@@ -1,0 +1,21 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+.idea/*.iml
+.idea/modules.xml
+.idea/workspace.xml
+.idea/misc.xml
+.intellijPlatform/
+
+# Node
+node_modules/
+web/dist/
+web/e2e/report/
+playwright-report/
+test-results/
+
+# Logs
+*.log
