@@ -1,0 +1,47 @@
+import { usePiStore } from "../store/store";
+
+export default function StatusBar() {
+  const stats = usePiStore((s) => s.stats);
+  const piStatus = usePiStore((s) => s.piStatus);
+  const piVersion = usePiStore((s) => s.piVersion);
+  const exitMessage = usePiStore((s) => s.exitMessage);
+  const exitStderr = usePiStore((s) => s.exitStderr);
+  const sessionName = usePiStore((s) => s.sessionName);
+  const bridgeKind = usePiStore((s) => s.bridgeKind);
+  const isStreaming = usePiStore((s) => s.isStreaming);
+
+  const percent = stats?.contextUsage?.percent;
+  const cost = stats?.cost;
+  const totalMessages = stats?.totalMessages;
+
+  return (
+    <div className="statusbar" data-testid="statusbar">
+      {piStatus === "exited" ? (
+        <div className="exit-banner" data-testid="exit-banner">
+          <span>
+            pi exited: {exitMessage}
+            {exitStderr ? ` — ${exitStderr.split("\n").slice(-3).join(" | ").slice(0, 300)}` : ""}
+          </span>
+        </div>
+      ) : null}
+      <div className="statusbar-row">
+        <span className={`status-dot ${piStatus} ${isStreaming ? "busy" : ""}`} data-testid="status-dot" />
+        <span data-testid="status-version">pi {piVersion || "—"}</span>
+        {sessionName ? <span className="status-session">{sessionName}</span> : null}
+        <span className="spacer" />
+        {percent != null ? (
+          <span data-testid="status-context" title="Context window usage">
+            ctx {percent}%
+          </span>
+        ) : null}
+        {cost != null ? (
+          <span data-testid="status-cost" title="Session cost">
+            ${cost.toFixed(4)}
+          </span>
+        ) : null}
+        {totalMessages != null ? <span data-testid="status-messages">{totalMessages} msgs</span> : null}
+        {bridgeKind === "mock" ? <span className="status-mock">MOCK</span> : null}
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,203 @@
+package dev.pi.agent.process
+
+import com.intellij.openapi.Disposable
+import com.intellij.openapi.components.Service
+import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.Disposer
+import dev.pi.agent.rpc.PiRpcClient
+import dev.pi.agent.rpc.PiRpcListener
+import kotlinx.serialization.json.JsonObject
+import java.io.File
+import java.io.IOException
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
+
+/** Lifecycle state of the per-project pi RPC process. */
+sealed class PiConnectionState {
+    data object NotStarted : PiConnectionState()
+    data class Starting(val installation: PiInstallation) : PiConnectionState()
+    data class Running(val installation: PiInstallation) : PiConnectionState()
+    data class Exited(val message: String, val stderrTail: String?) : PiConnectionState()
+}
+
+/**
+ * Owns the per-project `pi --mode rpc` child process and its [PiRpcClient].
+ *
+ * The process intentionally outlives tool window visibility so agent tasks keep
+ * running in the background; it is terminated when the project closes.
+ */
+@Service(Service.Level.PROJECT)
+class PiProcessManager(private val project: Project) : Disposable {    private val LOG = Logger.getInstance(PiProcessManager::class.java)
+
+    private val processRef = AtomicReference<Process?>(null)
+    private val clientRef = AtomicReference<PiRpcClient?>(null)
+
+    @Volatile
+    var state: PiConnectionState = PiConnectionState.NotStarted
+        private set
+
+    private val stateListeners = CopyOnWriteArrayList<(PiConnectionState) -> Unit>()
+    private val eventListeners = CopyOnWriteArrayList<(JsonObject) -> Unit>()
+
+    fun addStateListener(listener: (PiConnectionState) -> Unit) {
+        stateListeners.add(listener)
+        listener(state)
+    }
+
+    fun addEventListener(listener: (JsonObject) -> Unit) {
+        eventListeners.add(listener)
+    }
+
+    fun removeStateListener(listener: (PiConnectionState) -> Unit) = stateListeners.remove(listener)
+
+    fun removeEventListener(listener: (JsonObject) -> Unit) = eventListeners.remove(listener)
+
+    /** Returns the running client, starting the process if necessary. */
+    @Synchronized
+    fun client(): PiRpcClient? {
+        clientRef.get()?.let { return it }
+        return start()
+    }
+
+    @Synchronized
+    fun start(): PiRpcClient? {
+        val existing = clientRef.get()
+        if (existing != null) return existing
+
+        val installation = PiLocator.locate()
+        if (installation == null) {
+            setState(PiConnectionState.Exited("pi executable not found on this machine", null))
+            return null
+        }
+
+        setState(PiConnectionState.Starting(installation))
+        val cwd = project.basePath ?: System.getProperty("user.home")
+
+        val command = mutableListOf(
+            installation.path,
+            "--mode", "rpc",
+            "--no-extensions", // MVP: keep startup fast and deterministic; managed later via Manage view
+        )
+
+        val pb = ProcessBuilder(command)
+        pb.directory(File(cwd))
+        pb.redirectErrorStream(false)
+        val env = pb.environment()
+        val shellDirs = PiLocator.loginShellPath()
+        if (shellDirs.isNotEmpty()) {
+            env["PATH"] = (shellDirs + listOf(env["PATH"] ?: "")).filter { it.isNotBlank() }
+                .distinct().joinToString(":")
+        }
+
+        val process: Process = try {
+            pb.start()
+        } catch (e: IOException) {
+            LOG.warn("failed to start pi at $installation.path", e)
+            setState(PiConnectionState.Exited("failed to start pi: ${e.message}", null))
+            return null
+        }
+
+        processRef.set(process)
+        stderrTail = ""
+        Thread({ drainStderr(process) }, "pi-rpc-stderr").apply { isDaemon = true; start() }
+
+        val client = PiRpcClient(process, object : PiRpcListener {
+            override fun onEvent(event: JsonObject) {
+                eventListeners.forEach { it(event) }
+            }
+
+            override fun onClosed(message: String) {
+                // Give the process a moment to exit so we can read its code.
+                var exitCode: Int? = null
+                try {
+                    exitCode = if (process.waitFor(2, TimeUnit.SECONDS)) process.exitValue() else null
+                } catch (_: InterruptedException) {
+                }
+                val tail = stderrTail
+                val detail = buildString {
+                    append(message)
+                    if (exitCode != null && exitCode != 0) append(" (exit code $exitCode)")
+                }
+                setState(PiConnectionState.Exited(detail, tail.ifBlank { null }))
+                clientRef.set(null)
+                processRef.set(null)
+            }
+        })
+        clientRef.set(client)
+        setState(PiConnectionState.Running(installation))
+        return client
+    }
+
+    @Volatile
+    private var stderrTail: String = ""
+
+    private fun drainStderr(process: Process) {
+        try {
+            val reader = process.errorStream.bufferedReader(Charsets.UTF_8)
+            val sb = StringBuilder()
+            var line = reader.readLine()
+            while (line != null) {
+                LOG.info("[pi stderr] $line")
+                synchronized(this) {
+                    sb.appendLine(line)
+                    if (sb.length > MAX_STDERR) {
+                        sb.delete(0, sb.length - MAX_STDERR)
+                    }
+                    stderrTail = sb.toString()
+                }
+                line = reader.readLine()
+            }
+        } catch (_: IOException) {
+            // stream closed with the process
+        }
+    }
+
+    /** Restarts the process (used after a crash or a settings change). */
+    @Synchronized
+    fun restart(): PiRpcClient? {
+        shutdownProcess(keepState = true)
+        return start()
+    }
+
+    private fun setState(newState: PiConnectionState) {
+        state = newState
+        stateListeners.forEach { it(newState) }
+    }
+
+    private fun shutdownProcess(keepState: Boolean) {
+        clientRef.getAndSet(null)?.close()
+        val process = processRef.getAndSet(null)
+        if (process != null && process.isAlive) {
+            process.destroy()
+            try {
+                if (!process.waitFor(5, TimeUnit.SECONDS)) {
+                    process.destroyForcibly()
+                }
+            } catch (_: InterruptedException) {
+                process.destroyForcibly()
+            }
+        }
+        if (!keepState) {
+            setState(PiConnectionState.NotStarted)
+        }
+    }
+
+    override fun dispose() {
+        shutdownProcess(keepState = false)
+        stateListeners.clear()
+        eventListeners.clear()
+    }
+
+    init {
+        Disposer.register(project, this)
+    }
+
+    companion object {
+        private const val MAX_STDERR = 4096
+
+        @JvmStatic
+        fun getInstance(project: Project): PiProcessManager = project.getService(PiProcessManager::class.java)
+    }
+}

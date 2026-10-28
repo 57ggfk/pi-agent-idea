@@ -1,0 +1,19 @@
+<idea-plugin>
+    <id>dev.pi.agent</id>
+    <name>Pi Agent</name>
+    <vendor>57ggfk</vendor>
+    <description><![CDATA[
+    Pi coding agent, embedded in your IDE.<br/>
+    Chat with the pi coding agent from a tool window: streaming markdown answers,
+    thinking blocks, tool-call cards, model & session management, and GUI management
+    for pi's MCP servers, packages and skills.
+    ]]></description>
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow id="Pi Agent"
+                    anchor="right"
+                    factoryClass="dev.pi.agent.toolwindow.PiAgentToolWindowFactory"
+                    canCloseContents="false"/>
+    </extensions>
+</idea-plugin>

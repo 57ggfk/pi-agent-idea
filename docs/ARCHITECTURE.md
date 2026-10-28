@@ -37,25 +37,21 @@
 ```
 pi-agent-idea/
 ├── docs/                     # 产品/架构/任务计划/测试文档
-├── plugin/                   # JetBrains 插件（Gradle 根工程）
-│   ├── src/main/kotlin/dev/pi/agent/…
-│   │   ├── rpc/              # 协议层：RPC 客户端、消息模型、JSONL 分帧
-│   │   ├── process/          # PiProcessManager：子进程生命周期
-│   │   ├── bridge/           # BridgeService：前端 ⇄ Java 信封协议
-│   │   ├── toolwindow/       # ToolWindow + JBCefBrowser 装配
-│   │   ├── session/          # 会话文件索引/解析
-│   │   ├── manage/           # CLI 包装：auth/mcp/install/list
-│   │   └── settings/         # 插件设置（pi 路径等）
-│   ├── src/main/resources/…
-│   ├── src/test/kotlin/…     # 单元测试（协议/会话解析/CLI 包装）
-│   └── src-ui/               # （构建产物复制目标）web 前端资源
+├── src/main/kotlin/dev/pi/agent/…   # 插件（Gradle 根工程）
+│   ├── rpc/                  # 协议层：RPC 客户端、JSONL 分帧
+│   ├── process/              # PiLocator / PiProcessManager：子进程生命周期
+│   ├── bridge/               # BridgeService：前端 ⇄ Java 信封协议
+│   ├── toolwindow/           # ToolWindow + JBCefBrowser 装配
+│   └── ui/                   # LocalUiServer：前端资源 loopback HTTP 服务
+├── src/main/resources/META-INF/plugin.xml
+├── src/test/kotlin/…         # 单元测试（协议/集成）
 ├── web/                      # 前端工程（Vite + React + TS）
 │   ├── src/…
 │   └── e2e/                  # Playwright 前端 e2e（MockBridge）
 ├── test/
-│   └── mock-pi/              # mock pi RPC 服务器（node），供 e2e 使用
+│   └── mock-pi/              # mock pi RPC 服务器（node），供 IDE e2e 与单测使用
 ├── scripts/                  # 开发/构建辅助脚本
-├── build.gradle.kts / settings.gradle.kts / gradle wrapper
+├── build.gradle.kts / settings.gradle.kts / gradle wrapper (9.8.2)
 └── README.md / CHANGELOG.md / LICENSE
 ```
 

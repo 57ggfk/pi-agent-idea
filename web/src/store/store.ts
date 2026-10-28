@@ -1,0 +1,276 @@
+import { create } from "zustand";
+import type { Bridge } from "../bridge/types";
+import { rpc } from "../bridge/types";
+import { getBridge } from "../bridge";
+import {
+  applyEvent,
+  emptyItem,
+  itemsFromMessages,
+  type ChatItem,
+  type CommandInfo,
+  type ModelInfo,
+  type SessionStats,
+} from "./types";
+
+export type SendMode = "auto" | "steer" | "followUp";
+
+interface PiStore {
+  ready: boolean;
+  bridgeKind: "jcef" | "mock" | "connecting";
+  theme: "light" | "dark";
+
+  piStatus: "notStarted" | "starting" | "running" | "exited";
+  piVersion: string;
+  exitMessage: string;
+  exitStderr: string;
+
+  items: ChatItem[];
+  isStreaming: boolean;
+  aborted: boolean;
+  retryInfo: { attempt: number; maxAttempts: number; delayMs: number; errorMessage: string } | null;
+  queue: { steering: string[]; followUp: string[] };
+
+  model?: ModelInfo;
+  models: ModelInfo[];
+  thinkingLevel: string;
+  thinkingLevels: string[];
+  commands: CommandInfo[];
+  stats?: SessionStats;
+  sessionName?: string;
+
+  init(): Promise<void>;
+  send(text: string, mode: SendMode): Promise<void>;
+  abort(): Promise<void>;
+  newSession(): Promise<void>;
+  setModel(provider: string, modelId: string): Promise<void>;
+  setThinkingLevel(level: string): Promise<void>;
+  refreshStats(): Promise<void>;
+}
+
+export const usePiStore = create<PiStore>((set, get) => {
+  let bridge: Bridge | null = null;
+
+  const handlePiEvent = (event: Record<string, unknown>) => {
+    const type = event["type"];
+    const state = get();
+    if (type === "agent_start") {
+      set({ isStreaming: true, aborted: false });
+      return;
+    }
+    if (type === "agent_settled") {
+      set({ isStreaming: false, aborted: Boolean(event["aborted"]) });
+      void get().refreshStats();
+      return;
+    }
+    if (type === "auto_retry_start") {
+      set({
+        retryInfo: {
+          attempt: Number(event["attempt"] ?? 1),
+          maxAttempts: Number(event["maxAttempts"] ?? 3),
+          delayMs: Number(event["delayMs"] ?? 0),
+          errorMessage: String(event["errorMessage"] ?? ""),
+        },
+      });
+      return;
+    }
+    if (type === "auto_retry_end") {
+      set({ retryInfo: null });
+      return;
+    }
+    if (type === "queue_update") {
+      set({
+        queue: {
+          steering: (event["steering"] as string[]) ?? [],
+          followUp: (event["followUp"] as string[]) ?? [],
+        },
+      });
+      return;
+    }
+    if (type === "session_info_changed") {
+      set({ sessionName: (event["name"] as string) ?? undefined });
+      return;
+    }
+    if (type === "thinking_level_changed") {
+      set({ thinkingLevel: String(event["level"] ?? state.thinkingLevel) });
+      return;
+    }
+    set({ items: applyEvent(state.items, event) });
+  };
+
+  return {
+    ready: false,
+    bridgeKind: "connecting",
+    theme: "light",
+
+    piStatus: "notStarted",
+    piVersion: "",
+    exitMessage: "",
+    exitStderr: "",
+
+    items: [],
+    isStreaming: false,
+    aborted: false,
+    retryInfo: null,
+    queue: { steering: [], followUp: [] },
+
+    models: [],
+    thinkingLevel: "medium",
+    thinkingLevels: [],
+    commands: [],
+
+    async init() {
+      bridge = await getBridge();
+      set({ bridgeKind: bridge.kind });
+      bridge.onEvent((name, data) => {
+        if (name === "pi") {
+          handlePiEvent(data as Record<string, unknown>);
+        } else if (name === "pi-state") {
+          const st = data as {
+            status: PiStore["piStatus"];
+            version?: string;
+            message?: string;
+            stderr?: string;
+          };
+          set({
+            piStatus: st.status,
+            piVersion: st.version ?? get().piVersion,
+            exitMessage: st.message ?? "",
+            exitStderr: st.stderr ?? "",
+          });
+        }
+      });
+
+      try {
+        const env = await bridge.request<{ theme: "light" | "dark" }>("env");
+        set({ theme: env.theme });
+        document.documentElement.dataset.theme = env.theme;
+      } catch {
+        // standalone mock provides env as well; ignore failures
+      }
+
+      await Promise.all([
+        rpc<{ model?: ModelInfo; thinkingLevel?: string; isStreaming?: boolean; sessionName?: string }>(
+          bridge,
+          { type: "get_state" },
+        ).then((s) =>
+          set({
+            model: s.model,
+            thinkingLevel: s.thinkingLevel ?? "medium",
+            isStreaming: Boolean(s.isStreaming),
+            sessionName: s.sessionName,
+          }),
+        ).catch(() => undefined),
+        rpc<{ models: ModelInfo[] }>(bridge, { type: "get_available_models" })
+          .then((r) => set({ models: r.models ?? [] }))
+          .catch(() => undefined),
+        rpc<{ levels: string[] }>(bridge, { type: "get_available_thinking_levels" })
+          .then((r) => set({ thinkingLevels: r.levels ?? [] }))
+          .catch(() => undefined),
+        rpc<{ commands: CommandInfo[] }>(bridge, { type: "get_commands" })
+          .then((r) => set({ commands: r.commands ?? [] }))
+          .catch(() => undefined),
+        get().refreshStats(),
+      ]);
+
+      // Replay the current session so a reopened tool window shows history.
+      try {
+        const messages = await rpc<{ messages: unknown[] }>(bridge, { type: "get_messages" });
+        const restored = itemsFromMessages(messages.messages ?? []);
+        if (restored.length > 0) set({ items: restored });
+      } catch {
+        // mock bridge without get_messages support
+      }
+
+      set({ ready: true });
+    },
+
+    async send(text: string, mode: SendMode) {
+      if (!bridge || !text.trim()) return;
+      const { isStreaming, items } = get();
+      if (!isStreaming) {
+        const item = emptyItem("user", [{ kind: "text", text, done: true }]);
+        item.done = true;
+        set({ items: [...items, item] });
+      }
+      const command: Record<string, unknown> = { type: "prompt", message: text };
+      if (isStreaming && mode !== "auto") {
+        command["streamingBehavior"] = mode;
+      }
+      try {
+        await rpc(bridge, command);
+      } catch (e) {
+        const item = emptyItem("system", [
+          { kind: "text", text: `Failed to send: ${(e as Error).message}`, done: true },
+        ]);
+        item.done = true;
+        item.isError = true;
+        set({ items: [...get().items, item] });
+      }
+    },
+
+    async abort() {
+      if (!bridge) return;
+      try {
+        await rpc(bridge, { type: "abort" });
+      } catch {
+        // ignore: state events will settle the UI
+      }
+    },
+
+    async newSession() {
+      if (!bridge) return;
+      try {
+        await rpc(bridge, { type: "new_session" });
+        set({ items: [], stats: undefined, aborted: false, isStreaming: false });
+        await get().refreshStats();
+      } catch (e) {
+        const item = emptyItem("system", [
+          { kind: "text", text: `new_session failed: ${(e as Error).message}`, done: true },
+        ]);
+        item.done = true;
+        item.isError = true;
+        set({ items: [...get().items, item] });
+      }
+    },
+
+    async setModel(provider: string, modelId: string) {
+      if (!bridge) return;
+      try {
+        const model = await rpc<ModelInfo>(bridge, { type: "set_model", provider, modelId });
+        set({ model });
+      } catch (e) {
+        const item = emptyItem("system", [
+          { kind: "text", text: `set_model failed: ${(e as Error).message}`, done: true },
+        ]);
+        item.done = true;
+        item.isError = true;
+        set({ items: [...get().items, item] });
+      }
+    },
+
+    async setThinkingLevel(level: string) {
+      if (!bridge) return;
+      try {
+        await rpc(bridge, { type: "set_thinking_level", level });
+        set({ thinkingLevel: level });
+      } catch (e) {
+        const item = emptyItem("system", [
+          { kind: "text", text: `set_thinking_level failed: ${(e as Error).message}`, done: true },
+        ]);
+        item.done = true;
+        item.isError = true;
+        set({ items: [...get().items, item] });
+      }
+    },
+
+    async refreshStats() {
+      if (!bridge) return;
+      try {
+        const stats = await rpc<SessionStats>(bridge, { type: "get_session_stats" });
+        set({ stats });
+      } catch {
+        // non-fatal
+      }
+    },
+  };
+});
