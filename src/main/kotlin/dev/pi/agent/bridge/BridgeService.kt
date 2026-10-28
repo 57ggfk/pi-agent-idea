@@ -4,7 +4,6 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.util.Disposer
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.UIUtil
 import dev.pi.agent.process.PiConnectionState
@@ -22,14 +21,13 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
-import org.cef.browser.CefBrowser
 
 /**
  * Routes JSON-envelope messages between the web frontend and plugin services.
  *
- * Wire format (JS → Java): `{"t": "<method>", "id": "<reqId>", "p": {…}}`
- * Responses and pushed events go through [push] as
- * `{"t":"resp","id":…,…}` / `{"t":"event","name":…,"data":…}`.
+ * Transport is HTTP on the loopback UI server (see [dev.pi.agent.ui.LocalUiServer]):
+ * the frontend `POST`s `{t, id, p}` envelopes to `/bridge` and long-polls
+ * `/bridge/poll` for responses (`t=resp`) and pushed events (`t=event`).
  */
 @Service(Service.Level.PROJECT)
 class BridgeService(private val project: Project) : Disposable {
@@ -38,18 +36,15 @@ class BridgeService(private val project: Project) : Disposable {
     private val json = Json { encodeDefaults = true }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    @Volatile
-    private var sink: CefBrowser? = null
-
     private var piEventsWired = false
 
-    /** Called on the JCEF IO thread with the raw message body. */
-    fun handleMessage(message: String) {
+    /** Entry point for POST /bridge. Envelopes are handled asynchronously. */
+    fun handleEnvelope(message: String) {
         scope.launch {
             val element = try {
                 json.parseToJsonElement(message).jsonObject
             } catch (e: Exception) {
-                LOG.warn("bridge: malformed message: ${message.take(200)}")
+                LOG.warn("bridge: malformed envelope: ${message.take(200)}")
                 return@launch
             }
             runCatching { dispatch(element) }
@@ -102,14 +97,6 @@ class BridgeService(private val project: Project) : Disposable {
 
     // -- push channel -------------------------------------------------------
 
-    fun registerSink(browser: CefBrowser) {
-        sink = browser
-        wirePiEvents()
-        // Initial state so a freshly loaded page syncs immediately.
-        val state = PiProcessManager.getInstance(project).state
-        pushStateEvent(state)
-    }
-
     private fun wirePiEvents() {
         if (piEventsWired) return
         piEventsWired = true
@@ -122,6 +109,7 @@ class BridgeService(private val project: Project) : Disposable {
             })
         }
         manager.addStateListener { state -> pushStateEvent(state) }
+        pushStateEvent(manager.state)
     }
 
     private fun pushStateEvent(state: PiConnectionState) {
@@ -146,18 +134,17 @@ class BridgeService(private val project: Project) : Disposable {
         })
     }
 
-    private fun push(record: JsonObject) {
-        val browser = sink ?: return
-        try {
-            browser.executeJavaScript("window.__piEvent && window.__piEvent(${record});", browser.url, 0)
-        } catch (e: Exception) {
-            LOG.warn("bridge: failed to push to frontend", e)
-        }
+    fun push(record: JsonObject) {
+        BridgeTransport.push(record)
+    }
+
+    /** Lazily wires pi event listeners on first frontend contact. */
+    fun ensureWired() {
+        wirePiEvents()
     }
 
     override fun dispose() {
         scope.cancel()
-        sink = null
     }
 
     companion object {

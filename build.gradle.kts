@@ -42,6 +42,9 @@ java {
 // Web UI (React/Vite) build integration: web/dist is served as plugin resources
 // ---------------------------------------------------------------------------
 val webDist = layout.projectDirectory.dir("web/dist")
+// Staging dir whose `webui/` child becomes the resource entry in the jar, so
+// server-side lookups use classloader paths like `webui/index.html`.
+val webUiStaging = layout.buildDirectory.dir("webui-staging")
 
 val ensureWebUiDeps = tasks.register<Exec>("ensureWebUiDeps") {
     workingDir = layout.projectDirectory.dir("web").asFile
@@ -63,17 +66,23 @@ val buildWebUi = tasks.register<Exec>("buildWebUi") {
     commandLine("npm", "run", "build")
 }
 
+val syncWebUi = tasks.register<Sync>("syncWebUi") {
+    dependsOn(buildWebUi)
+    from(webDist)
+    into(webUiStaging.map { it.dir("webui") })
+}
+
 sourceSets {
     main {
         resources {
-            srcDir(webDist)
+            srcDir(webUiStaging)
         }
     }
 }
 
 tasks {
     processResources {
-        dependsOn(buildWebUi)
+        dependsOn(syncWebUi)
     }
 
     test {
@@ -86,6 +95,24 @@ tasks {
     wrapper {
         gradleVersion = "9.8.2"
         distributionType = Wrapper.DistributionType.BIN
+    }
+
+    withType<JavaExec>().configureEach {
+        // PI_IDE_E2E=/abs/path/to/mock-pi.mjs [PI_IDE_E2E_PROJECT=/abs/project]
+        // ./gradlew runIde — runs the IDE with JCEF remote debugging (CDP :9222),
+        // the mock pi binary and an auto-opened tool window — the IDE e2e harness.
+        System.getenv("PI_IDE_E2E")?.let { mockPi ->
+            jvmArgs(
+                "-Dide.browser.jcef.debug.port=9222",
+                "-Dpi.agent.autoOpen=true",
+                "-Didea.trust.all.projects=true",
+                "-Djb.consents.confirmation.enabled=false",
+            )
+            environment("PI_AGENT_EXECUTABLE", mockPi)
+            System.getenv("PI_IDE_E2E_PROJECT")?.let { projectPath ->
+                args(projectPath)
+            }
+        }
     }
 }
 

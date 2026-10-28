@@ -9,11 +9,15 @@
     for pi's MCP servers, packages and skills.
     ]]></description>
     <depends>com.intellij.modules.platform</depends>
+    <!-- JCEF ships as the bundled "Web Browser (JCEF)" plugin; depending on it
+         links our classloader to the JCEF classes (com.intellij.ui.jcef, org.cef). -->
+    <depends>com.intellij.modules.jcef</depends>
 
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow id="Pi Agent"
                     anchor="right"
                     factoryClass="dev.pi.agent.toolwindow.PiAgentToolWindowFactory"
                     canCloseContents="false"/>
+        <postStartupActivity implementation="dev.pi.agent.toolwindow.PiAgentStartupActivity"/>
     </extensions>
 </idea-plugin>
