@@ -44,11 +44,74 @@ export class MockBridge implements Bridge {
       const resp = this.handleCommand({ type: "sessions.list" }) as { success: boolean; data: T };
       return resp.success ? Promise.resolve(resp.data) : Promise.reject(new Error("sessions.list failed"));
     }
+    if (method.startsWith("manage.")) {
+      return Promise.resolve(this.handleManage(method) as T);
+    }
     if (method !== "rpc.request") {
       return Promise.reject(new Error(`mock bridge: unsupported method ${method}`));
     }
     const command = (params as { command?: Record<string, unknown> })?.command ?? {};
     return Promise.resolve(this.handleCommand(command) as T);
+  }
+
+  private handleManage(method: string): unknown {
+    switch (method) {
+      case "manage.env":
+        return {
+          ok: true,
+          found: true,
+          path: "/usr/local/bin/pi",
+          version: "1.4.0-mock",
+          agentDir: "/tmp/mock-home/.pi/agent",
+        };
+      case "manage.mcpList":
+        return {
+          ok: true,
+          raw: {
+            servers: [
+              { name: "filesystem", state: "connected", toolCount: 11, enabled: true },
+              { name: "docs", state: "needs-login", enabled: true },
+            ],
+            errors: [],
+          },
+        };
+      case "manage.mcpAdd":
+      case "manage.mcpRemove":
+      case "manage.mcpLogin":
+      case "manage.mcpLogout":
+      case "manage.packageInstall":
+      case "manage.packageRemove":
+      case "manage.skillCreate":
+        return { ok: true, output: "mock: done" };
+      case "manage.packagesList":
+        return { ok: true, lines: ["npm:@example/pi-tools@1.0.0", "No packages installed."] };
+      case "manage.skillsList":
+        return {
+          ok: true,
+          skills: [
+            {
+              name: "pdf-tools",
+              description: "Extract text and tables from PDF files.",
+              path: "/tmp/mock-home/.pi/agent/skills/pdf-tools/SKILL.md",
+              disableModelInvocation: false,
+            },
+          ],
+        };
+      case "manage.authOverview":
+        return {
+          ok: true,
+          providers: ["mock-provider"],
+          withCredentials: ["mock-provider"],
+        };
+      case "manage.authCheck":
+        return { ok: true, status: "ready", detail: { provider: "mock-provider" } };
+      case "manage.settingsRead":
+        return { ok: true, path: "/tmp/mock-home/.pi/agent/settings.json", text: "{\n  \"theme\": \"dark\"\n}" };
+      case "manage.settingsWrite":
+        return { ok: true, output: "saved" };
+      default:
+        return { ok: false, error: `mock bridge: unsupported method ${method}` };
+    }
   }
 
   private handleCommand(command: Record<string, unknown>): unknown {

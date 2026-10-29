@@ -78,7 +78,7 @@ export class JcefBridge implements Bridge {
       this.pending.set(id, {
         resolve: resolve as (v: unknown) => void,
         reject,
-        deadline: Date.now() + 120_000,
+        deadline: Date.now() + 360_000, // package installs can be slow
       });
     });
     const resp = await fetch("/bridge", {

@@ -52,7 +52,9 @@ val ensureWebUiDeps = tasks.register<Exec>("ensureWebUiDeps") {
     inputs.file("package-lock.json")
     outputs.dir("node_modules")
     onlyIf { !file("web/node_modules").exists() }
-    commandLine("npm", "install", "--no-audit", "--no-fund")
+    // Resolve npm through the user's login shell: GUI-launched daemons have a
+    // minimal PATH that misses nvm-installed toolchains (see PiLocator).
+    commandLine("/bin/zsh", "-lic", "npm install --no-audit --no-fund")
 }
 
 val buildWebUi = tasks.register<Exec>("buildWebUi") {
@@ -63,7 +65,15 @@ val buildWebUi = tasks.register<Exec>("buildWebUi") {
     inputs.file(layout.projectDirectory.file("web/vite.config.ts"))
     inputs.file(layout.projectDirectory.file("web/index.html"))
     outputs.dir(webDist)
-    commandLine("npm", "run", "build")
+    // Always rebuild: a silent no-op here once shipped a stale UI bundle.
+    outputs.upToDateWhen { false }
+    commandLine("/bin/zsh", "-lic", "npm run build")
+    doLast {
+        val index = layout.projectDirectory.file("web/dist/index.html").asFile
+        require(index.isFile && System.currentTimeMillis() - index.lastModified() < 10 * 60_000) {
+            "web/dist/index.html is stale — vite build did not produce a fresh bundle"
+        }
+    }
 }
 
 val syncWebUi = tasks.register<Sync>("syncWebUi") {

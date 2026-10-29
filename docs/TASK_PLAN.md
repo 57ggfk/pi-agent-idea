@@ -38,13 +38,13 @@
 - ☑ 前端 e2e：Playwright × MockBridge（6 用例全绿）
 
 ## Phase 3 —— pi 生态管理
-- ☐ 管理页签框架（Manage 视图导航）
-- ☐ 认证面板（pi auth check --json）
-- ☐ MCP 管理（list/add(stdio,http)/remove/enable-disable/login/logout）
-- ☐ 扩展包管理（pi list / install / remove，安装进度与错误呈现）
-- ☐ Skills 管理（扫描 SKILL.md、新建模板、编辑器打开）
-- ☐ pi 设置（settings.json 内嵌编辑 + 常用项表单）
-- ☐ 环境自检页（未装 pi → 引导安装；版本/PATH 诊断）
+- ☑ 管理页签框架（Manage 视图五分区导航 + 环境横幅）
+- ☑ 认证面板（auth.json/models.json 汇总 + pi auth check --provider X --json）
+- ☑ MCP 管理（list --json / add(stdio,url) / remove / login / logout）
+- ☑ 扩展包管理（pi list / install / remove，含错误呈现）
+- ☑ Skills 管理（扫描 SKILL.md frontmatter + 新建模板）
+- ☑ pi 设置（settings.json 内嵌编辑，写入前 .bak 备份 + JSON 校验）
+- ☑ 环境自检（pi 定位/版本/未装引导；PiCliRunner 经登录 shell PATH）
 
 ## Phase 4 —— IDE 深度集成 + 全面测试
 - ☐ 编辑器动作：Send/Explain/Fix with Pi（选区上下文）
