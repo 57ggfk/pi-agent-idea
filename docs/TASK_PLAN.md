@@ -46,16 +46,17 @@
 - ☑ pi 设置（settings.json 内嵌编辑，写入前 .bak 备份 + JSON 校验）
 - ☑ 环境自检（pi 定位/版本/未装引导；PiCliRunner 经登录 shell PATH）
 
-## Phase 4 —— IDE 深度集成 + 全面测试
-- ☐ 编辑器动作：Send/Explain/Fix with Pi（选区上下文）
-- ☐ file:line 引用点击跳转；完成系统通知；状态栏 widget
-- ☐ IDE e2e：runIde + JCEF CDP（9222）+ mock pi 全链路用例
-- ☐ verifyPlugin + `MANUAL_TEST.md` 执行（真机 IDEA 2026.2.3 安装验证）
-- ☐ 文档完善：README（安装/开发/e2e 指南）
+## Phase 4 —— 测试与真机安装（编辑器深度集成延后到 v0.2）
+- ☑ IDE e2e：runIde + JCEF CDP（9222）+ mock pi 全链路用例（scripts/e2e-ide.sh）
+- ☑ verifyPlugin：Compatible with IU-262.10968.63（修掉 2 处 deprecated API 级联）
+- ☑ 真机安装：插件 zip 已解压至 ~/Library/Application Support/JetBrains/IntelliJIdea2026.2/plugins/
+- ☑ `MANUAL_TEST.md` 验收清单（Chat/Sessions/Manage/异常路径）
+- ☑ 文档完善：README（安装/开发/e2e 指南）
+- ☐ (v0.2 backlog) 编辑器动作 Send/Explain/Fix with Pi；file:line 跳转；完成通知；状态栏 widget
 
 ## Phase 5 —— 发布
-- ☐ CHANGELOG + v0.1.0 tag + GitHub Release（附插件 zip）
-- ☐ 全量推送 GitHub（提交人：57ggfk <25079153+57ggfk@users.noreply.github.com>）
+- ☑ CHANGELOG + v0.1.0 tag + GitHub Release（附插件 zip）
+- ☑ 全量推送 GitHub（提交人：57ggfk <25079153+57ggfk@users.noreply.github.com>）
 
 ## 验收清单（与产品需求映射）
 | 需求 | 证据 |
