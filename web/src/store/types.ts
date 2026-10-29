@@ -189,6 +189,11 @@ export function applyEvent(items: ChatItem[], event: AnyRecord): ChatItem[] {
       if (!message) return items;
       const role = message["role"] as ChatItem["role"];
       if (role === "assistant") {
+        // Defensive: ignore duplicate assistant starts (event replay guards).
+        const tail = items[items.length - 1];
+        if (tail && tail.role === "assistant" && !tail.done && tail.blocks.length === 0) {
+          return items;
+        }
         return [...items, emptyItem("assistant")];
       }
       // user: skip if an optimistic copy is already the tail

@@ -18,6 +18,8 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
@@ -61,6 +63,7 @@ class BridgeService(private val project: Project) : Disposable {
                 "ping" -> buildJsonObject { put("pong", true) }
                 "env" -> envInfo()
                 "rpc.request" -> rpcRequest(params)
+                "sessions.list" -> sessionsList()
                 else -> throw IllegalArgumentException("unknown bridge method: $method")
             }
             push(buildJsonObject {
@@ -93,6 +96,24 @@ class BridgeService(private val project: Project) : Disposable {
             ?: throw IllegalStateException("pi process is not running")
         val response = client.send(command).await()
         return response.raw
+    }
+
+    private fun sessionsList(): JsonObject {
+        val sessions = dev.pi.agent.session.PiSessionIndex.list(project.basePath ?: "")
+        return buildJsonObject {
+            put("sessions", buildJsonArray {
+                sessions.forEach { s ->
+                    add(buildJsonObject {
+                        put("file", s.file)
+                        put("id", s.id ?: "")
+                        put("timestamp", s.timestamp ?: "")
+                        put("name", s.name ?: "")
+                        put("preview", s.preview ?: "")
+                        put("modifiedAt", s.modifiedAt)
+                    })
+                }
+            })
+        }
     }
 
     // -- push channel -------------------------------------------------------

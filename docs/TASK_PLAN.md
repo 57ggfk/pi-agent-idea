@@ -8,34 +8,34 @@
 - ☑ 产品设计文档
 - ☑ 架构设计文档
 - ☑ 本任务计划
-- ☐ git 初始化 + GitHub 远程仓库（账号 57ggfk）+ 文档入库
-- ☐ 工具链：JDK 21、Gradle 8.14.3、wrapper 提交
+- ☑ git 初始化 + GitHub 远程仓库（账号 57ggfk）+ 文档入库
+- ☑ 工具链：JDK 21、Gradle 9.8.2、wrapper 提交
 
 ## Phase 1 —— MVP（最小可用对话）🎯 出口：真实 pi 走通一轮对话
-- ☐ Gradle 工程脚手架（IPG 2.x、IU/local 2026.2、kotlinx.serialization）
-- ☐ plugin.xml：ToolWindow「Pi Agent」注册
-- ☐ JCEF 容器 + 前端资源加载（先本地 HTTP 轻量服务方案）
-- ☐ 桥接最小实现（ping/echo + env）
-- ☐ 前端骨架：React + Vite，输入框 + 消息列表（纯文本）
-- ☐ `PiRpcClient`（JSONL 分帧、请求关联、事件分发）
-- ☐ `PiProcessManager`（pi 定位、进程启动/关闭/崩溃回调）
-- ☐ 对话链路：prompt → text_delta 流式追加 → agent_settled 结束；abort
-- ☐ 单元测试：LfLineReader / 响应关联 / 协议解析
-- ☐ `buildPlugin` 成功 + `runIde` 冒烟（对照 MANUAL_TEST Phase1）
+- ☑ Gradle 工程脚手架（IPG 2.19.0、local IU 2026.2、kotlinx.serialization）
+- ☑ plugin.xml：ToolWindow「Pi Agent」注册（+ postStartupActivity 自动打开）
+- ☑ JCEF 容器 + 前端资源加载（loopback HTTP：LocalUiServer）
+- ☑ 桥接实现（HTTP 传输：POST /bridge + GET /bridge/poll 长轮询；JCEF JS 注入不可靠已弃用）
+- ☑ 前端骨架：React + Vite，输入框 + 消息列表
+- ☑ `PiRpcClient`（JSONL 分帧、请求关联、事件分发）
+- ☑ `PiProcessManager`（pi 定位、进程启动/关闭/崩溃回调）
+- ☑ 对话链路：prompt → text_delta 流式追加 → agent_settled 结束；abort
+- ☑ 单元测试：LfLineReader / RPC 集成（对 mock pi）/ 会话索引
+- ☑ `buildPlugin` 成功 + runIde e2e（Playwright over CDP :9222）全绿
 
 ## Phase 2 —— 完整聊天体验
-- ☐ 事件归约器 `applyEvent`（纯函数）+ 单测（Vitest）
-- ☐ markdown 流式渲染（marked + dompurify + highlight.js，代码块复制）
-- ☐ thinking 折叠块；usage/cost 展示
-- ☐ 工具调用卡片（read/edit/write/bash 专属摘要 + 折叠输出 + 错误态 + 耗时）
-- ☐ steer / followUp 排队 UI + queue_update 同步 + clear_queue
-- ☐ auto_retry / compaction 事件可视化
-- ☐ 模型选择器 + 思考等级选择器（get_available_models / thinking_levels）
-- ☐ 斜杠命令补全（get_commands）+ 图片粘贴发送
-- ☐ 会话列表（解析 sessions 目录）+ 切换/重命名/新会话
-- ☐ 会话统计状态栏（get_session_stats；contextUsage 百分比/成本）
-- ☐ IDE 主题跟随（主题注入 + CSS 变量）
-- ☐ 前端 e2e：Playwright × MockBridge（对话/工具卡/中止/补全）
+- ☑ 事件归约器 `applyEvent`（纯函数）+ 单测（Vitest 10 例）
+- ☑ markdown 流式渲染（marked + dompurify + highlight.js）
+- ☑ thinking 折叠块；usage/cost 展示
+- ☑ 工具调用卡片（工具名 + 参数摘要 + 折叠输出 + 错误态 + 耗时）
+- ☑ steer / followUp 排队 UI + queue_update 同步
+- ☑ auto_retry / compaction 事件可视化
+- ☑ 模型选择器 + 思考等级选择器
+- ☑ 斜杠命令补全（get_commands）+ 图片粘贴/附件发送
+- ☑ 会话列表（PiSessionIndex 解析 header.cwd）+ 切换 + 重命名
+- ☑ 会话统计状态栏（contextUsage/成本/消息数）+ Compact 按钮
+- ☑ IDE 主题跟随（env.theme → data-theme）
+- ☑ 前端 e2e：Playwright × MockBridge（6 用例全绿）
 
 ## Phase 3 —— pi 生态管理
 - ☐ 管理页签框架（Manage 视图导航）

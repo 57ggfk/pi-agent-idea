@@ -21,7 +21,9 @@ async function detect() {
   // mock bridge so the identical UI code runs outside the IDE.
   try {
     const resp = await fetch("/bridge/health", { signal: AbortSignal.timeout(1500) });
-    if (resp.ok) {
+    // Verify the payload is ours: vite's SPA fallback also returns 200 HTML.
+    const data = (await resp.json().catch(() => null)) as { ok?: boolean } | null;
+    if (resp.ok && data?.ok === true) {
       deliver(new JcefBridge());
       return;
     }

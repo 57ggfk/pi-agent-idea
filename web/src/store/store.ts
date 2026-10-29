@@ -13,11 +13,22 @@ import {
 } from "./types";
 
 export type SendMode = "auto" | "steer" | "followUp";
+export type Tab = "chat" | "sessions" | "manage";
+
+export interface SessionInfo {
+  file: string;
+  id: string;
+  timestamp: string;
+  name: string;
+  preview: string;
+  modifiedAt: number;
+}
 
 interface PiStore {
   ready: boolean;
   bridgeKind: "jcef" | "mock" | "connecting";
   theme: "light" | "dark";
+  tab: Tab;
 
   piStatus: "notStarted" | "starting" | "running" | "exited";
   piVersion: string;
@@ -37,18 +48,28 @@ interface PiStore {
   commands: CommandInfo[];
   stats?: SessionStats;
   sessionName?: string;
+  sessionId?: string;
+  sessions: SessionInfo[];
 
+  setTab(tab: Tab): void;
   init(): Promise<void>;
   send(text: string, mode: SendMode): Promise<void>;
+  sendImages(text: string, images: Array<{ data: string; mimeType: string }>, mode: SendMode): Promise<void>;
   abort(): Promise<void>;
   newSession(): Promise<void>;
   setModel(provider: string, modelId: string): Promise<void>;
   setThinkingLevel(level: string): Promise<void>;
+  compact(): Promise<void>;
   refreshStats(): Promise<void>;
+  refreshSessions(): Promise<void>;
+  switchSession(file: string): Promise<void>;
+  renameSession(name: string): Promise<void>;
+  replayMessages(): Promise<void>;
 }
 
 export const usePiStore = create<PiStore>((set, get) => {
   let bridge: Bridge | null = null;
+  let initStarted = false;
 
   const handlePiEvent = (event: Record<string, unknown>) => {
     const type = event["type"];
@@ -101,6 +122,7 @@ export const usePiStore = create<PiStore>((set, get) => {
     ready: false,
     bridgeKind: "connecting",
     theme: "light",
+    tab: "chat",
 
     piStatus: "notStarted",
     piVersion: "",
@@ -117,8 +139,17 @@ export const usePiStore = create<PiStore>((set, get) => {
     thinkingLevel: "medium",
     thinkingLevels: [],
     commands: [],
+    sessions: [],
+
+    setTab(tab: Tab) {
+      set({ tab });
+      if (tab === "sessions") void get().refreshSessions();
+    },
 
     async init() {
+      // React StrictMode (dev) mounts effects twice; event wiring must happen once.
+      if (initStarted) return;
+      initStarted = true;
       bridge = await getBridge();
       set({ bridgeKind: bridge.kind });
       bridge.onEvent((name, data) => {
@@ -149,7 +180,7 @@ export const usePiStore = create<PiStore>((set, get) => {
       }
 
       await Promise.all([
-        rpc<{ model?: ModelInfo; thinkingLevel?: string; isStreaming?: boolean; sessionName?: string }>(
+        rpc<{ model?: ModelInfo; thinkingLevel?: string; isStreaming?: boolean; sessionName?: string; sessionId?: string }>(
           bridge,
           { type: "get_state" },
         ).then((s) =>
@@ -158,6 +189,7 @@ export const usePiStore = create<PiStore>((set, get) => {
             thinkingLevel: s.thinkingLevel ?? "medium",
             isStreaming: Boolean(s.isStreaming),
             sessionName: s.sessionName,
+            sessionId: s.sessionId,
           }),
         ).catch(() => undefined),
         rpc<{ models: ModelInfo[] }>(bridge, { type: "get_available_models" })
@@ -185,7 +217,12 @@ export const usePiStore = create<PiStore>((set, get) => {
     },
 
     async send(text: string, mode: SendMode) {
-      if (!bridge || !text.trim()) return;
+      await get().sendImages(text, [], mode);
+    },
+
+    async sendImages(text: string, images: Array<{ data: string; mimeType: string }>, mode: SendMode) {
+      if (!bridge) return;
+      if (!text.trim() && images.length === 0) return;
       const { isStreaming, items } = get();
       if (!isStreaming) {
         const item = emptyItem("user", [{ kind: "text", text, done: true }]);
@@ -193,6 +230,13 @@ export const usePiStore = create<PiStore>((set, get) => {
         set({ items: [...items, item] });
       }
       const command: Record<string, unknown> = { type: "prompt", message: text };
+      if (images.length > 0) {
+        command["images"] = images.map((img) => ({
+          type: "image",
+          data: img.data,
+          mimeType: img.mimeType,
+        }));
+      }
       if (isStreaming && mode !== "auto") {
         command["streamingBehavior"] = mode;
       }
@@ -221,8 +265,9 @@ export const usePiStore = create<PiStore>((set, get) => {
       if (!bridge) return;
       try {
         await rpc(bridge, { type: "new_session" });
-        set({ items: [], stats: undefined, aborted: false, isStreaming: false });
+        set({ items: [], stats: undefined, aborted: false, isStreaming: false, sessionName: undefined });
         await get().refreshStats();
+        await get().refreshSessions();
       } catch (e) {
         const item = emptyItem("system", [
           { kind: "text", text: `new_session failed: ${(e as Error).message}`, done: true },
@@ -230,6 +275,89 @@ export const usePiStore = create<PiStore>((set, get) => {
         item.done = true;
         item.isError = true;
         set({ items: [...get().items, item] });
+      }
+    },
+
+    async compact() {
+      if (!bridge) return;
+      try {
+        const result = await rpc<{ tokensBefore?: number; estimatedTokensAfter?: number }>(bridge, { type: "compact" });
+        const item = emptyItem("system", [
+          {
+            kind: "text",
+            text: `Context compacted: ${result.tokensBefore ?? "?"} → ${result.estimatedTokensAfter ?? "?"} tokens.`,
+            done: true,
+          },
+        ]);
+        item.done = true;
+        set({ items: [...get().items, item] });
+        await get().refreshStats();
+      } catch (e) {
+        const item = emptyItem("system", [
+          { kind: "text", text: `compact failed: ${(e as Error).message}`, done: true },
+        ]);
+        item.done = true;
+        item.isError = true;
+        set({ items: [...get().items, item] });
+      }
+    },
+
+    async refreshSessions() {
+      if (!bridge) return;
+      try {
+        const result = await bridge.request<{ sessions: SessionInfo[] }>("sessions.list");
+        set({ sessions: result.sessions ?? [] });
+      } catch {
+        // non-fatal (mock bridge may not implement it)
+      }
+    },
+
+    async switchSession(file: string) {
+      if (!bridge) return;
+      try {
+        await rpc(bridge, { type: "switch_session", sessionPath: file });
+        set({ items: [], stats: undefined, aborted: false, isStreaming: false, tab: "chat" });
+        await get().replayMessages();
+        await get().refreshStats();
+        const state = await rpc<{ sessionName?: string; sessionId?: string; model?: ModelInfo; thinkingLevel?: string }>(
+          bridge,
+          { type: "get_state" },
+        );
+        set({ sessionName: state.sessionName, sessionId: state.sessionId, model: state.model, thinkingLevel: state.thinkingLevel ?? "medium" });
+      } catch (e) {
+        const item = emptyItem("system", [
+          { kind: "text", text: `switch_session failed: ${(e as Error).message}`, done: true },
+        ]);
+        item.done = true;
+        item.isError = true;
+        set({ items: [...get().items, item] });
+      }
+    },
+
+    async renameSession(name: string) {
+      if (!bridge) return;
+      try {
+        await rpc(bridge, { type: "set_session_name", name });
+        set({ sessionName: name });
+        await get().refreshSessions();
+      } catch (e) {
+        const item = emptyItem("system", [
+          { kind: "text", text: `rename failed: ${(e as Error).message}`, done: true },
+        ]);
+        item.done = true;
+        item.isError = true;
+        set({ items: [...get().items, item] });
+      }
+    },
+
+    async replayMessages() {
+      if (!bridge) return;
+      try {
+        const messages = await rpc<{ messages: unknown[] }>(bridge, { type: "get_messages" });
+        const restored = itemsFromMessages(messages.messages ?? []);
+        set({ items: restored });
+      } catch {
+        // mock bridge without get_messages support
       }
     },
 

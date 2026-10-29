@@ -1,6 +1,7 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
+import hljs from "highlight.js/lib/common";
 
 marked.setOptions({ gfm: true, breaks: true });
 
@@ -9,5 +10,14 @@ export default function Markdown({ text }: { text: string }) {
     () => DOMPurify.sanitize(marked.parse(text, { async: false }) as string),
     [text],
   );
-  return <div className="markdown" dangerouslySetInnerHTML={{ __html: html }} />;
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!ref.current) return;
+    ref.current.querySelectorAll("pre code:not(.hljs)").forEach((el) => {
+      hljs.highlightElement(el as HTMLElement);
+    });
+  }, [html]);
+
+  return <div className="markdown" ref={ref} dangerouslySetInnerHTML={{ __html: html }} />;
 }

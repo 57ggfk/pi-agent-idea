@@ -8,6 +8,9 @@ export default function TopBar() {
   const thinkingLevels = usePiStore((s) => s.thinkingLevels);
   const setThinkingLevel = usePiStore((s) => s.setThinkingLevel);
   const newSession = usePiStore((s) => s.newSession);
+  const compact = usePiStore((s) => s.compact);
+  const sessionName = usePiStore((s) => s.sessionName);
+  const isStreaming = usePiStore((s) => s.isStreaming);
 
   return (
     <div className="topbar" data-testid="topbar">
@@ -45,8 +48,19 @@ export default function TopBar() {
         ))}
       </select>
 
+      {sessionName ? <span className="session-badge">{sessionName}</span> : null}
+
       <div className="spacer" />
 
+      <button
+        className="btn"
+        data-testid="compact-btn"
+        onClick={() => void compact()}
+        disabled={isStreaming}
+        title="Compact the conversation context"
+      >
+        Compact
+      </button>
       <button className="btn" data-testid="new-session" onClick={() => void newSession()} title="Start a new session">
         + New
       </button>
