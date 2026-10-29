@@ -15,8 +15,6 @@ class PiAgentToolWindowFactory : ToolWindowFactory {
         val content = ContentFactory.getInstance().createContent(PiAgentPanel(project), "", false)
         toolWindow.contentManager.addContent(content)
     }
-
-    override fun shouldBeAvailable(project: Project): Boolean = true
 }
 
 /**
