@@ -64,6 +64,9 @@ class BridgeService(private val project: Project) : Disposable {
                 "env" -> envInfo()
                 "rpc.request" -> rpcRequest(params)
                 "sessions.list" -> sessionsList()
+                "config.getLastModel" -> lastModel()
+                "config.setLastModel" -> setLastModel(params)
+                "rpc.restart" -> restartPi()
                 "manage.env" -> dev.pi.agent.manage.PiManage.environment()
                 "manage.mcpList" -> dev.pi.agent.manage.PiManage.mcpList()
                 "manage.mcpAdd" -> dev.pi.agent.manage.PiManage.mcpAdd(params)
@@ -111,6 +114,30 @@ class BridgeService(private val project: Project) : Disposable {
             ?: throw IllegalStateException("pi process is not running")
         val response = client.send(command).await()
         return response.raw
+    }
+
+    /** Restarts the pi process after a crash or configuration change. */
+    private fun restartPi(): JsonObject {
+        PiProcessManager.getInstance(project).restart()
+            ?: throw IllegalStateException("failed to restart pi (see logs)")
+        return buildJsonObject { put("ok", true) }
+    }
+
+    private fun lastModel(): JsonObject {
+        val prefs = dev.pi.agent.process.PiModelPreferences.getInstance(project).get()
+        return buildJsonObject {
+            put("provider", prefs?.first ?: "")
+            put("model", prefs?.second ?: "")
+        }
+    }
+
+    private fun setLastModel(params: JsonObject): JsonObject {
+        val provider = (params["provider"] as? JsonPrimitive)?.content ?: ""
+        val model = (params["model"] as? JsonPrimitive)?.content ?: ""
+        if (provider.isNotBlank() && model.isNotBlank()) {
+            dev.pi.agent.process.PiModelPreferences.getInstance(project).set(provider, model)
+        }
+        return buildJsonObject { put("ok", true) }
     }
 
     private fun sessionsList(): JsonObject {

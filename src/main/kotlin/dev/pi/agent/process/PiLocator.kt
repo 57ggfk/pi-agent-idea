@@ -60,6 +60,59 @@ object PiLocator {
         ?.trim()
 
     /**
+     * Resolves the node interpreter that runs pi, for pi distributions that
+     * are node scripts (`#!/usr/bin/env node` — all npm installs).
+     *
+     * GUI-launched IDEs inherit a minimal PATH without node, so spawning pi
+     * directly dies with "env: node: No such file or directory". We search
+     * upwards from pi's canonical location (npm layout keeps node a few
+     * levels up, e.g. <nvm-root>/bin/node) and then the login-shell PATH.
+     */
+    fun nodeInterpreterFor(piPath: String): String? {
+        val canonical = try {
+            File(piPath).canonicalFile
+        } catch (_: Exception) {
+            File(piPath)
+        }
+        var dir: File? = canonical.parentFile
+        var depth = 0
+        while (dir != null && depth < 7) {
+            File(dir, "node").takeIf { it.isFile && it.canExecute() }?.let { return it.absolutePath }
+            File(dir, "bin/node").takeIf { it.isFile && it.canExecute() }?.let { return it.absolutePath }
+            dir = dir.parentFile
+            depth++
+        }
+        for (pathDir in loginShellPath()) {
+            File(pathDir, "node").takeIf { it.isFile && it.canExecute() }?.let { return it.absolutePath }
+        }
+        return null
+    }
+
+    /** True when [piPath] is a script that needs a node interpreter. */
+    fun isNodeScript(piPath: String): Boolean = try {
+        piPath.startsWith("/") && File(piPath).inputStream().bufferedReader().useLines { lines ->
+            lines.firstOrNull()?.contains("node") == true
+        }
+    } catch (_: Exception) {
+        false
+    }
+
+    /**
+     * Full spawn command for pi: [node, piPath, args…] when pi is a node
+     * script and its interpreter was found, otherwise [piPath, args…].
+     */
+    fun spawnCommand(piPath: String, args: List<String>): List<String> =
+        if (isNodeScript(piPath)) {
+            nodeInterpreterFor(piPath)?.let { listOf(it, piPath) } ?: listOf(piPath)
+        } else {
+            listOf(piPath)
+        } + args
+
+    /** Directory containing the resolved node interpreter, for child PATHs. */
+    fun nodeBinDirFor(piPath: String): String? =
+        nodeInterpreterFor(piPath)?.let { File(it).parent }
+
+    /**
      * Directories of the user's login shell PATH. Resolving this is essential
      * because IDEs launched from the Dock/Finder inherit a minimal PATH that
      * typically misses nvm-managed tools like pi.

@@ -1,6 +1,5 @@
 import { useEffect } from "react";
 import { usePiStore } from "./store/store";
-import TopBar from "./components/TopBar";
 import MessageList from "./components/MessageList";
 import Composer from "./components/Composer";
 import StatusBar from "./components/StatusBar";
@@ -37,7 +36,6 @@ export default function App() {
       </div>
       {tab === "chat" ? (
         <>
-          <TopBar />
           <MessageList />
           <Composer />
         </>

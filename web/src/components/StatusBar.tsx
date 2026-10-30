@@ -9,6 +9,7 @@ export default function StatusBar() {
   const sessionName = usePiStore((s) => s.sessionName);
   const bridgeKind = usePiStore((s) => s.bridgeKind);
   const isStreaming = usePiStore((s) => s.isStreaming);
+  const restartPi = usePiStore((s) => s.restartPi);
 
   const percent = stats?.contextUsage?.percent;
   const cost = stats?.cost;
@@ -22,6 +23,9 @@ export default function StatusBar() {
             pi exited: {exitMessage}
             {exitStderr ? ` — ${exitStderr.split("\n").slice(-3).join(" | ").slice(0, 300)}` : ""}
           </span>
+          <button className="btn btn-restart" data-testid="restart-btn" onClick={() => void restartPi()}>
+            ↻ Restart
+          </button>
         </div>
       ) : null}
       <div className="statusbar-row">
@@ -31,7 +35,7 @@ export default function StatusBar() {
         <span className="spacer" />
         {percent != null ? (
           <span data-testid="status-context" title="Context window usage">
-            ctx {percent}%
+            ctx {Math.round(percent)}%
           </span>
         ) : null}
         {cost != null ? (

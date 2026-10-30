@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.1.1 — 2026-10-31
+
+真实 pi 可用性修复与交互打磨。
+
+### 修复
+- **GUI 启动的 IDE 中 pi 无法启动（核心修复）**：pi 是 node 脚本，IDE 子进程 PATH
+  缺 node 导致 `env: node: No such file or directory` 秒退。现在自动从 pi 的
+  安装布局解析 node 解释器并直接以 `[node, pi]` 启动，同时把 node 目录注入
+  子进程 PATH（pi 的 MCP 服务器也需要）
+- 模型选择器对带 `/` 的模型 ID（如 `openrouter/free`）解析错误
+- 真实 pi 的用户消息重复渲染（`message_start` 空 content 去重）
+- 上下文占用百分比显示浮点数
+- 进程启动不再禁用扩展（`--no-extensions` 移除，MCP/扩展恢复可用）
+
+### 新增
+- 模型选择持久化：切换模型后下次启动自动恢复（`--provider/--model`）
+- provider 错误可视化：401/404/5xx 直接显示为错误条目，不再静默卡住
+- pi 进程崩溃横幅带 **↻ Restart** 一键重启
+- **Send 分体按钮**：Steer / Follow-up 队列模式移到按钮下拉上，
+  不可用时置灰而非隐藏；运行中 Enter 仍按所选模式排队
+- 模型/思考等级选择移至底部工具栏；模型选择器带检索框（空格 = AND 多关键词）
+
+### 测试
+- 前端 e2e 12 例、Vitest 18 例、Kotlin 17 例全绿
+- 新增真实 pi 全链路 e2e（openrouter/free，`scripts/e2e-ide-real.sh`）
+
 ## 0.1.0 — 2026-10-30
 
 首个可用版本（M1–M3 里程碑 + 真机验证）。

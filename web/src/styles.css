@@ -856,3 +856,174 @@ body {
   font-family: "SF Mono", Menlo, Consolas, monospace;
   font-size: 11px;
 }
+
+/* Composer controls row (model / thinking / compact / new) */
+.composer-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  max-width: 320px;
+}
+
+.chip:hover {
+  border-color: var(--accent);
+}
+
+.chip-icon {
+  flex-shrink: 0;
+}
+
+.chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.chip-caret {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.model-picker {
+  position: relative;
+}
+
+.model-popover {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  width: 420px;
+  max-width: 90vw;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25);
+  z-index: 50;
+  overflow: hidden;
+}
+
+.model-search {
+  width: calc(100% - 12px);
+  margin: 6px;
+}
+
+.model-list {
+  max-height: 280px;
+  overflow-y: auto;
+  padding-bottom: 6px;
+}
+
+.model-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.model-option-active {
+  background: var(--user-bubble);
+}
+
+.model-option-check {
+  width: 14px;
+  color: var(--success);
+  flex-shrink: 0;
+}
+
+.model-option-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.model-option-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-option-sub {
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-option-provider {
+  color: var(--text-secondary);
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.exit-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-restart {
+  flex-shrink: 0;
+}
+
+/* Split Send button with queue-mode dropdown */
+.split-btn {
+  display: inline-flex;
+  position: relative;
+}
+
+.split-main {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.split-caret {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-left: 1px solid rgba(127, 127, 127, 0.35);
+  padding: 4px 6px;
+  min-width: 22px;
+}
+
+.split-caret-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.send-mode-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  width: 300px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25);
+  z-index: 60;
+  overflow: hidden;
+  padding: 4px 0;
+}
+
+.mode-disabled {
+  opacity: 0.45;
+}

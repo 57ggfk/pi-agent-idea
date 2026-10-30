@@ -24,9 +24,9 @@ function textOf(items: ChatItem[], index: number): string {
 beforeEach(() => resetItemIds());
 
 describe("applyEvent", () => {
-  it("adds a user item on message_start", () => {
+  it("adds a user item on message_end (message_start is ignored for users)", () => {
     const items = applyEvent([], {
-      type: "message_start",
+      type: "message_end",
       message: { role: "user", content: "hello", timestamp: 1 },
     });
     expect(items).toHaveLength(1);
@@ -185,5 +185,80 @@ describe("itemsFromMessages", () => {
     expect(items[0].blocks[0]).toMatchObject({ kind: "text", text: "question" });
     expect(items[1].blocks.map((b) => b.kind)).toEqual(["thinking", "text", "toolcall"]);
     expect(items[1].usage?.totalTokens).toBe(42);
+  });
+});
+
+describe("provider error surfacing", () => {
+  it("message_update error event replaces the streaming item with a visible error", () => {
+    let items = applyEvent([], { type: "message_start", message: { role: "assistant", content: [] } });
+    items = applyEvent(items, { type: "message_update", assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "partial" } });
+    items = applyEvent(items, {
+      type: "message_update",
+      assistantMessageEvent: { type: "error", reason: "api", error: '404: No endpoints available' },
+    });
+    expect(items[0].done).toBe(true);
+    expect(items[0].isError).toBe(true);
+    expect(textOf(items, 0)).toContain("404");
+  });
+
+  it("message_end with errorMessage and no content shows the error", () => {
+    const items = applyEvent([], {
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [],
+        stopReason: "error",
+        errorMessage: '404: {"message":"No endpoints available"}',
+      },
+    });
+    expect(items[0].isError).toBe(true);
+    expect(textOf(items, 0)).toContain("No endpoints available");
+  });
+
+  it("message_end with errorMessage keeps existing text and just flags the item", () => {
+    const items = applyEvent([], {
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "partial answer before failure" }],
+        stopReason: "error",
+        errorMessage: "connection reset",
+      },
+    });
+    expect(items[0].isError).toBe(true);
+    expect(textOf(items, 0)).toContain("partial answer before failure");
+  });
+
+  it("duplicate assistant message_start does not create an empty item", () => {
+    const start = { type: "message_start", message: { role: "assistant", content: [] } };
+    let items = applyEvent([], start);
+    items = applyEvent(items, start);
+    expect(items).toHaveLength(1);
+  });
+});
+
+describe("real-pi user message dedupe", () => {
+  it("ignores message_start variants and dedupes message_end against the optimistic item", () => {
+    // optimistic item added by the store before events arrive (modeled as the
+    // message_end-derived shape the store creates)
+    let items = applyEvent([], { type: "message_end", message: { role: "user", content: "Say OK" } });
+    // real pi: message_start carries empty array content and is ignored
+    items = applyEvent(items, { type: "message_start", message: { role: "user", content: [] } });
+    // message_end finalizes; identical tail is deduped, not appended
+    items = applyEvent(items, { type: "message_end", message: { role: "user", content: [{ type: "text", text: "Say OK" }] } });
+    expect(items).toHaveLength(1);
+    expect(textOf(items, 0)).toBe("Say OK");
+  });
+
+  it("message_start with empty content does not create an empty user item", () => {
+    const items = applyEvent([], { type: "message_start", message: { role: "user", content: [] } });
+    expect(items).toHaveLength(0);
+  });
+
+  it("a distinct user message via message_end is appended", () => {
+    let items = applyEvent([], { type: "message_end", message: { role: "user", content: "first" } });
+    items = applyEvent(items, { type: "message_end", message: { role: "user", content: [{ type: "text", text: "second" }] } });
+    expect(items).toHaveLength(2);
+    expect(textOf(items, 1)).toBe("second");
   });
 });

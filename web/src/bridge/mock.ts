@@ -44,6 +44,12 @@ export class MockBridge implements Bridge {
       const resp = this.handleCommand({ type: "sessions.list" }) as { success: boolean; data: T };
       return resp.success ? Promise.resolve(resp.data) : Promise.reject(new Error("sessions.list failed"));
     }
+    if (method === "config.getLastModel") {
+      return Promise.resolve({ provider: "mock", model: "mock-model-pro" } as T);
+    }
+    if (method === "config.setLastModel") {
+      return Promise.resolve({ ok: true } as T);
+    }
     if (method.startsWith("manage.")) {
       return Promise.resolve(this.handleManage(method) as T);
     }

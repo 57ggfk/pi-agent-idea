@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "dev.pi"
-version = "0.1.0"
+version = "0.1.1"
 
 repositories {
     mavenCentral()
@@ -108,17 +108,22 @@ tasks {
     }
 
     withType<JavaExec>().configureEach {
-        // PI_IDE_E2E=/abs/path/to/mock-pi.mjs [PI_IDE_E2E_PROJECT=/abs/project]
-        // ./gradlew runIde — runs the IDE with JCEF remote debugging (CDP :9222),
-        // the mock pi binary and an auto-opened tool window — the IDE e2e harness.
-        System.getenv("PI_IDE_E2E")?.let { mockPi ->
+        // PI_IDE_E2E=/abs/path/to/mock-pi.mjs | "real"  [PI_IDE_E2E_PROJECT=/abs/project]
+        // ./gradlew runIde — runs the IDE with JCEF remote debugging (CDP :9222)
+        // and an auto-opened tool window. With a mock path the mock pi binary is
+        // injected via PI_AGENT_EXECUTABLE; with "real" the user's own pi runs.
+        System.getenv("PI_IDE_E2E")?.let { mode ->
             jvmArgs(
                 "-Dide.browser.jcef.debug.port=9222",
                 "-Dpi.agent.autoOpen=true",
                 "-Didea.trust.all.projects=true",
                 "-Djb.consents.confirmation.enabled=false",
+                // e2e diagnostics: keep plugin INFO logs (pi stderr) in idea.log
+                "-Dintellij.console.log.level=all",
             )
-            environment("PI_AGENT_EXECUTABLE", mockPi)
+            if (mode != "real") {
+                environment("PI_AGENT_EXECUTABLE", mode)
+            }
             System.getenv("PI_IDE_E2E_PROJECT")?.let { projectPath ->
                 args(projectPath)
             }

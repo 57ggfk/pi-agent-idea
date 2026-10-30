@@ -26,15 +26,16 @@ object PiCliRunner {
         val pi = PiLocator.locate()?.path
             ?: return CliResult(-1, "", "pi executable not found")
 
-        val command = listOf(pi) + args
+        val command = PiLocator.spawnCommand(pi, args)
         val pb = ProcessBuilder(command)
         pb.redirectErrorStream(false)
         val env = pb.environment()
-        val shellDirs = PiLocator.loginShellPath()
-        if (shellDirs.isNotEmpty()) {
-            env["PATH"] = (shellDirs + listOf(env["PATH"] ?: "")).filter { it.isNotBlank() }
-                .distinct().joinToString(":")
-        }
+        val pathDirs = buildList {
+            PiLocator.nodeBinDirFor(pi)?.let { add(it) }
+            addAll(PiLocator.loginShellPath())
+            add(env["PATH"] ?: "")
+        }.filter { it.isNotBlank() }.distinct()
+        env["PATH"] = pathDirs.joinToString(":")
         // Management commands must not try to talk to a TUI.
         env["PI_NO_COLOR"] = "1"
 

@@ -1,5 +1,7 @@
 import { useRef, useState } from "react";
 import { usePiStore, type SendMode } from "../store/store";
+import ModelPicker from "./ModelPicker";
+import SendButton from "./SendButton";
 
 interface PendingImage {
   data: string; // base64 without data: prefix
@@ -17,6 +19,11 @@ export default function Composer() {
   const isStreaming = usePiStore((s) => s.isStreaming);
   const queue = usePiStore((s) => s.queue);
   const commands = usePiStore((s) => s.commands);
+  const compact = usePiStore((s) => s.compact);
+  const newSession = usePiStore((s) => s.newSession);
+  const thinkingLevel = usePiStore((s) => s.thinkingLevel);
+  const thinkingLevels = usePiStore((s) => s.thinkingLevels);
+  const setThinkingLevel = usePiStore((s) => s.setThinkingLevel);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -97,18 +104,6 @@ export default function Composer() {
         </div>
       ) : null}
       <div className="composer-row">
-        {isStreaming ? (
-          <select
-            className="select"
-            data-testid="send-mode"
-            value={mode}
-            onChange={(e) => setMode(e.target.value as SendMode)}
-            title="How to deliver messages while the agent is running"
-          >
-            <option value="steer">Steer</option>
-            <option value="followUp">Follow-up</option>
-          </select>
-        ) : null}
         <button className="btn btn-icon" title="Attach images" onClick={() => fileRef.current?.click()}>
           📎
         </button>
@@ -175,11 +170,43 @@ export default function Composer() {
           <button className="btn btn-abort" data-testid="abort-btn" onClick={() => void abort()}>
             ■ Stop
           </button>
-        ) : (
-          <button className="btn btn-send" data-testid="send-btn" onClick={doSend} disabled={!text.trim() && images.length === 0}>
-            Send
-          </button>
-        )}
+        ) : null}
+        <SendButton
+          mode={mode}
+          setMode={(m: SendMode) => setMode(m)}
+          onMain={doSend}
+          disabled={!text.trim() && images.length === 0}
+          isStreaming={isStreaming}
+        />
+      </div>
+      <div className="composer-controls" data-testid="composer-controls">
+        <ModelPicker />
+        <select
+          className="select"
+          data-testid="thinking-select"
+          value={thinkingLevel}
+          onChange={(e) => void setThinkingLevel(e.target.value)}
+          title="Thinking level"
+        >
+          {thinkingLevels.map((l) => (
+            <option key={l} value={l}>
+              {l}
+            </option>
+          ))}
+        </select>
+        <div className="spacer" />
+        <button
+          className="btn"
+          data-testid="compact-btn"
+          onClick={() => void compact()}
+          disabled={isStreaming}
+          title="Compact the conversation context"
+        >
+          Compact
+        </button>
+        <button className="btn" data-testid="new-session" onClick={() => void newSession()} title="Start a new session">
+          + New
+        </button>
       </div>
     </div>
   );

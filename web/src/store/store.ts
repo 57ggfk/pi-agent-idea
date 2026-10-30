@@ -60,6 +60,7 @@ interface PiStore {
   setModel(provider: string, modelId: string): Promise<void>;
   setThinkingLevel(level: string): Promise<void>;
   compact(): Promise<void>;
+  restartPi(): Promise<void>;
   refreshStats(): Promise<void>;
   refreshSessions(): Promise<void>;
   switchSession(file: string): Promise<void>;
@@ -302,6 +303,23 @@ export const usePiStore = create<PiStore>((set, get) => {
       }
     },
 
+    async restartPi() {
+      if (!bridge) return;
+      try {
+        await bridge.request("rpc.restart");
+        set({ items: [], stats: undefined, aborted: false, isStreaming: false });
+        await get().refreshStats();
+        await get().replayMessages();
+      } catch (e) {
+        const item = emptyItem("system", [
+          { kind: "text", text: `restart failed: ${(e as Error).message}`, done: true },
+        ]);
+        item.done = true;
+        item.isError = true;
+        set({ items: [...get().items, item] });
+      }
+    },
+
     async refreshSessions() {
       if (!bridge) return;
       try {
@@ -366,6 +384,8 @@ export const usePiStore = create<PiStore>((set, get) => {
       try {
         const model = await rpc<ModelInfo>(bridge, { type: "set_model", provider, modelId });
         set({ model });
+        // Remember across restarts: the next pi process starts with this model.
+        void bridge.request("config.setLastModel", { provider, model: modelId }).catch(() => undefined);
       } catch (e) {
         const item = emptyItem("system", [
           { kind: "text", text: `set_model failed: ${(e as Error).message}`, done: true },

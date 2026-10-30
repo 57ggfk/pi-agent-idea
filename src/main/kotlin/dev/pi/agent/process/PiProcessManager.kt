@@ -75,21 +75,27 @@ class PiProcessManager(private val project: Project) : Disposable {    private v
         setState(PiConnectionState.Starting(installation))
         val cwd = project.basePath ?: System.getProperty("user.home")
 
-        val command = mutableListOf(
-            installation.path,
+        val piArgs = mutableListOf(
             "--mode", "rpc",
-            "--no-extensions", // MVP: keep startup fast and deterministic; managed later via Manage view
         )
+        // Resume the user's last model choice (persisted on set_model).
+        PiModelPreferences.getInstance(project).get()?.let { (provider, model) ->
+            piArgs += listOf("--provider", provider, "--model", model)
+        }
+        val command = PiLocator.spawnCommand(installation.path, piArgs).toMutableList()
 
         val pb = ProcessBuilder(command)
         pb.directory(File(cwd))
         pb.redirectErrorStream(false)
         val env = pb.environment()
-        val shellDirs = PiLocator.loginShellPath()
-        if (shellDirs.isNotEmpty()) {
-            env["PATH"] = (shellDirs + listOf(env["PATH"] ?: "")).filter { it.isNotBlank() }
-                .distinct().joinToString(":")
-        }
+        val pathDirs = buildList {
+            // The node interpreter next to pi (GUI-launched IDEs have neither
+            // node nor nvm in their PATH; pi and its MCP servers need both).
+            PiLocator.nodeBinDirFor(installation.path)?.let { add(it) }
+            addAll(PiLocator.loginShellPath())
+            add(env["PATH"] ?: "")
+        }.filter { it.isNotBlank() }.distinct()
+        env["PATH"] = pathDirs.joinToString(":")
 
         val process: Process = try {
             pb.start()

@@ -196,20 +196,30 @@ export function applyEvent(items: ChatItem[], event: AnyRecord): ChatItem[] {
         }
         return [...items, emptyItem("assistant")];
       }
-      // user: skip if an optimistic copy is already the tail
-      const text = messageText(message["content"]);
-      const tail = items[items.length - 1];
-      if (tail && tail.role === "user" && messageTextBlockText(tail) === text) {
-        return items;
-      }
-      const item = emptyItem("user", [{ kind: "text", text, done: true }]);
-      item.done = true;
-      return [...items, item];
+      // user: pi emits message_start with empty content before the prompt is
+      // finalized — ignore it entirely and let message_end (authoritative)
+      // dedupe against the optimistic item.
+      return items;
     }
 
     case "message_update": {
       const ev = asRecord(event["assistantMessageEvent"]);
       if (!ev) return items;
+      // Provider stream errors (e.g. 401/404/5xx from the API) arrive as
+      // assistantMessageEvent {type:"error"} — surface them and stop the spin.
+      if (ev["type"] === "error") {
+        const text = `⚠ ${String(ev["reason"] ?? "error")}: ${String(ev["error"] ?? "unknown provider error")}`;
+        const idx = lastIndexOfRole(items, "assistant");
+        if (idx >= 0) {
+          const next = items.slice();
+          next[idx] = { ...next[idx], done: true, isError: true, blocks: [{ kind: "text", text, done: true }] };
+          return next;
+        }
+        const item = emptyItem("system", [{ kind: "text", text, done: true }]);
+        item.done = true;
+        item.isError = true;
+        return [...items, item];
+      }
       const idx = lastIndexOfRole(items, "assistant");
       if (idx < 0) return items;
       const next = items.slice();
@@ -282,17 +292,35 @@ export function applyEvent(items: ChatItem[], event: AnyRecord): ChatItem[] {
       if (role === "user") {
         const text = messageText(message["content"]);
         const tail = items[items.length - 1];
+        const item = emptyItem("user", [{ kind: "text", text, done: true }]);
+        item.done = true;
+        // Optimistic copy already in place with the same text: nothing to do.
         if (tail && tail.role === "user" && messageTextBlockText(tail) === text) {
           return items;
         }
-        const item = emptyItem("user", [{ kind: "text", text, done: true }]);
-        item.done = true;
+        // pi finalizes the user message in message_end; an empty placeholder
+        // tail (older event shape) is replaced instead of appended after.
+        if (tail && tail.role === "user" && messageTextBlockText(tail).trim() === "" && text.trim() !== "") {
+          const next = items.slice();
+          next[next.length - 1] = item;
+          return next;
+        }
         return [...items, item];
       }
       if (role !== "assistant") return items;
       const idx = lastIndexOfRole(items, "assistant");
       const item = emptyItem("assistant", messageBlocks(message));
       item.done = true;
+      const errorMessage = message["errorMessage"];
+      if (typeof errorMessage === "string" && errorMessage) {
+        item.isError = true;
+        const hasVisibleText = item.blocks.some(
+          (b) => (b.kind === "text" || b.kind === "thinking") && b.text.trim().length > 0,
+        );
+        if (!hasVisibleText) {
+          item.blocks = [{ kind: "text", text: `⚠ ${errorMessage}`, done: true }];
+        }
+      }
       const usage = asRecord(message["usage"]);
       if (usage) item.usage = usage as UsageInfo;
       if (idx >= 0) {
