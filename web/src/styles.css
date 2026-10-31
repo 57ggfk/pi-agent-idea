@@ -17,6 +17,7 @@
   --error-bg: #fdeeee;
   --code-bg: #f4f5f7;
   --success: #1a7f37;
+  --success-bg: #e9f5ee;
 }
 
 :root[data-theme="dark"] {
@@ -35,6 +36,7 @@
   --error-bg: #3a2226;
   --code-bg: #26282c;
   --success: #4ec96a;
+  --success-bg: #22352a;
 }
 
 * {
@@ -195,12 +197,41 @@ body {
 }
 
 .markdown pre {
+  position: relative;
   background: var(--code-bg);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 8px 10px;
   overflow-x: auto;
   font-size: 12px;
+}
+
+/* Copy button injected into fenced code blocks */
+.code-copy-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 10px;
+  cursor: pointer;
+  opacity: 0.85;
+}
+
+.code-copy-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+/* Clickable path[:line] references inside messages */
+.file-link {
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
 .markdown code {
@@ -330,6 +361,36 @@ body {
   white-space: pre-wrap;
   max-height: 300px;
   overflow-y: auto;
+}
+
+/* Diff preview for edit / write tool calls */
+.tool-diff {
+  border-top: 1px solid var(--tool-border);
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
+  overflow-x: auto;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.diff-line {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 0 10px;
+}
+
+.diff-del {
+  background: var(--error-bg);
+  color: var(--error);
+}
+
+.diff-add {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.diff-show-all {
+  margin: 6px 10px;
 }
 
 .spinner {
@@ -597,6 +658,31 @@ body {
   overflow: hidden;
 }
 
+/* @ file completion menu */
+.file-menu {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-input);
+  margin-bottom: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.file-item {
+  padding: 5px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-item:hover,
+.file-active {
+  background: var(--user-bubble);
+}
+
 .slash-item {
   display: flex;
   gap: 10px;
@@ -620,6 +706,15 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Images echoed back inside sent user messages */
+.msg-image {
+  display: block;
+  max-height: 120px;
+  max-width: 100%;
+  border-radius: 8px;
+  margin: 4px 0;
 }
 
 /* Image chips */
@@ -1026,4 +1121,51 @@ body {
 
 .mode-disabled {
   opacity: 0.45;
+}
+
+/* Error boundary fallback */
+.error-boundary {
+  margin: auto;
+  padding: 24px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.error-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.error-detail {
+  background: var(--error-bg);
+  color: var(--error);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin: 12px auto;
+  max-width: 90%;
+  text-align: left;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 200px;
+  overflow-y: auto;
+  font-size: 11px;
+}
+
+/* ToolCard: clickable file path + native-diff launcher */
+.tool-file-link {
+  color: var(--accent);
+  text-decoration: underline dotted;
+  cursor: pointer;
+}
+
+.tool-file-link:hover {
+  text-decoration: underline solid;
+}
+
+.tool-diff-btn {
+  font-size: 10px;
+  padding: 1px 8px;
+  line-height: 1.4;
+  margin-right: 6px;
 }

@@ -32,6 +32,15 @@ export class MockBridge implements Bridge {
   request<T>(method: string, params?: unknown): Promise<T> {
     this.seq += 1;
     if (method === "ping") return Promise.resolve({ pong: true } as T);
+    if (method === "files.list") {
+      return Promise.resolve({ files: MOCK_FILES } as T);
+    }
+    if (method === "ide.openFile") {
+      return Promise.resolve({ ok: true } as T);
+    }
+    if (method === "ide.showFileDiff") {
+      return Promise.resolve({ ok: true } as T);
+    }
     if (method === "env") {
       return Promise.resolve({
         projectName: "mock-project",
@@ -317,6 +326,33 @@ export class MockBridge implements Bridge {
       (t += 60),
     );
 
+    // second (edit) tool call — exercises the diff view in ToolCard
+    const editArgs = {
+      path: "src/main.tsx",
+      old_string: 'createRoot(document.getElementById("root")!).render(\n  <App />\n);',
+      new_string: 'createRoot(document.getElementById("root")!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>,\n);',
+    };
+    emit(
+      {
+        type: "message_update",
+        usage: {},
+        assistantMessageEvent: { type: "toolcall_start", contentIndex: 3, id: "call_mock_2", toolName: "edit" },
+      },
+      (t += 40),
+    );
+    emit(
+      {
+        type: "message_update",
+        usage: {},
+        assistantMessageEvent: {
+          type: "toolcall_end",
+          contentIndex: 3,
+          toolCall: { id: "call_mock_2", name: "edit", arguments: editArgs },
+        },
+      },
+      (t += 60),
+    );
+
     // assistant message completes with all blocks
     const assistantMessage = {
       role: "assistant",
@@ -324,6 +360,7 @@ export class MockBridge implements Bridge {
         { type: "thinking", thinking },
         { type: "text", text },
         { type: "toolCall", id: "call_mock_1", name: "bash", arguments: { command: "echo hello from mock pi" } },
+        { type: "toolCall", id: "call_mock_2", name: "edit", arguments: editArgs },
       ],
       stopReason: "toolUse",
       usage: { input: 1000, output: 200, cacheRead: 0, cacheWrite: 0, totalTokens: 1200 },
@@ -358,10 +395,28 @@ export class MockBridge implements Bridge {
       },
       (t += 60),
     );
+    emit(
+      { type: "tool_execution_start", toolCallId: "call_mock_2", toolName: "edit", args: editArgs },
+      (t += 40),
+    );
+    emit(
+      {
+        type: "tool_execution_end",
+        toolCallId: "call_mock_2",
+        toolName: "edit",
+        result: { content: [{ type: "text", text: "Patch applied to src/main.tsx" }] },
+        isError: false,
+        durationMs: 8,
+      },
+      (t += 60),
+    );
 
-    // second turn: final text
+    // second turn: final text (with a fenced code block for the copy button)
     emit({ type: "turn_start" }, (t += 40));
-    const finalText = "The command printed `hello from mock pi`. All good ✅";
+    const finalText =
+      "The command printed `hello from mock pi`. All good ✅\n\n" +
+      "```bash\necho hello from mock pi\n```\n\n" +
+      "Also see src/main.tsx and src/store/store.ts:1 for details.";
     emit(
       { type: "message_start", message: { role: "assistant", content: [], stopReason: "pending" } },
       (t += 20),
@@ -420,6 +475,19 @@ const MOCK_MODELS: MockModel[] = [
     contextWindow: 128000,
     reasoning: false,
   },
+];
+
+// Sample project-relative paths served for the `files.list` bridge method
+// (drives the Composer's @ file completion).
+const MOCK_FILES: string[] = [
+  "src/App.tsx",
+  "src/main.tsx",
+  "src/store/store.ts",
+  "package.json",
+  "README.md",
+  "web/src/components/Markdown.tsx",
+  "web/src/components/Composer.tsx",
+  "web/e2e/chat.spec.ts",
 ];
 
 function chunkWords(text: string): string[] {

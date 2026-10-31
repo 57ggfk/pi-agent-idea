@@ -186,6 +186,46 @@ describe("itemsFromMessages", () => {
     expect(items[1].blocks.map((b) => b.kind)).toEqual(["thinking", "text", "toolcall"]);
     expect(items[1].usage?.totalTokens).toBe(42);
   });
+
+  it("maps image blocks from both the anthropic and the flat wire shape", () => {
+    const items = itemsFromMessages([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "look" },
+          { type: "image", source: { type: "base64", mediaType: "image/png", data: "AAAA" } },
+          { type: "image", mimeType: "image/jpeg", data: "data:image/jpeg;base64,BBBB" },
+        ],
+      },
+    ]);
+    expect(items).toHaveLength(1);
+    expect(items[0].blocks[1]).toEqual({ kind: "image", data: "AAAA", mimeType: "image/png" });
+    // data: URL prefixes are stripped to plain base64
+    expect(items[0].blocks[2]).toEqual({ kind: "image", data: "BBBB", mimeType: "image/jpeg" });
+  });
+});
+
+describe("user images", () => {
+  it("keeps the optimistic image blocks when pi finalizes the same text", () => {
+    const optimistic = emptyItem("user", [
+      { kind: "text", text: "what is this", done: true },
+      { kind: "image", data: "AAAA", mimeType: "image/png" },
+    ]);
+    optimistic.done = true;
+    const items = applyEvent([optimistic], {
+      type: "message_end",
+      message: {
+        role: "user",
+        content: [
+          { type: "text", text: "what is this" },
+          { type: "image", source: { type: "base64", mediaType: "image/png", data: "BBBB" } },
+        ],
+      },
+    });
+    // The optimistic copy (with the image) stays; no duplicate appended.
+    expect(items).toHaveLength(1);
+    expect(items[0].blocks.map((b) => b.kind)).toEqual(["text", "image"]);
+  });
 });
 
 describe("provider error surfacing", () => {

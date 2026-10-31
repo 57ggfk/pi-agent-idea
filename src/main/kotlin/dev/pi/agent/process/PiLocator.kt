@@ -118,12 +118,19 @@ object PiLocator {
      * typically misses nvm-managed tools like pi.
      */
     fun loginShellPath(): List<String> {
+        val now = System.currentTimeMillis()
+        shellPathCache?.let { (at, dirs) -> if (now - at < SHELL_PATH_TTL_MS) return dirs }
         val shell = System.getenv("SHELL") ?: "/bin/zsh"
         val out = runCapture(listOf(shell, "-lic", "printf '%s' \"\$PATH\""), 10) ?: return emptyList()
-        return out.split(":")
+        val dirs = out.split(":")
             .filter { it.isNotBlank() }
             .distinct()
+        shellPathCache = now to dirs
+        return dirs
     }
+
+    @Volatile
+    private var shellPathCache: Pair<Long, List<String>>? = null
 
     private fun runCapture(command: List<String>, timeoutSeconds: Long): String? = try {
         val pb = ProcessBuilder(command).redirectErrorStream(true)
@@ -146,4 +153,6 @@ object PiLocator {
         "/usr/local/bin/pi",
         "/opt/homebrew/bin/pi",
     )
+
+    private const val SHELL_PATH_TTL_MS = 60_000L
 }

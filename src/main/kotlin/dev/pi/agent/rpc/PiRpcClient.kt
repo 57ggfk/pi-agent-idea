@@ -11,6 +11,10 @@ import java.io.IOException
 import java.io.OutputStream
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicLong
 
 /** A completed command response record from pi. */
@@ -46,6 +50,10 @@ class PiRpcClient(
     private val pending = ConcurrentHashMap<String, CompletableFuture<RpcResponse>>()
     private val writeLock = Any()
     private val counter = AtomicLong()
+    private val timeoutScheduler: ScheduledExecutorService =
+        Executors.newSingleThreadScheduledExecutor { r ->
+            Thread(r, "pi-rpc-timeout").apply { isDaemon = true }
+        }
 
     @Volatile
     private var closed = false
@@ -60,9 +68,15 @@ class PiRpcClient(
 
     /**
      * Sends a command and completes with its response.
-     * The future completes exceptionally if the process dies first.
+     * The future completes exceptionally if the process dies first or if no
+     * response arrives within [timeoutMs] (the pending entry is then dropped,
+     * so a late response cannot complete a forgotten future).
      */
-    fun send(command: JsonObject, id: String = nextId()): CompletableFuture<RpcResponse> {
+    fun send(
+        command: JsonObject,
+        id: String = nextId(),
+        timeoutMs: Long = DEFAULT_TIMEOUT_MS,
+    ): CompletableFuture<RpcResponse> {
         val future = CompletableFuture<RpcResponse>()
         pending[id] = future
         val record = JsonObject(command + mapOf("id" to JsonPrimitive(id)))
@@ -70,6 +84,16 @@ class PiRpcClient(
         if (!ok) {
             pending.remove(id)
             future.completeExceptionally(IOException("pi process is not running"))
+            return future
+        }
+        if (timeoutMs > 0) {
+            timeoutScheduler.schedule({
+                if (pending.remove(id, future)) {
+                    future.completeExceptionally(
+                        TimeoutException("pi did not respond to '${command["type"]}' within ${timeoutMs}ms")
+                    )
+                }
+            }, timeoutMs, TimeUnit.MILLISECONDS)
         }
         return future
     }
@@ -145,11 +169,17 @@ class PiRpcClient(
 
     override fun close() {
         closed = true
+        timeoutScheduler.shutdownNow()
         // Closing stdin asks pi for an orderly shutdown.
         try {
             synchronized(writeLock) { stdin.close() }
         } catch (_: IOException) {
         }
         readerThread.join(3000)
+    }
+
+    companion object {
+        /** Bound for a single command/response round trip (compact can be slow). */
+        const val DEFAULT_TIMEOUT_MS: Long = 120_000
     }
 }

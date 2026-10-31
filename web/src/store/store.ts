@@ -40,6 +40,8 @@ interface PiStore {
   aborted: boolean;
   retryInfo: { attempt: number; maxAttempts: number; delayMs: number; errorMessage: string } | null;
   queue: { steering: string[]; followUp: string[] };
+  /** Editor-initiated prompt ("ide" event) waiting for the Composer to pick up. */
+  pendingPrompt: { text: string; id: number } | null;
 
   model?: ModelInfo;
   models: ModelInfo[];
@@ -66,11 +68,15 @@ interface PiStore {
   switchSession(file: string): Promise<void>;
   renameSession(name: string): Promise<void>;
   replayMessages(): Promise<void>;
+  clearPendingPrompt(): void;
+  openFile(path: string, line: number): Promise<void>;
+  showFileDiff(path: string): Promise<void>;
 }
 
 export const usePiStore = create<PiStore>((set, get) => {
   let bridge: Bridge | null = null;
   let initStarted = false;
+  let promptSeq = 0;
 
   const handlePiEvent = (event: Record<string, unknown>) => {
     const type = event["type"];
@@ -135,6 +141,7 @@ export const usePiStore = create<PiStore>((set, get) => {
     aborted: false,
     retryInfo: null,
     queue: { steering: [], followUp: [] },
+    pendingPrompt: null,
 
     models: [],
     thinkingLevel: "medium",
@@ -156,6 +163,13 @@ export const usePiStore = create<PiStore>((set, get) => {
       bridge.onEvent((name, data) => {
         if (name === "pi") {
           handlePiEvent(data as Record<string, unknown>);
+        } else if (name === "ide") {
+          // Editor action (e.g. "Explain with Pi"): pre-fill the composer and
+          // switch to chat. The Composer consumes pendingPrompt and focuses.
+          const d = (data ?? {}) as { kind?: string; text?: string };
+          if (d.kind === "prompt") {
+            set({ tab: "chat", pendingPrompt: { text: String(d.text ?? ""), id: ++promptSeq } });
+          }
         } else if (name === "pi-state") {
           const st = data as {
             status: PiStore["piStatus"];
@@ -226,7 +240,11 @@ export const usePiStore = create<PiStore>((set, get) => {
       if (!text.trim() && images.length === 0) return;
       const { isStreaming, items } = get();
       if (!isStreaming) {
-        const item = emptyItem("user", [{ kind: "text", text, done: true }]);
+        // Keep the image data on the optimistic item so sent images render back.
+        const item = emptyItem("user", [
+          { kind: "text", text, done: true },
+          ...images.map((img) => ({ kind: "image" as const, data: img.data, mimeType: img.mimeType })),
+        ]);
         item.done = true;
         set({ items: [...items, item] });
       }
@@ -332,6 +350,9 @@ export const usePiStore = create<PiStore>((set, get) => {
 
     async switchSession(file: string) {
       if (!bridge) return;
+      // A run still tied to the old session would keep streaming into the new
+      // one — abort it first so the UI settles before the switch.
+      if (get().isStreaming) await get().abort();
       try {
         await rpc(bridge, { type: "switch_session", sessionPath: file });
         set({ items: [], stats: undefined, aborted: false, isStreaming: false, tab: "chat" });
@@ -418,6 +439,29 @@ export const usePiStore = create<PiStore>((set, get) => {
         set({ stats });
       } catch {
         // non-fatal
+      }
+    },
+
+    clearPendingPrompt() {
+      set({ pendingPrompt: null });
+    },
+
+    async openFile(path: string, line: number) {
+      if (!bridge) return;
+      try {
+        await bridge.request("ide.openFile", { path, line });
+      } catch {
+        // non-fatal: the IDE may refuse to open the path
+      }
+    },
+
+    /** Shows pi's changes to a file in the IDE's native diff viewer. */
+    async showFileDiff(path: string) {
+      if (!bridge) return;
+      try {
+        await bridge.request("ide.showFileDiff", { path });
+      } catch {
+        // non-fatal: e.g. file no longer exists
       }
     },
   };

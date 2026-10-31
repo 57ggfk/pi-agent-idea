@@ -8,6 +8,8 @@
 export type ContentBlock =
   | { kind: "text"; text: string; done: boolean }
   | { kind: "thinking"; text: string; done: boolean }
+  /** Attached image; `data` is base64 without the data: URL prefix. */
+  | { kind: "image"; data: string; mimeType: string }
   | {
       kind: "toolcall";
       id: string;
@@ -106,6 +108,18 @@ function messageBlocks(message: AnyRecord): ContentBlock[] {
     const rec = asRecord(b) ?? {};
     if (rec["type"] === "thinking") {
       return { kind: "thinking", text: String(rec["thinking"] ?? ""), done: true };
+    }
+    if (rec["type"] === "image") {
+      // Real pi uses the Anthropic wire shape {source:{type:"base64",mediaType,data}};
+      // the prompt command path sends {data,mimeType}. Accept both.
+      const source = asRecord(rec["source"]);
+      const raw = String(source?.["data"] ?? rec["data"] ?? "");
+      const mimeType = String(source?.["mediaType"] ?? rec["mimeType"] ?? rec["mediaType"] ?? "image/png");
+      return {
+        kind: "image",
+        data: raw.startsWith("data:") ? raw.slice(raw.indexOf(",") + 1) : raw,
+        mimeType,
+      };
     }
     if (rec["type"] === "toolCall" || rec["type"] === "toolUse" || rec["type"] === "tool_call") {
       return {

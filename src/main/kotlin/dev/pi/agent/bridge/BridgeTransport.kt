@@ -7,15 +7,17 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
 
 /**
- * Event buffer between the plugin and the web frontend.
+ * Per-project event buffer between the plugin and the web frontend.
+ *
+ * Each project's [BridgeService] owns one instance, so multiple IDE windows
+ * never share an event stream: the frontend long-polls its own project's
+ * transport via a token-bound route (see LocalUiServer).
  *
  * The frontend long-polls `GET /bridge/poll?cursor=N`; every pushed record
  * (pi session events, connection state, command responses) is buffered here
  * with a monotonically increasing sequence and delivered in order.
  */
-object BridgeTransport {
-
-    private const val BUFFER_LIMIT = 2000
+class BridgeTransport {
 
     class Entry(val seq: Long, val record: JsonObject)
 
@@ -42,6 +44,9 @@ object BridgeTransport {
 
     /** Latest sequence (0 when nothing was pushed yet). */
     fun currentSeq(): Long = seq.get()
+
+    /** Lowest sequence still buffered; earlier cursors mean dropped events. */
+    fun oldestSeq(): Long = buffer.peekFirst()?.seq ?: (seq.get() + 1)
 
     /**
      * Blocks until a record with sequence > [cursor] exists or [timeoutMs] elapses.
@@ -72,5 +77,9 @@ object BridgeTransport {
         } finally {
             lock.unlock()
         }
+    }
+
+    companion object {
+        private const val BUFFER_LIMIT = 2000
     }
 }

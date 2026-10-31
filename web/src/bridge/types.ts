@@ -6,7 +6,7 @@
  * Java → JS event   : { t: "event", name: eventName, data }
  */
 
-export type BridgeEventName = "pi" | "pi-state";
+export type BridgeEventName = "pi" | "pi-state" | "ide";
 
 export interface EnvInfo {
   projectName: string;

@@ -1,20 +1,21 @@
 package dev.pi.agent.ui
 
 import com.intellij.openapi.diagnostic.Logger
-import com.intellij.openapi.project.ProjectManager
+import com.intellij.openapi.project.Project
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import dev.pi.agent.bridge.BridgeService
-import dev.pi.agent.bridge.BridgeTransport
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.add
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.add
 import java.io.InputStream
 import java.net.InetAddress
 import java.net.InetSocketAddress
+import java.security.SecureRandom
+import java.util.Base64
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 
 /**
@@ -26,19 +27,51 @@ import java.util.concurrent.Executors
  *  - `POST /bridge`             enqueue a `{t,id,p}` envelope (202, async reply)
  *  - `GET  /bridge/poll?cursor` long-poll for responses and pushed events
  *
- * JCEF loads `baseUrl`; the frontend is otherwise environment-agnostic, which
- * lets the same bundle be served by Vite (dev) or Playwright (e2e).
+ * Every open project gets its own bridge token ([uiUrlFor]); requests are
+ * routed to that project's [BridgeService] by the token, so multiple IDE
+ * windows are fully isolated. Tokens are handed to the SPA through the load
+ * URL's query string; without a valid token, any local process or malicious
+ * web page (cross-origin POST to loopback) could drive the agent.
+ *
+ * The frontend is otherwise environment-agnostic, which lets the same bundle
+ * be served by Vite (dev) or Playwright (e2e).
  *
  * Bound to the loopback interface on an ephemeral port only.
  */
 class LocalUiServer private constructor() {
 
     private val LOG = Logger.getInstance(LocalUiServer::class.java)
-    private val json = Json { encodeDefaults = true }
 
     private val server: HttpServer = HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0)
     val port: Int = server.address.port
     val baseUrl: String = "http://127.0.0.1:$port/"
+
+    private val bridgeAuth = BridgeAuth(ownOrigin = baseUrl.dropLast(1))
+    private val projectTokens = ConcurrentHashMap<String, Project>()
+
+    /** Load URL for a project's tool window panel; carries its bridge token. */
+    fun uiUrlFor(project: Project): String {
+        pruneDisposed()
+        val existing = projectTokens.entries.firstOrNull { it.value === project }?.key
+        val token = existing ?: generateToken().also { projectTokens[it] = project }
+        return "$baseUrl?token=$token"
+    }
+
+    private fun pruneDisposed() {
+        projectTokens.entries.removeIf { it.value.isDisposed }
+    }
+
+    /** Resolves the authenticated project for a bridge request, or null. */
+    private fun projectFor(exchange: HttpExchange): Project? {
+        if (!bridgeAuth.originAllowed(exchange.requestHeaders.getFirst("Origin"))) return null
+        val token = exchange.requestHeaders.getFirst("X-Pi-Token") ?: return null
+        val project = projectTokens[token] ?: return null
+        if (project.isDisposed) {
+            projectTokens.remove(token)
+            return null
+        }
+        return project
+    }
 
     init {
         server.createContext("/") { exchange -> safeHandle(exchange) }
@@ -62,6 +95,10 @@ class LocalUiServer private constructor() {
         }
     }
 
+    private fun unauthorized(exchange: HttpExchange) {
+        respondJson(exchange, 403, buildJsonObject { put("ok", false); put("error", "unauthorized") })
+    }
+
     private fun handle(exchange: HttpExchange) {
         val uriPath = exchange.requestURI.path ?: "/"
         val method = exchange.requestMethod
@@ -72,13 +109,28 @@ class LocalUiServer private constructor() {
             }
 
             uriPath == "/bridge" && method == "POST" -> {
-                val body = exchange.requestBody.readBytes().toString(Charsets.UTF_8)
-                bridgeService()?.handleEnvelope(body)
+                val project = projectFor(exchange)
+                if (project == null) {
+                    unauthorized(exchange)
+                    return
+                }
+                val body = readBody(exchange)
+                    ?: run {
+                        respondJson(exchange, 413, buildJsonObject { put("ok", false); put("error", "payload too large") })
+                        return
+                    }
+                BridgeService.getInstance(project).handleEnvelope(body)
                 respondJson(exchange, 202, buildJsonObject { put("queued", true) })
             }
 
             uriPath == "/bridge/poll" && method == "GET" -> {
-                bridgeService()?.ensureWired()
+                val project = projectFor(exchange)
+                if (project == null) {
+                    unauthorized(exchange)
+                    return
+                }
+                val service = BridgeService.getInstance(project)
+                service.ensureWired()
                 val params = exchange.requestURI.rawQuery ?: ""
                 val cursor = params.split("&")
                     .map { it.split("=", limit = 2) }
@@ -88,7 +140,7 @@ class LocalUiServer private constructor() {
                     .map { it.split("=", limit = 2) }
                     .firstOrNull { it[0] == "timeout" }
                     ?.get(1)?.toLongOrNull()?.coerceIn(0, 25_000) ?: 20_000L
-                val entries = BridgeTransport.pollAfter(cursor, timeoutMs)
+                val entries = service.pollEvents(cursor, timeoutMs)
                 val lastSeq = entries.lastOrNull()?.seq ?: cursor
                 val payload = buildJsonObject {
                     put("events", buildJsonArray {
@@ -100,6 +152,7 @@ class LocalUiServer private constructor() {
                         }
                     })
                     put("cursor", lastSeq)
+                    put("oldest", service.oldestSeq())
                 }
                 respondJson(exchange, 200, payload)
             }
@@ -112,12 +165,6 @@ class LocalUiServer private constructor() {
             }
         }
     }
-
-    /** MVP routing: a single open project. Multi-window support tracked in docs. */
-    private fun bridgeService(): BridgeService? =
-        ProjectManager.getInstanceIfCreated()?.openProjects?.firstOrNull()?.let {
-            BridgeService.getInstance(it)
-        }
 
     private fun serveResource(exchange: HttpExchange, uriPath: String) {
         // Serve /webui/* from the classloader; fall back to index.html (SPA).
@@ -138,6 +185,13 @@ class LocalUiServer private constructor() {
         } else {
             exchange.responseBody.close()
         }
+    }
+
+    /** Reads the POST body, or null when it exceeds [MAX_BODY_BYTES]. */
+    private fun readBody(exchange: HttpExchange): String? {
+        val bytes = exchange.requestBody.readNBytes(MAX_BODY_BYTES + 1)
+        if (bytes.size > MAX_BODY_BYTES) return null
+        return bytes.toString(Charsets.UTF_8)
     }
 
     private fun respondJson(exchange: HttpExchange, status: Int, payload: kotlinx.serialization.json.JsonObject) {
@@ -165,12 +219,21 @@ class LocalUiServer private constructor() {
     }
 
     companion object {
+        /** POST body ceiling; image envelopes are base64 and can legitimately be large. */
+        private const val MAX_BODY_BYTES = 16 * 1024 * 1024
+
         @Volatile
         private var instance: LocalUiServer? = null
 
         @JvmStatic
         fun getInstance(): LocalUiServer = instance ?: synchronized(this) {
             instance ?: LocalUiServer().also { instance = it }
+        }
+
+        internal fun generateToken(): String {
+            val bytes = ByteArray(32)
+            SecureRandom().nextBytes(bytes)
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
         }
     }
 }

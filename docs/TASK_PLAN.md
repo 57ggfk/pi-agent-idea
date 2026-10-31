@@ -52,7 +52,24 @@
 - ☑ 真机安装：插件 zip 已解压至 ~/Library/Application Support/JetBrains/IntelliJIdea2026.2/plugins/
 - ☑ `MANUAL_TEST.md` 验收清单（Chat/Sessions/Manage/异常路径）
 - ☑ 文档完善：README（安装/开发/e2e 指南）
-- ☐ (v0.2 backlog) 编辑器动作 Send/Explain/Fix with Pi；file:line 跳转；完成通知；状态栏 widget
+
+## Phase 6 —— v0.1.2 稳定性热修（2026-10-31）
+- ☑ JCEF browser 泄漏（面板挂入 Disposer 树）
+- ☑ RPC 请求超时（默认 120s，可按请求覆盖）
+- ☑ PiCliRunner 管道死锁（并发排水 stdout/stderr）+ Dispatchers.IO
+- ☑ 本地桥鉴权（per-project 随机 token + Origin 校验 + 16MB body 上限）
+- ☑ 桥日志不再记录信封内容
+
+## Phase 7 —— v0.2.0 IDE 深度集成与体验（2026-10-31）
+- ☑ 多窗口隔离（per-project token → BridgeService/BridgeTransport 路由）
+- ☑ 编辑器动作 Explain/Fix/Send Selection with Pi（选区 + file:line 注入）
+- ☑ 后台完成通知（notificationGroup BALLOON，点击激活工具窗）
+- ☑ 状态栏 π widget（状态/版本/崩溃 ⚠，点击打开工具窗）
+- ☑ file:line 跳转（ide.openFile）+ @ 文件引用补全（files.list）
+- ☑ 渲染完整性：图片回显、edit/write diff 视图、代码块 Copy、外链系统浏览器、ErrorBoundary
+- ☑ Composer：拖拽图片、Escape/abort/unhandled rejection 小修
+- ☑ 长轮询 oldest 缺口检测补救；ensureWired 竞态；PI_CODING_AGENT_DIR；loginShellPath 缓存
+- ☐ 真机验收（MANUAL_TEST.md，用户操作）+ GitHub Release
 
 ## Phase 5 —— 发布
 - ☑ CHANGELOG + v0.1.0 tag + GitHub Release（附插件 zip）

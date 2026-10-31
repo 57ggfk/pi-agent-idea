@@ -10,6 +10,11 @@ function BlockView({ block }: { block: ContentBlock }) {
     if (!block.text) return null;
     return <Markdown text={block.text} />;
   }
+  if (block.kind === "image") {
+    if (!block.data) return null;
+    const src = block.data.startsWith("data:") ? block.data : `data:${block.mimeType};base64,${block.data}`;
+    return <img className="msg-image" src={src} alt="attached image" data-testid="msg-image" />;
+  }
   if (block.kind === "thinking") {
     const streaming = !block.done;
     return (

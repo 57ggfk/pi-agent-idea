@@ -1,5 +1,6 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePiStore, type SendMode } from "../store/store";
+import { getBridge } from "../bridge";
 import ModelPicker from "./ModelPicker";
 import SendButton from "./SendButton";
 
@@ -9,11 +10,35 @@ interface PendingImage {
   name: string;
 }
 
+const FILE_MENU_MAX = 20;
+// The @-token being typed: start-of-text or whitespace, "@" then the query
+// (no whitespace) up to the caret end of the input.
+const AT_QUERY_RE = /(?:^|\s)@([^\s@]*)$/;
+
+// Project files for @ completion — fetched once per UI session.
+let filesCache: string[] | null = null;
+async function loadProjectFiles(): Promise<string[]> {
+  if (filesCache) return filesCache;
+  try {
+    const bridge = await getBridge();
+    const resp = await bridge.request<{ files?: string[] }>("files.list");
+    filesCache = resp.files ?? [];
+  } catch {
+    filesCache = [];
+  }
+  return filesCache;
+}
+
 export default function Composer() {
   const [text, setText] = useState("");
   const [mode, setMode] = useState<SendMode>("auto");
   const [images, setImages] = useState<PendingImage[]>([]);
   const [highlightIndex, setHighlightIndex] = useState(0);
+  const [files, setFiles] = useState<string[]>([]);
+  // Menus dismissed with Escape stay closed until the text changes.
+  const [slashDismissed, setSlashDismissed] = useState(false);
+  const [fileDismissed, setFileDismissed] = useState(false);
+  const [fileHighlight, setFileHighlight] = useState(0);
   const send = usePiStore((s) => s.sendImages);
   const abort = usePiStore((s) => s.abort);
   const isStreaming = usePiStore((s) => s.isStreaming);
@@ -24,12 +49,40 @@ export default function Composer() {
   const thinkingLevel = usePiStore((s) => s.thinkingLevel);
   const thinkingLevels = usePiStore((s) => s.thinkingLevels);
   const setThinkingLevel = usePiStore((s) => s.setThinkingLevel);
+  const pendingPrompt = usePiStore((s) => s.pendingPrompt);
+  const clearPendingPrompt = usePiStore((s) => s.clearPendingPrompt);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    void loadProjectFiles().then(setFiles);
+  }, []);
+
+  // Editor actions ("Explain with Pi" etc.) push a pre-filled prompt through
+  // the ide event; the store lands it here for the composer to pick up.
+  useEffect(() => {
+    if (!pendingPrompt) return;
+    const value = pendingPrompt.text;
+    setText(value);
+    setSlashDismissed(false);
+    setFileDismissed(false);
+    clearPendingPrompt();
+    const ta = taRef.current;
+    if (ta) {
+      ta.focus();
+      ta.setSelectionRange(value.length, value.length);
+    }
+  }, [pendingPrompt, clearPendingPrompt]);
+
   const slashQuery = /^\//.test(text) && !text.includes(" ") ? text.slice(1).toLowerCase() : null;
-  const matches = slashQuery !== null
+  const slashMatches = slashQuery !== null && !slashDismissed
     ? commands.filter((c) => c.name.toLowerCase().includes(slashQuery)).slice(0, 8)
+    : [];
+
+  const atMatch = AT_QUERY_RE.exec(text);
+  const atQuery = atMatch ? atMatch[1] : null;
+  const fileMatches = atQuery !== null && !fileDismissed
+    ? files.filter((f) => f.toLowerCase().includes(atQuery.toLowerCase())).slice(0, FILE_MENU_MAX)
     : [];
 
   const doSend = () => {
@@ -38,6 +91,7 @@ export default function Composer() {
     setText("");
     setImages([]);
     setHighlightIndex(0);
+    setFileHighlight(0);
     if (taRef.current) taRef.current.style.height = "auto";
     void send(t, images.map((img) => ({ data: img.data, mimeType: img.mimeType })), mode);
   };
@@ -47,20 +101,43 @@ export default function Composer() {
     taRef.current?.focus();
   };
 
-  const addFiles = async (files: FileList | File[]) => {
+  /** Replaces the trailing "@query" token with "@path " and moves the caret. */
+  const insertFile = (path: string) => {
+    const m = AT_QUERY_RE.exec(text);
+    if (!m) return;
+    const atIdx = m.index + m[0].indexOf("@");
+    const next = text.slice(0, atIdx) + `@${path} `;
+    setText(next);
+    setFileHighlight(0);
+    const caret = next.length;
+    requestAnimationFrame(() => {
+      const ta = taRef.current;
+      if (ta) {
+        ta.focus();
+        ta.setSelectionRange(caret, caret);
+      }
+    });
+  };
+
+  const addFiles = async (fileList: FileList | File[]) => {
     const added: PendingImage[] = [];
-    for (const file of Array.from(files)) {
+    for (const file of Array.from(fileList)) {
       if (!file.type.startsWith("image/")) continue;
-      const data = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const result = String(reader.result);
-          resolve(result.slice(result.indexOf(",") + 1));
-        };
-        reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(file);
-      });
-      added.push({ data, mimeType: file.type, name: file.name });
+      try {
+        const data = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const result = String(reader.result);
+            resolve(result.slice(result.indexOf(",") + 1));
+          };
+          reader.onerror = () => reject(reader.error ?? new Error(`failed to read ${file.name}`));
+          reader.readAsDataURL(file);
+        });
+        added.push({ data, mimeType: file.type, name: file.name });
+      } catch (e) {
+        // A single unreadable file must not reject the whole batch.
+        console.warn("skipping unreadable image", file.name, e);
+      }
     }
     if (added.length) setImages((prev) => [...prev, ...added]);
   };
@@ -68,10 +145,34 @@ export default function Composer() {
   const queuedCount = queue.steering.length + queue.followUp.length;
 
   return (
-    <div className="composer" data-testid="composer">
-      {matches.length > 0 ? (
+    <div
+      className="composer"
+      data-testid="composer"
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={(e) => {
+        e.preventDefault();
+        if (e.dataTransfer.files.length > 0) void addFiles(e.dataTransfer.files);
+      }}
+    >
+      {fileMatches.length > 0 ? (
+        <div className="file-menu" data-testid="file-menu">
+          {fileMatches.map((f, i) => (
+            <div
+              key={f}
+              className={`file-item ${i === fileHighlight ? "file-active" : ""}`}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                insertFile(f);
+              }}
+            >
+              @{f}
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {slashMatches.length > 0 ? (
         <div className="slash-menu" data-testid="slash-menu">
-          {matches.map((c, i) => (
+          {slashMatches.map((c, i) => (
             <div
               key={c.name}
               className={`slash-item ${i === highlightIndex ? "slash-active" : ""}`}
@@ -122,27 +223,51 @@ export default function Composer() {
           ref={taRef}
           data-testid="composer-input"
           className="composer-input"
-          placeholder="Message pi… (/ for commands)"
+          placeholder="Message pi… (/ for commands, @ for files)"
           rows={1}
           value={text}
           onChange={(e) => {
             setText(e.target.value);
             setHighlightIndex(0);
+            setSlashDismissed(false);
+            setFileDismissed(false);
             e.target.style.height = "auto";
             e.target.style.height = Math.min(e.target.scrollHeight, 160) + "px";
           }}
           onPaste={(e) => {
-            const files = Array.from(e.clipboardData.files).filter((f) => f.type.startsWith("image/"));
-            if (files.length > 0) {
+            const pasted = Array.from(e.clipboardData.files).filter((f) => f.type.startsWith("image/"));
+            if (pasted.length > 0) {
               e.preventDefault();
-              void addFiles(files);
+              void addFiles(pasted);
             }
           }}
           onKeyDown={(e) => {
-            if (matches.length > 0) {
+            if (fileMatches.length > 0) {
               if (e.key === "ArrowDown") {
                 e.preventDefault();
-                setHighlightIndex((i) => Math.min(i + 1, matches.length - 1));
+                setFileHighlight((i) => Math.min(i + 1, fileMatches.length - 1));
+                return;
+              }
+              if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setFileHighlight((i) => Math.max(i - 1, 0));
+                return;
+              }
+              if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+                e.preventDefault();
+                insertFile(fileMatches[Math.min(fileHighlight, fileMatches.length - 1)]);
+                return;
+              }
+              if (e.key === "Escape") {
+                e.preventDefault();
+                setFileDismissed(true);
+                return;
+              }
+            }
+            if (slashMatches.length > 0) {
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setHighlightIndex((i) => Math.min(i + 1, slashMatches.length - 1));
                 return;
               }
               if (e.key === "ArrowUp") {
@@ -152,11 +277,13 @@ export default function Composer() {
               }
               if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
                 e.preventDefault();
-                applySlashCommand(matches[highlightIndex].name);
+                applySlashCommand(slashMatches[highlightIndex].name);
                 return;
               }
               if (e.key === "Escape") {
-                setText("");
+                // Close the menu only — the typed text stays.
+                e.preventDefault();
+                setSlashDismissed(true);
                 return;
               }
             }

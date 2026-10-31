@@ -1,6 +1,6 @@
 # Pi Agent for JetBrains —— 架构设计文档
 
-> 版本：v1.0（2026-10-27）
+> 版本：v1.1（2026-10-31，随 v0.2 更新：HTTP 桥 + per-project token、IDE 集成点）
 > 关联：[PRODUCT_DESIGN.md](PRODUCT_DESIGN.md)、[TASK_PLAN.md](TASK_PLAN.md)
 
 ## 1. 总体架构
@@ -12,17 +12,17 @@
 │  │  ┌──────────── JBCefBrowser (JCEF/Chromium) ────────────────┐ │ │
 │  │  │  前端 SPA（React + TypeScript，插件资源内打包）              │ │ │
 │  │  │  ChatView / SessionsView / ManageView                     │ │ │
-│  │  │        ▲  window.__piEvent(json)     │                    │ │ │
-│  │  │        │                             │ window.__piSend(s) │ │ │
-│  │  └──────────┼─────────────────────────────┼───────────────────┘ │ │
-│  │             │  Java→JS 事件推送            │ JS→Java 请求        │ │
-│  │  ┌──────────┴─────────────────────────────▼───────────────────┐ │ │
-│  │  │ BridgeService: JBCefJSQuery + executeJavaScript（JSON 信封）│ │ │
-│  │  └──────────────────────────┬─────────────────────────────────┘ │ │
-│  └─────────────────────────────┼────────────────────────────────────┘ │
+│  │  │      ▲ POST /bridge + GET /bridge/poll（长轮询）           │ │ │
+│  │  │      │ X-Pi-Token: <per-project token>                    │ │ │
+│  │  └──────────┼──────────────────────────────────────────────┘ │ │
+│  │             ▼                                                 │ │
+│  │  ┌──────── LocalUiServer（loopback 随机端口，per-project token │ │ │
+│  │  │           注册表路由到对应项目）───────────────────────────┐ │ │
+│  │  │ BridgeService（per-project）：信封协议 → 分发              │ │ │
+│  └──┴──────────────────────────┬──────────────────────────────────┘ │
 │                                ▼                                     │
-│  ┌────────────────── PiAgentService (per-project) ─────────────────┐ │
-│  │  RpcSession: 进程管理 + 请求/事件路由 + UI 状态机                  │ │
+│  ┌────────────────── PiProcessManager (per-project) ───────────────┐ │
+│  │  PiRpcClient: 进程管理 + 请求/事件路由                            │ │
 │  │    │ stdin/stdout JSONL                                          │ │
 │  └────┼─────────────────────────────────────────────────────────────┘ │
 └───────┼───────────────────────────────────────────────────────────────┘
@@ -88,25 +88,32 @@ pi-agent-idea/
 - 健康管理：进程意外退出 → 广播 `processExited` 事件（含 exitCode/stderr 尾部）→ 前端显示可重试卡片；"重启会话" 动作重建进程并 `get_messages` 回放。
 - 复用策略：ToolWindow 关闭不杀进程（后台继续跑任务，符合"agent 任务"预期）；项目关闭时终止。
 
-## 5. 桥接层（`bridge/`）
+## 5. 桥接层（`bridge/` + `ui/LocalUiServer`）
 
-单一信封协议，双向 JSON 字符串：
+单一信封协议，双向 JSON 字符串，经 **loopback HTTP** 传输（v0.1.0 起落地，弃用
+JCEF JS 注入——时序不可靠）：
 
 ```
-JS → Java : { "t": "<method>", "id": "<reqId>", "p": {…params} }
-Java → JS : { "t": "resp", "id": "<reqId>", "ok": true, "data": … }
+JS → Java : POST /bridge   { "t": "<method>", "id": "<reqId>", "p": {…params} }
+Java → JS : GET /bridge/poll?cursor=N   （长轮询，25s 上限）
+            { "t": "resp", "id": "<reqId>", "ok": true, "data": … }
             { "t": "event", "name": "<事件名>", "data": … }
 ```
 
-- JS→Java：`window.__piSend(jsonString)` 由 `JBCefJSQuery.create(handler)` 注册；handler 在 pooled 线程回调，方法实现**必须自行切到合适线程**（EDT 仅用于 Swing 访问）。
-- Java→JS：`JBCefBrowser.cefBrowser.executeJavaScript("window.__piEvent(<json>)", …)`；JSON 以字符串字面量安全转义。
-- 方法集（v1）：`rpc.command`（透传任意 RPC 命令）、`getState`、`listSessions`、`manage.*`（auth/mcp/packages/skills）、`ide.*`（打开文件、读主题）、`env`（项目路径、IDE 主题、版本）。
-- 防抖：大流量事件（`message_update`）在 Java 侧按 16ms 窗口合并推送，避免 JCEF executeJavaScript 风暴。
-
-### 5.1 前端资源加载
-
-自定义 scheme：`CefApp.registerSchemeHandlerFactory("http", "pi-agent", handler)`，handler 从插件 classloader 读取 `webui/` 资源（MIME 按扩展名）。前端通过 `http://pi-agent/index.html` 访问。
-备选方案（若 CEF 注册在目标平台行为异常）：打包期起一个仅绑定 `127.0.0.1` 随机端口的轻量 HTTP 服务。**MVP 阶段先落地备选方案以保证交付，自定义 scheme 在 M2 验证切换**（两者对前端透明，仅 base URL 不同）。
+- **鉴权**：LocalUiServer 启动即为每个打开的项目签发随机 token（32B base64url），
+  经加载 URL 查询串交给 SPA；后续请求必须携带 `X-Pi-Token` 头。同时校验 Origin
+  同源（拦截网页对 loopback 的 CSRF）。`/bridge/health` 无副作用，保持开放。
+- **多项目隔离**：token → project 注册表；每个项目的 `BridgeService` 持有独立的
+  `BridgeTransport` 事件缓冲（per-project，非全局单例），多窗口不会串话。
+- **事件序列**：`BridgeTransport` 按 seq 排序缓冲（上限 2000 条）；poll 响应带
+  `oldest`（缓冲区最旧 seq），前端据此检测断连期间丢事件并补救。
+- 方法集：`rpc.request`（透传 RPC 命令，可带 `timeoutMs`）、`sessions.list`、
+  `files.list`（@ 补全用，30s 缓存）、`ide.openFile`（编辑器跳转）、
+  `config.*`、`manage.*`（auth/mcp/packages/skills/settings）、`env`。
+- 事件：`pi`（原始 pi 事件）、`pi-state`（进程状态）、`ide`（编辑器动作注入的
+  prompt，如 Explain/Fix with Pi）。
+- 编辑器动作（`editor/`）通过 `BridgeService.pushIdePrompt` 注入 prompt 并激活
+  工具窗；后台运行结束时若工具窗不可见，发 BALLOON 通知（`notificationGroup`）。
 
 ## 6. 前端架构（`web/`）
 
@@ -138,10 +145,10 @@ Java → JS : { "t": "resp", "id": "<reqId>", "ok": true, "data": … }
 | 层 | 线程 |
 |---|---|
 | RPC 读循环 | 专用 daemon 线程 `pi-rpc-reader-<n>` |
-| RPC 请求 | 调用方上下文（UI 动作 → `Dispatchers.EDT` 立即转后台协程） |
-| 桥接 handler | JCEF pooled 线程 → 协程 `Dispatchers.Default` |
+| RPC 请求 | 调用方上下文（协程，超时默认 120s） |
+| 桥接 handler | LocalUiServer HTTP 线程 → 协程 `Dispatchers.IO`（管理命令可阻塞数分钟） |
 | Swing/JCEF API 访问 | EDT（`invokeLater`） |
-| 前端事件推送 | 合并窗口后于后台协程调用 `executeJavaScript`（JBCef 线程安全） |
+| 长轮询 | LocalUiServer cachedThreadPool daemon 线程（每请求最长 25s） |
 
 实现采用 Kotlin coroutines（`intellij-platform` 附带 kotlin-stdlib；coroutines 库随平台提供）。
 
@@ -184,4 +191,4 @@ e2e 的关键设计：**同一套 Playwright 用例、两种 driver**（`file:we
 | GUI 启动的 IDE 缺 nvm PATH | 登录 shell PATH 探测 + 设置项手动指定 |
 | pi RPC 协议随版本演进 | 协议宽容解析 + 前端归约器单测 + `sinceBuild` 收紧 |
 | JCEF 远程调试端口不可用（IDE 策略） | e2e 降级路径：前端 e2e + runIde 截图 + 人工清单 |
-| 本地 HTTP 服务被其他进程访问 | 仅绑定 127.0.0.1 + 随机端口 + 首次访问 token 校验 |
+| 本地 HTTP 服务被其他进程访问 | 仅绑定 127.0.0.1 + 随机端口 + per-project 随机 token + Origin 同源校验（v0.1.2 落地） |

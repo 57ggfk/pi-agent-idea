@@ -6,7 +6,9 @@
     Pi coding agent, embedded in your IDE.<br/>
     Chat with the pi coding agent from a tool window: streaming markdown answers,
     thinking blocks, tool-call cards, model & session management, and GUI management
-    for pi's MCP servers, packages and skills.
+    for pi's MCP servers, packages and skills. Editor actions hand selections to pi,
+    file references jump back into the editor, and a status bar widget keeps the
+    agent state visible.
     ]]></description>
     <depends>com.intellij.modules.platform</depends>
     <!-- JCEF ships as the bundled "Web Browser (JCEF)" plugin; depending on it
@@ -17,7 +19,44 @@
         <toolWindow id="Pi Agent"
                     anchor="right"
                     factoryClass="dev.pi.agent.toolwindow.PiAgentToolWindowFactory"
+                    icon="/icons/piAgent.svg"
                     canCloseContents="false"/>
         <postStartupActivity implementation="dev.pi.agent.toolwindow.PiAgentStartupActivity"/>
+
+        <!-- Balloon notifications (e.g. background run finished). -->
+        <notificationGroup id="Pi Agent" displayType="BALLOON"/>
+
+        <!-- Status bar state indicator. -->
+        <statusBarWidgetFactory id="PiAgentStatusBarWidget"
+                                implementation="dev.pi.agent.toolwindow.PiStatusBarWidgetFactory"/>
+
+        <!-- Editor integration (selection-based). -->
+        <group id="PiAgent.EditorPopup" popup="true" text="Pi Agent" description="Send code to the pi agent">
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+            <action id="PiAgent.ExplainSelection"
+                    class="dev.pi.agent.editor.ExplainWithPi"
+                    text="Explain with Pi"
+                    description="Ask pi to explain the selected code"/>
+            <action id="PiAgent.FixSelection"
+                    class="dev.pi.agent.editor.FixWithPi"
+                    text="Fix with Pi"
+                    description="Ask pi to fix the selected code"/>
+            <action id="PiAgent.SendSelection"
+                    class="dev.pi.agent.editor.SendSelectionToPi"
+                    text="Send Selection to Pi"
+                    description="Send the selected code to pi with file context"/>
+        </group>
+
+        <!-- File integration (project view / editor tab context menus).
+             All group ids are platform-wide, so this works on every
+             JetBrains IDE, not just IDEA. -->
+        <group id="PiAgent.FilePopup" popup="true" text="Pi Agent" description="Send a file to the pi agent">
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
+            <add-to-group group-id="EditorTabPopupMenu" anchor="last"/>
+            <action id="PiAgent.SendFile"
+                    class="dev.pi.agent.editor.SendFileToPi"
+                    text="Send File to Pi Agent"
+                    description="Send the whole file to pi with its path context"/>
+        </group>
     </extensions>
 </idea-plugin>

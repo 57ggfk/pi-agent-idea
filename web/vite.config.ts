@@ -12,4 +12,8 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
   },
+  test: {
+    // Playwright specs have their own runner (playwright.config.ts).
+    exclude: ["**/node_modules/**", "e2e/**"],
+  },
 });

@@ -40,23 +40,54 @@ object PiCliRunner {
         env["PI_NO_COLOR"] = "1"
 
         LOG.info("pi cli: ${args.joinToString(" ")}")
+        return runProcess(pb, timeoutSeconds)
+    }
+
+    /**
+     * Runs [pb] with both streams drained concurrently. Draining must happen
+     * *while* the process runs: waiting first would deadlock whenever output
+     * exceeds the OS pipe buffer (~64KB) because the child blocks on write and
+     * can never exit.
+     */
+    internal fun runProcess(pb: ProcessBuilder, timeoutSeconds: Long): CliResult {
         return try {
             val proc = pb.start()
+            val stdout = StringBuilder()
+            val stderr = StringBuilder()
+            val drainOut = drainThread(proc.inputStream, stdout)
+            val drainErr = drainThread(proc.errorStream, stderr)
             val finished = proc.waitFor(timeoutSeconds, TimeUnit.SECONDS)
             if (!finished) {
                 proc.destroyForcibly()
-                CliResult(-1, "", "timed out after ${timeoutSeconds}s: ${command.joinToString(" ")}")
-            } else {
+                // Streams close with the process; give the readers a moment to hit EOF.
+                drainOut.join(1000)
+                drainErr.join(1000)
                 CliResult(
-                    exitCode = proc.exitValue(),
-                    stdout = proc.inputStream.bufferedReader().readText(),
-                    stderr = proc.errorStream.bufferedReader().readText(),
+                    -1,
+                    stdout.toString(),
+                    "timed out after ${timeoutSeconds}s: ${pb.command().joinToString(" ")}",
                 )
+            } else {
+                // Exited: both streams reach EOF quickly. Unbounded join is safe.
+                drainOut.join(10_000)
+                drainErr.join(10_000)
+                CliResult(proc.exitValue(), stdout.toString(), stderr.toString())
             }
         } catch (e: Exception) {
             CliResult(-1, "", "failed to run pi: ${e.message}")
         }
     }
+
+    private fun drainThread(stream: java.io.InputStream, into: StringBuilder): Thread =
+        Thread({
+            try {
+                stream.bufferedReader().forEachLine { line ->
+                    synchronized(into) { into.appendLine(line) }
+                }
+            } catch (_: java.io.IOException) {
+                // stream closed with the process
+            }
+        }, "pi-cli-drain").apply { isDaemon = true; start() }
 
     /** Parses the first JSON value found in stdout (CLI wrappers may add noise). */
     fun parseJsonOrNull(result: CliResult): kotlinx.serialization.json.JsonElement? {
@@ -69,6 +100,12 @@ object PiCliRunner {
         }
     }
 
-    /** User-level pi config files. */
-    fun agentDir(): File = File(System.getProperty("user.home"), ".pi/agent")
+    /**
+     * User-level pi config files. Honors pi's `PI_CODING_AGENT_DIR` override
+     * (matching PiSessionIndex's handling of `PI_CODING_AGENT_SESSION_DIR`).
+     */
+    fun agentDir(): File =
+        System.getenv("PI_CODING_AGENT_DIR")?.takeIf { it.isNotBlank() }
+            ?.let { File(it) }
+            ?: File(System.getProperty("user.home"), ".pi/agent")
 }

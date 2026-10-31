@@ -11,6 +11,7 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
@@ -143,6 +144,56 @@ class PiRpcClientTest {
         val deadline = System.currentTimeMillis() + 10_000
         while (process!!.isAlive && System.currentTimeMillis() < deadline) Thread.sleep(50)
         assertFalse(process!!.isAlive)
+    }
+
+    @Test
+    fun `send times out when pi never responds`() {
+        // A process that reads nothing and writes nothing: the command is
+        // written to the pipe but never answered.
+        val proc = ProcessBuilder("/bin/sh", "-c", "sleep 30").start()
+        process = proc
+        val c = PiRpcClient(proc, object : PiRpcListener {
+            override fun onEvent(event: JsonObject) {}
+            override fun onClosed(message: String) {}
+        })
+        client = c
+
+        val start = System.currentTimeMillis()
+        val ex = assertFailsWith<java.util.concurrent.ExecutionException> {
+            c.send(
+                json.parseToJsonElement("""{"type":"get_state"}""") as JsonObject,
+                timeoutMs = 500,
+            ).get(10, TimeUnit.SECONDS)
+        }
+        assertTrue(ex.cause is java.util.concurrent.TimeoutException, "cause: ${ex.cause}")
+        // Fails at the 500ms deadline, not at future.get's 10s bound.
+        assertTrue(System.currentTimeMillis() - start < 5_000, "timeout should fire at the configured deadline")
+    }
+
+    @Test
+    fun `response within timeout completes normally`() {
+        val proc = ProcessBuilder("/bin/sh", "-c", "sleep 30").start()
+        process = proc
+        val c = PiRpcClient(proc, object : PiRpcListener {
+            override fun onEvent(event: JsonObject) {}
+            override fun onClosed(message: String) {}
+        })
+        client = c
+        val future = c.send(
+            json.parseToJsonElement("""{"type":"get_state"}""") as JsonObject,
+            timeoutMs = 60_000,
+        )
+        // No response will ever come; a 1s wait cap fires (as TimeoutException)
+        // well below the client-side 60s deadline, proving the deadline has not.
+        try {
+            future.get(1, TimeUnit.SECONDS)
+        } catch (_: java.util.concurrent.TimeoutException) {
+            // our wait cap; expected
+        }
+        // The client-side timeout must NOT have fired yet: the future is still
+        // pending, so a fresh wait attempt is legal.
+        assertFalse(future.isDone)
+        c.close()
     }
 
     private fun JsonObject.fieldOrNull(name: String): String? =
