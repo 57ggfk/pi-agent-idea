@@ -56,13 +56,15 @@ object PiCliRunner {
             val drainErr = drainThread(proc.errorStream, stderr)
             val finished = proc.waitFor(timeoutSeconds, TimeUnit.SECONDS)
             if (!finished) {
+                // Kill the whole tree: orphaned grandchildren (sleep/ping under
+                // a shell) keep the pipes open on Linux, where closing our end
+                // does not wake a thread blocked in read().
+                runCatching { proc.toHandle().descendants().forEach { it.destroyForcibly() } }
                 proc.destroyForcibly()
-                // Orphaned grandchildren can keep the pipes open long after
-                // the direct child died; closing our ends unblocks the drain
-                // threads immediately instead of leaving them parked in read.
+                // Belt and suspenders for platforms where descendants may miss.
                 runCatching { proc.inputStream.close() }
                 runCatching { proc.errorStream.close() }
-                // Give the readers a moment to observe the closed streams.
+                // Give the readers a moment to observe the closed pipes.
                 drainOut.join(1000)
                 drainErr.join(1000)
                 CliResult(

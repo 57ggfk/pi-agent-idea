@@ -161,6 +161,18 @@ class PiRpcClientTest {
         if (isWindows) ProcessBuilder("powershell", "-NoProfile", "-Command", "Start-Sleep -Seconds 30")
         else ProcessBuilder("/bin/sh", "-c", "sleep 30")
 
+    /**
+     * Kills the process tree and waits for death: an orphaned grandchild
+     * (dash execs the last command, but shells that fork keep sleep alive)
+     * holds the stdout pipe open, leaving the client's reader thread parked
+     * past the platform leak tracker's check.
+     */
+    private fun killTree(proc: Process) {
+        runCatching { proc.toHandle().descendants().forEach { it.destroyForcibly() } }
+        proc.destroyForcibly()
+        proc.waitFor(5, TimeUnit.SECONDS)
+    }
+
     @Test
     fun `send times out when pi never responds`() {
         // A process that reads nothing and writes nothing: the command is
@@ -184,8 +196,8 @@ class PiRpcClientTest {
         // Fails at the 500ms deadline, not at future.get's 10s bound.
         assertTrue(System.currentTimeMillis() - start < 5_000, "timeout should fire at the configured deadline")
         // Kill in-test: the platform leak tracker runs before @AfterTest, and
-        // the client's reader thread only unwinds once the process dies.
-        proc.destroyForcibly()
+        // the client's reader thread only unwinds once the process tree dies.
+        killTree(proc)
     }
 
     @Test
@@ -212,9 +224,9 @@ class PiRpcClientTest {
         // pending, so a fresh wait attempt is legal.
         assertFalse(future.isDone)
         c.close()
-        // Same leak-tracker ordering as above: end the process here, not in
-        // @AfterTest.
-        proc.destroyForcibly()
+        // Same leak-tracker ordering as above: end the process tree here, not
+        // in @AfterTest.
+        killTree(proc)
     }
 
     private fun JsonObject.fieldOrNull(name: String): String? =
