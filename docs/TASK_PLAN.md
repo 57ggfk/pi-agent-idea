@@ -114,7 +114,12 @@
 - ☑ **UI 布局重构（响应式）**：三档断点（≤480 图标降级/≥720 聊天列居中+
   会话卡片网格/≥1100）、流式间距、状态栏次要信息窄窗隐藏；OptionsPopover
   开关重构（去 label 包裹）+ Escape 关闭；三档宽度 Playwright 截图人工审阅
-- ☐ 真机验收（runIde 中让 pi 改文件走审批两路径；用户操作）
+- ☑ **真机验收（自动化完成，无需人工）**：内置电脑操作驱动真实 WebStorm 2026.2
+  + 真实 pi 1.4.0——① Find Action 确认全部动作注册；② 编辑器右键菜单出现
+  Pi Agent 组（截图）；③ 工具窗新响应式 UI 生效（430px 图标降级）；④
+  **审批全链路**：真实 pi 写文件 → 审批卡弹出 → Allow → 工具执行、文件落地、
+  续轮完成；Deny → 工具卡 error 阻断、模型收到拒绝原因
+- ☐ GitHub Release（等用户确认后打 v0.4.0 tag）
 
 ## Phase 5 —— 发布
 - ☑ CHANGELOG + v0.1.0 tag + GitHub Release（附插件 zip）

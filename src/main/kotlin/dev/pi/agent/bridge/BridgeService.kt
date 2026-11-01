@@ -137,6 +137,17 @@ class BridgeService(private val project: Project) : Disposable {
     private suspend fun rpcRequest(params: JsonObject): JsonObject {
         val command = params["command"] as? JsonObject
             ?: throw IllegalArgumentException("rpc.request requires command object")
+        // extension_ui_response is a sub-protocol NOTIFICATION: pi resolves the
+        // pending dialog by the id inside and never replies. Sending it through
+        // the correlated send() wraps it in a request id and pi never resolves
+        // the dialog (verified against the official rpc-extension-ui client,
+        // which writes the bare record to stdin).
+        if (command["type"]?.jsonPrimitive?.contentOrNull == "extension_ui_response") {
+            val client: PiRpcClient = PiProcessManager.getInstance(project).client()
+                ?: throw IllegalStateException("pi process is not running")
+            if (!client.notify(command)) throw IllegalStateException("pi process is not running")
+            return buildJsonObject { put("success", true) }
+        }
         val timeoutMs = (params["timeoutMs"] as? JsonPrimitive)?.content?.toLongOrNull()
             ?: PiRpcClient.DEFAULT_TIMEOUT_MS
         val client: PiRpcClient = PiProcessManager.getInstance(project).client()
