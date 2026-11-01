@@ -69,7 +69,8 @@
 - ☑ 渲染完整性：图片回显、edit/write diff 视图、代码块 Copy、外链系统浏览器、ErrorBoundary
 - ☑ Composer：拖拽图片、Escape/abort/unhandled rejection 小修
 - ☑ 长轮询 oldest 缺口检测补救；ensureWired 竞态；PI_CODING_AGENT_DIR；loginShellPath 缓存
-- ☐ 真机验收（MANUAL_TEST.md，用户操作）+ GitHub Release
+- ☐ 真机验收（MANUAL_TEST.md，用户操作）—— 用户决定跳过，留待后续版本补回归
+- ☑ GitHub Release（v0.3.1，见 Phase 9）
 
 ## Phase 8 —— v0.3.1 VCS 集成（2026-11-01）
 - ☑ **Generate Commit Message with Pi**：提交面板动作（Vcs.MessageActionGroup +
@@ -85,7 +86,13 @@
   转发器造成的 6 处 @Internal API 误报（verifier ignore 机制不覆盖 usage）
 - ☑ 版本号 0.2.1 → 0.3.1（build.gradle.kts）；CHANGELOG「Unreleased」切分为
   0.3.0 / 0.3.1（0.3.0 未单独发布，其内容随 0.3.1 一同发出）
-- ☐ 真机验收（MANUAL_TEST.md「Commit Message 生成」节，用户操作）
+- ☐ 真机验收（MANUAL_TEST.md「Commit Message 生成」节，用户操作）—— 用户决定跳过，留待后续版本补回归
+
+## Phase 9 —— v0.3.1 发布（2026-11-01）
+- ☑ 全量自动化验证：Kotlin 测试全绿 + Vitest 19 + Playwright 21 + buildPlugin 产物
+  （pi-agent-idea-0.3.1.zip，2.6M）
+- ☑ 真机人工回归：用户决定跳过，直接发布（自动化覆盖为准）
+- ☑ push main + tag v0.3.1 + GitHub Release（附插件 zip，0.3.0 内容随本版一同发布）
 
 ## Phase 5 —— 发布
 - ☑ CHANGELOG + v0.1.0 tag + GitHub Release（附插件 zip）
