@@ -1585,6 +1585,13 @@ body {
     margin: 0 8px 6px;
   }
 
+  /* The options menu opens from the left-aligned gear; anchored left its
+     280px would clip past the tool window's right edge — open leftwards. */
+  .options-menu {
+    left: auto;
+    right: 0;
+  }
+
   .exit-banner {
     flex-wrap: wrap;
   }
