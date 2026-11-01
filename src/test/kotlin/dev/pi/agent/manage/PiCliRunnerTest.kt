@@ -8,18 +8,26 @@ import kotlin.test.assertTrue
 /**
  * Exercises PiCliRunner.runProcess directly (bypassing pi discovery) with
  * real child processes, in particular the pipe-buffer deadlock scenario that
- * motivated the concurrent drain.
+ * motivated the concurrent drain. Commands have per-OS equivalents: Unix uses
+ * /bin/sh, Windows uses PowerShell/cmd (no POSIX tools there).
  */
 class PiCliRunnerTest {
 
-    private fun sh(script: String) = ProcessBuilder("/bin/sh", "-c", script)
+    private val isWindows: Boolean =
+        System.getProperty("os.name")?.lowercase()?.contains("windows") == true
+
+    private fun proc(unix: String, windows: List<String>): ProcessBuilder =
+        if (isWindows) ProcessBuilder(windows) else ProcessBuilder("/bin/sh", "-c", unix)
 
     @Test
     fun `stdout larger than pipe buffer does not deadlock`() {
         // 200KB of stdout far exceeds the ~64KB pipe buffer; waiting before
         // draining would hang until the timeout and misreport a failure.
         val result = PiCliRunner.runProcess(
-            sh("yes hello | head -c 200000"),
+            proc(
+                "yes hello | head -c 200000",
+                listOf("powershell", "-NoProfile", "-Command", "1..60000 | ForEach-Object { 'hello' }"),
+            ),
             timeoutSeconds = 20,
         )
         assertTrue(result.success, "stderr: ${result.stderr}")
@@ -32,7 +40,13 @@ class PiCliRunnerTest {
     @Test
     fun `stderr larger than pipe buffer does not deadlock`() {
         val result = PiCliRunner.runProcess(
-            sh("yes err | head -c 200000 1>&2"),
+            proc(
+                "yes err | head -c 200000 1>&2",
+                listOf(
+                    "powershell", "-NoProfile", "-Command",
+                    "1..60000 | ForEach-Object { [Console]::Error.WriteLine('err') }",
+                ),
+            ),
             timeoutSeconds = 20,
         )
         assertTrue(result.success, "stderr: ${result.stderr}")
@@ -42,8 +56,13 @@ class PiCliRunnerTest {
     @Test
     fun `timeout reports error and partial stdout`() {
         val start = System.currentTimeMillis()
+        // Windows: ping self-throttles (~1s per -n tick) with output nulled —
+        // cmd has no sleep builtin.
         val result = PiCliRunner.runProcess(
-            sh("echo partial; sleep 30"),
+            proc(
+                "echo partial; sleep 30",
+                listOf("cmd", "/c", "echo partial & ping -n 31 127.0.0.1 > nul"),
+            ),
             timeoutSeconds = 1,
         )
         assertFalse(result.success)
@@ -56,7 +75,10 @@ class PiCliRunnerTest {
     @Test
     fun `nonzero exit propagates`() {
         val result = PiCliRunner.runProcess(
-            sh("echo boom 1>&2; exit 3"),
+            proc(
+                "echo boom 1>&2; exit 3",
+                listOf("cmd", "/c", "echo boom 1>&2 & exit 3"),
+            ),
             timeoutSeconds = 10,
         )
         assertEquals(3, result.exitCode)

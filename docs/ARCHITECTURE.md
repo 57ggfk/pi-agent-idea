@@ -82,7 +82,12 @@ pi-agent-idea/
 
 `PiProcessManager`（per-project `@Service`）：
 
-- pi 定位：插件设置中的显式路径 → 登录 shell PATH 探测（`zsh -lc which pi`，覆盖 nvm 等场景）→ 常见候选路径。解析结果含版本号（`pi --version`）。
+- pi 定位（跨平台，`PiLocator`）：`PI_AGENT_EXECUTABLE` 环境变量 → Unix 登录
+  shell PATH 探测（`$SHELL`/zsh/bash `-lic`，覆盖 nvm 等场景）或 Windows
+  `where pi` → 常见候选路径（Unix：`~/.local/bin`、Homebrew 等；Windows：
+  `%APPDATA%\npm\pi.cmd`、scoop、chocolatey）。`.cmd` shim 经 `cmd /c` 启动，
+  node 脚本自动注入解释器（含 Windows `node.exe`）。解析结果含版本号
+  （`pi --version`）。
 - 启动参数：`pi --mode rpc`，可选 `--session-dir`、`--session <path>`、`--model`、`--provider`、`--no-session` 等；`cwd` = 项目根。
 - 环境变量：合并 IDE 环境与用户 PATH 修正（否则 GUI 启动的 IDE 常找不到 nvm 工具）。
 - 健康管理：进程意外退出 → 广播 `processExited` 事件（含 exitCode/stderr 尾部）→ 前端显示可重试卡片；"重启会话" 动作重建进程并 `get_messages` 回放。
@@ -180,7 +185,7 @@ e2e 的关键设计：**同一套 Playwright 用例、两种 driver**（`file:we
 | ADR-2 | JCEF Web UI 而非 Swing | Swing | 对标 cc gui 的富文本/流式体验，Swing 实现 markdown 流式渲染成本过高 |
 | ADR-3 | Kotlin + kotlinx.serialization | Java | 平台惯例、协程友好；协议宽容解析 |
 | ADR-4 | 前端 React+Vite，独立 npm 工程 | WebPack/纯 HTML | 独立构建是 e2e 与开发效率的基础 |
-| ADR-5 | 目标平台 `2026.2`（用户本机 2026.2.3） | 下载离线 IDE | 本机即真实目标；`runIde`/安装测试直接命中用户环境 |
+| ADR-5 | 目标平台 `2026.2`：优先本地安装的 IDE（跨 OS 自动探测），无本地 IDE 时回退远程 IntelliJ IDEA Community 2026.2 | 锁定单一 OS 的本地路径 | 本机即真实目标；无 IDEA 的机器（CI/Linux）也能构建 |
 | ADR-6 | bytecode 21 / Gradle 8.14 / IPG 2.x | — | 平台 2026.2 要求 |
 
 ## 12. 风险与缓解
@@ -188,7 +193,7 @@ e2e 的关键设计：**同一套 Playwright 用例、两种 driver**（`file:we
 | 风险 | 缓解 |
 |---|---|
 | 自定义 scheme 在 JCEF 兼容性问题 | 已备轻量本地 HTTP 服务方案（§5.1），切换对前端透明 |
-| GUI 启动的 IDE 缺 nvm PATH | 登录 shell PATH 探测 + 设置项手动指定 |
+| GUI 启动的 IDE 缺 nvm PATH | 登录 shell PATH 探测（Unix）/ `where` + 候选路径（Windows）+ `PI_AGENT_EXECUTABLE` 逃生门 |
 | pi RPC 协议随版本演进 | 协议宽容解析 + 前端归约器单测 + `sinceBuild` 收紧 |
 | JCEF 远程调试端口不可用（IDE 策略） | e2e 降级路径：前端 e2e + runIde 截图 + 人工清单 |
 | 本地 HTTP 服务被其他进程访问 | 仅绑定 127.0.0.1 + 随机端口 + per-project 随机 token + Origin 同源校验（v0.1.2 落地） |

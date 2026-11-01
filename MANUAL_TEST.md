@@ -5,7 +5,7 @@
 
 ## 安装
 
-- [ ] `Settings → Plugins → ⚙ → Install Plugin from Disk…` 选择 `build/distributions/pi-agent-idea-0.2.1.zip`（或直接解压到 `~/Library/Application Support/JetBrains/IntelliJIdea2026.2/plugins/`）→ 重启 IDE
+- [ ] `Settings → Plugins → ⚙ → Install Plugin from Disk…` 选择 `build/distributions/pi-agent-idea-0.2.1.zip`（或直接解压到插件目录：macOS `~/Library/Application Support/JetBrains/IntelliJIdea2026.2/plugins/`，Windows `%APPDATA%\JetBrains\IntelliJIdea2026.2\plugins\`，Linux `~/.local/share/JetBrains/IntelliJIdea2026.2/plugins/`）→ 重启 IDE
 - [ ] 重启后 `Settings → Plugins` 中出现 **Pi Agent**，无加载报错（`Help → Show Log` 无 SEVERE）
 
 ## Chat（对话）
@@ -55,8 +55,8 @@
 
 ## 异常路径
 
-- [ ] 临时将插件设置中的 pi 移出 PATH（或 mock 崩溃 `MOCK_PI_FAIL=1`）→ 状态栏出现红色退出横幅与 stderr 摘要
-- [ ] 项目关闭 → pi 进程终止（`ps | grep "mode rpc"`）
+- [ ] 临时将 pi 移出 PATH（或 mock 崩溃 `MOCK_PI_FAIL=1`）→ 状态栏出现红色退出横幅与 stderr 摘要
+- [ ] 项目关闭 → pi 进程终止（macOS/Linux：`ps aux | grep "mode rpc"`；Windows：`Get-CimInstance Win32_Process -Filter "Name='node.exe'" | ? { $_.CommandLine -match 'mode rpc' }`）
 
 ## 自动化对应
 

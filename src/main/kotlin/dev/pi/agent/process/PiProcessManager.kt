@@ -82,20 +82,17 @@ class PiProcessManager(private val project: Project) : Disposable {    private v
         PiModelPreferences.getInstance(project).get()?.let { (provider, model) ->
             piArgs += listOf("--provider", provider, "--model", model)
         }
-        val command = PiLocator.spawnCommand(installation.path, piArgs).toMutableList()
+        val command = PiLocator.spawnCommand(installation.path, piArgs)
 
         val pb = ProcessBuilder(command)
         pb.directory(File(cwd))
         pb.redirectErrorStream(false)
-        val env = pb.environment()
-        val pathDirs = buildList {
-            // The node interpreter next to pi (GUI-launched IDEs have neither
-            // node nor nvm in their PATH; pi and its MCP servers need both).
+        // The node interpreter next to pi (GUI-launched IDEs have neither
+        // node nor nvm in their PATH; pi and its MCP servers need both).
+        OsProcess.augmentPathEnv(pb, buildList {
             PiLocator.nodeBinDirFor(installation.path)?.let { add(it) }
             addAll(PiLocator.loginShellPath())
-            add(env["PATH"] ?: "")
-        }.filter { it.isNotBlank() }.distinct()
-        env["PATH"] = pathDirs.joinToString(":")
+        })
 
         val process: Process = try {
             pb.start()

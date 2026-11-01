@@ -304,7 +304,7 @@ class BridgeService(private val project: Project) : Disposable {
     }
 
     private fun resolveIoFile(path: String): java.io.File? {
-        val expanded = if (path.startsWith("~/"))
+        val expanded = if (path.startsWith("~/") || path.startsWith("~\\"))
             java.io.File(System.getProperty("user.home"), path.drop(2)).absolutePath
         else path
         val file = java.io.File(expanded)

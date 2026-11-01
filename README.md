@@ -52,19 +52,46 @@ CSRF 驱动你的 agent。
 `Settings → Plugins → ⚙ → Install Plugin from Disk…`，重启 IDE。
 
 要求：IntelliJ IDEA 2026.2+（262.*）、本机安装 pi
-（`npm install -g @earendil-works/pi-coding-agent`）。插件会通过登录 shell
-PATH 自动定位 pi，无需额外配置。
+（`npm install -g @earendil-works/pi-coding-agent`；**Windows 上请装在
+Windows 侧**，见下方 WSL 边界）。插件按 `PI_AGENT_EXECUTABLE` 环境变量 →
+登录 shell PATH（macOS/Linux）或 `where pi`（Windows）→ 常见安装位置
+（Windows 覆盖 `%APPDATA%\npm\pi.cmd`、scoop、chocolatey）的顺序自动定位 pi，
+无需额外配置。
 
 ## 开发
 
+工具链：**JDK 21**（Gradle toolchain 自动解析）、**Node 20+**。
+IDE 依赖：本地装有 IntelliJ IDEA 2026.2+ 会自动探测（macOS / Windows /
+Linux / WSL 均可，也可用 `ideaPath` 属性显式指定）；没有本地 IDEA 时自动
+回退远程 IntelliJ IDEA Community 2026.2（首次约 1 GB 下载）。
+
+macOS / Linux：
+
 ```bash
-# 工具链：JDK 21（toolchain 自动解析）、Node 20+
 ./gradlew test buildPlugin          # Kotlin 测试 + 发行包
 cd web && npm install
 npm run test                        # 事件归约器单测（Vitest）
 npx playwright test                 # 前端 e2e（MockBridge）
 cd .. && bash scripts/e2e-ide.sh    # 真实 IDEA JCEF e2e（CDP :9222 + mock pi）
 ```
+
+Windows（PowerShell）：
+
+```powershell
+.\gradlew.bat test buildPlugin
+cd web; npm install
+npm run test
+npx playwright test
+cd ..; powershell -ExecutionPolicy Bypass -File scripts\e2e-ide.ps1          # mock pi e2e
+powershell -ExecutionPolicy Bypass -File scripts\e2e-ide.ps1 -Real          # 真实 pi e2e
+```
+
+### WSL 支持边界
+
+- ✅ WSL 内运行 Gradle 构建（自动探测 `/mnt/c` 下的 Windows IDEA）
+- ✅ Windows IDEA + Windows 原生 pi（npm 全局装在 Windows 侧）
+- ❌ WSL 内 `runIde` / IDE-e2e —— Linux JVM 驱动不了 Windows IDE，请从 Windows 侧跑
+- ❌ Windows IDEA + WSL 里的 pi —— Windows JVM 无法启动 Linux ELF，请在 Windows 侧安装 pi
 
 - 产品/架构/任务文档见 [docs/](docs/)
 - 架构要点：`pi --mode rpc` 子进程（严格 LF JSONL）+ loopback HTTP 桥接

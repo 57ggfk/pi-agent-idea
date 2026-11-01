@@ -1,0 +1,45 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # No local IntelliJ on CI: the build falls back to the remote
+      # IntelliJ IDEA Community 2026.2 artifact (see build.gradle.kts).
+      - name: Build and test
+        if: runner.os != 'Windows'
+        run: ./gradlew build --console=plain
+
+      - name: Build and test
+        if: runner.os == 'Windows'
+        run: .\gradlew.bat build --console=plain
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-${{ matrix.os }}
+          path: build/reports/tests/test/
+          retention-days: 7

@@ -21,6 +21,8 @@ import kotlin.test.assertTrue
 class PiRpcClientTest {
 
     private val json = Json
+    private val isWindows: Boolean =
+        System.getProperty("os.name")?.lowercase()?.contains("windows") == true
     private var client: PiRpcClient? = null
     private var process: Process? = null
 
@@ -59,9 +61,17 @@ class PiRpcClientTest {
     }
 
     private fun nodeExecutable(): String? {
-        for (candidate in listOf("/usr/bin/env")) {
+        // /usr/bin/env is the nvm-less Unix fallback; on Windows (and any
+        // machine with node on PATH) a bare `node` probe works everywhere —
+        // CreateProcess finds node.exe, Unix PATH lookup finds the shim.
+        val probes = if (isWindows) {
+            listOf(listOf("node", "--version"))
+        } else {
+            listOf(listOf("/usr/bin/env", "node", "--version"), listOf("node", "--version"))
+        }
+        for (probe in probes) {
             try {
-                val proc = ProcessBuilder(candidate, "node", "--version").start()
+                val proc = ProcessBuilder(probe).start()
                 if (proc.waitFor(5, TimeUnit.SECONDS) && proc.exitValue() == 0) return "node"
             } catch (_: Exception) {
             }
@@ -146,11 +156,16 @@ class PiRpcClientTest {
         assertFalse(process!!.isAlive)
     }
 
+    /** A process that reads and writes nothing for ~30s (pipe-hang scenarios). */
+    private fun silentProcess(): ProcessBuilder =
+        if (isWindows) ProcessBuilder("powershell", "-NoProfile", "-Command", "Start-Sleep -Seconds 30")
+        else ProcessBuilder("/bin/sh", "-c", "sleep 30")
+
     @Test
     fun `send times out when pi never responds`() {
         // A process that reads nothing and writes nothing: the command is
         // written to the pipe but never answered.
-        val proc = ProcessBuilder("/bin/sh", "-c", "sleep 30").start()
+        val proc = silentProcess().start()
         process = proc
         val c = PiRpcClient(proc, object : PiRpcListener {
             override fun onEvent(event: JsonObject) {}
@@ -172,7 +187,7 @@ class PiRpcClientTest {
 
     @Test
     fun `response within timeout completes normally`() {
-        val proc = ProcessBuilder("/bin/sh", "-c", "sleep 30").start()
+        val proc = silentProcess().start()
         process = proc
         val c = PiRpcClient(proc, object : PiRpcListener {
             override fun onEvent(event: JsonObject) {}

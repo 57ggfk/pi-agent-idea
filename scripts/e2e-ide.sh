@@ -7,7 +7,14 @@ cd "$(dirname "$0")/.."
 REPO="$(pwd)"
 export PI_IDE_E2E="$REPO/test/mock-pi/mock-pi.mjs"
 export PI_IDE_E2E_PROJECT="$REPO/test/e2e-project"
-export JAVA_HOME="${JAVA_HOME:-$(echo "$HOME"/Library/Java/JavaVirtualMachines/jdk-21*/Contents/Home)}"
+if [ -z "${JAVA_HOME:-}" ]; then
+  # macOS and Linux JDK 21 discovery (Windows uses scripts/e2e-ide.ps1).
+  if [ "$(uname)" = "Darwin" ]; then
+    export JAVA_HOME="$(echo "$HOME"/Library/Java/JavaVirtualMachines/jdk-21*/Contents/Home)"
+  else
+    export JAVA_HOME="$(ls -d /usr/lib/jvm/java-21* 2>/dev/null | head -1)"
+  fi
+fi
 
 ./gradlew runIde --console=plain > /tmp/runIde-e2e.log 2>&1 &
 GRADLE_PID=$!

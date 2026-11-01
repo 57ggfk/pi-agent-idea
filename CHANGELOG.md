@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+跨平台：源码 / 构建 / 运行全面兼容 macOS、Windows 与 Linux（含 WSL 边界说明）。
+
+### 修复
+- **Windows 上无法定位/启动 pi**：PiLocator 支持 `where pi` 与 Windows 候选路径
+  （`%APPDATA%\npm\pi.cmd`、scoop、chocolatey）、`node.exe` 解析；`.cmd` shim
+  经 `cmd /c` 启动；子进程 PATH 用平台分隔符拼接（原先固定 `:`，Windows 必坏）
+- 构建脚本两处 macOS 专属问题：`ensureWebUiDeps` 的 inputs 相对路径解析到
+  项目根目录（应为 `web/`）；npm 硬编码 `/bin/zsh -lic`（Linux 无 zsh 即挂）→
+  按存在性挑 shell（`$SHELL` → zsh → bash → sh）
+- 测试在 Windows 硬失败/整组跳过：PiCliRunnerTest 换用跨平台子进程命令，
+  PiRpcClientTest 的 node 探测支持 Windows —— 全部用例在 Windows 真实执行
+- Windows 下会话列表静默为空：cwd 匹配前做分隔符/大小写归一化
+- Markdown 文件链接识别 Windows 路径（`C:\...`、`C:/...`、`~/...`），
+  `~\` 开头路径在 IDE 侧正确展开
+
+### 新增
+- 构建：本地 IDEA 按 OS 自动探测（macOS/Windows/Linux/WSL `/mnt/c`），
+  找不到时回退远程 IntelliJ IDEA Community 2026.2 —— 任何机器开箱可构建
+- CI：GitHub Actions 三系统矩阵（ubuntu/windows/macos）跑 `build` + `test`
+- Windows IDE-e2e 脚本 `scripts/e2e-ide.ps1`（mock / `-Real` 均可）；
+  e2e-ide*.sh 的 JAVA_HOME 探测支持 Linux；node-env.sh 不再钉死 Node 版本
+
 ## 0.2.1 — 2026-10-31
 
 编辑器/文件整合深化：文件右键发送、原生 Diff 视图、路径点击回显。

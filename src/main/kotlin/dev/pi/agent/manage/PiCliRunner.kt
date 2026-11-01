@@ -1,6 +1,7 @@
 package dev.pi.agent.manage
 
 import com.intellij.openapi.diagnostic.Logger
+import dev.pi.agent.process.OsProcess
 import dev.pi.agent.process.PiLocator
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -29,15 +30,12 @@ object PiCliRunner {
         val command = PiLocator.spawnCommand(pi, args)
         val pb = ProcessBuilder(command)
         pb.redirectErrorStream(false)
-        val env = pb.environment()
-        val pathDirs = buildList {
+        OsProcess.augmentPathEnv(pb, buildList {
             PiLocator.nodeBinDirFor(pi)?.let { add(it) }
             addAll(PiLocator.loginShellPath())
-            add(env["PATH"] ?: "")
-        }.filter { it.isNotBlank() }.distinct()
-        env["PATH"] = pathDirs.joinToString(":")
+        })
         // Management commands must not try to talk to a TUI.
-        env["PI_NO_COLOR"] = "1"
+        pb.environment()["PI_NO_COLOR"] = "1"
 
         LOG.info("pi cli: ${args.joinToString(" ")}")
         return runProcess(pb, timeoutSeconds)

@@ -1,5 +1,6 @@
 package dev.pi.agent.session
 
+import dev.pi.agent.process.OsProcess
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -37,15 +38,28 @@ object PiSessionIndex {
         val root = rootOverride ?: sessionsRoot()
         if (!root.isDirectory) return emptyList()
 
+        val target = normalizeCwd(projectPath)
         val summaries = mutableListOf<SessionSummary>()
         root.walkTopDown()
             .filter { it.isFile && it.extension == "jsonl" }
             .forEach { file ->
                 parseHeader(file)?.let { summary ->
-                    if (summary.cwd == projectPath) summaries.add(summary)
+                    summary.cwd?.let { if (normalizeCwd(it) == target) summaries.add(summary) }
                 }
             }
         return summaries.sortedByDescending { it.modifiedAt }.take(limit)
+    }
+
+    /**
+     * cwd comparison tolerant of Windows quirks: unify separators, drop
+     * trailing separators, and ignore case on Windows. pi records the cwd it
+     * was launched with; IDEA's basePath can differ in case, separator
+     * direction, or a trailing slash, which previously made the session list
+     * silently empty.
+     */
+    private fun normalizeCwd(path: String): String {
+        val unified = path.replace('\\', '/').trimEnd('/')
+        return if (OsProcess.isWindows) unified.lowercase() else unified
     }
 
     private fun parseHeader(file: File): SessionSummary? {

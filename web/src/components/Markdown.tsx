@@ -22,11 +22,13 @@ function registerPurifyHooks() {
 }
 
 // Backticked tokens: any path-looking token with an extension (`src/App.tsx`,
-// `README.md:12`).
-const INLINE_FILE_RE = /^([A-Za-z0-9._\-/]+\.[A-Za-z0-9]{1,10})(?::(\d{1,6}))?$/;
-// Plain text runs: require at least one "/" so prose like "e.g." or "3.14" is
-// never linkified. Group 2 is the path, group 3 the optional :line suffix.
-const TEXT_FILE_RE = /(^|[\s(])((?:[A-Za-z0-9._\-]+\/)+[A-Za-z0-9._\-]+\.[A-Za-z0-9]{1,10})(?::(\d{1,6}))?/g;
+// `README.md:12`, plus Windows/tilde forms `C:\src\App.tsx:12`, `~/notes/a.md`).
+const INLINE_FILE_RE = /^((?:[A-Za-z]:[\\/])?(?:~[\\/])?[A-Za-z0-9._\-\\/]+\.[A-Za-z0-9]{1,10})(?::(\d{1,6}))?$/;
+// Plain text runs: require at least one "/" (or a drive/tilde prefix) so prose
+// like "e.g." or "3.14" is never linkified. Group 2 is the path, group 3 the
+// optional :line suffix.
+const TEXT_FILE_RE =
+  /(^|[\s(])((?:(?:[A-Za-z]:[\\/]|~[\\/])(?:[A-Za-z0-9._\-]+[\\/])*|(?:[A-Za-z0-9._\-]+[\\/])+)[A-Za-z0-9._\-]+\.[A-Za-z0-9]{1,10})(?::(\d{1,6}))?/g;
 
 function isLinkablePath(path: string): boolean {
   return path.length > 0 && !path.includes(" ") && !/^https?:/i.test(path);

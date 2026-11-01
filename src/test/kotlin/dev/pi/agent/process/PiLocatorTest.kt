@@ -4,9 +4,13 @@ import org.junit.jupiter.api.Assumptions.assumeTrue
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class PiLocatorTest {
+
+    private val isWindows: Boolean =
+        System.getProperty("os.name")?.lowercase()?.contains("windows") == true
 
     private val realPi: String? = PiLocator.locate(forceRefresh = true)?.path
 
@@ -25,7 +29,7 @@ class PiLocatorTest {
 
     @Test
     fun `non-node scripts spawn directly`() {
-        val dir = Files_createTempDir()
+        val dir = tempDir()
         val fake = File(dir, "notnode").apply {
             writeText("#!/bin/sh\necho hi\n")
             setExecutable(true)
@@ -41,9 +45,45 @@ class PiLocatorTest {
         assumeTrue(PiLocator.isNodeScript(pi), "real pi is not a node script")
         val binDir = PiLocator.nodeBinDirFor(pi)
         assumeTrue(binDir != null, "no node interpreter found for $pi")
-        assertTrue(File(binDir!!, "node").canExecute())
+        val nodeBinary = if (isWindows) "node.exe" else "node"
+        assertTrue(File(binDir!!, nodeBinary).canExecute())
     }
 
-    private fun Files_createTempDir(): File =
+    @Test
+    fun `cmd shims are wrapped in cmd c on windows`() {
+        assumeTrue(isWindows, "Windows-only behaviour")
+        val shim = "C:\\Users\\dev\\AppData\\Roaming\\npm\\pi.cmd"
+        assertTrue(OsProcess.isCmdLike(shim))
+        assertEquals(
+            listOf("cmd", "/c", shim, "--version"),
+            OsProcess.launchCommand(listOf(shim, "--version")),
+        )
+        assertFalse(OsProcess.isCmdLike("C:\\Program Files\\nodejs\\node.exe"))
+    }
+
+    @Test
+    fun `non-cmd commands pass through launchCommand`() {
+        assertEquals(
+            listOf("node", "--version"),
+            OsProcess.launchCommand(listOf("node", "--version")),
+        )
+    }
+
+    @Test
+    fun `windows script detection is by extension`() {
+        assumeTrue(isWindows, "Windows-only behaviour")
+        val dir = tempDir()
+        assertTrue(
+            PiLocator.isNodeScript(File(dir, "mock.mjs").apply { writeText("export {}") }.absolutePath),
+            ".mjs must be treated as a node script",
+        )
+        assertFalse(
+            PiLocator.isNodeScript(File(dir, "pi.cmd").apply { writeText("@echo off") }.absolutePath),
+            ".cmd shims resolve node themselves",
+        )
+        dir.deleteRecursively()
+    }
+
+    private fun tempDir(): File =
         File(System.getProperty("java.io.tmpdir"), "pi-locator-test-${System.nanoTime()}").apply { mkdirs() }
 }
