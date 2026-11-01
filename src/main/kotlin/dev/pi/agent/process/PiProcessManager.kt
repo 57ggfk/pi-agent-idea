@@ -82,6 +82,12 @@ class PiProcessManager(private val project: Project) : Disposable {    private v
         PiModelPreferences.getInstance(project).get()?.let { (provider, model) ->
             piArgs += listOf("--provider", provider, "--model", model)
         }
+        // Tool-approval extension: extracted per start so upgrades propagate;
+        // its policy file is re-read per tool call, so toggling never needs a
+        // restart. When extraction fails pi simply runs without approval.
+        PiApprovalSupport.ensureExtensionInstalled()?.let { ext ->
+            piArgs += listOf("--extension", ext.absolutePath)
+        }
         val command = PiLocator.spawnCommand(installation.path, piArgs)
 
         val pb = ProcessBuilder(command)
@@ -93,6 +99,7 @@ class PiProcessManager(private val project: Project) : Disposable {    private v
             PiLocator.nodeBinDirFor(installation.path)?.let { add(it) }
             addAll(PiLocator.loginShellPath())
         })
+        pb.environment()["PI_APPROVE_POLICY"] = PiApprovalSupport.policyFile().absolutePath
 
         val process: Process = try {
             pb.start()

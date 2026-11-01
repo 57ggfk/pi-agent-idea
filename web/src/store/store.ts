@@ -4,11 +4,13 @@ import { rpc } from "../bridge/types";
 import { getBridge } from "../bridge";
 import {
   applyEvent,
+  approvalFromEvent,
   emptyItem,
   itemsFromMessages,
   type ChatItem,
   type CommandInfo,
   type ModelInfo,
+  type PendingApproval,
   type SessionStats,
 } from "./types";
 
@@ -54,6 +56,14 @@ interface PiStore {
   sessionId?: string;
   sessions: SessionInfo[];
 
+  /** Pending tool-approval dialogs forwarded by the pi-approve extension. */
+  approvals: PendingApproval[];
+  /** Approval policy of the bundled extension: "ask" (default) or "yolo". */
+  approvalMode: "ask" | "yolo";
+  /** pi-managed toggles; null until get_state / config.getPrefs answered. */
+  autoCompaction: boolean | null;
+  autoRetry: boolean | null;
+
   setTab(tab: Tab): void;
   init(): Promise<void>;
   send(text: string, mode: SendMode): Promise<void>;
@@ -76,6 +86,10 @@ interface PiStore {
   clearPendingPrompt(): void;
   openFile(path: string, line: number): Promise<void>;
   showFileDiff(path: string): Promise<void>;
+  respondApproval(id: string, confirmed: boolean): Promise<void>;
+  setApprovalMode(mode: "ask" | "yolo"): Promise<void>;
+  setAutoCompaction(enabled: boolean): Promise<void>;
+  setAutoRetry(enabled: boolean): Promise<void>;
 }
 
 export const usePiStore = create<PiStore>((set, get) => {
@@ -91,7 +105,9 @@ export const usePiStore = create<PiStore>((set, get) => {
       return;
     }
     if (type === "agent_settled") {
-      set({ isStreaming: false, aborted: Boolean(event["aborted"]) });
+      // Pending approval dialogs belong to the finished run — drop them so a
+      // stale card never blocks the composer.
+      set({ isStreaming: false, aborted: Boolean(event["aborted"]), approvals: [] });
       void get().refreshStats();
       return;
     }
@@ -123,6 +139,14 @@ export const usePiStore = create<PiStore>((set, get) => {
       set({ sessionName: (event["name"] as string) ?? undefined });
       return;
     }
+    if (type === "extension_ui_request") {
+      // Dialog kinds (confirm/select/input/editor) queue as approval cards;
+      // fire-and-forget methods (notify/setStatus/…) parse to null and are
+      // ignored.
+      const request = approvalFromEvent(event);
+      if (request) set({ approvals: [...get().approvals, request] });
+      return;
+    }
     if (type === "thinking_level_changed") {
       set({ thinkingLevel: String(event["level"] ?? state.thinkingLevel) });
       return;
@@ -147,6 +171,11 @@ export const usePiStore = create<PiStore>((set, get) => {
     retryInfo: null,
     queue: { steering: [], followUp: [] },
     pendingPrompt: null,
+
+    approvals: [],
+    approvalMode: "ask",
+    autoCompaction: null,
+    autoRetry: null,
 
     models: [],
     thinkingLevel: "medium",
@@ -200,7 +229,7 @@ export const usePiStore = create<PiStore>((set, get) => {
       }
 
       await Promise.all([
-        rpc<{ model?: ModelInfo; thinkingLevel?: string; isStreaming?: boolean; sessionName?: string; sessionId?: string }>(
+        rpc<{ model?: ModelInfo; thinkingLevel?: string; isStreaming?: boolean; sessionName?: string; sessionId?: string; autoCompactionEnabled?: boolean }>(
           bridge,
           { type: "get_state" },
         ).then((s) =>
@@ -210,6 +239,7 @@ export const usePiStore = create<PiStore>((set, get) => {
             isStreaming: Boolean(s.isStreaming),
             sessionName: s.sessionName,
             sessionId: s.sessionId,
+            autoCompaction: typeof s.autoCompactionEnabled === "boolean" ? s.autoCompactionEnabled : null,
           }),
         ).catch(() => undefined),
         rpc<{ models: ModelInfo[] }>(bridge, { type: "get_available_models" })
@@ -232,6 +262,24 @@ export const usePiStore = create<PiStore>((set, get) => {
       } catch {
         // mock bridge without get_messages support
       }
+
+      // Approval policy (bundled pi-approve extension) and preferences pi does
+      // not expose via get_state. Both non-fatal on bridges without them.
+      try {
+        const policy = await bridge.request<{ mode?: string }>("approval.getPolicy");
+        if (policy.mode === "yolo" || policy.mode === "ask") set({ approvalMode: policy.mode });
+      } catch {
+        // mock bridge without approval support
+      }
+      try {
+        const prefs = await bridge.request<{ autoRetry?: boolean }>("config.getPrefs");
+        if (typeof prefs.autoRetry === "boolean") set({ autoRetry: prefs.autoRetry });
+      } catch {
+        // mock bridge without prefs support
+      }
+      // Re-apply the persisted auto-retry choice to the fresh pi process.
+      const retry = get().autoRetry;
+      if (retry != null) void get().setAutoRetry(retry);
 
       set({ ready: true });
     },
@@ -278,6 +326,8 @@ export const usePiStore = create<PiStore>((set, get) => {
 
     async abort() {
       if (!bridge) return;
+      // Approval cards belong to the run being aborted.
+      set({ approvals: [] });
       try {
         await rpc(bridge, { type: "abort" });
       } catch {
@@ -545,6 +595,65 @@ export const usePiStore = create<PiStore>((set, get) => {
         await bridge.request("ide.showFileDiff", { path });
       } catch {
         // non-fatal: e.g. file no longer exists
+      }
+    },
+
+    /**
+     * Answers a pending extension_ui_request. The run is blocked until the
+     * response arrives, so the card is removed optimistically.
+     */
+    async respondApproval(id: string, confirmed: boolean) {
+      if (!bridge) return;
+      const target = get().approvals.find((a) => a.id === id);
+      set({ approvals: get().approvals.filter((a) => a.id !== id) });
+      if (!target) return;
+      const command: Record<string, unknown> =
+        target.method === "confirm"
+          ? { type: "extension_ui_response", id, confirmed }
+          : { type: "extension_ui_response", id, cancelled: true };
+      try {
+        await rpc(bridge, command);
+      } catch {
+        // A dead run takes its dialog with it; nothing left to render.
+      }
+    },
+
+    /** Switches the bundled extension between "ask" and "yolo" (no restart). */
+    async setApprovalMode(mode: "ask" | "yolo") {
+      if (!bridge) return;
+      const prev = get().approvalMode;
+      set({ approvalMode: mode });
+      try {
+        await bridge.request("approval.setPolicy", { mode, allow: [] });
+      } catch (e) {
+        set({ approvalMode: prev });
+        console.warn("approval.setPolicy failed", e);
+      }
+    },
+
+    async setAutoCompaction(enabled: boolean) {
+      if (!bridge) return;
+      const prev = get().autoCompaction;
+      set({ autoCompaction: enabled });
+      try {
+        await rpc(bridge, { type: "set_auto_compaction", enabled });
+      } catch (e) {
+        set({ autoCompaction: prev });
+        console.warn("set_auto_compaction failed", e);
+      }
+    },
+
+    async setAutoRetry(enabled: boolean) {
+      if (!bridge) return;
+      const prev = get().autoRetry;
+      set({ autoRetry: enabled });
+      try {
+        await rpc(bridge, { type: "set_auto_retry", enabled });
+        // Persist so a restarted pi process gets the same choice.
+        void bridge.request("config.setPrefs", { autoRetry: enabled }).catch(() => undefined);
+      } catch (e) {
+        set({ autoRetry: prev });
+        console.warn("set_auto_retry failed", e);
       }
     },
   };

@@ -29,6 +29,15 @@ export class MockBridge implements Bridge {
   private aborted = false;
   private emittedForPrompt = false;
   private sessionSeq = 0;
+  private autoCompactionEnabled = true;
+  private autoRetryEnabled: boolean | null = null;
+  private approvalMode: "ask" | "yolo" = "ask";
+  /** Resolver of the currently pending approval dialog, if any. */
+  private approvalResolve: ((confirmed: boolean) => void) | null = null;
+  // Approval gating for the bash tool call, enabled via ?approval=1 so the
+  // existing specs keep the ungated timing.
+  private readonly approvalScenario =
+    typeof location !== "undefined" && new URLSearchParams(location.search).has("approval");
   private mockSessions = [
     {
       file: "/tmp/mock-sessions/2026-10-27T10-00-00_aaa.jsonl",
@@ -87,6 +96,24 @@ export class MockBridge implements Bridge {
       return Promise.resolve({ provider: "mock", model: "mock-model-pro" } as T);
     }
     if (method === "config.setLastModel") {
+      return Promise.resolve({ ok: true } as T);
+    }
+    if (method === "config.getPrefs") {
+      return Promise.resolve(
+        (this.autoRetryEnabled == null ? {} : { autoRetry: this.autoRetryEnabled }) as T,
+      );
+    }
+    if (method === "config.setPrefs") {
+      const autoRetry = (params as { autoRetry?: boolean })?.autoRetry;
+      if (typeof autoRetry === "boolean") this.autoRetryEnabled = autoRetry;
+      return Promise.resolve({ ok: true } as T);
+    }
+    if (method === "approval.getPolicy") {
+      return Promise.resolve({ mode: this.approvalMode, allow: [] } as T);
+    }
+    if (method === "approval.setPolicy") {
+      const mode = (params as { mode?: string })?.mode;
+      if (mode === "ask" || mode === "yolo") this.approvalMode = mode;
       return Promise.resolve({ ok: true } as T);
     }
     if (method.startsWith("manage.")) {
@@ -171,7 +198,7 @@ export class MockBridge implements Bridge {
             isStreaming: this.isStreaming,
             sessionId: "mock-session-0001",
             sessionFile: "/tmp/mock-project/session.jsonl",
-            autoCompactionEnabled: true,
+            autoCompactionEnabled: this.autoCompactionEnabled,
             messageCount: this.messageCount,
             pendingMessageCount: 0,
           },
@@ -213,7 +240,7 @@ export class MockBridge implements Bridge {
         }
         const disposition = this.isStreaming ? "queued" : "started";
         if (!this.isStreaming) {
-          this.startRun(message);
+          void this.startRun(message);
         } else {
           this.emit("pi", { type: "queue_update", steering: [message], followUp: [] });
         }
@@ -221,6 +248,9 @@ export class MockBridge implements Bridge {
       }
       case "abort": {
         this.aborted = true;
+        // An aborted run unwinds a pending approval dialog (denied).
+        this.approvalResolve?.(false);
+        this.approvalResolve = null;
         return { success: true };
       }
       case "new_session":
@@ -262,59 +292,73 @@ export class MockBridge implements Bridge {
         this.thinkingLevel = String(command["level"]);
         this.emit("pi", { type: "thinking_level_changed", level: this.thinkingLevel });
         return { success: true };
+      case "extension_ui_response": {
+        const resolve = this.approvalResolve;
+        this.approvalResolve = null;
+        resolve?.(command["confirmed"] === true);
+        return { success: true };
+      }
+      case "set_auto_compaction":
+        this.autoCompactionEnabled = command["enabled"] !== false;
+        return { success: true };
+      case "set_auto_retry":
+        return { success: true };
       default:
         return { success: false, error: `mock bridge: unsupported command ${type}` };
     }
   }
 
-  private startRun(prompt: string) {
+  /**
+   * Emits a confirm dialog and waits for extension_ui_response (or abort),
+   * mirroring the extension_ui round-trip of the real pi-approve extension.
+   */
+  private requestApproval(id: string, title: string, message: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      this.approvalResolve = (confirmed) => {
+        this.approvalResolve = null;
+        resolve(confirmed);
+      };
+      this.emit("pi", { type: "extension_ui_request", id, method: "confirm", title, message, timeout: 300000 });
+    });
+  }
+
+  private async startRun(prompt: string) {
     this.isStreaming = true;
     this.aborted = false;
     this.emittedForPrompt = false;
-    const emit = (event: Record<string, unknown>, delay: number) => {
-      this.timers.push(
-        setTimeout(() => {
-          if (this.aborted && !["agent_settled"].includes(String(event["type"]))) return;
-          this.emit("pi", event);
-        }, delay),
-      );
+    const sleep = (ms: number) => new Promise<void>((r) => this.timers.push(setTimeout(r, ms)));
+    const emit = (event: Record<string, unknown>) => {
+      if (this.aborted && String(event["type"]) !== "agent_settled") return;
+      this.emit("pi", event);
     };
 
-    let t = 30;
-    emit({ type: "agent_start" }, t);
-    emit({ type: "turn_start" }, (t += 20));
-    emit(
-      {
-        type: "message_start",
-        message: { role: "user", content: prompt, timestamp: Date.now() },
-      },
-      (t += 20),
-    );
-    emit(
-      {
-        type: "message_end",
-        message: { role: "user", content: prompt, timestamp: Date.now() },
-      },
-      (t += 20),
-    );
-    emit(
-      { type: "message_start", message: { role: "assistant", content: [], stopReason: "pending" } },
-      (t += 20),
-    );
+    await sleep(30);
+    emit({ type: "agent_start" });
+    await sleep(20);
+    emit({ type: "turn_start" });
+    await sleep(20);
+    emit({
+      type: "message_start",
+      message: { role: "user", content: prompt, timestamp: Date.now() },
+    });
+    await sleep(20);
+    emit({
+      type: "message_end",
+      message: { role: "user", content: prompt, timestamp: Date.now() },
+    });
+    await sleep(20);
+    emit({ type: "message_start", message: { role: "assistant", content: [], stopReason: "pending" } });
 
     // thinking block
     const thinking = "The user asked a question. Let me check the project first.";
-    emit({ type: "message_update", usage: {}, assistantMessageEvent: { type: "thinking_start", contentIndex: 0 } }, (t += 30));
+    await sleep(30);
+    emit({ type: "message_update", usage: {}, assistantMessageEvent: { type: "thinking_start", contentIndex: 0 } });
     for (const chunk of chunkWords(thinking)) {
-      emit(
-        { type: "message_update", usage: {}, assistantMessageEvent: { type: "thinking_delta", contentIndex: 0, delta: chunk } },
-        (t += 40),
-      );
+      await sleep(40);
+      emit({ type: "message_update", usage: {}, assistantMessageEvent: { type: "thinking_delta", contentIndex: 0, delta: chunk } });
     }
-    emit(
-      { type: "message_update", usage: {}, assistantMessageEvent: { type: "thinking_end", contentIndex: 0, content: thinking } },
-      (t += 30),
-    );
+    await sleep(30);
+    emit({ type: "message_update", usage: {}, assistantMessageEvent: { type: "thinking_end", contentIndex: 0, content: thinking } });
 
     // text block
     const text =
@@ -322,36 +366,29 @@ export class MockBridge implements Bridge {
       "1. Inspect the repository layout\n" +
       "2. Run a quick sanity check\n\n" +
       "Let me start with a shell command.";
-    emit({ type: "message_update", usage: {}, assistantMessageEvent: { type: "text_start", contentIndex: 1 } }, (t += 30));
+    await sleep(30);
+    emit({ type: "message_update", usage: {}, assistantMessageEvent: { type: "text_start", contentIndex: 1 } });
     for (const chunk of chunkWords(text)) {
-      emit(
-        { type: "message_update", usage: {}, assistantMessageEvent: { type: "text_delta", contentIndex: 1, delta: chunk } },
-        (t += 40),
-      );
+      await sleep(40);
+      emit({ type: "message_update", usage: {}, assistantMessageEvent: { type: "text_delta", contentIndex: 1, delta: chunk } });
     }
-    emit(
-      { type: "message_update", usage: {}, assistantMessageEvent: { type: "text_end", contentIndex: 1, content: text } },
-      (t += 30),
-    );
+    await sleep(30);
+    emit({ type: "message_update", usage: {}, assistantMessageEvent: { type: "text_end", contentIndex: 1, content: text } });
 
     // tool call
-    emit(
-      {
-        type: "message_update",
-        usage: {},
-        assistantMessageEvent: { type: "toolcall_start", contentIndex: 2, id: "call_mock_1", toolName: "bash" },
-      },
-      (t += 40),
-    );
+    await sleep(40);
+    emit({
+      type: "message_update",
+      usage: {},
+      assistantMessageEvent: { type: "toolcall_start", contentIndex: 2, id: "call_mock_1", toolName: "bash" },
+    });
+    await sleep(60);
     const toolCall = { id: "call_mock_1", name: "bash", arguments: { command: "echo hello from mock pi" } };
-    emit(
-      {
-        type: "message_update",
-        usage: {},
-        assistantMessageEvent: { type: "toolcall_end", contentIndex: 2, toolCall },
-      },
-      (t += 60),
-    );
+    emit({
+      type: "message_update",
+      usage: {},
+      assistantMessageEvent: { type: "toolcall_end", contentIndex: 2, toolCall },
+    });
 
     // second (edit) tool call — exercises the diff view in ToolCard
     const editArgs = {
@@ -359,26 +396,22 @@ export class MockBridge implements Bridge {
       old_string: 'createRoot(document.getElementById("root")!).render(\n  <App />\n);',
       new_string: 'createRoot(document.getElementById("root")!).render(\n  <React.StrictMode>\n    <App />\n  </React.StrictMode>,\n);',
     };
-    emit(
-      {
-        type: "message_update",
-        usage: {},
-        assistantMessageEvent: { type: "toolcall_start", contentIndex: 3, id: "call_mock_2", toolName: "edit" },
+    await sleep(40);
+    emit({
+      type: "message_update",
+      usage: {},
+      assistantMessageEvent: { type: "toolcall_start", contentIndex: 3, id: "call_mock_2", toolName: "edit" },
+    });
+    await sleep(60);
+    emit({
+      type: "message_update",
+      usage: {},
+      assistantMessageEvent: {
+        type: "toolcall_end",
+        contentIndex: 3,
+        toolCall: { id: "call_mock_2", name: "edit", arguments: editArgs },
       },
-      (t += 40),
-    );
-    emit(
-      {
-        type: "message_update",
-        usage: {},
-        assistantMessageEvent: {
-          type: "toolcall_end",
-          contentIndex: 3,
-          toolCall: { id: "call_mock_2", name: "edit", arguments: editArgs },
-        },
-      },
-      (t += 60),
-    );
+    });
 
     // assistant message completes with all blocks
     const assistantMessage = {
@@ -393,66 +426,76 @@ export class MockBridge implements Bridge {
       usage: { input: 1000, output: 200, cacheRead: 0, cacheWrite: 0, totalTokens: 1200 },
       timestamp: Date.now(),
     };
-    emit({ type: "message_end", message: assistantMessage }, (t += 30));
-    emit({ type: "turn_end", message: assistantMessage, toolResults: [] }, (t += 20));
+    await sleep(30);
+    emit({ type: "message_end", message: assistantMessage });
+    await sleep(20);
+    emit({ type: "turn_end", message: assistantMessage, toolResults: [] });
 
     // tool execution
-    emit(
-      { type: "tool_execution_start", toolCallId: "call_mock_1", toolName: "bash", args: { command: "echo hello from mock pi" } },
-      (t += 40),
-    );
-    emit(
-      {
+    await sleep(40);
+    emit({ type: "tool_execution_start", toolCallId: "call_mock_1", toolName: "bash", args: { command: "echo hello from mock pi" } });
+    let bashApproved = true;
+    if (this.approvalScenario && this.approvalMode === "ask") {
+      bashApproved = await this.requestApproval(
+        "ui-approval-1",
+        "Allow bash?",
+        JSON.stringify({ command: "echo hello from mock pi" }, null, 2),
+      );
+    }
+    if (bashApproved) {
+      await sleep(80);
+      emit({
         type: "tool_execution_update",
         toolCallId: "call_mock_1",
         toolName: "bash",
         args: { command: "echo hello from mock pi" },
         partialResult: { content: [{ type: "text", text: "hello from mock " }] },
-      },
-      (t += 80),
-    );
-    emit(
-      {
+      });
+      await sleep(60);
+      emit({
         type: "tool_execution_end",
         toolCallId: "call_mock_1",
         toolName: "bash",
         result: { content: [{ type: "text", text: "hello from mock pi" }] },
         isError: false,
         durationMs: 15,
-      },
-      (t += 60),
-    );
-    emit(
-      { type: "tool_execution_start", toolCallId: "call_mock_2", toolName: "edit", args: editArgs },
-      (t += 40),
-    );
-    emit(
-      {
+      });
+    } else {
+      // Blocked by the approval gate: error result, nothing executed.
+      await sleep(30);
+      emit({
         type: "tool_execution_end",
-        toolCallId: "call_mock_2",
-        toolName: "edit",
-        result: { content: [{ type: "text", text: "Patch applied to src/main.tsx" }] },
-        isError: false,
-        durationMs: 8,
-      },
-      (t += 60),
-    );
+        toolCallId: "call_mock_1",
+        toolName: "bash",
+        result: { content: [{ type: "text", text: "bash was not approved" }] },
+        isError: true,
+        durationMs: 0,
+      });
+    }
+    await sleep(40);
+    emit({ type: "tool_execution_start", toolCallId: "call_mock_2", toolName: "edit", args: editArgs });
+    await sleep(60);
+    emit({
+      type: "tool_execution_end",
+      toolCallId: "call_mock_2",
+      toolName: "edit",
+      result: { content: [{ type: "text", text: "Patch applied to src/main.tsx" }] },
+      isError: false,
+      durationMs: 8,
+    });
 
     // second turn: final text (with a fenced code block for the copy button)
-    emit({ type: "turn_start" }, (t += 40));
+    await sleep(40);
+    emit({ type: "turn_start" });
     const finalText =
       "The command printed `hello from mock pi`. All good ✅\n\n" +
       "```bash\necho hello from mock pi\n```\n\n" +
       "Also see src/main.tsx and src/store/store.ts:1 for details.";
-    emit(
-      { type: "message_start", message: { role: "assistant", content: [], stopReason: "pending" } },
-      (t += 20),
-    );
+    await sleep(20);
+    emit({ type: "message_start", message: { role: "assistant", content: [], stopReason: "pending" } });
     for (const chunk of chunkWords(finalText)) {
-      emit(
-        { type: "message_update", usage: {}, assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: chunk } },
-        (t += 40),
-      );
+      await sleep(40);
+      emit({ type: "message_update", usage: {}, assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: chunk } });
     }
     const finalMessage = {
       role: "assistant",
@@ -461,21 +504,20 @@ export class MockBridge implements Bridge {
       usage: { input: 1400, output: 90, cacheRead: 0, cacheWrite: 0, totalTokens: 1490 },
       timestamp: Date.now(),
     };
-    emit({ type: "message_end", message: finalMessage }, (t += 30));
-    emit({ type: "turn_end", message: finalMessage, toolResults: [] }, (t += 20));
-    emit({ type: "agent_end", messages: [finalMessage], willRetry: false }, (t += 30));
-    emit({ type: "agent_settled", aborted: false }, (t += 50));
+    await sleep(30);
+    emit({ type: "message_end", message: finalMessage });
+    await sleep(20);
+    emit({ type: "turn_end", message: finalMessage, toolResults: [] });
+    await sleep(30);
+    emit({ type: "agent_end", messages: [finalMessage], willRetry: false });
+    await sleep(50);
 
-    this.timers.push(
-      setTimeout(() => {
-        if (!this.emittedForPrompt) {
-          this.emittedForPrompt = true;
-          this.isStreaming = false;
-          this.messageCount += 2;
-          this.emit("pi", { type: "agent_settled", aborted: this.aborted });
-        }
-      }, t + 80),
-    );
+    if (!this.emittedForPrompt) {
+      this.emittedForPrompt = true;
+      this.isStreaming = false;
+      this.messageCount += 2;
+      emit({ type: "agent_settled", aborted: this.aborted });
+    }
   }
 
   private emit(name: BridgeEventName, data: unknown) {

@@ -1243,3 +1243,157 @@ body {
   line-height: 1.4;
   margin-right: 6px;
 }
+
+/* Tool-approval card — pending extension_ui_request above the composer.
+   The agent run is blocked until the user answers, so it is prominent. */
+.approval-card {
+  margin: 0 12px 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  background: var(--user-bubble);
+}
+
+.approval-title {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.approval-message {
+  margin: 0 0 8px;
+  padding: 8px;
+  background: var(--code-bg);
+  border-radius: 6px;
+  font-size: 11px;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.approval-queued {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.approval-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-approve {
+  background: var(--success);
+  border-color: var(--success);
+  color: var(--accent-contrast);
+}
+
+.btn-deny {
+  background: var(--error);
+  border-color: var(--error);
+  color: var(--accent-contrast);
+}
+
+/* Options popover — opens upward like the thinking menu (the composer sits
+   at the bottom of the tool window). */
+.options-picker {
+  position: relative;
+}
+
+.options-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 280px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25);
+  z-index: 60;
+  padding: 6px 10px;
+}
+
+.options-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 6px 2px;
+  cursor: pointer;
+}
+
+.options-row + .options-row {
+  border-top: 1px solid var(--border);
+}
+
+.options-label {
+  font-size: 12px;
+}
+
+/* Small toggle switch */
+.switch {
+  position: relative;
+  width: 30px;
+  height: 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  padding: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.switch .knob {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  transition: left 0.15s ease, background 0.15s ease;
+}
+
+.switch-on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.switch-on .knob {
+  left: 15px;
+  background: var(--accent-contrast);
+}
+
+/* Status bar context-usage bar */
+.status-ctx {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ctx-bar {
+  position: relative;
+  width: 56px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.ctx-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--success);
+  transition: width 0.3s ease;
+}
+
+.ctx-bar.ctx-warn .ctx-bar-fill {
+  background: #d6a119;
+}
+
+.ctx-bar.ctx-critical .ctx-bar-fill {
+  background: var(--error);
+}

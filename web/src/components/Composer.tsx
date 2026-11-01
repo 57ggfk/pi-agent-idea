@@ -4,6 +4,7 @@ import { getBridge } from "../bridge";
 import ModelPicker from "./ModelPicker";
 import SendButton from "./SendButton";
 import ThinkingPicker from "./ThinkingPicker";
+import OptionsPopover from "./OptionsPopover";
 
 interface PendingImage {
   data: string; // base64 without data: prefix
@@ -308,6 +309,7 @@ export default function Composer() {
       <div className="composer-controls" data-testid="composer-controls">
         <ModelPicker />
         <ThinkingPicker />
+        <OptionsPopover />
         <div className="spacer" />
         <button
           className="btn"

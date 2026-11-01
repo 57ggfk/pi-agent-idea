@@ -2,6 +2,7 @@ import { Component, useEffect, type ReactNode } from "react";
 import { usePiStore } from "./store/store";
 import MessageList from "./components/MessageList";
 import Composer from "./components/Composer";
+import ApprovalCard from "./components/ApprovalCard";
 import StatusBar from "./components/StatusBar";
 import SessionsView from "./components/SessionsView";
 import ManageView from "./components/ManageView";
@@ -73,6 +74,7 @@ export default function App() {
           {tab === "chat" ? (
             <>
               <MessageList />
+              <ApprovalCard />
               <Composer />
             </>
           ) : tab === "sessions" ? (

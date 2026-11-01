@@ -15,6 +15,9 @@ export default function StatusBar() {
   const cost = stats?.cost;
   const totalMessages = stats?.totalMessages;
 
+  // Context fill level drives the bar color (green → amber → red).
+  const ctxLevel = percent == null ? "ok" : percent >= 90 ? "critical" : percent >= 70 ? "warn" : "ok";
+
   return (
     <div className="statusbar" data-testid="statusbar">
       {piStatus === "exited" ? (
@@ -34,7 +37,13 @@ export default function StatusBar() {
         {sessionName ? <span className="status-session">{sessionName}</span> : null}
         <span className="spacer" />
         {percent != null ? (
-          <span data-testid="status-context" title="Context window usage">
+          <span className="status-ctx" data-testid="status-context" title="Context window usage">
+            <span className={`ctx-bar ctx-${ctxLevel}`} data-testid="status-context-bar">
+              <span
+                className="ctx-bar-fill"
+                style={{ width: `${Math.min(100, Math.max(2, percent))}%` }}
+              />
+            </span>
             ctx {Math.round(percent)}%
           </span>
         ) : null}

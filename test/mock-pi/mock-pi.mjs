@@ -10,12 +10,15 @@
  *   MOCK_PI_FAIL=1    exit immediately with code 3 after responding to get_state
  *   MOCK_PI_VERSION   version string to report (default "1.4.0-mock")
  *   MOCK_PI_SPEED     multiplier on event delays (default 1, lower = faster)
+ *   MOCK_PI_APPROVAL=1  pause the bash tool call on an extension_ui_request
+ *                       confirm dialog and honor extension_ui_response
  */
 import readline from "node:readline";
 
 const VERSION = process.env["MOCK_PI_VERSION"] ?? "1.4.0-mock";
 const SPEED = Number(process.env["MOCK_PI_SPEED"] ?? "1");
 const FAIL = process.env["MOCK_PI_FAIL"] === "1";
+const APPROVAL = process.env["MOCK_PI_APPROVAL"] === "1";
 
 if (process.argv.includes("--version")) {
   console.log(VERSION);
@@ -41,7 +44,22 @@ const state = {
   sessionId: "mock-session-0001",
   sessionFile: "/tmp/mock-session-0001.jsonl",
   messageCount: 0,
+  autoCompactionEnabled: true,
 };
+
+/** Resolves the pending approval dialog, or null while none is open. */
+let approvalResponder = null;
+
+/** Emits a confirm dialog and blocks until extension_ui_response (or abort). */
+function requestApproval(id, title, message) {
+  return new Promise((resolve) => {
+    approvalResponder = (confirmed) => {
+      approvalResponder = null;
+      resolve(confirmed);
+    };
+    out({ type: "extension_ui_request", id, method: "confirm", title, message, timeout: 300000 });
+  });
+}
 
 function out(record) {
   process.stdout.write(JSON.stringify(record) + "\n");
@@ -131,23 +149,43 @@ async function runPrompt(id, message) {
 
   if (!aborted) {
     emit({ type: "tool_execution_start", toolCallId: "call_mock_1", toolName: "bash", args: { command: "echo hello from mock pi" } });
-    await sleep(60);
-    emit({
-      type: "tool_execution_update",
-      toolCallId: "call_mock_1",
-      toolName: "bash",
-      args: { command: "echo hello from mock pi" },
-      partialResult: { content: [{ type: "text", text: "hello from " }] },
-    });
-    await sleep(40);
-    emit({
-      type: "tool_execution_end",
-      toolCallId: "call_mock_1",
-      toolName: "bash",
-      result: { content: [{ type: "text", text: "hello from mock pi" }] },
-      isError: false,
-      durationMs: 15,
-    });
+    let approved = true;
+    if (APPROVAL) {
+      approved = await requestApproval(
+        "ui-approval-1",
+        "Allow bash?",
+        JSON.stringify({ command: "echo hello from mock pi" }, null, 2),
+      );
+    }
+    if (approved) {
+      await sleep(60);
+      emit({
+        type: "tool_execution_update",
+        toolCallId: "call_mock_1",
+        toolName: "bash",
+        args: { command: "echo hello from mock pi" },
+        partialResult: { content: [{ type: "text", text: "hello from " }] },
+      });
+      await sleep(40);
+      emit({
+        type: "tool_execution_end",
+        toolCallId: "call_mock_1",
+        toolName: "bash",
+        result: { content: [{ type: "text", text: "hello from mock pi" }] },
+        isError: false,
+        durationMs: 15,
+      });
+    } else {
+      // Blocked by the approval gate: error result, nothing executed.
+      emit({
+        type: "tool_execution_end",
+        toolCallId: "call_mock_1",
+        toolName: "bash",
+        result: { content: [{ type: "text", text: "bash was not approved" }] },
+        isError: true,
+        durationMs: 0,
+      });
+    }
 
     emit({ type: "turn_start" });
     emit({ type: "message_start", message: { role: "assistant", content: [], stopReason: "pending" } });
@@ -247,6 +285,12 @@ rl.on("line", (line) => {
     }
     case "abort":
       aborted = true;
+      // An aborted run unwinds a pending approval dialog (denied).
+      if (approvalResponder) {
+        const resolveDenied = approvalResponder;
+        approvalResponder = null;
+        resolveDenied(false);
+      }
       respond(id, type, true);
       break;
     case "new_session":
@@ -296,6 +340,20 @@ rl.on("line", (line) => {
       respond(id, type, true);
       break;
     case "set_session_name":
+      respond(id, type, true);
+      break;
+    case "extension_ui_response": {
+      // Answer to our confirm dialog: resolve the waiting tool_call.
+      const resolver = approvalResponder;
+      if (resolver) resolver(cmd["confirmed"] === true);
+      respond(id, type, true);
+      break;
+    }
+    case "set_auto_compaction":
+      state.autoCompactionEnabled = cmd["enabled"] !== false;
+      respond(id, type, true);
+      break;
+    case "set_auto_retry":
       respond(id, type, true);
       break;
     case "compact":

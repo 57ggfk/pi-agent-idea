@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import {
   applyEvent,
+  approvalFromEvent,
   emptyItem,
   itemsFromMessages,
   resetItemIds,
@@ -300,5 +301,50 @@ describe("real-pi user message dedupe", () => {
     items = applyEvent(items, { type: "message_end", message: { role: "user", content: [{ type: "text", text: "second" }] } });
     expect(items).toHaveLength(2);
     expect(textOf(items, 1)).toBe("second");
+  });
+});
+
+describe("approvalFromEvent", () => {
+  it("parses a confirm dialog request", () => {
+    const a = approvalFromEvent({
+      type: "extension_ui_request",
+      id: "ui-1",
+      method: "confirm",
+      title: "Allow bash?",
+      message: '{"command": "rm -rf /"}',
+      timeout: 300000,
+    });
+    expect(a).not.toBeNull();
+    expect(a!.id).toBe("ui-1");
+    expect(a!.method).toBe("confirm");
+    expect(a!.title).toBe("Allow bash?");
+    expect(a!.message).toContain("rm -rf");
+    expect(a!.timeoutMs).toBe(300000);
+    expect(typeof a!.receivedAt).toBe("number");
+  });
+
+  it("parses select requests with their options", () => {
+    const a = approvalFromEvent({
+      type: "extension_ui_request",
+      id: "ui-2",
+      method: "select",
+      title: "Pick one",
+      options: ["Allow", "Block"],
+    });
+    expect(a).not.toBeNull();
+    expect(a!.method).toBe("select");
+    expect(a!.options).toEqual(["Allow", "Block"]);
+  });
+
+  it("returns null for fire-and-forget methods", () => {
+    expect(approvalFromEvent({ type: "extension_ui_request", id: "n1", method: "notify", message: "hi" })).toBeNull();
+    expect(approvalFromEvent({ type: "extension_ui_request", id: "n2", method: "setStatus" })).toBeNull();
+    expect(approvalFromEvent({ type: "extension_ui_request", id: "n3", method: "setWidget" })).toBeNull();
+  });
+
+  it("returns null for non-dialog events and requests without an id", () => {
+    expect(approvalFromEvent({ type: "agent_start" })).toBeNull();
+    expect(approvalFromEvent({ type: "message_update" })).toBeNull();
+    expect(approvalFromEvent({ type: "extension_ui_request", method: "confirm" })).toBeNull();
   });
 });

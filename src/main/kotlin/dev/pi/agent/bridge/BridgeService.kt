@@ -89,6 +89,10 @@ class BridgeService(private val project: Project) : Disposable {
                 "ide.showFileDiff" -> showFileDiff(params)
                 "config.getLastModel" -> lastModel()
                 "config.setLastModel" -> setLastModel(params)
+                "config.getPrefs" -> getPrefs()
+                "config.setPrefs" -> setPrefs(params)
+                "approval.getPolicy" -> approvalGetPolicy()
+                "approval.setPolicy" -> approvalSetPolicy(params)
                 "rpc.restart" -> restartPi()
                 "manage.env" -> dev.pi.agent.manage.PiManage.environment()
                 "manage.mcpList" -> dev.pi.agent.manage.PiManage.mcpList()
@@ -162,6 +166,38 @@ class BridgeService(private val project: Project) : Disposable {
         if (provider.isNotBlank() && model.isNotBlank()) {
             dev.pi.agent.process.PiModelPreferences.getInstance(project).set(provider, model)
         }
+        return buildJsonObject { put("ok", true) }
+    }
+
+    // -- UI preferences & tool-approval policy -------------------------------
+
+    /** Preferences pi does not expose via get_state; restored by the frontend. */
+    private fun getPrefs(): JsonObject {
+        val autoRetry = dev.pi.agent.process.PiUserPrefs.getInstance(project).autoRetry()
+        return buildJsonObject {
+            if (autoRetry != null) put("autoRetry", autoRetry)
+        }
+    }
+
+    private fun setPrefs(params: JsonObject): JsonObject {
+        val autoRetry = (params["autoRetry"] as? JsonPrimitive)?.content?.toBooleanStrictOrNull()
+        if (autoRetry != null) {
+            dev.pi.agent.process.PiUserPrefs.getInstance(project).setAutoRetry(autoRetry)
+        }
+        return buildJsonObject { put("ok", true) }
+    }
+
+    private fun approvalGetPolicy(): JsonObject =
+        dev.pi.agent.process.PiApprovalSupport.policy()
+
+    /** Writes the approval policy; the extension re-reads it on every tool call. */
+    private fun approvalSetPolicy(params: JsonObject): JsonObject {
+        val mode = (params["mode"] as? JsonPrimitive)?.content
+            ?: throw IllegalArgumentException("approval.setPolicy requires mode")
+        val allow = (params["allow"] as? kotlinx.serialization.json.JsonArray)
+            ?.mapNotNull { (it as? JsonPrimitive)?.content }
+            ?: emptyList()
+        dev.pi.agent.process.PiApprovalSupport.writePolicy(mode, allow)
         return buildJsonObject { put("ok", true) }
     }
 

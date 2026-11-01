@@ -65,6 +65,47 @@ export interface SessionStats {
 }
 
 // ---------------------------------------------------------------------------
+// Tool-approval requests (pi extension UI forwarded over RPC)
+// ---------------------------------------------------------------------------
+
+export type ApprovalMethod = "confirm" | "select" | "input" | "editor";
+
+/** One pending extension_ui_request the user must answer before pi proceeds. */
+export interface PendingApproval {
+  id: string;
+  method: ApprovalMethod;
+  title: string;
+  message: string;
+  options?: string[];
+  timeoutMs?: number;
+  receivedAt: number;
+}
+
+const DIALOG_METHODS: readonly string[] = ["confirm", "select", "input", "editor"];
+
+/**
+ * Parses an `extension_ui_request` event into a PendingApproval, or returns
+ * null for fire-and-forget methods (notify/setStatus/setWidget/…), which
+ * carry no dialog the user has to answer.
+ */
+export function approvalFromEvent(event: AnyRecord): PendingApproval | null {
+  if (event["type"] !== "extension_ui_request") return null;
+  const method = String(event["method"] ?? "");
+  if (!DIALOG_METHODS.includes(method)) return null;
+  const id = String(event["id"] ?? "");
+  if (!id) return null;
+  return {
+    id,
+    method: method as ApprovalMethod,
+    title: String(event["title"] ?? ""),
+    message: String(event["message"] ?? ""),
+    options: Array.isArray(event["options"]) ? event["options"].map(String) : undefined,
+    timeoutMs: typeof event["timeout"] === "number" ? event["timeout"] : undefined,
+    receivedAt: Date.now(),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Event reducer
 // ---------------------------------------------------------------------------
 
