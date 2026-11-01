@@ -74,16 +74,18 @@ export default function MessageList() {
 
   return (
     <div className="message-list" ref={scrollRef} onScroll={onScroll} data-testid="message-list">
-      {items.length === 0 ? <EmptyState /> : null}
-      {items.map((item) => (
-        <ItemView key={item.id} item={item} />
-      ))}
-      {retryInfo ? (
-        <div className="system-item retry" data-testid="retry-banner">
-          Retrying ({retryInfo.attempt}/{retryInfo.maxAttempts}) in{" "}
-          {Math.round(retryInfo.delayMs / 1000)}s — {retryInfo.errorMessage}
-        </div>
-      ) : null}
+      <div className="message-col">
+        {items.length === 0 ? <EmptyState /> : null}
+        {items.map((item) => (
+          <ItemView key={item.id} item={item} />
+        ))}
+        {retryInfo ? (
+          <div className="system-item retry" data-testid="retry-banner">
+            Retrying ({retryInfo.attempt}/{retryInfo.maxAttempts}) in{" "}
+            {Math.round(retryInfo.delayMs / 1000)}s — {retryInfo.errorMessage}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

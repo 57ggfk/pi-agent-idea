@@ -48,8 +48,8 @@ test("yolo mode runs tools without asking", async ({ page }) => {
   await page.getByTestId("options-btn").click();
   await expect(page.getByTestId("options-menu")).toBeVisible();
   await page.getByTestId("opt-approval-toggle").click();
-  // Close the menu by clicking outside it.
-  await page.getByTestId("composer-input").click();
+  await page.keyboard.press("Escape"); // close the menu
+  await expect(page.getByTestId("options-menu")).toHaveCount(0);
 
   await send(page, "run the check");
 

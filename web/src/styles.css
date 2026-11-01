@@ -1397,3 +1397,195 @@ body {
 .ctx-bar.ctx-critical .ctx-bar-fill {
   background: var(--error);
 }
+
+/* ==========================================================================
+   Responsive layout v2 — the tool window can be any size; the layout must
+   follow. Viewport == JCEF content area, so plain media queries are exact.
+   Breakpoints: ≤480 narrow tool window, ≥720 wide, ≥1100 extra wide.
+   ========================================================================== */
+
+/* --- Chat column: readable measure on wide windows, full bleed on narrow --- */
+.message-list {
+  padding: clamp(10px, 2vw, 20px) clamp(10px, 3vw, 26px);
+}
+
+.message-col {
+  width: 100%;
+  max-width: 860px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.composer-inner {
+  width: 100%;
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+/* --- Composer toolbar: pickers left, actions right; wraps when squeezed --- */
+.composer-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+
+.tools-left,
+.tools-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Icon+label tool buttons: the label collapses first on narrow windows */
+.btn-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.btn-ico {
+  font-size: 12px;
+  line-height: 1;
+}
+
+/* Pickers must never blow the row up — truncate instead */
+.model-picker {
+  min-width: 0;
+}
+
+.model-picker .chip,
+.thinking-picker .select,
+.options-picker .btn {
+  max-width: 200px;
+}
+
+.chip-label,
+.model-picker .chip {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- Tabs: roomier touch targets, centered on wide --- */
+.tabs {
+  gap: 4px;
+  padding: 2px 10px 0;
+}
+
+.tab {
+  padding: 6px 14px;
+  font-size: 12.5px;
+}
+
+/* --- Status bar: wraps gracefully, low-priority items hide first --- */
+.statusbar-row {
+  flex-wrap: wrap;
+  row-gap: 2px;
+  padding: 4px clamp(10px, 3vw, 26px);
+}
+
+/* --- Sessions: rows become a card grid when there is room --- */
+.sessions-toolbar {
+  padding: 8px clamp(10px, 3vw, 26px);
+}
+
+.sessions-list {
+  padding: 0 clamp(10px, 3vw, 26px) 12px;
+  overflow-y: auto;
+}
+
+/* --- Manage: centered content column --- */
+.manage-view-full {
+  width: 100%;
+  max-width: 980px;
+  margin: 0 auto;
+  overflow-y: auto;
+}
+
+.manage-env {
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+/* --- Empty state: calmer, centered --- */
+.empty-state {
+  margin: auto;
+  padding: 24px 12px;
+}
+
+@media (min-width: 720px) {
+  .empty-logo {
+    font-size: 44px;
+  }
+
+  .sessions-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+    gap: 10px;
+    align-content: start;
+  }
+
+  .session-row {
+    margin: 0;
+  }
+}
+
+@media (min-width: 1100px) {
+  .sessions-list {
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  }
+}
+
+/* --- Narrow tool window: labels go icon-only, secondary info hides --- */
+@media (max-width: 480px) {
+  .btn-lbl {
+    display: none;
+  }
+
+  .btn-tool {
+    padding: 5px 8px;
+  }
+
+  .model-picker .chip,
+  .thinking-picker .select,
+  .options-picker .btn {
+    max-width: 132px;
+  }
+
+  .options-picker .btn .btn-lbl {
+    display: none;
+  }
+
+  .item {
+    max-width: 100%;
+  }
+
+  .status-opt,
+  .status-session {
+    display: none;
+  }
+
+  .tab {
+    padding: 6px 9px;
+    font-size: 12px;
+  }
+
+  .composer {
+    padding: 6px 8px;
+  }
+
+  .approval-card {
+    margin: 0 8px 6px;
+  }
+
+  .exit-banner {
+    flex-wrap: wrap;
+  }
+}

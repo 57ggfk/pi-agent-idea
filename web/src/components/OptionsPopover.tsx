@@ -10,8 +10,10 @@ interface RowProps {
 }
 
 function OptionRow({ label, testId, checked, onToggle, hint }: RowProps) {
+  // Plain div, not a <label>: label-wrapped switches re-dispatch clicks and
+  // confuse both pointer automation and double-toggle handling.
   return (
-    <label className="options-row" data-testid={testId} title={hint}>
+    <div className="options-row" data-testid={testId} title={hint}>
       <span className="options-label">{label}</span>
       <button
         type="button"
@@ -19,14 +21,12 @@ function OptionRow({ label, testId, checked, onToggle, hint }: RowProps) {
         data-testid={`${testId}-toggle`}
         role="switch"
         aria-checked={checked}
-        onClick={(e) => {
-          e.preventDefault();
-          onToggle();
-        }}
+        aria-label={label}
+        onClick={() => onToggle()}
       >
         <span className="knob" />
       </button>
-    </label>
+    </div>
   );
 }
 
@@ -49,8 +49,15 @@ export default function OptionsPopover() {
     const close = (e: MouseEvent) => {
       if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
     };
+    const closeOnEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
     document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
   }, [open]);
 
   return (

@@ -48,12 +48,18 @@ export default function StatusBar() {
           </span>
         ) : null}
         {cost != null ? (
-          <span data-testid="status-cost" title="Session cost">
+          <span className="status-opt" data-testid="status-cost" title="Session cost">
             ${cost.toFixed(4)}
           </span>
         ) : null}
-        {totalMessages != null ? <span data-testid="status-messages">{totalMessages} msgs</span> : null}
-        {bridgeKind === "mock" ? <span className="status-mock">MOCK</span> : null}
+        {totalMessages != null ? (
+          <span className="status-opt" data-testid="status-messages">
+            {totalMessages} msgs
+          </span>
+        ) : null}
+        {bridgeKind === "mock" ? (
+          <span className="status-opt status-mock">MOCK</span>
+        ) : null}
       </div>
     </div>
   );

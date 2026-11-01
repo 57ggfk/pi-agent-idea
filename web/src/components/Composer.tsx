@@ -154,6 +154,7 @@ export default function Composer() {
         if (e.dataTransfer.files.length > 0) void addFiles(e.dataTransfer.files);
       }}
     >
+      <div className="composer-inner">
       {fileMatches.length > 0 ? (
         <div className="file-menu" data-testid="file-menu">
           {fileMatches.map((f, i) => (
@@ -307,31 +308,44 @@ export default function Composer() {
         />
       </div>
       <div className="composer-controls" data-testid="composer-controls">
-        <ModelPicker />
-        <ThinkingPicker />
-        <OptionsPopover />
+        <div className="tools-left">
+          <ModelPicker />
+          <ThinkingPicker />
+          <OptionsPopover />
+        </div>
         <div className="spacer" />
-        <button
-          className="btn"
-          data-testid="compact-btn"
-          onClick={() => void compact()}
-          disabled={isStreaming}
-          title="Compact the conversation context"
-        >
-          Compact
-        </button>
-        <button
-          className="btn"
-          data-testid="fork-btn"
-          onClick={() => void forkSession()}
-          disabled={isStreaming}
-          title="Fork the conversation at the last user message into a new session"
-        >
-          Fork
-        </button>
-        <button className="btn" data-testid="new-session" onClick={() => void newSession()} title="Start a new session">
-          + New
-        </button>
+        <div className="tools-right">
+          <button
+            className="btn btn-tool"
+            data-testid="compact-btn"
+            onClick={() => void compact()}
+            disabled={isStreaming}
+            title="Compact the conversation context"
+          >
+            <span className="btn-ico">⏏</span>
+            <span className="btn-lbl">Compact</span>
+          </button>
+          <button
+            className="btn btn-tool"
+            data-testid="fork-btn"
+            onClick={() => void forkSession()}
+            disabled={isStreaming}
+            title="Fork the conversation at the last user message into a new session"
+          >
+            <span className="btn-ico">⑂</span>
+            <span className="btn-lbl">Fork</span>
+          </button>
+          <button
+            className="btn btn-tool"
+            data-testid="new-session"
+            onClick={() => void newSession()}
+            title="Start a new session"
+          >
+            <span className="btn-ico">＋</span>
+            <span className="btn-lbl">New</span>
+          </button>
+        </div>
+      </div>
       </div>
     </div>
   );
