@@ -121,7 +121,12 @@
   Deny（工具卡 error 阻断、模型收到拒绝原因）；⚙切 Yolo→不弹卡直接执行
   （策略文件 ask 恢复确认）；⑤ 联调修掉两个真机 bug：extension_ui_response
   须裸发通知、窄窗 Options 菜单向右展开被工具窗右缘裁剪（改为向左展开）
-- ☐ GitHub Release（等用户确认后打 v0.4.0 tag）
+- ☑ GitHub Release：tag v0.4.0 + zip + Release Notes（CHANGELOG 已切 0.4.0，
+  changeNotes 经 patchPluginXml 注入构建产物并验证）
+- ☑ Marketplace 发布准备：publishPlugin 配置（PI_MARKETPLACE_TOKEN env /
+  publishToken 属性 + channels）、图标、verifyPlugin、支持区间声明全部就绪；
+  待用户创建 JetBrains Account 令牌后 `publishPlugin` 或门户拖传
+- ☐ Marketplace 上架审核（需要用户的 JetBrains 账号操作，见 README 或对话指引）
 
 ## Phase 5 —— 发布
 - ☑ CHANGELOG + v0.1.0 tag + GitHub Release（附插件 zip）
