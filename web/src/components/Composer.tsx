@@ -3,6 +3,7 @@ import { usePiStore, type SendMode } from "../store/store";
 import { getBridge } from "../bridge";
 import ModelPicker from "./ModelPicker";
 import SendButton from "./SendButton";
+import ThinkingPicker from "./ThinkingPicker";
 
 interface PendingImage {
   data: string; // base64 without data: prefix
@@ -47,9 +48,6 @@ export default function Composer() {
   const commands = usePiStore((s) => s.commands);
   const compact = usePiStore((s) => s.compact);
   const newSession = usePiStore((s) => s.newSession);
-  const thinkingLevel = usePiStore((s) => s.thinkingLevel);
-  const thinkingLevels = usePiStore((s) => s.thinkingLevels);
-  const setThinkingLevel = usePiStore((s) => s.setThinkingLevel);
   const pendingPrompt = usePiStore((s) => s.pendingPrompt);
   const clearPendingPrompt = usePiStore((s) => s.clearPendingPrompt);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -309,19 +307,7 @@ export default function Composer() {
       </div>
       <div className="composer-controls" data-testid="composer-controls">
         <ModelPicker />
-        <select
-          className="select"
-          data-testid="thinking-select"
-          value={thinkingLevel}
-          onChange={(e) => void setThinkingLevel(e.target.value)}
-          title="Thinking level"
-        >
-          {thinkingLevels.map((l) => (
-            <option key={l} value={l}>
-              {l}
-            </option>
-          ))}
-        </select>
+        <ThinkingPicker />
         <div className="spacer" />
         <button
           className="btn"

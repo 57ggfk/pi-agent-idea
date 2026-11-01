@@ -1098,6 +1098,53 @@ body {
   flex-shrink: 0;
 }
 
+/* Thinking-level picker — the composer sits at the bottom of the tool
+   window, so its menu opens upward (a native <select> opens downward and
+   gets clipped by the window edge). */
+.thinking-picker {
+  position: relative;
+}
+
+.thinking-picker .select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.thinking-picker .select:hover {
+  border-color: var(--accent);
+}
+
+.thinking-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 160px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25);
+  z-index: 60;
+  overflow: hidden;
+  padding: 4px 0;
+}
+
+.thinking-menu .slash-item {
+  white-space: nowrap;
+  align-items: center;
+}
+
+.thinking-menu .slash-item:hover {
+  background: var(--user-bubble);
+}
+
+.thinking-check {
+  width: 14px;
+  color: var(--success);
+  flex-shrink: 0;
+}
+
 .exit-banner {
   display: flex;
   align-items: center;
