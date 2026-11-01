@@ -24,9 +24,11 @@ packages, skills, settings).
 ## 功能
 
 **Chat** — 流式 markdown（含代码高亮、代码块复制）、thinking 折叠块、
-工具调用卡片（edit/write 显示 diff 视图）、steer/follow-up 排队、中止、
-斜杠命令补全、@ 文件引用补全、图片发送（粘贴/选择/**拖拽**）、file:line
-点击跳回编辑器、手动 compact、会话统计（上下文占用/成本）、IDE 明暗主题跟随。
+工具调用卡片（edit/write 显示 diff 视图）、**工具调用审批**（Ask/Yolo 切换：
+read-only 工具自动放行，改动/命令在聊天流中批准或拒绝）、steer/follow-up 排队、
+中止、斜杠命令补全、@ 文件引用补全、图片发送（粘贴/选择/**拖拽**）、file:line
+点击跳回编辑器、手动 compact、**⚙ 自动压缩/自动重试开关**、会话统计（上下文占用
+进度条/成本）、IDE 明暗主题跟随。
 
 **IDE 集成** — 编辑器右键 **Explain / Fix / Send Selection with Pi**（自动带
 file:line 与选区上下文）、后台任务完成系统通知（点击直达工具窗）、状态栏

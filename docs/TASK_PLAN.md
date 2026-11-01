@@ -94,6 +94,21 @@
 - ☑ 真机人工回归：用户决定跳过，直接发布（自动化覆盖为准）
 - ☑ push main + tag v0.3.1 + GitHub Release（附插件 zip，0.3.0 内容随本版一同发布）
 
+## Phase 10 —— v0.4.0 工具调用审批与体验补全（2026-11-01）
+- ☑ 内置 pi 扩展 `pi-approve.js`：`tool_call` 钩子 + 工具 annotations 判定
+  （readOnlyHint 放行）+ `ctx.ui.confirm` → extension_ui_request；策略文件
+  （PI_APPROVE_POLICY）每次 tool_call 重读，Ask/Yolo 热切换
+- ☑ `PiApprovalSupport`（扩展解压到 `<config>/pi-agent/` + 策略读写）+
+  `PiProcessManager` 注入 `--extension` / `PI_APPROVE_POLICY`
+- ☑ 桥接 `approval.get/setPolicy`、`config.get/setPrefs`；前端 store 审批队列
+  + `ApprovalCard` + `respondApproval`（extension_ui_response）
+- ☑ ⚙ Options 弹层：自动压缩 / 自动重试（持久化、重连重放）/ 工具审批
+- ☑ 状态栏 ctx 进度条（绿/琥珀/红）
+- ☑ CI 加厚：verifyPlugin（Linux 腿）+ web job（Vitest + Playwright chromium）
+- ☑ 测试：Vitest 23（+4）、Playwright 24（+3：批准/拒绝/yolo）全绿；
+  mock-pi.mjs `MOCK_PI_APPROVAL` 与 MockBridge `?approval=1` 审批轮次
+- ☐ 真机验收（runIde 中让 pi 改文件走审批两路径；用户操作）
+
 ## Phase 5 —— 发布
 - ☑ CHANGELOG + v0.1.0 tag + GitHub Release（附插件 zip）
 - ☑ 全量推送 GitHub（提交人：57ggfk <25079153+57ggfk@users.noreply.github.com>）

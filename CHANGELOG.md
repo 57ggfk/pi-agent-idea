@@ -1,5 +1,38 @@
 # Changelog
 
+## Unreleased (0.4.0)
+
+**工具调用审批**（随插件内置 pi 扩展，经 extension_ui 通路在 IDE 内批准/拒绝）
+与基础体验补全（自动压缩/自动重试开关、上下文用量进度条、CI 加厚）。
+
+### 新增
+- **工具调用审批**：pi 本体无权限系统，插件现在内置 `pi-approve` 扩展
+  （`pi --extension` 加载，不影响终端 pi）：read-only 工具（按工具自带
+  `readOnlyHint`/`destructiveHint` annotations 判定）直接放行，改动/命令类
+  工具在聊天流中弹出审批卡片（工具名 + 参数摘要），**Allow / Deny**；
+  拒绝以错误结果返回给模型；5 分钟无响应自动拒绝；无 UI 场景 fail-closed。
+  ⚙ Options 菜单一键切 **Ask / Yolo**（策略文件每次 tool_call 重读，无需
+  重启 pi）
+- **⚙ Options 弹层**（底部工具栏）：自动压缩（`set_auto_compaction`）、
+  自动重试（`set_auto_retry`，跨重启持久化）、工具审批模式，三开关集中管理
+- 状态栏 **ctx 进度条**（绿 → 70% 琥珀 → 90% 红），不再只有干巴巴的百分比
+- CI：`verifyPlugin`（Marketplace 拒收标准检查）进 Linux 腿；新增 `web` job
+  （Vitest + Playwright chromium）
+
+### 实现
+- `process/PiApprovalSupport`：扩展每次启动从插件资源解压到
+  `<IDE config>/pi-agent/`（升级即生效），策略 JSON 读写
+- 桥接新方法：`approval.getPolicy` / `approval.setPolicy`、
+  `config.getPrefs` / `config.setPrefs`
+- 前端：`extension_ui_request` 解析（`approvalFromEvent` 纯函数）→ 审批卡片
+  → `extension_ui_response`；`agent_settled`/abort 清空过期卡片；
+  fire-and-forget 方法（notify/setStatus/…）忽略
+- Mock：mock-pi.mjs（`MOCK_PI_APPROVAL=1`）与 MockBridge（`?approval=1`）
+  脚本化审批轮次，前端 e2e 全覆盖
+
+### 测试
+- Vitest 23（+4 审批解析）、Playwright 24（+3 审批 e2e：批准/拒绝/yolo）
+
 ## 0.3.1 — 2026-11-01
 
 VCS 集成：用 Pi 生成 Commit Message（不进聊天会话），加验证收尾修复。

@@ -27,7 +27,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       # No local IntelliJ on CI: the build falls back to the remote
-      # IntelliJ IDEA Community 2026.2 artifact (see build.gradle.kts).
+      # IntelliJ IDEA Community artifact (see build.gradle.kts).
       - name: Build and test
         if: runner.os != 'Windows'
         run: ./gradlew build --console=plain
@@ -36,6 +36,12 @@ jobs:
         if: runner.os == 'Windows'
         run: .\gradlew.bat build --console=plain
 
+      # Marketplace rejection-criteria check (compatibility + internal API
+      # usage) — once on the fastest leg is enough.
+      - name: Verify plugin
+        if: runner.os == 'Linux'
+        run: ./gradlew verifyPlugin --console=plain
+
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -43,3 +49,28 @@ jobs:
           name: test-reports-${{ matrix.os }}
           path: build/reports/tests/test/
           retention-days: 7
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Unit tests (Vitest)
+        working-directory: web
+        run: npm test
+
+      - name: Install Playwright browsers
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E tests (Playwright, MockBridge)
+        working-directory: web
+        run: npx playwright test

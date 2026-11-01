@@ -89,6 +89,7 @@ pi-agent-idea/
   node 脚本自动注入解释器（含 Windows `node.exe`）。解析结果含版本号
   （`pi --version`）。
 - 启动参数：`pi --mode rpc`，可选 `--session-dir`、`--session <path>`、`--model`、`--provider`、`--no-session` 等；`cwd` = 项目根。
+- **工具审批扩展**（v0.4.0）：随插件内置 `pi-approve.js`（资源 `pi-approve/`），每次启动解压到 `<IDE config>/pi-agent/` 并以 `--extension <path>` 加载——只影响插件拉起的 pi，不污染用户扩展目录；环境变量 `PI_APPROVE_POLICY` 指向策略 JSON `{mode: ask|yolo, allow: []}`，扩展在每次 `tool_call` 时重读（`PiApprovalSupport`），切 ask/yolo 无需重启 pi。扩展按工具自带 annotations（`readOnlyHint`/`destructiveHint`）决定放行或弹 `ctx.ui.confirm`，RPC 模式下确认框转成 `extension_ui_request` 事件走给前端。
 - 环境变量：合并 IDE 环境与用户 PATH 修正（否则 GUI 启动的 IDE 常找不到 nvm 工具）。
 - 健康管理：进程意外退出 → 广播 `processExited` 事件（含 exitCode/stderr 尾部）→ 前端显示可重试卡片；"重启会话" 动作重建进程并 `get_messages` 回放。
 - 复用策略：ToolWindow 关闭不杀进程（后台继续跑任务，符合"agent 任务"预期）；项目关闭时终止。
@@ -129,6 +130,7 @@ Java → JS : GET /bridge/poll?cursor=N   （长轮询，25s 上限）
   - `session`：state（模型/思考等级/isStreaming）、消息列表（`ChatItem[]`：UserItem | AssistantItem(text/thinking/toolcall 块) | ToolCardItem）、队列、stats
   - `ui`：当前页签、命令面板、模型选择器
 - 事件归约器（`applyEvent`）：把 pi 事件流（`message_start/update/end`、`tool_execution_*`、`agent_*`、`queue_update`、`auto_retry_*`、`compaction_*`）归约为 `ChatItem[]` 的增量更新 —— **这是前端唯一的复杂逻辑，纯函数，单测覆盖**。
+- **审批通路**（v0.4.0）：`extension_ui_request`（confirm/select/input/editor）在 store 层入队（`approvals`），`ApprovalCard` 渲染在 Composer 上方，用户点 Allow/Deny 回 `extension_ui_response`（confirm → `confirmed`，其余 → `cancelled`）；fire-and-forget 方法（notify/setStatus/…）解析为 null 忽略。`agent_settled`/abort 清空过期卡片。解析逻辑为纯函数 `approvalFromEvent`（单测覆盖）。
 - 样式：手写 CSS（跟随 IDE 主题：Java 注入 `data-theme=light|dark` + CSS 变量，色值取自 IDE ThemeJson）。
 
 ## 7. 管理层（`manage/`）
