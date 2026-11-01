@@ -30,6 +30,11 @@
   必须放在顶层 `<actions>` 节。v0.1.0–v0.4.0 的 Explain/Fix/Send Selection、
   Send File、Generate Commit Message 在真机上均不可见（真机验收被跳过所以
   一直没暴露）；已用内置电脑操作在 WebStorm 2026.2 上自动验证注册成功
+- **审批响应必须裸发（真机联调发现）**：`extension_ui_response` 是 extension
+  UI 子协议的**通知**——pi 按记录内的 id 解析挂起的对话框且从不回包；经
+  `rpc.request` 关联发送会被包一层请求 id，pi 无法解析导致对话框死等。
+  现走 fire-and-forget 通路（对齐官方 rpc-extension-ui 示例客户端的裸写
+  stdin 行为）；真机验证 Allow 执行写入并续轮、Deny 阻断并告知原因
 
 ### 实现
 - `process/PiApprovalSupport`：扩展每次启动从插件资源解压到
