@@ -19,6 +19,13 @@
 - CI：`verifyPlugin`（Marketplace 拒收标准检查）进 Linux 腿；新增 `web` job
   （Vitest + Playwright chromium）
 
+### 修复
+- **编辑器右键菜单自首个版本起从未注册（重大修复）**：`<group>`/`<action>` 声明
+  一直写在 `<extensions>` 内——插件描述符解析器会静默忽略该非法位置的动作，
+  必须放在顶层 `<actions>` 节。v0.1.0–v0.4.0 的 Explain/Fix/Send Selection、
+  Send File、Generate Commit Message 在真机上均不可见（真机验收被跳过所以
+  一直没暴露）；已用内置电脑操作在 WebStorm 2026.2 上自动验证注册成功
+
 ### 实现
 - `process/PiApprovalSupport`：扩展每次启动从插件资源解压到
   `<IDE config>/pi-agent/`（升级即生效），策略 JSON 读写
@@ -49,7 +56,7 @@ VCS 集成：用 Pi 生成 Commit Message（不进聊天会话），加验证收
 - PiCliRunner 支持 stdin 管道（写入线程 + 超时关闭，超时按进程树清理）
 
 ### 修复
-- **CLI 子进程超时清理整个进程树**：shell 可能 fork（而非 exec）尾部命令，
+- CLI 子进程超时清理整个进程树：shell 可能 fork（而非 exec）尾部命令，
   只强杀直接子进程会留下持有 stdout 管道的孤儿孙进程，排水线程在 Linux 上
   等不到 EOF；现在连同 `ProcessHandle.descendants()` 一起清理，管道闭合、
   读线程正常退出

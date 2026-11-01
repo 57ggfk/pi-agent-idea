@@ -107,6 +107,10 @@
 - ☑ CI 加厚：verifyPlugin（Linux 腿）+ web job（Vitest + Playwright chromium）
 - ☑ 测试：Vitest 23（+4）、Playwright 24（+3：批准/拒绝/yolo）全绿；
   mock-pi.mjs `MOCK_PI_APPROVAL` 与 MockBridge `?approval=1` 审批轮次
+- ☑ **重大修复：编辑器右键菜单从未注册**——`<group>`/`<action>` 一直误置于
+  `<extensions>` 内被描述符解析器静默忽略，须置于顶层 `<actions>` 节；
+  v0.1.0–v0.4.0 全部编辑器/VCS 动作在真机不可见。内置电脑操作（Find Action）
+  在 WebStorm 2026.2 上自动复现并验证修复
 - ☐ 真机验收（runIde 中让 pi 改文件走审批两路径；用户操作）
 
 ## Phase 5 —— 发布

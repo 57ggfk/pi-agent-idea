@@ -37,7 +37,12 @@
                                  id="dev.pi.agent.settings"
                                  displayName="Pi Agent"
                                  instance="dev.pi.agent.settings.PiAgentSettingsConfigurable"/>
+    </extensions>
 
+    <!-- Actions MUST live in a top-level <actions> section: <group>/<action>
+         inside <extensions> is silently ignored by the descriptor parser
+         (the editor context menus never registered in v0.1.0–v0.4.0). -->
+    <actions>
         <!-- Editor integration (selection-based). -->
         <group id="PiAgent.EditorPopup" popup="true" text="Pi Agent" description="Send code to the pi agent">
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
@@ -85,5 +90,5 @@
             <add-to-group group-id="Vcs.Commit.PrimaryCommitActions" anchor="first"/>
             <keyboard-shortcut keymap="$default" first-keystroke="alt shift C"/>
         </action>
-    </extensions>
+    </actions>
 </idea-plugin>
