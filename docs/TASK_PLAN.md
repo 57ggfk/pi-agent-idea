@@ -83,6 +83,8 @@
 - ☑ verifyPlugin 修复并真正通过：补 pluginVerification.ides（原来 No IDEs Found
   即失败）；PiAgentToolWindowFactory 改 Java 实现，消除 Kotlin 接口默认方法
   转发器造成的 6 处 @Internal API 误报（verifier ignore 机制不覆盖 usage）
+- ☑ 版本号 0.2.1 → 0.3.1（build.gradle.kts）；CHANGELOG「Unreleased」切分为
+  0.3.0 / 0.3.1（0.3.0 未单独发布，其内容随 0.3.1 一同发出）
 - ☐ 真机验收（MANUAL_TEST.md「Commit Message 生成」节，用户操作）
 
 ## Phase 5 —— 发布

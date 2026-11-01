@@ -1,10 +1,44 @@
 # Changelog
 
-## Unreleased
+## 0.3.1 — 2026-11-01
 
-一、跨平台：源码 / 构建 / 运行全面兼容 macOS、Windows 与 Linux（含 WSL 边界说明）。
-二、环境约束对标 cc gui 重定。
-三、设置页与会话生命周期补全。
+VCS 集成：用 Pi 生成 Commit Message（不进聊天会话），加验证收尾修复。
+（0.3.0 未单独发布，其内容随本版本一同发出。）
+
+### 新增
+- **VCS 集成：用 Pi 生成 Commit Message**（提交工具窗 + 模态提交对话框）：
+  提交面板「Generate Commit Message with Pi」（Alt+Shift+C）把**已勾选变更的
+  unified diff**（`IdeaTextPatchBuilder` 构建、96KB 截断、二进制文件降级为注释行）
+  交给一次性无头 pi（`pi --print --no-session --no-tools --no-mcp -ne -ns -np -nc`，
+  prompt 经 stdin 管道传入，300s 超时），要求 Conventional Commits 格式，
+  结果清洗代码围栏后写入提交信息框；不进聊天会话、不改 agent 上下文；
+  失败（pi 缺失/超时/空输出）走「Pi Agent」通知
+- PiCliRunner 支持 stdin 管道（写入线程 + 超时关闭，超时按进程树清理）
+
+### 修复
+- **CLI 子进程超时清理整个进程树**：shell 可能 fork（而非 exec）尾部命令，
+  只强杀直接子进程会留下持有 stdout 管道的孤儿孙进程，排水线程在 Linux 上
+  等不到 EOF；现在连同 `ProcessHandle.descendants()` 一起清理，管道闭合、
+  读线程正常退出
+- **思考等级选择器改为自定义弹层**：原生 select 弹层会被工具窗边缘裁剪，
+  靠近窗口底部时改为向上弹开
+- **verifyPlugin 真正跑起来且通过**：补 `pluginVerification.ides`（此前
+  "No IDEs Found" 直接失败）；`PiAgentToolWindowFactory` 改为 Java 实现 ——
+  Kotlin 实现带默认方法的 `ToolWindowFactory`（上游以 jvm-default=all 编译）
+  会生成 getIcon/getAnchor/manage 转发器，被 verifier 计为 6 处 @Internal API
+  用法（verifier 的 ignore 机制只覆盖 problem 不覆盖 usage，无法豁免）；
+  转为 Java 后继承接口默认值，verifier 结果从 "6 internal API" 降到 0
+
+### 测试
+- Commit Message 生成 8 例单测：unified diff 拼装（修改/新增/删除/行数推导/
+  截断/二进制）、prompt、回复清洗
+- 测试执行器超时路径关闭进程流、静默进程用例在测试体内销毁进程，
+  修掉 ThreadLeakTracker 顺序导致的线程泄漏误报
+
+## 0.3.0 — 2026-11-01
+
+跨平台：源码 / 构建 / 运行全面兼容 macOS、Windows 与 Linux（含 WSL 边界说明）；
+环境约束对标 cc gui 重定；设置页与会话生命周期补全。
 
 ### 破坏性变更（环境约束）
 - **支持区间改为 2023.3–2026.3**（`sinceBuild=233` / `untilBuild=263.*`，
@@ -39,27 +73,11 @@
   删除（根目录校验防误删）；聊天工具栏 **Fork**（从最后一条 user 消息分叉）；
   会话导出为免脚本内联样式的独立 HTML 文件
 - `Explain File with Pi` 动作接入右键菜单（已实现但从未注册）
-- **VCS 集成：用 Pi 生成 Commit Message**（提交工具窗 + 模态提交对话框）：
-  提交面板「Generate Commit Message with Pi」（Alt+Shift+C）把**已勾选变更的
-  unified diff**（`IdeaTextPatchBuilder` 构建、96KB 截断、二进制文件降级为注释行）
-  交给一次性无头 pi（`pi --print --no-session --no-tools --no-mcp -ne -ns -np -nc`，
-  prompt 经 stdin 管道传入，300s 超时），要求 Conventional Commits 格式，
-  结果清洗代码围栏后写入提交信息框；不进聊天会话、不改 agent 上下文；
-  失败（pi 缺失/超时/空输出）走「Pi Agent」通知
 - CI：GitHub Actions 三系统矩阵（ubuntu/windows/macos）跑 `build` + `test`
 - Windows IDE-e2e 脚本 `scripts/e2e-ide.ps1`（mock / `-Real` 均可）；
   e2e-ide*.sh 的 JAVA_HOME 探测支持 Linux；node-env.sh 不再钉死 Node 版本
 - mock（web MockBridge 与 test/mock-pi.mjs）补 `fork`/`clone`/
   `export_html`/`switch_session`，会话链路可被 e2e 全覆盖
-
-### 修复（v0.3.1 验证收尾）
-- **verifyPlugin 真正跑起来且通过**：补 `pluginVerification.ides`（此前
-  "No IDEs Found" 直接失败）；`PiAgentToolWindowFactory` 改为 Java 实现 ——
-  Kotlin 实现带默认方法的 `ToolWindowFactory`（上游以 jvm-default=all 编译）
-  会生成 getIcon/getAnchor/manage 转发器，被 verifier 计为 6 处 @Internal API
-  用法（verifier 的 ignore 机制只覆盖 problem 不覆盖 usage，无法豁免）；
-  转为 Java 后继承接口默认值，verifier 结果从
-  "6 internal API" 降到 0，全部级别通过
 
 ## 0.2.1 — 2026-10-31
 

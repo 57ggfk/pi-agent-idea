@@ -1,11 +1,11 @@
 # 手工验收清单（真机 IDEA）
 
-> 插件：Pi Agent v0.2.1 · 目标：IntelliJ IDEA 2023.3+（全系 JetBrains IDE，233–263.\*）
+> 插件：Pi Agent v0.3.1 · 目标：IntelliJ IDEA 2023.3+（全系 JetBrains IDE，233–263.\*）
 > 前置：本机装有 pi（`pi --version`）；IDEA 可用任意模型配置。
 
 ## 安装
 
-- [ ] `Settings → Plugins → ⚙ → Install Plugin from Disk…` 选择 `build/distributions/pi-agent-idea-0.2.1.zip`（或直接解压到插件目录：macOS `~/Library/Application Support/JetBrains/IntelliJIdea2026.2/plugins/`，Windows `%APPDATA%\JetBrains\IntelliJIdea2026.2\plugins\`，Linux `~/.local/share/JetBrains/IntelliJIdea2026.2/plugins/`）→ 重启 IDE
+- [ ] `Settings → Plugins → ⚙ → Install Plugin from Disk…` 选择 `build/distributions/pi-agent-idea-0.3.1.zip`（或直接解压到插件目录：macOS `~/Library/Application Support/JetBrains/IntelliJIdea2026.2/plugins/`，Windows `%APPDATA%\JetBrains\IntelliJIdea2026.2\plugins\`，Linux `~/.local/share/JetBrains/IntelliJIdea2026.2/plugins/`）→ 重启 IDE
 - [ ] 重启后 `Settings → Plugins` 中出现 **Pi Agent**，无加载报错（`Help → Show Log` 无 SEVERE）
 
 ## Chat（对话）
