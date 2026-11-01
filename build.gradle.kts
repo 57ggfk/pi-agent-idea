@@ -197,6 +197,20 @@ intellijPlatform {
             sinceBuild = "233"
             untilBuild = provider { "263.*" }
         }
+        // Marketplace change-notes: the topmost CHANGELOG section for the
+        // current version (## <version> ... up to the next section), with
+        // the heading line itself dropped.
+        changeNotes = provider {
+            val v = project.version.toString()
+            file("CHANGELOG.md").readText()
+                .substringAfter("## $v", "")
+                .substringBefore("\n## ")
+                .lineSequence()
+                .drop(1)
+                .joinToString("\n")
+                .trim()
+                .ifEmpty { "Release $v" }
+        }
     }
 
     pluginVerification {
@@ -211,5 +225,16 @@ intellijPlatform {
             org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel.COMPATIBILITY_PROBLEMS,
             org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel.INTERNAL_API_USAGES,
         )
+    }
+
+    publishing {
+        // JetBrains Marketplace credentials. Create the token at
+        // plugins.jetbrains.com → profile icon → My Tokens, then either
+        //   PI_MARKETPLACE_TOKEN=... ./gradlew publishPlugin
+        // or -PpublishToken=... . Channel: "default" for stable releases,
+        // any name (e.g. "beta") for pre-releases.
+        token = providers.environmentVariable("PI_MARKETPLACE_TOKEN")
+            .orElse(providers.gradleProperty("publishToken"))
+        channels.add(providers.gradleProperty("publishChannel").orElse("default"))
     }
 }
