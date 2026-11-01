@@ -23,7 +23,9 @@ import java.io.File
 object PiApprovalSupport {
     private val LOG = Logger.getInstance(PiApprovalSupport::class.java)
 
-    private const val EXTENSION_RESOURCE = "/pi-approve/pi-approve.js"
+    // No leading slash: PluginClassLoader resolves root-relative paths and
+    // rejects the "/..." form (plain ClassLoader semantics are the opposite).
+    private const val EXTENSION_RESOURCE = "pi-approve/pi-approve.js"
     private const val EXTENSION_FILE_NAME = "pi-approve.js"
     private const val POLICY_FILE_NAME = "pi-approval-policy.json"
 
