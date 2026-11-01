@@ -57,7 +57,12 @@ object PiCliRunner {
             val finished = proc.waitFor(timeoutSeconds, TimeUnit.SECONDS)
             if (!finished) {
                 proc.destroyForcibly()
-                // Streams close with the process; give the readers a moment to hit EOF.
+                // Orphaned grandchildren can keep the pipes open long after
+                // the direct child died; closing our ends unblocks the drain
+                // threads immediately instead of leaving them parked in read.
+                runCatching { proc.inputStream.close() }
+                runCatching { proc.errorStream.close() }
+                // Give the readers a moment to observe the closed streams.
                 drainOut.join(1000)
                 drainErr.join(1000)
                 CliResult(

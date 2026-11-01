@@ -183,6 +183,9 @@ class PiRpcClientTest {
         assertTrue(ex.cause is java.util.concurrent.TimeoutException, "cause: ${ex.cause}")
         // Fails at the 500ms deadline, not at future.get's 10s bound.
         assertTrue(System.currentTimeMillis() - start < 5_000, "timeout should fire at the configured deadline")
+        // Kill in-test: the platform leak tracker runs before @AfterTest, and
+        // the client's reader thread only unwinds once the process dies.
+        proc.destroyForcibly()
     }
 
     @Test
@@ -209,6 +212,9 @@ class PiRpcClientTest {
         // pending, so a fresh wait attempt is legal.
         assertFalse(future.isDone)
         c.close()
+        // Same leak-tracker ordering as above: end the process here, not in
+        // @AfterTest.
+        proc.destroyForcibly()
     }
 
     private fun JsonObject.fieldOrNull(name: String): String? =
