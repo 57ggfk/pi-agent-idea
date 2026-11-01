@@ -1,30 +1,17 @@
 package dev.pi.agent.toolwindow
 
-import com.intellij.openapi.project.Project
-import com.intellij.openapi.util.Disposer
-import com.intellij.openapi.wm.ToolWindow
-import com.intellij.openapi.wm.ToolWindowFactory
-import com.intellij.ui.content.ContentFactory
-import com.intellij.ui.jcef.JBCefBrowser
 import com.intellij.ide.BrowserUtil
+import com.intellij.openapi.Disposable
+import com.intellij.openapi.project.Project
+import com.intellij.ui.jcef.JBCefBrowser
 import dev.pi.agent.ui.LocalUiServer
 import org.cef.browser.CefBrowser
 import org.cef.browser.CefFrame
 import org.cef.handler.CefRequestHandlerAdapter
 import org.cef.network.CefRequest
+import java.awt.BorderLayout
 import javax.swing.BorderFactory
 import javax.swing.JPanel
-
-class PiAgentToolWindowFactory : ToolWindowFactory {
-
-    override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
-        val panel = PiAgentPanel(project)
-        val content = ContentFactory.getInstance().createContent(panel, "", false)
-        // Without this the panel's dispose() never runs and the JCEF browser leaks.
-        Disposer.register(content, panel)
-        toolWindow.contentManager.addContent(content)
-    }
-}
 
 /**
  * Hosts the web UI. The bridge transport is HTTP (loopback, see LocalUiServer),
@@ -33,7 +20,7 @@ class PiAgentToolWindowFactory : ToolWindowFactory {
  * Navigations away from the UI server (markdown links) are handed to the
  * system browser so they can never hijack the SPA.
  */
-class PiAgentPanel(project: Project) : JPanel(), com.intellij.openapi.Disposable {
+class PiAgentPanel(project: Project) : JPanel(), Disposable {
 
     private val browser = JBCefBrowser()
 
@@ -53,9 +40,9 @@ class PiAgentPanel(project: Project) : JPanel(), com.intellij.openapi.Disposable
     }
 
     init {
-        layout = java.awt.BorderLayout()
+        layout = BorderLayout()
         border = BorderFactory.createEmptyBorder()
-        add(browser.component, java.awt.BorderLayout.CENTER)
+        add(browser.component, BorderLayout.CENTER)
         browser.jbCefClient.addRequestHandler(linkHandler, browser.cefBrowser)
         // uiUrlFor carries this project's bridge token (see LocalUiServer) so
         // each IDE window talks to its own project's bridge.

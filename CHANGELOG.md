@@ -39,11 +39,27 @@
   删除（根目录校验防误删）；聊天工具栏 **Fork**（从最后一条 user 消息分叉）；
   会话导出为免脚本内联样式的独立 HTML 文件
 - `Explain File with Pi` 动作接入右键菜单（已实现但从未注册）
+- **VCS 集成：用 Pi 生成 Commit Message**（提交工具窗 + 模态提交对话框）：
+  提交面板「Generate Commit Message with Pi」（Alt+Shift+C）把**已勾选变更的
+  unified diff**（`IdeaTextPatchBuilder` 构建、96KB 截断、二进制文件降级为注释行）
+  交给一次性无头 pi（`pi --print --no-session --no-tools --no-mcp -ne -ns -np -nc`，
+  prompt 经 stdin 管道传入，300s 超时），要求 Conventional Commits 格式，
+  结果清洗代码围栏后写入提交信息框；不进聊天会话、不改 agent 上下文；
+  失败（pi 缺失/超时/空输出）走「Pi Agent」通知
 - CI：GitHub Actions 三系统矩阵（ubuntu/windows/macos）跑 `build` + `test`
 - Windows IDE-e2e 脚本 `scripts/e2e-ide.ps1`（mock / `-Real` 均可）；
   e2e-ide*.sh 的 JAVA_HOME 探测支持 Linux；node-env.sh 不再钉死 Node 版本
 - mock（web MockBridge 与 test/mock-pi.mjs）补 `fork`/`clone`/
   `export_html`/`switch_session`，会话链路可被 e2e 全覆盖
+
+### 修复（v0.3.1 验证收尾）
+- **verifyPlugin 真正跑起来且通过**：补 `pluginVerification.ides`（此前
+  "No IDEs Found" 直接失败）；`PiAgentToolWindowFactory` 改为 Java 实现 ——
+  Kotlin 实现带默认方法的 `ToolWindowFactory`（上游以 jvm-default=all 编译）
+  会生成 getIcon/getAnchor/manage 转发器，被 verifier 计为 6 处 @Internal API
+  用法（verifier 的 ignore 机制只覆盖 problem 不覆盖 usage，无法豁免）；
+  转为 Java 后继承接口默认值，verifier 结果从
+  "6 internal API" 降到 0，全部级别通过
 
 ## 0.2.1 — 2026-10-31
 

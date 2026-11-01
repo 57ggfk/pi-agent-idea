@@ -55,6 +55,21 @@
 - [ ] 勾选自动打开 → 新开项目窗口 → Pi Agent 工具窗自动激活
 - [ ] 清空路径 → Apply → 恢复自动发现
 
+## Commit Message 生成（VCS 集成）
+
+前置：项目有 Git/Mercurial 等变更，打开提交面板（工具窗或模态对话框均可）。
+
+- [ ] 勾选若干变更 → 提交面板出现 **Generate Commit Message with Pi**（灯泡图标，
+      Alt+Shift+C），位于提交按钮旁下拉与消息框旁工具条
+- [ ] 未勾选任何变更时按钮置灰
+- [ ] 点击 → 后台进度条「Asking pi to write the commit message…」→ 完成后提交信息框
+      自动填入 Conventional Commits 风格消息（首行 ≤72 字符），并出现成功气泡
+- [ ] 生成过程中可取消 → 收到取消通知，信息框不变
+- [ ] 生成的内容**不进入** Pi Agent 聊天会话（Chat 页看不到该请求与响应）
+- [ ] 异常路径：清空设置里的 pi 路径并使其不可发现 → 点击生成 → 出现错误气泡
+      （Failed to generate commit message: pi executable not found）
+- [ ] 大 diff（>96KB）也能生成（diff 被截断后仍发送）
+
 ## Manage（管理）
 
 - [ ] 顶部横幅显示 pi 版本与二进制路径（找不到 pi 时显示安装引导命令）
@@ -72,4 +87,4 @@
 ## 自动化对应
 
 以上 Chat/Sessions/Manage 的核心路径已由三层自动化覆盖：
-`./gradlew test`（14 例）· `cd web && npx playwright test`（11 例）· `bash scripts/e2e-ide.sh`（真实 JCEF 全链路）
+`./gradlew test`（39 例，含 Commit Message 生成器的 diff 拼装/清洗单测）· `cd web && npx playwright test`（19 例）· `bash scripts/e2e-ide.sh`（真实 JCEF 全链路）

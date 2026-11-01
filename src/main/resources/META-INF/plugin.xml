@@ -70,5 +70,20 @@
                     text="Explain File with Pi"
                     description="Ask pi to summarize the whole file and flag anything suspicious"/>
         </group>
+
+        <!-- Commit panel: generate the commit message with a headless one-shot
+             pi. Vcs.MessageActionGroup renders in the commit tool window
+             toolbar next to the message-history button;
+             Vcs.Commit.PrimaryCommitActions is the dropdown beside the Commit
+             button. Both exist across 233–263. -->
+        <action id="PiAgent.GenerateCommitMessage"
+                class="dev.pi.agent.vcs.PiGenerateCommitMessageAction"
+                icon="AllIcons.Actions.IntentionBulb"
+                text="Generate Commit Message with Pi"
+                description="Ask pi to write a Conventional Commits message for the included changes">
+            <add-to-group group-id="Vcs.MessageActionGroup" anchor="first"/>
+            <add-to-group group-id="Vcs.Commit.PrimaryCommitActions" anchor="first"/>
+            <keyboard-shortcut keymap="$default" first-keystroke="alt shift C"/>
+        </action>
     </extensions>
 </idea-plugin>

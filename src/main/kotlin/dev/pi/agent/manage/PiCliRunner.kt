@@ -23,7 +23,12 @@ object PiCliRunner {
 
     private val LOG = Logger.getInstance(PiCliRunner::class.java)
 
-    fun run(args: List<String>, timeoutSeconds: Long = 60): CliResult {
+    /**
+     * Runs `pi` with [args]. When [stdinText] is non-null it is piped to the
+     * child's stdin (and stdin is closed right after): prompts bigger than
+     * the OS command-line limit (e.g. large diffs) must travel this way.
+     */
+    fun run(args: List<String>, timeoutSeconds: Long = 60, stdinText: String? = null): CliResult {
         val pi = PiLocator.locate()?.path
             ?: return CliResult(-1, "", "pi executable not found")
 
@@ -37,8 +42,8 @@ object PiCliRunner {
         // Management commands must not try to talk to a TUI.
         pb.environment()["PI_NO_COLOR"] = "1"
 
-        LOG.info("pi cli: ${args.joinToString(" ")}")
-        return runProcess(pb, timeoutSeconds)
+        LOG.info("pi cli: ${args.joinToString(" ")}${if (stdinText != null) " (stdin: ${stdinText.length} chars)" else ""}")
+        return runProcess(pb, timeoutSeconds, stdinText)
     }
 
     /**
@@ -47,13 +52,18 @@ object PiCliRunner {
      * exceeds the OS pipe buffer (~64KB) because the child blocks on write and
      * can never exit.
      */
-    internal fun runProcess(pb: ProcessBuilder, timeoutSeconds: Long): CliResult {
+    internal fun runProcess(pb: ProcessBuilder, timeoutSeconds: Long, stdinText: String? = null): CliResult {
         return try {
             val proc = pb.start()
             val stdout = StringBuilder()
             val stderr = StringBuilder()
             val drainOut = drainThread(proc.inputStream, stdout)
             val drainErr = drainThread(proc.errorStream, stderr)
+            // Write stdin from its own thread: a prompt larger than the pipe
+            // buffer blocks the writer until the child consumes it, and the
+            // child may exit early (bad flag, auth error) — the closer below
+            // then unblocks us instead of hanging forever.
+            val feedIn = stdinText?.let { writerThread(proc.outputStream, it) }
             val finished = proc.waitFor(timeoutSeconds, TimeUnit.SECONDS)
             if (!finished) {
                 // Kill the whole tree: orphaned grandchildren (sleep/ping under
@@ -62,8 +72,10 @@ object PiCliRunner {
                 runCatching { proc.toHandle().descendants().forEach { it.destroyForcibly() } }
                 proc.destroyForcibly()
                 // Belt and suspenders for platforms where descendants may miss.
+                runCatching { proc.outputStream.close() }
                 runCatching { proc.inputStream.close() }
                 runCatching { proc.errorStream.close() }
+                feedIn?.join(1000)
                 // Give the readers a moment to observe the closed pipes.
                 drainOut.join(1000)
                 drainErr.join(1000)
@@ -74,6 +86,7 @@ object PiCliRunner {
                 )
             } else {
                 // Exited: both streams reach EOF quickly. Unbounded join is safe.
+                feedIn?.join(10_000)
                 drainOut.join(10_000)
                 drainErr.join(10_000)
                 CliResult(proc.exitValue(), stdout.toString(), stderr.toString())
@@ -93,6 +106,16 @@ object PiCliRunner {
                 // stream closed with the process
             }
         }, "pi-cli-drain").apply { isDaemon = true; start() }
+
+    /** Writes the whole [text] to [stream], then closes it. */
+    private fun writerThread(stream: java.io.OutputStream, text: String): Thread =
+        Thread({
+            try {
+                stream.use { it.write(text.toByteArray(Charsets.UTF_8)); it.flush() }
+            } catch (_: java.io.IOException) {
+                // child exited before reading everything
+            }
+        }, "pi-cli-feedin").apply { isDaemon = true; start() }
 
     /** Parses the first JSON value found in stdout (CLI wrappers may add noise). */
     fun parseJsonOrNull(result: CliResult): kotlinx.serialization.json.JsonElement? {

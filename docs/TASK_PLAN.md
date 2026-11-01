@@ -71,6 +71,20 @@
 - ☑ 长轮询 oldest 缺口检测补救；ensureWired 竞态；PI_CODING_AGENT_DIR；loginShellPath 缓存
 - ☐ 真机验收（MANUAL_TEST.md，用户操作）+ GitHub Release
 
+## Phase 8 —— v0.3.1 VCS 集成（2026-11-01）
+- ☑ **Generate Commit Message with Pi**：提交面板动作（Vcs.MessageActionGroup +
+  Vcs.Commit.PrimaryCommitActions + Alt+Shift/C）→ 已勾选变更 unified diff
+  （IdeaTextPatchBuilder，96KB 截断、二进制降级）→ 一次性无头 pi
+  （`--print --no-session --no-tools --no-mcp -ne -ns -np -nc`，stdin 传 prompt，
+  300s 超时，不进聊天会话）→ 清洗围栏 → 填入提交信息框；失败/取消走通知
+- ☑ PiCliRunner 支持 stdin 管道（写入线程 + 超时关闭，复用进程树清理）
+- ☑ 单测 8 例：unified diff 拼装（修改/新增/删除/行数推导/截断/二进制）、
+  prompt、回复清洗
+- ☑ verifyPlugin 修复并真正通过：补 pluginVerification.ides（原来 No IDEs Found
+  即失败）；PiAgentToolWindowFactory 改 Java 实现，消除 Kotlin 接口默认方法
+  转发器造成的 6 处 @Internal API 误报（verifier ignore 机制不覆盖 usage）
+- ☐ 真机验收（MANUAL_TEST.md「Commit Message 生成」节，用户操作）
+
 ## Phase 5 —— 发布
 - ☑ CHANGELOG + v0.1.0 tag + GitHub Release（附插件 zip）
 - ☑ 全量推送 GitHub（提交人：57ggfk <25079153+57ggfk@users.noreply.github.com>）

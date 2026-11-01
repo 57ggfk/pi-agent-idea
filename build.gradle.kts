@@ -25,20 +25,25 @@ repositories {
 val localIdeaPath = providers.gradleProperty("ideaPath").orNull?.takeIf { it.isNotBlank() }
 
 dependencies {
-    intellijPlatform {
-        if (localIdeaPath != null) {
-            local(localIdeaPath)
-        } else {
-            intellijIdeaCommunity("2024.3.1")
+        intellijPlatform {
+            if (localIdeaPath != null) {
+                local(localIdeaPath)
+            } else {
+                intellijIdeaCommunity("2024.3.1")
+            }
+            // VCS commit-panel integration (IdeaTextPatchBuilder,
+            // ChangesViewCommitPanel) lives in this platform module, which is
+            // not on the default compile classpath. Present in every IDE
+            // across 233–263, so no optional loading is needed.
+            bundledModule("intellij.platform.vcs.impl")
+            // JCEF classes (com.intellij.ui.jcef, org.cef) live in the platform on
+            // 2024.3 (no bundledPlugin needed); on 2026.2+ they moved to a bundled
+            // module, linked at runtime via the optional depends in plugin.xml.
+            instrumentationTools()
+            // Marketplace-equivalent binary compatibility checks (see
+            // intellijPlatform.pluginVerification below).
+            pluginVerifier()
         }
-        // JCEF classes (com.intellij.ui.jcef, org.cef) live in the platform on
-        // 2024.3 (no bundledPlugin needed); on 2026.2+ they moved to a bundled
-        // module, linked at runtime via the optional depends in plugin.xml.
-        instrumentationTools()
-        // Marketplace-equivalent binary compatibility checks (see
-        // intellijPlatform.pluginVerification below).
-        pluginVerifier()
-    }
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.12.0")
     // Explicit JUnit5 flavor: with Gradle 8.14 the plain kotlin("test")
     // resolves to the JUnit4 variant and the worker dies on missing
@@ -195,6 +200,11 @@ intellijPlatform {
     }
 
     pluginVerification {
+        // Verify against the lowest supported line — the same one we compile
+        // against — so the check is deterministic and cached locally.
+        ides {
+            ide(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.IntellijIdeaCommunity, "2024.3.1")
+        }
         // Marketplace rejection criteria: binary incompatibilities and
         // internal API usage only.
         failureLevel = listOf(
