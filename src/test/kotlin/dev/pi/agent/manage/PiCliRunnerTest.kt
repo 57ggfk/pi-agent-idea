@@ -56,12 +56,13 @@ class PiCliRunnerTest {
     @Test
     fun `timeout reports error and partial stdout`() {
         val start = System.currentTimeMillis()
-        // Windows: ping self-throttles (~1s per -n tick) with output nulled —
-        // cmd has no sleep builtin.
+        // PowerShell is a single child process, so destroyForcibly also ends
+        // it — cmd would leave the ping grandchild holding the stdout pipe
+        // open and the drain thread alive past the test.
         val result = PiCliRunner.runProcess(
             proc(
                 "echo partial; sleep 30",
-                listOf("cmd", "/c", "echo partial & ping -n 31 127.0.0.1 > nul"),
+                listOf("powershell", "-NoProfile", "-Command", "'partial'; Start-Sleep -Seconds 30"),
             ),
             timeoutSeconds = 1,
         )

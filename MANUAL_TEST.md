@@ -1,6 +1,6 @@
 # 手工验收清单（真机 IDEA）
 
-> 插件：Pi Agent v0.2.1 · 目标：IntelliJ IDEA 2026.2+（全系 JetBrains IDE，262.*）
+> 插件：Pi Agent v0.2.1 · 目标：IntelliJ IDEA 2023.3+（全系 JetBrains IDE，233–263.\*）
 > 前置：本机装有 pi（`pi --version`）；IDEA 可用任意模型配置。
 
 ## 安装
@@ -40,9 +40,20 @@
 
 ## Sessions（会话）
 
-- [ ] Sessions 页签列出本项目历史会话（名称/预览/时间）
+- [ ] Sessions 页签列出本项目历史会话（名称/预览/时间/**消息数**）
 - [ ] 点击某会话 → 回到 Chat 并回放历史消息
+- [ ] 会话行 **⧉ Clone** → 新会话出现并被切换
+- [ ] 会话行 **⇩ Export** → 弹出保存对话框 → 保存后收到"Pi session exported"气泡通知，HTML 可在浏览器打开（含完整消息，无脚本）
+- [ ] 会话行 **✕ Delete** → 确认框 → 会话从列表消失；删除**当前**会话自动落到新会话
+- [ ] Chat 工具栏 **Fork** → 以最后一条 user 消息为界分叉出新会话
 - [ ] 重启 IDE 后打开工具窗 → 上一会话历史自动回放
+
+## 设置（Settings → Tools → Pi Agent）
+
+- [ ] 设置页出现 **Pi Agent**，含 pi 路径输入框（带 Browse）与自动打开复选框
+- [ ] 填入 pi 路径 → Apply → 正在运行的 pi 自动重启，Manage 横幅显示新路径
+- [ ] 勾选自动打开 → 新开项目窗口 → Pi Agent 工具窗自动激活
+- [ ] 清空路径 → Apply → 恢复自动发现
 
 ## Manage（管理）
 

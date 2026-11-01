@@ -11,9 +11,11 @@
     agent state visible.
     ]]></description>
     <depends>com.intellij.modules.platform</depends>
-    <!-- JCEF ships as the bundled "Web Browser (JCEF)" plugin; depending on it
-         links our classloader to the JCEF classes (com.intellij.ui.jcef, org.cef). -->
-    <depends>com.intellij.modules.jcef</depends>
+    <!-- JCEF is a separate platform module in IntelliJ IDEA 2026.2+, but older
+         IDEs (2023.3–2026.1) provide JCEF from the platform without exposing
+         this module. Optional depends links the module's classes when present
+         and keeps the plugin loadable everywhere else. -->
+    <depends optional="true" config-file="jcef-features.xml">com.intellij.modules.jcef</depends>
 
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow id="Pi Agent"
@@ -29,6 +31,12 @@
         <!-- Status bar state indicator. -->
         <statusBarWidgetFactory id="PiAgentStatusBarWidget"
                                 implementation="dev.pi.agent.toolwindow.PiStatusBarWidgetFactory"/>
+
+        <!-- Settings → Tools → Pi Agent: custom pi path, auto-open. -->
+        <applicationConfigurable parentId="tools"
+                                 id="dev.pi.agent.settings"
+                                 displayName="Pi Agent"
+                                 instance="dev.pi.agent.settings.PiAgentSettingsConfigurable"/>
 
         <!-- Editor integration (selection-based). -->
         <group id="PiAgent.EditorPopup" popup="true" text="Pi Agent" description="Send code to the pi agent">
@@ -57,6 +65,10 @@
                     class="dev.pi.agent.editor.SendFileToPi"
                     text="Send File to Pi Agent"
                     description="Send the whole file to pi with its path context"/>
+            <action id="PiAgent.ExplainFile"
+                    class="dev.pi.agent.editor.ExplainFileWithPi"
+                    text="Explain File with Pi"
+                    description="Ask pi to summarize the whole file and flag anything suspicious"/>
         </group>
     </extensions>
 </idea-plugin>

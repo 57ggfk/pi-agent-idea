@@ -254,6 +254,27 @@ rl.on("line", (line) => {
       state.sessionId = "mock-session-" + Math.random().toString(36).slice(2, 8);
       respond(id, type, true, { cancelled: false });
       break;
+    case "switch_session":
+      // C8 gap: lets the IDE e2e harness exercise session switching.
+      state.messageCount = 0;
+      state.sessionId =
+        String(cmd["sessionPath"] ?? "").replace(/.*[/\\]/, "").replace(/\.jsonl$/, "") ||
+        "mock-session-switched";
+      respond(id, type, true, { cancelled: false });
+      break;
+    case "fork":
+    case "clone": {
+      state.messageCount = 0;
+      state.sessionId = "mock-session-" + Math.random().toString(36).slice(2, 8);
+      respond(id, type, true, {
+        sessionId: state.sessionId,
+        sessionPath: "/tmp/mock-sessions/" + state.sessionId + ".jsonl",
+      });
+      break;
+    }
+    case "export_html":
+      respond(id, type, true, { path: "/tmp/mock-export/session.html" });
+      break;
     case "set_model": {
       const found =
         cmd["modelId"] === "mock-model-mini"

@@ -157,7 +157,9 @@
    - 单元测试：RPC 协议解析（含 JSONL 分帧、Unicode 行分隔符陷阱）、响应/事件模型、会话文件解析。
    - 前端 e2e（Playwright + 独立 serve 前端 + MockBridge）：对话流、工具卡片、中止、命令补全。
    - IDE e2e（Gradle runIde + JCEF 远程调试端口 + CDP）：真实 JCEF 内走通「发送→流式回复→中止」全链路。
-3. **兼容性**：目标 IntelliJ Platform 2026.2（本机 IDEA 2026.2.3），`sinceBuild=262` / `untilBuild=262.*` 起步（后续放宽）。
+3. **兼容性**：支持区间 2023.3–2026.3（`sinceBuild=233` / `untilBuild=263.*`，
+   对标 cc gui）；编译目标固定为最低支持线 IntelliJ IDEA Community 2024.3.1，
+   使每次构建都验证全区间二进制兼容。
 4. **发布物**：`buildPlugin` 产出 zip；仓库含 CHANGELOG、README、标签发布。
 
 ## 7. 里程碑

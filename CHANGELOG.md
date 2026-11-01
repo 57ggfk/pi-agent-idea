@@ -2,7 +2,21 @@
 
 ## Unreleased
 
-跨平台：源码 / 构建 / 运行全面兼容 macOS、Windows 与 Linux（含 WSL 边界说明）。
+一、跨平台：源码 / 构建 / 运行全面兼容 macOS、Windows 与 Linux（含 WSL 边界说明）。
+二、环境约束对标 cc gui 重定。
+三、设置页与会话生命周期补全。
+
+### 破坏性变更（环境约束）
+- **支持区间改为 2023.3–2026.3**（`sinceBuild=233` / `untilBuild=263.*`，
+  对标 cc gui），不再只支持 2026.2
+- **编译目标固定为远程 IntelliJ IDEA Community 2024.3.1**（最低支持线）——
+  每次构建都在最低线上验证全区间二进制兼容；`ideaPath` 属性仅用于把
+  runIde/e2e 指向本地真实 IDE，构建不再依赖本地安装的 IDEA
+- 工具链对齐：bytecode 17（原 21）、Gradle 8.14.4（原 9.8.2）、
+  IPG 2.10.5（原 2.19.0）；接入 `pluginVerifier`（COMPATIBILITY_PROBLEMS +
+  INTERNAL_API_USAGES，对齐 Marketplace 拒收标准）
+- JCEF 依赖改为 optional depends（2026.2+ 走模块，2023.3–2026.1 走平台类路径），
+  插件在无 JCEF 模块的旧版上也能加载
 
 ### 修复
 - **Windows 上无法定位/启动 pi**：PiLocator 支持 `where pi` 与 Windows 候选路径
@@ -12,17 +26,24 @@
   项目根目录（应为 `web/`）；npm 硬编码 `/bin/zsh -lic`（Linux 无 zsh 即挂）→
   按存在性挑 shell（`$SHELL` → zsh → bash → sh）
 - 测试在 Windows 硬失败/整组跳过：PiCliRunnerTest 换用跨平台子进程命令，
-  PiRpcClientTest 的 node 探测支持 Windows —— 全部用例在 Windows 真实执行
+  PiRpcClientTest 的 node 探测支持 Windows，kotlin test 显式钉 JUnit5 变体
+  （Gradle 8.14 下默认解析到 JUnit4 会崩 worker）—— 全部用例在 Windows 真实执行
 - Windows 下会话列表静默为空：cwd 匹配前做分隔符/大小写归一化
 - Markdown 文件链接识别 Windows 路径（`C:\...`、`C:/...`、`~/...`），
   `~\` 开头路径在 IDE 侧正确展开
 
 ### 新增
-- 构建：本地 IDEA 按 OS 自动探测（macOS/Windows/Linux/WSL `/mnt/c`），
-  找不到时回退远程 IntelliJ IDEA Community 2026.2 —— 任何机器开箱可构建
+- **设置页**（Settings → Tools → Pi Agent）：自定义 pi 路径（发现失败时的
+  图形化逃生门，保存后自动重启运行中的 pi）+ 项目启动自动打开工具窗开关
+- **会话生命周期补全**：会话列表显示消息数；行内操作 克隆 / 导出 HTML /
+  删除（根目录校验防误删）；聊天工具栏 **Fork**（从最后一条 user 消息分叉）；
+  会话导出为免脚本内联样式的独立 HTML 文件
+- `Explain File with Pi` 动作接入右键菜单（已实现但从未注册）
 - CI：GitHub Actions 三系统矩阵（ubuntu/windows/macos）跑 `build` + `test`
 - Windows IDE-e2e 脚本 `scripts/e2e-ide.ps1`（mock / `-Real` 均可）；
   e2e-ide*.sh 的 JAVA_HOME 探测支持 Linux；node-env.sh 不再钉死 Node 版本
+- mock（web MockBridge 与 test/mock-pi.mjs）补 `fork`/`clone`/
+  `export_html`/`switch_session`，会话链路可被 e2e 全覆盖
 
 ## 0.2.1 — 2026-10-31
 

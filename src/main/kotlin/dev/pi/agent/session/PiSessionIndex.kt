@@ -15,6 +15,7 @@ data class SessionSummary(
     val name: String?,
     val preview: String?,
     val modifiedAt: Long,
+    val messageCount: Int = 0,
 )
 
 /**
@@ -68,13 +69,20 @@ object PiSessionIndex {
         var cwd: String? = null
         var name: String? = null
         var preview: String? = null
+        var messageCount = 0
 
         try {
             file.useLines { lines ->
-                var scanned = 0
+                var parsed = 0
                 for (line in lines) {
-                    scanned++
-                    if (scanned > 4000) break
+                    // Raw marker count runs over the whole file (cheap, no
+                    // JSON parsing) so the UI can show a message total even
+                    // for large sessions.
+                    if (MESSAGE_MARKER in line) messageCount++
+                    // Header extraction parses until complete, bounded.
+                    if (id != null && name != null && preview != null) continue
+                    parsed++
+                    if (parsed > 4000) continue
                     val obj = runCatching { json.parseToJsonElement(line) }.getOrNull() as? JsonObject ?: continue
                     when (obj["type"]?.jsonPrimitive?.content) {
                         "session" -> {
@@ -94,7 +102,6 @@ object PiSessionIndex {
                             }
                         }
                     }
-                    if (id != null && name != null && preview != null) break
                 }
             }
         } catch (_: Exception) {
@@ -109,7 +116,35 @@ object PiSessionIndex {
             name = name,
             preview = preview,
             modifiedAt = file.lastModified(),
+            messageCount = messageCount,
         )
+    }
+
+    /**
+     * Resolves a session path sent back by the UI: it must live under the
+     * sessions root and exist. The UI only echoes paths from [list], but
+     * these methods touch the filesystem so the path is never trusted
+     * blindly.
+     */
+    fun sessionFileFor(path: String, rootOverride: File? = null): File {
+        val candidate = File(path)
+        check(isInsideRoot(candidate, rootOverride ?: sessionsRoot())) {
+            "refusing to touch a path outside the sessions root: $path"
+        }
+        check(candidate.isFile) { "not a session file: $path" }
+        return candidate
+    }
+
+    /** Deletes a session file after verifying it lives under the sessions root. */
+    fun deleteSessionFile(path: String, rootOverride: File? = null) {
+        sessionFileFor(path, rootOverride).delete()
+    }
+
+    /** True when [candidate] is [root] itself or a descendant of it. */
+    internal fun isInsideRoot(candidate: File, root: File): Boolean {
+        val rootPath = runCatching { root.canonicalFile.path }.getOrNull() ?: return false
+        val candidatePath = runCatching { candidate.canonicalFile.path }.getOrNull() ?: return false
+        return candidatePath == rootPath || candidatePath.startsWith(rootPath + File.separator)
     }
 
     private fun firstUserText(content: kotlinx.serialization.json.JsonElement?): String {
@@ -123,4 +158,6 @@ object PiSessionIndex {
             else -> ""
         }
     }
+
+    private const val MESSAGE_MARKER = "\"type\":\"message\""
 }

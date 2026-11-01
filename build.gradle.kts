@@ -2,7 +2,7 @@ plugins {
     id("java")
     id("org.jetbrains.kotlin.jvm") version "2.4.21"
     id("org.jetbrains.kotlin.plugin.serialization") version "2.4.21"
-    id("org.jetbrains.intellij.platform") version "2.19.0"
+    id("org.jetbrains.intellij.platform") version "2.10.5"
 }
 
 group = "dev.pi"
@@ -16,100 +16,51 @@ repositories {
 }
 
 // ---------------------------------------------------------------------------
-// IDE dependency: prefer a local IntelliJ install (ideaPath property or per-OS
-// auto-detection); fall back to the remote Community artifact so any machine —
-// CI included — can build without an IDE installed.
+// IDE dependency: compile against the LOWEST supported platform line
+// (2024.3.1, mirroring cc gui's baseline) so every build — CI included —
+// verifies binary compatibility across the whole sinceBuild..untilBuild
+// range. Set ideaPath to a local IDE only to run runIde/e2e against your
+// real environment; it is never needed for building.
 // ---------------------------------------------------------------------------
-fun File.isIdeaInstall(): Boolean = when {
-    name.endsWith(".app") && resolve("Contents").isDirectory -> true
-    else -> listOf("bin/idea64.exe", "bin/idea.sh").any { resolve(it).isFile }
-}
-
-fun detectLocalIdea(): String? {
-    val home = System.getProperty("user.home")
-    val os = org.gradle.internal.os.OperatingSystem.current()
-    val candidates = mutableListOf<String>()
-    when {
-        os.isWindows -> {
-            val localAppData = System.getenv("LOCALAPPDATA") ?: "$home\\AppData\\Local"
-            val programFiles = System.getenv("ProgramFiles") ?: "C:\\Program Files"
-            candidates += listOf(
-                "$localAppData\\Programs\\IntelliJ IDEA",
-                "$localAppData\\Programs\\IntelliJ IDEA Ultimate",
-                "$programFiles\\JetBrains\\IntelliJ IDEA",
-            )
-            File("$localAppData\\JetBrains\\Toolbox\\apps").takeIf { it.isDirectory }
-                ?.walkTopDown()?.maxDepth(3)
-                ?.filter { it.isIdeaInstall() }
-                ?.forEach { candidates += it.absolutePath }
-        }
-        os.isMacOsX -> candidates += listOf(
-            "/Applications/IntelliJ IDEA.app",
-            "$home/Applications/IntelliJ IDEA.app",
-        )
-        else -> {
-            candidates += listOf("/opt/idea", "$home/idea")
-            File("$home/.local/share/JetBrains/Toolbox/apps").takeIf { it.isDirectory }
-                ?.walkTopDown()?.maxDepth(3)
-                ?.filter { it.isIdeaInstall() }
-                ?.forEach { candidates += it.absolutePath }
-            File("/snap").takeIf { it.isDirectory }
-                ?.listFiles { f -> f.name.startsWith("intellij-idea") }
-                ?.forEach { candidates += it.absolutePath }
-            // WSL: a Windows-side IDEA (mounted at /mnt/c) is fine for
-            // building the plugin; runIde from WSL is not supported.
-            val inWsl = File("/proc/version").takeIf { it.isFile }
-                ?.readText()?.lowercase()?.contains("microsoft") == true
-            if (inWsl) {
-                File("/mnt/c/Program Files/JetBrains").takeIf { it.isDirectory }
-                    ?.listFiles { f -> f.name.startsWith("IntelliJ IDEA") }
-                    ?.forEach { candidates += it.absolutePath }
-                File("/mnt/c/Users").takeIf { it.isDirectory }
-                    ?.listFiles { f -> f.isDirectory }
-                    ?.forEach { user ->
-                        candidates += "${user.absolutePath}/AppData/Local/Programs/IntelliJ IDEA"
-                    }
-            }
-        }
-    }
-    return candidates.firstOrNull { File(it).isIdeaInstall() }
-}
-
-val explicitIdeaPath = providers.gradleProperty("ideaPath")
-val localIdeaPath = explicitIdeaPath.orNull ?: detectLocalIdea()
-if (explicitIdeaPath.isPresent) {
-    val p = explicitIdeaPath.get()
-    if (!File(p).isIdeaInstall()) {
-        logger.warn("ideaPath='$p' does not look like an IntelliJ install (expected bin/idea64.exe, bin/idea.sh, or a .app bundle) — the build may fail.")
-    }
-} else if (localIdeaPath == null) {
-    logger.lifecycle("No local IntelliJ IDEA found — falling back to remote intellijIdeaCommunity 2026.2 (first build downloads ~1 GB). Set ideaPath in gradle.properties to pin a local install.")
-}
+val localIdeaPath = providers.gradleProperty("ideaPath").orNull?.takeIf { it.isNotBlank() }
 
 dependencies {
     intellijPlatform {
         if (localIdeaPath != null) {
-            local(providers.provider { localIdeaPath })
+            local(localIdeaPath)
         } else {
-            intellijIdeaCommunity("2026.2")
+            intellijIdeaCommunity("2024.3.1")
         }
-        // JCEF ships as a bundled plugin on 2026.2; its classes (com.intellij.ui.jcef, org.cef)
-        // must be on the compile classpath explicitly.
-        bundledPlugin("com.intellij.modules.jcef")
+        // JCEF classes (com.intellij.ui.jcef, org.cef) live in the platform on
+        // 2024.3 (no bundledPlugin needed); on 2026.2+ they moved to a bundled
+        // module, linked at runtime via the optional depends in plugin.xml.
+        instrumentationTools()
+        // Marketplace-equivalent binary compatibility checks (see
+        // intellijPlatform.pluginVerification below).
+        pluginVerifier()
     }
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.12.0")
-    testImplementation(kotlin("test"))
+    // Explicit JUnit5 flavor: with Gradle 8.14 the plain kotlin("test")
+    // resolves to the JUnit4 variant and the worker dies on missing
+    // org.junit.rules.TestRule.
+    testImplementation(kotlin("test-junit5"))
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    // The IntelliJ platform test framework (auto-added to the Test task by
+    // the IPG plugin) initializes its logger via a JUnit5
+    // LauncherSessionListener that touches JUnit4 classes; without these on
+    // the worker classpath the executor dies before running any test
+    // (mirrors cc gui, which carries junit:junit for the same reason).
+    testRuntimeOnly("junit:junit:4.13.2")
 }
 
 kotlin {
-    jvmToolchain(21)
+    jvmToolchain(17)
 }
 
 java {
     toolchain {
-        languageVersion.set(JavaLanguageVersion.of(21))
+        languageVersion.set(JavaLanguageVersion.of(17))
     }
 }
 
@@ -196,7 +147,7 @@ tasks {
     }
 
     wrapper {
-        gradleVersion = "9.8.2"
+        gradleVersion = "8.14.4"
         distributionType = Wrapper.DistributionType.BIN
     }
 
@@ -235,8 +186,20 @@ intellijPlatform {
             and skills — all from a JCEF-based tool window.
         """.trimIndent()
         ideaVersion {
-            sinceBuild = "262"
-            untilBuild = provider { "262.*" }
+            // Support range mirrors cc gui: 2023.3 .. 2026.3. Compilation
+            // targets the LOWEST line (2024.3.1) so newer-API accidents fail
+            // the build instead of the users on older IDEs.
+            sinceBuild = "233"
+            untilBuild = provider { "263.*" }
         }
+    }
+
+    pluginVerification {
+        // Marketplace rejection criteria: binary incompatibilities and
+        // internal API usage only.
+        failureLevel = listOf(
+            org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel.COMPATIBILITY_PROBLEMS,
+            org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel.INTERNAL_API_USAGES,
+        )
     }
 }

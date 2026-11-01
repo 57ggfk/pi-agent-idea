@@ -10,9 +10,10 @@ data class PiInstallation(val path: String, val version: String?)
 /**
  * Finds the pi CLI on this machine, on macOS, Windows and Linux alike.
  *
- * Order: explicit `PI_AGENT_EXECUTABLE` env var (used by tests) → discovery
- * via the login shell's PATH (Unix: covers nvm/volta installs invisible to
- * GUI-launched IDEs) or `where pi` (Windows) → well-known locations.
+ * Order: explicit `PI_AGENT_EXECUTABLE` env var (used by tests) → the custom
+ * path from Settings → Tools → Pi Agent → discovery via the login shell's
+ * PATH (Unix: covers nvm/volta installs invisible to GUI-launched IDEs) or
+ * `where pi` (Windows) → well-known locations.
  */
 object PiLocator {
 
@@ -39,6 +40,21 @@ object PiLocator {
                 return PiInstallation(f.absolutePath, version(f.absolutePath))
             }
             LOG.warn("PI_AGENT_EXECUTABLE is set but not a file: $envPath")
+        }
+
+        // Explicit user setting (Settings → Tools → Pi Agent) — the documented
+        // escape hatch for machines where discovery fails. It never overrides
+        // the env var above so test/e2e injection keeps working. Skipped when
+        // no application is present (plain unit tests).
+        val app = com.intellij.openapi.application.ApplicationManager.getApplication()
+        if (app != null) {
+            app.getService(dev.pi.agent.settings.PiAgentSettings::class.java).customPiPath()?.let { settingPath ->
+                val f = File(settingPath)
+                if (f.isFile) {
+                    return PiInstallation(f.absolutePath, version(f.absolutePath))
+                }
+                LOG.warn("custom pi path is set but not a file: $settingPath")
+            }
         }
 
         if (OsProcess.isWindows) {

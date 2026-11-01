@@ -593,7 +593,9 @@ body {
 }
 
 .session-row {
-  text-align: left;
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -601,6 +603,31 @@ body {
   cursor: pointer;
   color: var(--text);
   font-size: 12px;
+}
+
+.session-row-main {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.session-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  justify-content: center;
+}
+
+.session-action {
+  padding: 1px 6px;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .session-row:hover {

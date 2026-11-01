@@ -6,8 +6,11 @@ import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.fileChooser.FileChooserFactory
+import com.intellij.openapi.fileChooser.FileSaverDescriptor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.ui.JBColor
@@ -79,6 +82,8 @@ class BridgeService(private val project: Project) : Disposable {
                 "env" -> envInfo()
                 "rpc.request" -> rpcRequest(params)
                 "sessions.list" -> sessionsList()
+                "sessions.delete" -> sessionsDelete(params)
+                "sessions.exportHtml" -> sessionsExportHtml(params)
                 "files.list" -> filesList()
                 "ide.openFile" -> openFileInEditor(params)
                 "ide.showFileDiff" -> showFileDiff(params)
@@ -172,10 +177,58 @@ class BridgeService(private val project: Project) : Disposable {
                         put("name", s.name ?: "")
                         put("preview", s.preview ?: "")
                         put("modifiedAt", s.modifiedAt)
+                        put("messageCount", s.messageCount)
                     })
                 }
             })
         }
+    }
+
+    private fun sessionsDelete(params: JsonObject): JsonObject {
+        val file = params["file"]?.let { it as? JsonPrimitive }?.content
+            ?: throw IllegalArgumentException("sessions.delete requires file")
+        dev.pi.agent.session.PiSessionIndex.deleteSessionFile(file)
+        return buildJsonObject { put("ok", true) }
+    }
+
+    private suspend fun sessionsExportHtml(params: JsonObject): JsonObject {
+        val file = params["file"]?.let { it as? JsonPrimitive }?.content
+            ?: throw IllegalArgumentException("sessions.exportHtml requires file")
+        val sessionFile = dev.pi.agent.session.PiSessionIndex.sessionFileFor(file)
+        val rendered = kotlinx.coroutines.withContext(Dispatchers.IO) {
+            dev.pi.agent.session.SessionHtmlExporter.render(sessionFile)
+        }
+
+        // The save dialog must run on the EDT; the handler is on Dispatchers.IO.
+        val savedPath = kotlinx.coroutines.CompletableDeferred<String?>()
+        ApplicationManager.getApplication().invokeLater {
+            try {
+                val descriptor = FileSaverDescriptor(
+                    "Export Session as HTML", "Choose where to save the pi session", "html",
+                )
+                val wrapper = FileChooserFactory.getInstance()
+                    .createSaveFileDialog(descriptor, project)
+                    .save(rendered.suggestedFileName)
+                val target = wrapper?.file
+                if (target == null) {
+                    savedPath.complete(null)
+                    return@invokeLater
+                }
+                // Plain file write: the wrapper only carries the chosen path.
+                target.writeText(rendered.html)
+                savedPath.complete(target.path)
+            } catch (e: Exception) {
+                savedPath.completeExceptionally(e)
+            }
+        }
+        val path = savedPath.await()
+            ?: return buildJsonObject { put("ok", true); put("cancelled", true) }
+
+        NotificationGroupManager.getInstance()
+            .getNotificationGroup("Pi Agent")
+            .createNotification("Pi session exported", "Saved to $path", NotificationType.INFORMATION)
+            .notify(project)
+        return buildJsonObject { put("ok", true); put("path", path) }
     }
 
     // -- IDE integration ----------------------------------------------------

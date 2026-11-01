@@ -33,7 +33,9 @@ file:line 与选区上下文）、后台任务完成系统通知（点击直达�
 pi 运行状态 widget、markdown 外链用系统浏览器打开、多窗口完全隔离
 （每窗口独立会话与事件流）。
 
-**Sessions** — 按项目列出历史会话，一键续聊（回放完整历史）、重命名、新建。
+**Sessions** — 按项目列出历史会话（名称/预览/时间/消息数），一键续聊（回放完整
+历史）、重命名、新建、**克隆、导出 HTML（免脚本单文件）**、**删除**；聊天工具栏
+**Fork** 从最后一条 user 消息分叉新会话。
 
 **Manage** — pi 生态全部图形化管理：MCP 服务器（增删/OAuth 登录）、
 扩展包（npm/git/本地安装卸载）、Skills（浏览/创建模板）、认证状态
@@ -51,19 +53,22 @@ CSRF 驱动你的 agent。
 从 [Releases](../../releases) 下载 `pi-agent-idea-<version>.zip`，然后
 `Settings → Plugins → ⚙ → Install Plugin from Disk…`，重启 IDE。
 
-要求：IntelliJ IDEA 2026.2+（262.*）、本机安装 pi
+要求：IntelliJ IDEA 2023.3+（233–263.\*，全系 JetBrains IDE，支持范围对标
+cc gui）、本机安装 pi
 （`npm install -g @earendil-works/pi-coding-agent`；**Windows 上请装在
 Windows 侧**，见下方 WSL 边界）。插件按 `PI_AGENT_EXECUTABLE` 环境变量 →
-登录 shell PATH（macOS/Linux）或 `where pi`（Windows）→ 常见安装位置
-（Windows 覆盖 `%APPDATA%\npm\pi.cmd`、scoop、chocolatey）的顺序自动定位 pi，
-无需额外配置。
+**设置里的自定义路径**（Settings → Tools → Pi Agent）→ 登录 shell PATH
+（macOS/Linux）或 `where pi`（Windows）→ 常见安装位置
+（Windows 覆盖 `%APPDATA%\npm\pi.cmd`、scoop、chocolatey）的顺序自动定位 pi；
+发现失败时在设置里手动指定路径即可。
 
 ## 开发
 
-工具链：**JDK 21**（Gradle toolchain 自动解析）、**Node 20+**。
-IDE 依赖：本地装有 IntelliJ IDEA 2026.2+ 会自动探测（macOS / Windows /
-Linux / WSL 均可，也可用 `ideaPath` 属性显式指定）；没有本地 IDEA 时自动
-回退远程 IntelliJ IDEA Community 2026.2（首次约 1 GB 下载）。
+工具链：**JDK 17**（Gradle toolchain 自动解析）、**Node 20+**。
+IDE 依赖：编译目标是远程 **IntelliJ IDEA Community 2024.3.1**（支持的最低
+平台线，约 1 GB 首次下载）——每次构建都在验证整个支持区间（233–263.\*）的
+二进制兼容性，与 cc gui 的做法一致。`ideaPath` 属性仅用于把 runIde/e2e 指向
+本地真实 IDE，构建不需要。
 
 macOS / Linux：
 

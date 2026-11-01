@@ -55,7 +55,8 @@ test("code block copy button copies the code and flashes a check", async ({ page
   await expect(copyBtn).toHaveText("Copy", { timeout: 5_000 });
 
   const clip = await page.evaluate(() => navigator.clipboard.readText());
-  expect(clip.replace(/\n+$/, "")).toBe("echo hello from mock pi");
+  // Trailing whitespace varies with platform line-ending rendering.
+  expect(clip.replace(/\s+$/, "")).toBe("echo hello from mock pi");
 });
 
 test("error boundary wraps the app and is exported", async ({ page }) => {

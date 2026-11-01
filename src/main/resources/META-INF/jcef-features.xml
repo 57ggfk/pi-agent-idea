@@ -1,0 +1,6 @@
+<idea-plugin>
+    <!-- Loaded only when the com.intellij.modules.jcef module is present
+         (IntelliJ IDEA 2026.2+). On older IDEs (2023.3–2026.1) JCEF classes
+         (com.intellij.ui.jcef, org.cef) are provided by the platform itself,
+         so the tool window registered in plugin.xml works unchanged. -->
+</idea-plugin>

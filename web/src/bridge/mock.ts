@@ -28,6 +28,27 @@ export class MockBridge implements Bridge {
   private messageCount = 0;
   private aborted = false;
   private emittedForPrompt = false;
+  private sessionSeq = 0;
+  private mockSessions = [
+    {
+      file: "/tmp/mock-sessions/2026-10-27T10-00-00_aaa.jsonl",
+      id: "session-aaa",
+      timestamp: "2026-10-27T10:00:00.000Z",
+      name: "Refactor auth module",
+      preview: "Please refactor the auth module to use middleware",
+      modifiedAt: Date.now() - 3_600_000,
+      messageCount: 12,
+    },
+    {
+      file: "/tmp/mock-sessions/2026-10-28T08-00-00_bbb.jsonl",
+      id: "session-bbb",
+      timestamp: "2026-10-28T08:00:00.000Z",
+      name: "",
+      preview: "Fix the failing tests in CI",
+      modifiedAt: Date.now(),
+      messageCount: 4,
+    },
+  ];
 
   request<T>(method: string, params?: unknown): Promise<T> {
     this.seq += 1;
@@ -40,6 +61,15 @@ export class MockBridge implements Bridge {
     }
     if (method === "ide.showFileDiff") {
       return Promise.resolve({ ok: true } as T);
+    }
+    if (method === "sessions.delete") {
+      const file = (params as { file?: string })?.file;
+      this.mockSessions = this.mockSessions.filter((s) => s.file !== file);
+      return Promise.resolve({ ok: true } as T);
+    }
+    if (method === "sessions.exportHtml") {
+      const file = (params as { file?: string })?.file ?? "";
+      return Promise.resolve({ ok: true, path: file.replace(/\.jsonl$/, ".html") } as T);
     }
     if (method === "env") {
       return Promise.resolve({
@@ -175,29 +205,7 @@ export class MockBridge implements Bridge {
           },
         };
       case "sessions.list":
-        return {
-          success: true,
-          data: {
-            sessions: [
-              {
-                file: "/tmp/mock-sessions/2026-10-27T10-00-00_aaa.jsonl",
-                id: "session-aaa",
-                timestamp: "2026-10-27T10:00:00.000Z",
-                name: "Refactor auth module",
-                preview: "Please refactor the auth module to use middleware",
-                modifiedAt: Date.now() - 3_600_000,
-              },
-              {
-                file: "/tmp/mock-sessions/2026-10-28T08-00-00_bbb.jsonl",
-                id: "session-bbb",
-                timestamp: "2026-10-28T08:00:00.000Z",
-                name: "",
-                preview: "Fix the failing tests in CI",
-                modifiedAt: Date.now(),
-              },
-            ],
-          },
-        };
+        return { success: true, data: { sessions: this.mockSessions } };
       case "prompt": {
         const message = String(command["message"] ?? "");
         if (this.isStreaming && !command["streamingBehavior"]) {
@@ -221,6 +229,25 @@ export class MockBridge implements Bridge {
       case "switch_session":
         this.messageCount = 0;
         return { success: true, data: { cancelled: false } };
+      case "fork":
+      case "clone": {
+        // Branch semantics only mocked: a new empty session entry is created
+        // and returned so the UI can exercise the switch/refresh flow.
+        this.sessionSeq += 1;
+        const kind = String(command["type"]);
+        const id = `session-${kind}-${this.sessionSeq}`;
+        const session = {
+          file: `/tmp/mock-sessions/2026-10-29T09-00-00_${id}.jsonl`,
+          id,
+          timestamp: new Date().toISOString(),
+          name: kind === "clone" ? "Cloned session" : "Forked session",
+          preview: "Branched conversation",
+          modifiedAt: Date.now(),
+          messageCount: this.messageCount,
+        };
+        this.mockSessions = [session, ...this.mockSessions];
+        return { success: true, data: { sessionId: session.id, sessionPath: session.file } };
+      }
       case "set_session_name":
         return { success: true };
       case "set_model": {

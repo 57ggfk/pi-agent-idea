@@ -17,6 +17,9 @@ export default function SessionsView() {
   const switchSession = usePiStore((s) => s.switchSession);
   const sessionId = usePiStore((s) => s.sessionId);
   const newSession = usePiStore((s) => s.newSession);
+  const deleteSession = usePiStore((s) => s.deleteSession);
+  const cloneSession = usePiStore((s) => s.cloneSession);
+  const exportSession = usePiStore((s) => s.exportSession);
   const [filter, setFilter] = useState("");
 
   useEffect(() => {
@@ -54,21 +57,53 @@ export default function SessionsView() {
           </div>
         ) : null}
         {filtered.map((s) => (
-          <button
+          <div
             key={s.file}
             className={`session-row ${s.id && s.id === sessionId ? "session-current" : ""}`}
             data-testid="session-row"
-            onClick={() => void switchSession(s.file)}
             title={s.file}
           >
-            <div className="session-row-top">
-              <span className="session-name">{s.name || s.preview?.slice(0, 60) || s.id || "Untitled"}</span>
-              <span className="session-time">{formatTime(s.modifiedAt)}</span>
+            <button className="session-row-main" onClick={() => void switchSession(s.file)}>
+              <div className="session-row-top">
+                <span className="session-name">{s.name || s.preview?.slice(0, 60) || s.id || "Untitled"}</span>
+                <span className="session-time">{formatTime(s.modifiedAt)}</span>
+              </div>
+              <div className="session-preview">
+                {s.name ? s.preview || s.id : s.id}
+                {typeof s.messageCount === "number" ? ` · ${s.messageCount} msgs` : ""}
+              </div>
+            </button>
+            <div className="session-actions">
+              <button
+                className="btn session-action"
+                data-testid="session-clone"
+                title="Clone this session"
+                onClick={() => void cloneSession(s.file)}
+              >
+                ⧉
+              </button>
+              <button
+                className="btn session-action"
+                data-testid="session-export"
+                title="Export as HTML"
+                onClick={() => void exportSession(s.file)}
+              >
+                ⇩
+              </button>
+              <button
+                className="btn session-action"
+                data-testid="session-delete"
+                title="Delete this session"
+                onClick={() => {
+                  if (window.confirm("Delete this session? This cannot be undone.")) {
+                    void deleteSession(s.file);
+                  }
+                }}
+              >
+                ✕
+              </button>
             </div>
-            <div className="session-preview">
-              {s.name ? s.preview || s.id : s.id}
-            </div>
-          </button>
+          </div>
         ))}
       </div>
     </div>

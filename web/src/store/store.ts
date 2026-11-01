@@ -22,6 +22,7 @@ export interface SessionInfo {
   name: string;
   preview: string;
   modifiedAt: number;
+  messageCount?: number;
 }
 
 interface PiStore {
@@ -67,6 +68,10 @@ interface PiStore {
   refreshSessions(): Promise<void>;
   switchSession(file: string): Promise<void>;
   renameSession(name: string): Promise<void>;
+  deleteSession(file: string): Promise<void>;
+  cloneSession(file: string): Promise<void>;
+  forkSession(): Promise<void>;
+  exportSession(file: string): Promise<void>;
   replayMessages(): Promise<void>;
   clearPendingPrompt(): void;
   openFile(path: string, line: number): Promise<void>;
@@ -382,6 +387,84 @@ export const usePiStore = create<PiStore>((set, get) => {
       } catch (e) {
         const item = emptyItem("system", [
           { kind: "text", text: `rename failed: ${(e as Error).message}`, done: true },
+        ]);
+        item.done = true;
+        item.isError = true;
+        set({ items: [...get().items, item] });
+      }
+    },
+
+    async deleteSession(file: string) {
+      if (!bridge) return;
+      try {
+        // Deleting the current session leaves the pi process without a
+        // session — start a fresh one so the UI never points at a dead file.
+        const target = get().sessions.find((s) => s.file === file);
+        const wasCurrent = Boolean(target?.id && target.id === get().sessionId);
+        await bridge.request("sessions.delete", { file });
+        await get().refreshSessions();
+        if (wasCurrent) await get().newSession();
+      } catch (e) {
+        const item = emptyItem("system", [
+          { kind: "text", text: `delete failed: ${(e as Error).message}`, done: true },
+        ]);
+        item.done = true;
+        item.isError = true;
+        set({ items: [...get().items, item] });
+      }
+    },
+
+    async cloneSession(file: string) {
+      if (!bridge) return;
+      try {
+        const result = await rpc<{ sessionId?: string; sessionPath?: string }>(
+          bridge,
+          { type: "clone", sessionPath: file },
+        );
+        await get().refreshSessions();
+        const path =
+          result.sessionPath ?? get().sessions.find((s) => s.id === result.sessionId)?.file;
+        if (path) await get().switchSession(path);
+      } catch (e) {
+        const item = emptyItem("system", [
+          { kind: "text", text: `clone failed: ${(e as Error).message}`, done: true },
+        ]);
+        item.done = true;
+        item.isError = true;
+        set({ items: [...get().items, item] });
+      }
+    },
+
+    async forkSession() {
+      if (!bridge) return;
+      try {
+        const result = await rpc<{ sessionId?: string; sessionPath?: string }>(
+          bridge,
+          { type: "fork" },
+        );
+        await get().refreshSessions();
+        const path =
+          result.sessionPath ?? get().sessions.find((s) => s.id === result.sessionId)?.file;
+        if (path) await get().switchSession(path);
+      } catch (e) {
+        const item = emptyItem("system", [
+          { kind: "text", text: `fork failed: ${(e as Error).message}`, done: true },
+        ]);
+        item.done = true;
+        item.isError = true;
+        set({ items: [...get().items, item] });
+      }
+    },
+
+    async exportSession(file: string) {
+      if (!bridge) return;
+      try {
+        // The IDE side opens the save dialog and fires a balloon with the
+        // chosen path; nothing to render here.
+        await bridge.request("sessions.exportHtml", { file });
+      } catch (e) {
+        const item = emptyItem("system", [
+          { kind: "text", text: `export failed: ${(e as Error).message}`, done: true },
         ]);
         item.done = true;
         item.isError = true;

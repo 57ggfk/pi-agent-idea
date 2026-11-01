@@ -41,6 +41,7 @@ export default function Composer() {
   const [fileHighlight, setFileHighlight] = useState(0);
   const send = usePiStore((s) => s.sendImages);
   const abort = usePiStore((s) => s.abort);
+  const forkSession = usePiStore((s) => s.forkSession);
   const isStreaming = usePiStore((s) => s.isStreaming);
   const queue = usePiStore((s) => s.queue);
   const commands = usePiStore((s) => s.commands);
@@ -330,6 +331,15 @@ export default function Composer() {
           title="Compact the conversation context"
         >
           Compact
+        </button>
+        <button
+          className="btn"
+          data-testid="fork-btn"
+          onClick={() => void forkSession()}
+          disabled={isStreaming}
+          title="Fork the conversation at the last user message into a new session"
+        >
+          Fork
         </button>
         <button className="btn" data-testid="new-session" onClick={() => void newSession()} title="Start a new session">
           + New

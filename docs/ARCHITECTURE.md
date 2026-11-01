@@ -185,8 +185,8 @@ e2e 的关键设计：**同一套 Playwright 用例、两种 driver**（`file:we
 | ADR-2 | JCEF Web UI 而非 Swing | Swing | 对标 cc gui 的富文本/流式体验，Swing 实现 markdown 流式渲染成本过高 |
 | ADR-3 | Kotlin + kotlinx.serialization | Java | 平台惯例、协程友好；协议宽容解析 |
 | ADR-4 | 前端 React+Vite，独立 npm 工程 | WebPack/纯 HTML | 独立构建是 e2e 与开发效率的基础 |
-| ADR-5 | 目标平台 `2026.2`：优先本地安装的 IDE（跨 OS 自动探测），无本地 IDE 时回退远程 IntelliJ IDEA Community 2026.2 | 锁定单一 OS 的本地路径 | 本机即真实目标；无 IDEA 的机器（CI/Linux）也能构建 |
-| ADR-6 | bytecode 21 / Gradle 8.14 / IPG 2.x | — | 平台 2026.2 要求 |
+| ADR-5 | 编译目标 = 最低支持线 IntelliJ IDEA Community 2024.3.1（远程），支持区间 233–263.\*（对标 cc gui）；`ideaPath` 属性仅用于把 runIde/e2e 指向本地真实 IDE | 依赖本地安装的特定版本 / 追最新版本 | 无 IDEA 的机器（CI/Linux）也能构建；每次构建都在最低线上验证全区间二进制兼容 |
+| ADR-6 | bytecode 17 / Gradle 8.14.4 / IPG 2.10.5 | — | 与 cc gui 工具链对齐；JBR 17 覆盖 233–263 全区间 |
 
 ## 12. 风险与缓解
 
