@@ -24,8 +24,8 @@ packages, skills, settings).
 ## 功能
 
 **Chat** — 流式 markdown（含代码高亮、代码块复制）、thinking 折叠块、
-工具调用卡片（edit/write 显示 diff 视图）、**工具调用审批**（Ask/Yolo 切换：
-read-only 工具自动放行，改动/命令在聊天流中批准或拒绝）、steer/follow-up 排队、
+工具调用卡片（edit/write 显示 diff 视图）、**工具调用审批**（默认自动批准，
+⚙ Options 关掉即回到逐次确认；read-only 工具始终直接放行）、steer/follow-up 排队、
 中止、斜杠命令补全、@ 文件引用补全、图片发送（粘贴/选择/**拖拽**）、file:line
 点击跳回编辑器、手动 compact、**⚙ 自动压缩/自动重试开关**、会话统计（上下文占用
 进度条/成本）、IDE 明暗主题跟随。
@@ -40,9 +40,14 @@ pi 运行状态 widget、markdown 外链用系统浏览器打开、多窗口完�
 **Fork** 从最后一条 user 消息分叉新会话。
 
 **Manage** — pi 生态全部图形化管理：MCP 服务器（增删/OAuth 登录）、
-扩展包（npm/git/本地安装卸载）、Skills（浏览/创建模板）、认证状态
-（逐 provider 检查）、`settings.json` 内嵌编辑，以及 pi 安装自检引导
+扩展包（npm/git/本地安装卸载）、Skills（浏览/创建模板，标注用户级 / 项目级）、
+认证状态（逐 provider 检查）、`settings.json` 内嵌编辑，以及 pi 安装自检引导
 （尊重 `PI_CODING_AGENT_DIR` 自定义安装位置）。
+
+**项目信任** — pi 只在受信任的项目里加载仓库内的 `.pi/`（skills / MCP / settings /
+扩展）。面板会说明"这个项目的项目级配置现在是否生效"：未信任时横幅列出会被忽略的
+资源并提供一键信任（二次确认、逐项列出将生效内容），已信任时可撤销；写
+`~/.pi/agent/trust.json` 走备份 + 原子替换，解析失败拒绝写入，不会波及别的项目。
 
 ## 安全
 

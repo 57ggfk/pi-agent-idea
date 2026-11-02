@@ -1,11 +1,11 @@
 # 手工验收清单（真机 IDEA）
 
-> 插件：Pi Agent v0.4.0 · 目标：IntelliJ IDEA 2023.3+（全系 JetBrains IDE，233–263.\*）
+> 插件：Pi Agent v0.5.0 · 目标：IntelliJ IDEA 2023.3+（全系 JetBrains IDE，233–263.\*）
 > 前置：本机装有 pi（`pi --version`）；IDEA 可用任意模型配置。
 
 ## 安装
 
-- [ ] `Settings → Plugins → ⚙ → Install Plugin from Disk…` 选择 `build/distributions/pi-agent-idea-0.4.0.zip`（或直接解压到插件目录：macOS `~/Library/Application Support/JetBrains/IntelliJIdea2026.2/plugins/`，Windows `%APPDATA%\JetBrains\IntelliJIdea2026.2\plugins\`，Linux `~/.local/share/JetBrains/IntelliJIdea2026.2/plugins/`）→ 重启 IDE
+- [ ] `Settings → Plugins → ⚙ → Install Plugin from Disk…` 选择 `build/distributions/pi-agent-idea-0.5.0.zip`（或直接解压到插件目录：macOS `~/Library/Application Support/JetBrains/IntelliJIdea2026.2/plugins/`，Windows `%APPDATA%\JetBrains\IntelliJIdea2026.2\plugins\`，Linux `~/.local/share/JetBrains/IntelliJIdea2026.2/plugins/`）→ 重启 IDE
 - [ ] 重启后 `Settings → Plugins` 中出现 **Pi Agent**，无加载报错（`Help → Show Log` 无 SEVERE）
 
 ## Chat（对话）
@@ -77,7 +77,11 @@
 - [ ] 顶部横幅显示 pi 版本与二进制路径（找不到 pi 时显示安装引导命令）
 - [ ] **MCP Servers**：`pi mcp add demo -- echo hi` 后 Refresh 出现条目；Remove 可删除；有 OAuth 的服务器可 Login/Logout
 - [ ] **Packages**：`pi install npm:@example/pi-tools` 后出现条目；Remove 可卸载
-- [ ] **Skills**：列出 `~/.pi/agent/skills`、`.pi/skills`、`.agents/skills` 下的技能；**+ New skill** 可创建模板
+- [ ] **Skills**：用户级（`~/.pi/agent/skills`）与项目级（`.pi/skills`、`.agents/skills`）都列出，条目带「用户级 / 项目级」标签；项目未受信任时项目级条目显示「项目级 · 未生效」+ 虚线弱化 + 原因行；**+ New skill** 可创建模板
+- [ ] **项目信任**：打开一个从未信任过的项目 → 面板顶部出现横幅，列出仓库里存在但会被 pi 忽略的 skills/MCP/settings/扩展；点「信任本项目」→ 二次确认逐项列出将生效内容 → 确认后横幅消失，保留一行状态 + 撤销入口
+- [ ] **项目信任 · 生效验证**：信任后重启 pi（或重开项目）→ 项目级 skills 的「未生效」标记消失，且在 pi 里 `/skills` 能看到该 skill
+- [ ] **项目信任 · 撤销**：点「撤销信任」→ 横幅回到未信任态，`~/.pi/agent/trust.json` 里该项目键被移除、**其他项目的键仍在**
+- [ ] **项目信任 · 文件损坏**：手工把 `trust.json` 改成非法 JSON → 面板显示「无法读取信任配置」，只给「重试」**不给「信任」**（不能覆盖读不懂的文件）；恢复文件后重试即恢复
 - [ ] **Auth**：列出已配置凭据/custom provider 的 provider；**Check** 显示 ready/not_ready
 - [ ] **Settings**：加载 `~/.pi/agent/settings.json`；改坏 JSON 保存 → 报错不落盘；改合法 JSON 保存 → 成功且生成 .bak
 
@@ -89,4 +93,4 @@
 ## 自动化对应
 
 以上 Chat/Sessions/Manage 的核心路径已由三层自动化覆盖：
-`./gradlew test`（39 例，含 Commit Message 生成器的 diff 拼装/清洗单测）· `cd web && npx playwright test`（51 例，其中 `layout-regressions.spec.ts` 按几何值断言弹层/卡片/轴心，专门防 docs/UI_ISSUES.md 那类"DOM 在但看不见"的回归）· `bash scripts/e2e-ide.sh`（真实 JCEF 全链路）
+`./gradlew test`（63 例，含 Commit Message 生成器的 diff 拼装/清洗、`PiTrust` 的路径归一化与原子写、`PiStartArgs` 的 `--approve` 单次消费）· `cd web && npx playwright test`（55 例，其中 `layout.spec.ts` / `layout-regressions.spec.ts` 按几何值断言弹层/卡片/轴心，专门防 docs/UI_ISSUES.md 那类"DOM 在但看不见"的回归）· `bash scripts/e2e-ide.sh`（真实 JCEF 全链路）

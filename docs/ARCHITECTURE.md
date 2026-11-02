@@ -93,6 +93,14 @@ pi-agent-idea/
 - 环境变量：合并 IDE 环境与用户 PATH 修正（否则 GUI 启动的 IDE 常找不到 nvm 工具）。
 - 健康管理：进程意外退出 → 广播 `processExited` 事件（含 exitCode/stderr 尾部）→ 前端显示可重试卡片；"重启会话" 动作重建进程并 `get_messages` 回放。
 - 复用策略：ToolWindow 关闭不杀进程（后台继续跑任务，符合"agent 任务"预期）；项目关闭时终止。
+- **项目信任**（v0.5.0，`process/PiTrust`）：pi 只在**受信任项目**里加载仓库内的 `.pi/`
+  （skills / MCP / settings / 扩展），信任态存在 `~/.pi/agent/trust.json` —— 与终端里的
+  pi 共用同一个文件。判定用 canonical path 归一化，**仅 Windows 小写化**（Linux/macOS
+  大小写敏感，跟着小写会把 `/home/Foo` 与 `/home/foo` 并成一个项目）。写入顺序为
+  「`.bak` 备份 → 只改目标键（同名但大小写/分隔符不同的键一并清掉）→ 重新解析校验 →
+  临时文件 + `ATOMIC_MOVE`」；**解析失败一律拒绝写入**——写坏会让用户在*所有*项目上都
+  用不了 pi，比「信任操作失败」严重得多。授权只对**下一次**启动追加 `--approve`
+  （`PiStartArgs.build()` 纯函数 + 单次消费），运行中的进程绝不自动重启。
 
 ## 5. 桥接层（`bridge/` + `ui/LocalUiServer`）
 
@@ -115,7 +123,10 @@ Java → JS : GET /bridge/poll?cursor=N   （长轮询，25s 上限）
   `oldest`（缓冲区最旧 seq），前端据此检测断连期间丢事件并补救。
 - 方法集：`rpc.request`（透传 RPC 命令，可带 `timeoutMs`）、`sessions.list`、
   `files.list`（@ 补全用，30s 缓存）、`ide.openFile`（编辑器跳转）、
-  `config.*`、`manage.*`（auth/mcp/packages/skills/settings）、`env`。
+  `config.*`、`manage.*`（auth/mcp/packages/skills/settings）、
+  `trust.*`（get/grant/revoke，后两者要求 `confirmed:true`）、`env`。
+  `manage.skillsList` 必须带 `project.basePath`——扫描基准是项目根，不是 IDE 进程的
+  工作目录（多项目窗口下会串台），见 §7。
 - 事件：`pi`（原始 pi 事件）、`pi-state`（进程状态）、`ide`（编辑器动作注入的
   prompt，如 Explain/Fix with Pi）。
 - 编辑器动作（`editor/`）通过 `BridgeService.pushIdePrompt` 注入 prompt 并激活
@@ -142,7 +153,7 @@ Java → JS : GET /bridge/poll?cursor=N   （长轮询，25s 上限）
 | 认证状态 | `pi auth check --provider X --json` |
 | MCP 列表/增删/OAuth | `pi mcp list --json` / `pi mcp add …` / `pi mcp login`（超时保护） |
 | 包安装/卸载/列表 | `pi install <src>` / `pi remove` / `pi list` |
-| Skills 列表 | 文件系统扫描（`SKILL.md` frontmatter 解析，支持 `~/.pi/agent/skills`、`.pi/skills`、`.agents/skills`） |
+| Skills 列表 | 文件系统扫描（`SKILL.md` frontmatter 解析）+ `scope` 标注：用户级扫 `~/.pi/agent/skills`，项目级扫 `<basePath>/.pi/skills` 与 `<basePath>/.agents/skills`（以 bridge 传入的项目根为基准，按 canonical `SKILL.md` 去重）；项目未受信任时条目仍列出但标「项目级 · 未生效」 |
 | 设置/模型 | 直接读写 `~/.pi/agent/settings.json`、`models.json`（JSON 保留注释不做，pi 不支持注释） |
 
 写文件前先备份 `.bak`；所有管理操作完成后提示用户 `/reload` 或自动重启 RPC 进程使配置生效。
