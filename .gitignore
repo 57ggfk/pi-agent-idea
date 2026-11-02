@@ -16,6 +16,8 @@ web/dist/
 web/e2e/report/
 playwright-report/
 test-results/
+# Screenshots written by web/probe-*.mjs (dev-server geometry probes).
+web/probe-*.png
 
 # Logs
 *.log
