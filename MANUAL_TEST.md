@@ -17,14 +17,15 @@
 - [ ] 消息中出现 `file.kt:12` 形式引用 → 点击跳到编辑器对应行
 - [ ] 触发一次工具调用 → 出现工具卡片；edit/write 调用显示红绿 **diff 视图**
 - [ ] 发送图片 → 自己的消息气泡里图片**回显**；会话回放时图片也显示
-- [ ] 输入 `@` → 出现文件补全浮层（输入关键词过滤，↑↓/Enter 选择，Esc 只关菜单）
+- [ ] 输入 `@` → 出现文件补全浮层（输入关键词过滤，↑↓/Enter 选择，Esc 只关菜单）；无匹配时显示 `No matching files`；`@` 紧跟中文（如 `看@src`）也能弹出
 - [ ] 拖拽一张图片文件到输入框 → 和粘贴一样出现图片 chips
 - [ ] 运行中发送第二条消息 → 出现 Steer/Follow-up 模式选择；选择后底部显示排队提示
 - [ ] 点击 **Stop** → 中止；输入框恢复 Send
-- [ ] 输入 `/` → 命令补全菜单（扩展命令/模板/skill）；Tab 选中后自动补全
+- [ ] 输入 `/` → 命令补全菜单（扩展命令/模板/skill）；Tab 选中后自动补全；无匹配时显示 `No matching commands`
 - [ ] 底部状态栏：运行状态点、pi 版本、ctx 百分比、成本、消息数
 - [ ] 顶栏 **Compact** → 系统条目显示压缩前后 token
-- [ ] 顶栏 **+ New** → 清空会话
+- [ ] 顶栏 **+ New** → 清空会话；**运行中点 + 会先弹确认框**，取消则当前回复继续
+- [ ] ⚙ **Options** 菜单在 360 / 430 / 900px 宽度下都能完整展开：三个开关可点、Theme 三个分段都在、不越出工具窗
 
 ## IDE 集成（v0.2 新增）
 
@@ -32,6 +33,7 @@
 - [ ] **Explain with Pi** → 工具窗激活，输入框预填了带 `file:line` 与选区代码的 prompt（可编辑后发送）
 - [ ] **无选区时**右键 → 三个动作置灰
 - [ ] **项目文件树右键任意文件 → Pi Agent → Send File to Pi Agent** → 整文件内容进输入框（v0.2.1）
+- [ ] 同一菜单里 **Explain File with Pi** 在项目树中**也可点**（不再要求先打开编辑器）；选中目录/二进制/>256KB 文件时两项置灰，鼠标悬停能看到禁用原因
 - [ ] 让 pi 改一个文件 → 改动工具卡片上点 **Diff** → 弹出 JetBrains 原生 Before/After 对比窗口（v0.2.1）
 - [ ] 工具卡片/消息里的文件路径（绝对、相对、`~/` 均可）点击 → 编辑器打开对应行（v0.2.1）
 - [ ] 状态栏出现 **π** widget：pi 运行中显示版本，崩溃显示 ⚠；点击 widget 打开工具窗
@@ -40,7 +42,7 @@
 
 ## Sessions（会话）
 
-- [ ] Sessions 页签列出本项目历史会话（名称/预览/时间/**消息数**）
+- [ ] Sessions 页签列出本项目历史会话（名称/预览/时间/**消息数**）；顶部只有 filter 输入框（`+ New session` 已删除），窄窗下卡片右侧的复制/导出/删除与时间不被裁掉
 - [ ] 点击某会话 → 回到 Chat 并回放历史消息
 - [ ] 会话行 **⧉ Clone** → 新会话出现并被切换
 - [ ] 会话行 **⇩ Export** → 弹出保存对话框 → 保存后收到"Pi session exported"气泡通知，HTML 可在浏览器打开（含完整消息，无脚本）
@@ -87,4 +89,4 @@
 ## 自动化对应
 
 以上 Chat/Sessions/Manage 的核心路径已由三层自动化覆盖：
-`./gradlew test`（39 例，含 Commit Message 生成器的 diff 拼装/清洗单测）· `cd web && npx playwright test`（19 例）· `bash scripts/e2e-ide.sh`（真实 JCEF 全链路）
+`./gradlew test`（39 例，含 Commit Message 生成器的 diff 拼装/清洗单测）· `cd web && npx playwright test`（51 例，其中 `layout-regressions.spec.ts` 按几何值断言弹层/卡片/轴心，专门防 docs/UI_ISSUES.md 那类"DOM 在但看不见"的回归）· `bash scripts/e2e-ide.sh`（真实 JCEF 全链路）

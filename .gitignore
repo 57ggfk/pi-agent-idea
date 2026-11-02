@@ -21,3 +21,13 @@ test-results/
 *.log
 .zcode/
 .idea/
+
+# Agent scratch / credentials.
+# Spec Kit's local install (.specify/), its per-agent command copies
+# (.codebuddy/) and the workspace agent state (.workbuddy/, incl. the
+# mirrored speckit commands and the daily work log) are machine-local:
+# regenerate with `specify init --here --force --ignore-agent-tools
+# --integration codebuddy --script py`, never merge them through git.
+.codebuddy/
+.specify/
+.workbuddy/

@@ -89,7 +89,7 @@ pi-agent-idea/
   node 脚本自动注入解释器（含 Windows `node.exe`）。解析结果含版本号
   （`pi --version`）。
 - 启动参数：`pi --mode rpc`，可选 `--session-dir`、`--session <path>`、`--model`、`--provider`、`--no-session` 等；`cwd` = 项目根。
-- **工具审批扩展**（v0.4.0）：随插件内置 `pi-approve.js`（资源 `pi-approve/`），每次启动解压到 `<IDE config>/pi-agent/` 并以 `--extension <path>` 加载——只影响插件拉起的 pi，不污染用户扩展目录；环境变量 `PI_APPROVE_POLICY` 指向策略 JSON `{mode: ask|yolo, allow: []}`，扩展在每次 `tool_call` 时重读（`PiApprovalSupport`），切 ask/yolo 无需重启 pi。扩展按工具自带 annotations（`readOnlyHint`/`destructiveHint`）决定放行或弹 `ctx.ui.confirm`，RPC 模式下确认框转成 `extension_ui_request` 事件走给前端。
+- **工具审批扩展**（v0.4.0）：随插件内置 `pi-approve.js`（资源 `pi-approve/`），每次启动解压到 `<IDE config>/pi-agent/` 并以 `--extension <path>` 加载——只影响插件拉起的 pi，不污染用户扩展目录；环境变量 `PI_APPROVE_POLICY` 指向策略 JSON `{version: 2, mode: yolo|ask, allow: []}`，扩展在每次 `tool_call` 时重读（`PiApprovalSupport`），切 ask/yolo 无需重启 pi。**默认 `yolo`（自动批准）**：工具窗口不该为每次编辑/命令弹确认；`ask` 由 ⚙ Options → Auto-approve tool calls 关掉开关启用。`version` 缺失的旧策略文件（v0.4.0 及以前默认 `ask`）在安装扩展时一次性迁移到新默认，迁移后用户的选择被尊重。扩展按工具自带 annotations（`readOnlyHint`/`destructiveHint`）决定放行或弹 `ctx.ui.confirm`，RPC 模式下确认框转成 `extension_ui_request` 事件走给前端。
 - 环境变量：合并 IDE 环境与用户 PATH 修正（否则 GUI 启动的 IDE 常找不到 nvm 工具）。
 - 健康管理：进程意外退出 → 广播 `processExited` 事件（含 exitCode/stderr 尾部）→ 前端显示可重试卡片；"重启会话" 动作重建进程并 `get_messages` 回放。
 - 复用策略：ToolWindow 关闭不杀进程（后台继续跑任务，符合"agent 任务"预期）；项目关闭时终止。
