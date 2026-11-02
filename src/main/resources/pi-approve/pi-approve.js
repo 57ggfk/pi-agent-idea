@@ -7,7 +7,10 @@
  * tool call, so toggling approval in the IDE takes effect without restarting.
  *
  * Policy shape (managed by the plugin):
- *   { "mode": "ask" | "yolo", "allow": ["toolName", ...] }
+ *   { "version": 2, "mode": "yolo" | "ask", "allow": ["toolName", ...] }
+ *
+ * Default is "yolo": the IDE tool window does not interrupt on every edit or
+ * command. "ask" is opt-in from Options → Auto-approve tools.
  *
  * Decision order for a tool call:
  *   1. mode "yolo"                       -> allow everything
@@ -22,7 +25,7 @@ import fs from "node:fs";
 const CONFIRM_TIMEOUT_MS = 5 * 60 * 1000;
 
 function readPolicy() {
-  const fallback = { mode: "ask", allow: [] };
+  const fallback = { mode: "yolo", allow: [] };
   const path = process.env.PI_APPROVE_POLICY;
   if (!path) return fallback;
   try {

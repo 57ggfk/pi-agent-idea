@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Bridge } from "../bridge/types";
+import type { AppTheme, Bridge, ThemePreference } from "../bridge/types";
 import { rpc } from "../bridge/types";
 import { getBridge } from "../bridge";
 import {
@@ -17,6 +17,53 @@ import {
 export type SendMode = "auto" | "steer" | "followUp";
 export type Tab = "chat" | "sessions" | "manage";
 
+// Dev / Vite fallback. Inside the IDE the preference is persisted through
+// PiUserPrefs (config.getPrefs), because the loopback port — and therefore
+// the origin holding localStorage — changes between IDE sessions.
+const THEME_STORAGE_KEY = "pi-agent.theme-preference";
+
+function isThemePreference(value: unknown): value is ThemePreference {
+  return value === "system" || value === "light" || value === "dark";
+}
+
+function isAppTheme(value: unknown): value is AppTheme {
+  return value === "light" || value === "dark";
+}
+
+export function resolveTheme(preference: ThemePreference, ideTheme: AppTheme): AppTheme {
+  return preference === "system" ? ideTheme : preference;
+}
+
+function readLocalThemePreference(): ThemePreference {
+  try {
+    const raw = typeof localStorage === "undefined" ? null : localStorage.getItem(THEME_STORAGE_KEY);
+    if (isThemePreference(raw)) return raw;
+  } catch {
+    // Storage can be unavailable (privacy settings); default is fine.
+  }
+  return "system";
+}
+
+function writeLocalThemePreference(preference: ThemePreference) {
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(THEME_STORAGE_KEY, preference);
+    }
+  } catch {
+    // Non-fatal: the IDE preference is the authoritative store.
+  }
+}
+
+function applyDocumentTheme(theme: AppTheme) {
+  if (typeof document === "undefined") return;
+  document.documentElement.dataset.theme = theme;
+  document.documentElement.style.setProperty("color-scheme", theme);
+}
+
+const initialPreference = readLocalThemePreference();
+const initialTheme: AppTheme = resolveTheme(initialPreference, "light");
+applyDocumentTheme(initialTheme);
+
 export interface SessionInfo {
   file: string;
   id: string;
@@ -30,7 +77,12 @@ export interface SessionInfo {
 interface PiStore {
   ready: boolean;
   bridgeKind: "jcef" | "mock" | "connecting";
-  theme: "light" | "dark";
+  /** Resolved theme currently applied to the document. */
+  theme: AppTheme;
+  /** "system" follows the IDE; "light"/"dark" are explicit user overrides. */
+  themePreference: ThemePreference;
+  /** Last theme reported by the IDE (light/dark). */
+  ideTheme: AppTheme;
   tab: Tab;
 
   piStatus: "notStarted" | "starting" | "running" | "exited";
@@ -58,13 +110,14 @@ interface PiStore {
 
   /** Pending tool-approval dialogs forwarded by the pi-approve extension. */
   approvals: PendingApproval[];
-  /** Approval policy of the bundled extension: "ask" (default) or "yolo". */
+  /** Approval policy of the bundled extension: "yolo" (default) or "ask". */
   approvalMode: "ask" | "yolo";
   /** pi-managed toggles; null until get_state / config.getPrefs answered. */
   autoCompaction: boolean | null;
   autoRetry: boolean | null;
 
   setTab(tab: Tab): void;
+  setThemePreference(preference: ThemePreference): void;
   init(): Promise<void>;
   send(text: string, mode: SendMode): Promise<void>;
   sendImages(text: string, images: Array<{ data: string; mimeType: string }>, mode: SendMode): Promise<void>;
@@ -75,6 +128,9 @@ interface PiStore {
   compact(): Promise<void>;
   restartPi(): Promise<void>;
   refreshStats(): Promise<void>;
+  /** Retries `get_commands` — init() races the pi process and used to leave
+   *  the slash menu permanently empty. */
+  refreshCommands(): Promise<void>;
   refreshSessions(): Promise<void>;
   switchSession(file: string): Promise<void>;
   renameSession(name: string): Promise<void>;
@@ -96,6 +152,51 @@ export const usePiStore = create<PiStore>((set, get) => {
   let bridge: Bridge | null = null;
   let initStarted = false;
   let promptSeq = 0;
+
+  /** Applies a preference and, in system mode, the current IDE theme. */
+  const applyThemePreference = (preference: ThemePreference, persist: boolean) => {
+    const theme = resolveTheme(preference, get().ideTheme);
+    set({ themePreference: preference, theme });
+    applyDocumentTheme(theme);
+    writeLocalThemePreference(preference);
+    if (persist && bridge) {
+      // PiUserPrefs is per project and survives port/token changes.
+      void bridge.request("config.setPrefs", { theme: preference }).catch(() => undefined);
+    }
+  };
+
+  /** IDE reported a theme change; overrides only matter in system mode. */
+  const applyIdeTheme = (ideTheme: AppTheme) => {
+    const theme = resolveTheme(get().themePreference, ideTheme);
+    set({ ideTheme, theme });
+    applyDocumentTheme(theme);
+  }
+
+  /**
+   * Re-fetches the metadata init() asked for while the pi process might still
+   * have been starting. Nothing here is fatal on its own, but a silently empty
+   * command/model list makes the composer's menus look broken, so we retry once
+   * pi reports itself running instead of leaving them empty for the session.
+   */
+  const refreshMeta = () => {
+    if (!bridge) return;
+    const b = bridge;
+    if (get().commands.length === 0) void get().refreshCommands();
+    if (get().models.length === 0) {
+      void rpc<{ models: ModelInfo[] }>(b, { type: "get_available_models" })
+        .then((r) => {
+          if (r.models?.length) set({ models: r.models });
+        })
+        .catch(() => undefined);
+    }
+    if (get().thinkingLevels.length === 0) {
+      void rpc<{ levels: string[] }>(b, { type: "get_available_thinking_levels" })
+        .then((r) => {
+          if (r.levels?.length) set({ thinkingLevels: r.levels });
+        })
+        .catch(() => undefined);
+    }
+  };
 
   const handlePiEvent = (event: Record<string, unknown>) => {
     const type = event["type"];
@@ -157,7 +258,9 @@ export const usePiStore = create<PiStore>((set, get) => {
   return {
     ready: false,
     bridgeKind: "connecting",
-    theme: "light",
+    theme: initialTheme,
+    themePreference: initialPreference,
+    ideTheme: "light",
     tab: "chat",
 
     piStatus: "notStarted",
@@ -173,7 +276,8 @@ export const usePiStore = create<PiStore>((set, get) => {
     pendingPrompt: null,
 
     approvals: [],
-    approvalMode: "ask",
+    // Auto-approve by default; "ask" is opt-in from the options menu.
+    approvalMode: "yolo",
     autoCompaction: null,
     autoRetry: null,
 
@@ -186,6 +290,10 @@ export const usePiStore = create<PiStore>((set, get) => {
     setTab(tab: Tab) {
       set({ tab });
       if (tab === "sessions") void get().refreshSessions();
+    },
+
+    setThemePreference(preference: ThemePreference) {
+      applyThemePreference(preference, true);
     },
 
     async init() {
@@ -204,6 +312,9 @@ export const usePiStore = create<PiStore>((set, get) => {
           if (d.kind === "prompt") {
             set({ tab: "chat", pendingPrompt: { text: String(d.text ?? ""), id: ++promptSeq } });
           }
+        } else if (name === "theme") {
+          const t = (data ?? {}) as { theme?: unknown };
+          if (isAppTheme(t.theme)) applyIdeTheme(t.theme);
         } else if (name === "pi-state") {
           const st = data as {
             status: PiStore["piStatus"];
@@ -217,13 +328,13 @@ export const usePiStore = create<PiStore>((set, get) => {
             exitMessage: st.message ?? "",
             exitStderr: st.stderr ?? "",
           });
+          if (st.status === "running") refreshMeta();
         }
       });
 
       try {
-        const env = await bridge.request<{ theme: "light" | "dark" }>("env");
-        set({ theme: env.theme });
-        document.documentElement.dataset.theme = env.theme;
+        const env = await bridge.request<{ theme?: unknown }>("env");
+        if (isAppTheme(env.theme)) applyIdeTheme(env.theme);
       } catch {
         // standalone mock provides env as well; ignore failures
       }
@@ -248,9 +359,7 @@ export const usePiStore = create<PiStore>((set, get) => {
         rpc<{ levels: string[] }>(bridge, { type: "get_available_thinking_levels" })
           .then((r) => set({ thinkingLevels: r.levels ?? [] }))
           .catch(() => undefined),
-        rpc<{ commands: CommandInfo[] }>(bridge, { type: "get_commands" })
-          .then((r) => set({ commands: r.commands ?? [] }))
-          .catch(() => undefined),
+        get().refreshCommands(),
         get().refreshStats(),
       ]);
 
@@ -272,8 +381,10 @@ export const usePiStore = create<PiStore>((set, get) => {
         // mock bridge without approval support
       }
       try {
-        const prefs = await bridge.request<{ autoRetry?: boolean }>("config.getPrefs");
+        const prefs = await bridge.request<{ autoRetry?: boolean; theme?: unknown }>("config.getPrefs");
         if (typeof prefs.autoRetry === "boolean") set({ autoRetry: prefs.autoRetry });
+        // IDE-side preference wins over the dev localStorage fallback.
+        if (isThemePreference(prefs.theme)) applyThemePreference(prefs.theme, false);
       } catch {
         // mock bridge without prefs support
       }
@@ -572,6 +683,19 @@ export const usePiStore = create<PiStore>((set, get) => {
         set({ stats });
       } catch {
         // non-fatal
+      }
+    },
+
+    async refreshCommands() {
+      if (!bridge) return;
+      try {
+        const r = await rpc<{ commands: CommandInfo[] }>(bridge, { type: "get_commands" });
+        // Keep the previous list on an empty answer: pi has no commands until
+        // its extensions are loaded, and wiping it would blink the menu empty.
+        if (r.commands?.length) set({ commands: r.commands });
+      } catch (e) {
+        // pi may not be running yet; the composer retries when the menu opens.
+        console.warn("get_commands failed", e);
       }
     },
 

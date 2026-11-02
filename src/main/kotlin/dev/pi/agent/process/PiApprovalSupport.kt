@@ -32,6 +32,12 @@ object PiApprovalSupport {
     const val MODE_ASK = "ask"
     const val MODE_YOLO = "yolo"
 
+    /** Bumped when the *default* policy changes, so stored files can migrate. */
+    private const val POLICY_VERSION = 2
+
+    /** Fresh installs auto-approve: an IDE tool window should not ask on every edit. */
+    private const val DEFAULT_MODE = MODE_YOLO
+
     /** Directory holding the extracted extension and the policy file. */
     fun agentDir(): File = File(PathManager.getConfigDir().toFile(), "pi-agent")
 
@@ -70,11 +76,12 @@ object PiApprovalSupport {
         val file = policyFile()
         val raw = runCatching { Json.parseToJsonElement(file.readText()).jsonObject }.getOrNull()
         val mode = raw?.get("mode")?.jsonPrimitive?.content
-            ?.takeIf { it == MODE_ASK || it == MODE_YOLO } ?: MODE_ASK
+            ?.takeIf { it == MODE_ASK || it == MODE_YOLO } ?: DEFAULT_MODE
         val allow = raw?.get("allow")?.jsonArray
             ?.mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
             ?: emptyList()
         return buildJsonObject {
+            put("version", POLICY_VERSION)
             put("mode", mode)
             put("allow", buildJsonArray { allow.forEach { add(kotlinx.serialization.json.JsonPrimitive(it)) } })
         }
@@ -87,14 +94,33 @@ object PiApprovalSupport {
         file.parentFile.mkdirs()
         file.writeText(
             buildJsonObject {
+                put("version", POLICY_VERSION)
                 put("mode", mode)
                 put("allow", buildJsonArray { allow.forEach { add(kotlinx.serialization.json.JsonPrimitive(it)) } })
             }.toString(),
         )
     }
 
+    /**
+     * Seeds (or migrates) the policy file.
+     *
+     * Files without a `version` were written by releases that defaulted to
+     * "ask" for everyone, so their stored mode is the old default rather than a
+     * user decision — those adopt the current default once. Files written from
+     * [POLICY_VERSION] on keep whatever the user picked.
+     */
     private fun ensurePolicyFile() {
         val file = policyFile()
-        if (!file.isFile) writePolicy(MODE_ASK, emptyList())
+        val raw = runCatching { Json.parseToJsonElement(file.readText()).jsonObject }.getOrNull()
+        if (raw == null) {
+            writePolicy(DEFAULT_MODE, emptyList())
+            return
+        }
+        val version = raw["version"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0
+        if (version >= POLICY_VERSION) return
+        val allow = raw["allow"]?.jsonArray
+            ?.mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }
+            ?: emptyList()
+        writePolicy(DEFAULT_MODE, allow)
     }
 }

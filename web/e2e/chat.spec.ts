@@ -136,3 +136,10 @@ test("queue mode lives on the send button dropdown, grayed out when idle", async
   await page.getByTestId("abort-btn").click();
   await expect(page.getByTestId("send-mode-caret")).toBeDisabled({ timeout: 20_000 });
 });
+
+test("auto-approve is on by default", async ({ page }) => {
+  await page.getByTestId("options-btn").click();
+  await expect(page.getByTestId("options-menu")).toBeVisible();
+  await expect(page.getByTestId("opt-approval")).toContainText("Auto-approve tool calls");
+  await expect(page.getByTestId("opt-approval-toggle")).toHaveAttribute("aria-checked", "true");
+});

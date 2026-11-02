@@ -2,7 +2,18 @@ import { useCallback, useEffect, useState } from "react";
 import { OutcomeBanner } from "../ManageView";
 import type { manageApi, SkillInfo } from "../../manage";
 
-export default function SkillsPanel({ api }: { api: ReturnType<typeof manageApi> }) {
+/**
+ * @param trusted project trust state from `trust.get`. Project-level skills
+ *   exist on disk either way, but pi ignores them until the project is
+ *   trusted — so they must be marked instead of being presented as active.
+ */
+export default function SkillsPanel({
+  api,
+  trusted = true,
+}: {
+  api: ReturnType<typeof manageApi>;
+  trusted?: boolean;
+}) {
   const [skills, setSkills] = useState<SkillInfo[]>([]);
   const [outcome, setOutcome] = useState<{ ok: boolean; error?: string; output?: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -82,17 +93,41 @@ export default function SkillsPanel({ api }: { api: ReturnType<typeof manageApi>
         </div>
       ) : null}
 
-      {skills.map((s) => (
-        <div className="panel-row" key={s.path} data-testid="skill-row">
-          <div className="panel-row-main">
-            <span className="panel-row-title">{s.name}</span>
-            <span className="panel-row-sub">{s.description}</span>
+      {skills.map((s) => {
+        // Only project-level skills are gated: user skills always load.
+        const inert = s.scope === "project" && !trusted;
+        return (
+          <div
+            className={`panel-row ${inert ? "panel-row-inactive" : ""}`}
+            key={s.path}
+            data-testid="skill-row"
+            data-scope={s.scope}
+            data-active={inert ? "false" : "true"}
+          >
+            <div className="panel-row-main">
+              <span className="panel-row-title">
+                {s.name}
+                <span className="scope-tag" data-testid="skill-scope" data-inert={inert ? "true" : "false"}>
+                  {s.scope === "project" ? (inert ? "项目级 · 未生效" : "项目级") : "用户级"}
+                </span>
+              </span>
+              <span className="panel-row-sub">{s.description}</span>
+              {inert ? (
+                <span
+                  className="panel-row-sub panel-row-warn"
+                  data-testid="skill-inert-reason"
+                  title="项目未被 pi 信任：该 skill 存在于仓库中，但启动时会被忽略。"
+                >
+                  未生效：项目未被信任
+                </span>
+              ) : null}
+            </div>
+            <div className="panel-row-actions">
+              <span className="panel-row-sub mono">{s.path}</span>
+            </div>
           </div>
-          <div className="panel-row-actions">
-            <span className="panel-row-sub mono">{s.path}</span>
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

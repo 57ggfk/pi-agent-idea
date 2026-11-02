@@ -1,5 +1,6 @@
 package dev.pi.agent.bridge
 
+import com.intellij.ide.ui.LafManagerListener
 import com.intellij.notification.Notification
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
@@ -56,6 +57,7 @@ class BridgeService(private val project: Project) : Disposable {
 
     private val wiredLock = Any()
     private var piEventsWired = false
+    private var themeEventsWired = false
 
     /** Entry point for POST /bridge. Envelopes are handled asynchronously. */
     fun handleEnvelope(message: String) {
@@ -103,12 +105,15 @@ class BridgeService(private val project: Project) : Disposable {
                 "manage.packagesList" -> dev.pi.agent.manage.PiManage.packagesList()
                 "manage.packageInstall" -> dev.pi.agent.manage.PiManage.packageInstall(params)
                 "manage.packageRemove" -> dev.pi.agent.manage.PiManage.packageRemove(params)
-                "manage.skillsList" -> dev.pi.agent.manage.PiManage.skillsList()
+                "manage.skillsList" -> dev.pi.agent.manage.PiManage.skillsList(project.basePath)
                 "manage.skillCreate" -> dev.pi.agent.manage.PiManage.skillCreate(params)
                 "manage.authOverview" -> dev.pi.agent.manage.PiManage.authOverview()
                 "manage.authCheck" -> dev.pi.agent.manage.PiManage.authCheck(params)
                 "manage.settingsRead" -> dev.pi.agent.manage.PiManage.settingsRead()
                 "manage.settingsWrite" -> dev.pi.agent.manage.PiManage.settingsWrite(params)
+                "trust.get" -> trustGet()
+                "trust.grant" -> trustGrant(params)
+                "trust.revoke" -> trustRevoke(params)
                 else -> throw IllegalArgumentException("unknown bridge method: $method")
             }
             push(buildJsonObject {
@@ -130,9 +135,11 @@ class BridgeService(private val project: Project) : Disposable {
     private fun envInfo(): JsonObject = buildJsonObject {
         put("projectName", project.name)
         put("projectPath", project.basePath ?: "")
-        put("theme", if (JBColor.isBright()) "light" else "dark")
+        put("theme", currentTheme())
         put("editorFontFamily", UIUtil.getLabelFont().family)
     }
+
+    private fun currentTheme(): String = if (JBColor.isBright()) "light" else "dark"
 
     private suspend fun rpcRequest(params: JsonObject): JsonObject {
         val command = params["command"] as? JsonObject
@@ -184,22 +191,113 @@ class BridgeService(private val project: Project) : Disposable {
 
     /** Preferences pi does not expose via get_state; restored by the frontend. */
     private fun getPrefs(): JsonObject {
-        val autoRetry = dev.pi.agent.process.PiUserPrefs.getInstance(project).autoRetry()
+        val prefs = dev.pi.agent.process.PiUserPrefs.getInstance(project)
+        val autoRetry = prefs.autoRetry()
+        val themePreference = prefs.themePreference()
         return buildJsonObject {
             if (autoRetry != null) put("autoRetry", autoRetry)
+            if (themePreference != null) put("theme", themePreference)
         }
     }
 
     private fun setPrefs(params: JsonObject): JsonObject {
+        val prefs = dev.pi.agent.process.PiUserPrefs.getInstance(project)
         val autoRetry = (params["autoRetry"] as? JsonPrimitive)?.content?.toBooleanStrictOrNull()
-        if (autoRetry != null) {
-            dev.pi.agent.process.PiUserPrefs.getInstance(project).setAutoRetry(autoRetry)
-        }
+        if (autoRetry != null) prefs.setAutoRetry(autoRetry)
+        val themePreference = (params["theme"] as? JsonPrimitive)?.content
+        if (themePreference != null) prefs.setThemePreference(themePreference)
         return buildJsonObject { put("ok", true) }
     }
 
     private fun approvalGetPolicy(): JsonObject =
         dev.pi.agent.process.PiApprovalSupport.policy()
+
+    // -- project trust ------------------------------------------------------
+
+    /**
+     * Project-level files (skills, mcp, settings, extensions) are inert until
+     * pi finds the project in `trust.json`. The frontend cannot see that file,
+     * so the state has to come from here.
+     *
+     * The project is taken from the bridge's per-project routing, never from
+     * the request: a frontend must not be able to ask about another project.
+     */
+    private fun trustGet(): JsonObject {
+        val basePath = project.basePath ?: ""
+        val snapshot = dev.pi.agent.process.PiTrust.snapshot(basePath)
+        val resources = dev.pi.agent.process.PiTrust.resources(basePath, snapshot.trusted)
+        return buildJsonObject {
+            // An unreadable store is reported as a failed read: the frontend
+            // must show it rather than pretend the project is untrusted.
+            put("ok", snapshot.error == null)
+            snapshot.error?.let { put("error", it) }
+            put("trusted", snapshot.trusted)
+            put("path", if (basePath.isBlank()) "" else dev.pi.agent.process.PiTrust.normalize(basePath))
+            put("store", snapshot.file)
+            put("exists", snapshot.exists)
+            put("resources", buildJsonArray {
+                resources.forEach { resource ->
+                    add(buildJsonObject {
+                        put("type", resource.type)
+                        put("label", resource.label)
+                        put("scope", resource.scope)
+                        put("active", resource.active)
+                        put("path", resource.path)
+                        resource.reason?.let { put("reason", it) }
+                    })
+                }
+            })
+        }
+    }
+
+    private fun trustGrant(params: JsonObject): JsonObject {
+        if (!confirmed(params)) {
+            return buildJsonObject { put("ok", false); put("error", "confirmation required") }
+        }
+        val basePath = project.basePath
+            ?: return buildJsonObject { put("ok", false); put("error", "project has no base path") }
+        val result = dev.pi.agent.process.PiTrust.grant(basePath)
+        if (!result.ok) {
+            return buildJsonObject {
+                put("ok", false)
+                put("error", result.error ?: "write failed")
+                put("trusted", false)
+            }
+        }
+        val manager = PiProcessManager.getInstance(project)
+        // A running process keeps the trust state it started with; the flag
+        // only affects the next start, and only because the user just
+        // authorised this project in this session.
+        manager.approveOnNextStart()
+        return buildJsonObject {
+            put("ok", true)
+            put("trusted", true)
+            put("path", dev.pi.agent.process.PiTrust.normalize(basePath))
+            put("restartRequired", manager.state !is PiConnectionState.NotStarted)
+        }
+    }
+
+    private fun trustRevoke(params: JsonObject): JsonObject {
+        if (!confirmed(params)) {
+            return buildJsonObject { put("ok", false); put("error", "confirmation required") }
+        }
+        val basePath = project.basePath
+            ?: return buildJsonObject { put("ok", false); put("error", "project has no base path") }
+        val result = dev.pi.agent.process.PiTrust.revoke(basePath)
+        if (!result.ok) {
+            return buildJsonObject { put("ok", false); put("error", result.error ?: "write failed") }
+        }
+        val manager = PiProcessManager.getInstance(project)
+        return buildJsonObject {
+            put("ok", true)
+            put("trusted", false)
+            put("path", dev.pi.agent.process.PiTrust.normalize(basePath))
+            put("restartRequired", manager.state !is PiConnectionState.NotStarted)
+        }
+    }
+
+    private fun confirmed(params: JsonObject): Boolean =
+        (params["confirmed"] as? JsonPrimitive)?.content?.toBooleanStrictOrNull() == true
 
     /** Writes the approval policy; the extension re-reads it on every tool call. */
     private fun approvalSetPolicy(params: JsonObject): JsonObject {
@@ -462,6 +560,22 @@ class BridgeService(private val project: Project) : Disposable {
         }
         manager.addStateListener { state -> pushStateEvent(state) }
         pushStateEvent(manager.state)
+        wireThemeEvents()
+    }
+
+    private fun wireThemeEvents() {
+        synchronized(wiredLock) {
+            if (themeEventsWired) return
+            themeEventsWired = true
+        }
+        val connection = ApplicationManager.getApplication().messageBus.connect(this)
+        connection.subscribe(LafManagerListener.TOPIC, LafManagerListener { _ ->
+            push(buildJsonObject {
+                put("t", "event")
+                put("name", "theme")
+                put("data", buildJsonObject { put("theme", currentTheme()) })
+            })
+        })
     }
 
     /**

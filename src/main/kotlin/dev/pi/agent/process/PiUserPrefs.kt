@@ -24,8 +24,24 @@ class PiUserPrefs(private val project: Project) {
         properties.setValue(KEY_AUTO_RETRY, enabled.toString())
     }
 
+    /**
+     * Theme preference: "system" (follow the IDE), "light" or "dark".
+     * Null until the user makes an explicit choice.
+     */
+    fun themePreference(): String? {
+        val raw = properties.getValue(KEY_THEME) ?: return null
+        return raw.takeIf { it == "system" || it == "light" || it == "dark" }
+    }
+
+    fun setThemePreference(preference: String) {
+        if (preference == "system" || preference == "light" || preference == "dark") {
+            properties.setValue(KEY_THEME, preference)
+        }
+    }
+
     companion object {
         private const val KEY_AUTO_RETRY = "dev.pi.agent.autoRetry"
+        private const val KEY_THEME = "dev.pi.agent.themePreference"
 
         @JvmStatic
         fun getInstance(project: Project): PiUserPrefs =

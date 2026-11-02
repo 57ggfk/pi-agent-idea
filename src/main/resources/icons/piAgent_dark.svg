@@ -1,0 +1,7 @@
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Dark-theme variant (IconLoader picks *_dark.svg in Darcula). Same glyph,
+       lighter stroke so it stays readable on #2B2D30. -->
+  <path d="M4.2 4.8H11.8" fill="none" stroke="#CED0D6" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M5.7 4.8V11.2" fill="none" stroke="#CED0D6" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="M10.3 4.8C10.3 7.7 10 9.4 8.5 11.1" fill="none" stroke="#CED0D6" stroke-width="1.5" stroke-linecap="round"/>
+</svg>

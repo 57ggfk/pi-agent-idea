@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Pi Agent · UI 原型</title>
+<link rel="stylesheet" href="./prototype.css" />
+</head>
+<body>
+<svg class="sprite" aria-hidden="true">
+  <defs>
+    <symbol id="i-chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="i-chev-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-paperclip" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></symbol>
+    <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect width="12" height="12" x="6" y="6" rx="2"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-fork" viewBox="0 0 24 24"><circle cx="12" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><path d="M18 9v2a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V9"/><path d="M12 12v3"/></symbol>
+    <symbol id="i-compact" viewBox="0 0 24 24"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" x2="21" y1="10" y2="3"/><line x1="3" x2="10" y1="21" y2="14"/></symbol>
+    <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></symbol>
+    <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></symbol>
+    <symbol id="i-terminal" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></symbol>
+    <symbol id="i-package" viewBox="0 0 24 24"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4"/><path d="m21 2-9.6 9.6"/><circle cx="7.5" cy="15.5" r="5.5"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="16" y2="12"/><line x1="12" x2="12.01" y1="8" y2="8"/></symbol>
+    <symbol id="i-message" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+  </defs>
+</svg>
+
+<div class="proto">
+  <header class="proto-bar">
+    <div class="proto-brand">Pi Agent <span>UI 原型</span></div>
+    <div class="proto-group" role="group" aria-label="主题">
+      <span>主题</span>
+      <button data-theme-btn="light" aria-pressed="true">Light</button>
+      <button data-theme-btn="dark" aria-pressed="false">Dark</button>
+    </div>
+    <div class="proto-group" role="group" aria-label="窗口宽度">
+      <span>宽度</span>
+      <button data-width-btn="360" aria-pressed="false">360</button>
+      <button data-width-btn="720" aria-pressed="true">720</button>
+      <button data-width-btn="100%" aria-pressed="false">自适应</button>
+    </div>
+    <div class="proto-group" role="group" aria-label="页面">
+      <span>页面</span>
+      <button data-page-btn="chat" aria-pressed="true">对话</button>
+      <button data-page-btn="empty" aria-pressed="false">空态</button>
+      <button data-page-btn="sessions" aria-pressed="false">会话</button>
+      <button data-page-btn="manage" aria-pressed="false">管理</button>
+    </div>
+    <div class="proto-hint">原型控制 · 非产品 UI</div>
+  </header>
+
+  <div class="stage">
+    <div class="device" id="device" data-theme="light">
+      <div class="app">
+        <nav class="tabs" role="tablist" aria-label="Pi Agent">
+          <button class="tab active" data-tab="chat" role="tab" aria-selected="true">Chat</button>
+          <button class="tab" data-tab="sessions" role="tab" aria-selected="false">Sessions</button>
+          <button class="tab" data-tab="manage" role="tab" aria-selected="false">Manage</button>
+        </nav>
+
+        <section class="view view-chat active" data-view="chat">
+
+          <div class="message-list" id="messages">
+            <div class="message-col">
+              <div class="msg msg-user">
+                <div class="bubble">这个 tool window 的 UI 有点乱，尤其是窄窗口下。帮我看看布局和响应式能怎么改？</div>
+              </div>
+
+              <article class="msg msg-assistant">
+                <div class="msg-head">
+                  <span class="avatar">π</span>
+                  <span class="who">Pi</span>
+                  <span class="when">2m</span>
+                </div>
+                <div class="msg-body">
+                  <p>看了下 <code>web/src/styles.css</code> 和几个组件，问题主要不是配色，而是缺少统一的设计 token 和图标体系。</p>
+
+                  <div class="thinking">
+                    <button class="thinking-head" data-toggle aria-expanded="false">
+                      <svg class="ic"><use href="#i-sparkles"/></svg>
+                      <span>Thought for 8s</span>
+                      <span class="muted">· 1.2k tokens</span>
+                      <svg class="ic chev"><use href="#i-chev"/></svg>
+                    </button>
+                    <div class="thinking-body">先确认样式规模，再定位重复定义和响应式断点。
+
+- styles.css 1598 行，.item-error 和 .message-list 各定义两次
+- 字号 10/11/12/13/14px 混用，圆角 3–12px 混用
+- 响应式用 viewport media query，tool window 宽度变化时不一定准确</div>
+                  </div>
+
+                  <div class="tool">
+                    <button class="tool-head" data-toggle aria-expanded="false">
+                      <span class="tool-icon"><svg class="ic"><use href="#i-file"/></svg></span>
+                      <span class="tool-name">read</span>
+                      <code class="tool-arg">web/src/styles.css</code>
+                      <span class="tool-meta ok"><svg class="ic ic-sm"><use href="#i-check"/></svg>38ms</span>
+                      <svg class="ic chev"><use href="#i-chev"/></svg>
+                    </button>
+                    <div class="tool-body">
+                      <pre>1  /* Pi Agent web UI — themeable via [data-theme] */
+2
+3  :root,
+4  :root[data-theme="light"] {
+5    --bg: #ffffff;
+6    --accent: #3574f0;
+7    --text: #1e1f22;
+8  }</pre>
+                    </div>
+                  </div>
+
+                  <div class="tool open">
+                    <button class="tool-head" data-toggle aria-expanded="true">
+                      <span class="tool-icon"><svg class="ic"><use href="#i-pencil"/></svg></span>
+                      <span class="tool-name">edit</span>
+                      <code class="tool-arg">web/src/styles.css</code>
+                      <span class="tool-meta ok">+48 −21</span>
+                      <svg class="ic chev"><use href="#i-chev"/></svg>
+                    </button>
+                    <div class="tool-body">
+                      <div class="diff">
+                        <div class="diff-line diff-ctx"><span class="sign"></span>:root {</div>
+                        <div class="diff-line diff-del"><span class="sign">−</span>  --font-size: 13px;</div>
+                        <div class="diff-line diff-add"><span class="sign">+</span>  --fs-base: 13px;</div>
+                        <div class="diff-line diff-del"><span class="sign">−</span>  --radius: 6px;</div>
+                        <div class="diff-line diff-add"><span class="sign">+</span>  --r-sm: 6px;</div>
+                        <div class="diff-line diff-add"><span class="sign">+</span>  --r-md: 8px;</div>
+                        <div class="diff-line diff-add"><span class="sign">+</span>  --r-lg: 10px;</div>
+                        <div class="diff-line diff-ctx"><span class="sign"></span>}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <p><strong>建议分三层改：</strong></p>
+                  <ul>
+                    <li>先补 token：字号、间距、圆角、状态色，把散落的 px 收口。</li>
+                    <li>图标统一成 14–16px 线性图标，替换 emoji 和几何符号。</li>
+                    <li>响应式从 viewport media query 改成容器查询，tool window 多窄都成立。</li>
+                  </ul>
+                  <p>方向确认后，我可以先出一版静态原型，再改 React 代码，避免反复返工。</p>
+                </div>
+              </article>
+
+              <div class="system">
+                <svg class="ic ic-sm"><use href="#i-info"/></svg>
+                Context compacted · 12k → 3.2k tokens
+              </div>
+
+              <div class="msg msg-user">
+                <div class="bubble">可以，先来一版简洁的，不要花里胡哨。</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="approval" id="approval">
+            <div class="approval-head">
+              <span class="approval-badge"><svg class="ic"><use href="#i-terminal"/></svg></span>
+              <div>
+                <div class="approval-title">Approve shell command</div>
+                <div class="approval-sub">pi wants to run this in the project root</div>
+              </div>
+            </div>
+            <pre class="approval-cmd">npm run build</pre>
+            <div class="approval-actions">
+              <button class="btn btn-primary" data-approve="allow">Allow once</button>
+              <button class="btn" data-approve="deny">Deny</button>
+              <span class="approval-wait"><span class="wait-dot"></span>Agent is waiting</span>
+            </div>
+          </div>
+
+          <div class="composer">
+            <div class="composer-box">
+              <textarea class="composer-input" id="composer-input" rows="1"
+                placeholder="Message pi…  (/ for commands, @ for files)"></textarea>
+              <div class="composer-tools">
+                <button class="icon-btn" title="Attach images" aria-label="Attach images">
+                  <svg class="ic"><use href="#i-paperclip"/></svg>
+                </button>
+                <div class="divider"></div>
+
+                <div class="menu-wrap">
+                  <button class="chip" data-menu-btn aria-haspopup="listbox" aria-expanded="false">
+                    <svg class="ic ic-sm chip-icon"><use href="#i-sparkles"/></svg>
+                    <span class="chip-text" data-menu-label>Sonnet 4.5</span>
+                    <svg class="ic ic-sm caret"><use href="#i-chev-down"/></svg>
+                  </button>
+                  <div class="menu" role="listbox" aria-label="Model">
+                    <input class="menu-search" placeholder="Search models…" aria-label="Search models" />
+                    <div class="menu-label">Anthropic</div>
+                    <button class="menu-item selected" data-option data-label="Sonnet 4.5" role="option" aria-selected="true">
+                      <svg class="ic ic-sm check"><use href="#i-check"/></svg>
+                      <span class="menu-item-main"><span class="menu-item-name">Claude Sonnet 4.5</span><span class="menu-item-sub">anthropic · 200k context</span></span>
+                    </button>
+                    <button class="menu-item" data-option data-label="Opus 4.1" role="option" aria-selected="false">
+                      <svg class="ic ic-sm check"><use href="#i-check"/></svg>
+                      <span class="menu-item-main"><span class="menu-item-name">Claude Opus 4.1</span><span class="menu-item-sub">anthropic · 200k context</span></span>
+                    </button>
+                    <div class="menu-label">OpenAI</div>
+                    <button class="menu-item" data-option data-label="GPT-5.1" role="option" aria-selected="false">
+                      <svg class="ic ic-sm check"><use href="#i-check"/></svg>
+                      <span class="menu-item-main"><span class="menu-item-name">GPT-5.1</span><span class="menu-item-sub">openai · 400k context</span></span>
+                    </button>
+                  </div>
+                </div>
+
+                <div class="menu-wrap menu-align-right">
+                  <button class="chip" data-menu-btn aria-haspopup="listbox" aria-expanded="false">
+                    <span class="chip-text" data-menu-label>Medium</span>
+                    <svg class="ic ic-sm caret"><use href="#i-chev-down"/></svg>
+                  </button>
+                  <div class="menu" role="listbox" aria-label="Thinking level">
+                    <div class="menu-label">Thinking level</div>
+                    <button class="menu-item" data-option data-label="Off" role="option"><svg class="ic ic-sm check"><use href="#i-check"/></svg><span class="menu-item-main"><span class="menu-item-name">Off</span></span></button>
+                    <button class="menu-item" data-option data-label="Low" role="option"><svg class="ic ic-sm check"><use href="#i-check"/></svg><span class="menu-item-main"><span class="menu-item-name">Low</span></span></button>
+                    <button class="menu-item selected" data-option data-label="Medium" role="option"><svg class="ic ic-sm check"><use href="#i-check"/></svg><span class="menu-item-main"><span class="menu-item-name">Medium</span></span></button>
+                    <button class="menu-item" data-option data-label="High" role="option"><svg class="ic ic-sm check"><use href="#i-check"/></svg><span class="menu-item-main"><span class="menu-item-name">High</span></span></button>
+                  </div>
+                </div>
+
+                <button class="icon-btn" title="Options" aria-label="Options">
+                  <svg class="ic"><use href="#i-settings"/></svg>
+                </button>
+
+                <span class="spacer"></span>
+
+                <button class="btn btn-ghost btn-labeled hide-xs" title="Compact context">
+                  <svg class="ic ic-sm"><use href="#i-compact"/></svg>
+                  <span class="btn-label">Compact</span>
+                </button>
+                <button class="btn btn-ghost btn-labeled hide-xs" title="Fork session">
+                  <svg class="ic ic-sm"><use href="#i-fork"/></svg>
+                  <span class="btn-label">Fork</span>
+                </button>
+                <button class="btn btn-ghost btn-labeled hide-xs" title="New session">
+                  <svg class="ic ic-sm"><use href="#i-plus"/></svg>
+                  <span class="btn-label">New</span>
+                </button>
+
+                <button class="send-btn" id="send" title="Send" aria-label="Send">
+                  <svg class="ic"><use href="#i-arrow-up"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="view view-empty" data-view="empty">
+          <div class="empty">
+            <div class="empty-logo">π</div>
+            <h1 class="empty-title">Pi Agent</h1>
+            <p class="empty-sub">简洁克制的对话界面。保持 IDE 密度，聚焦任务本身，减少视觉噪音。</p>
+            <div class="empty-actions">
+              <button class="btn btn-primary">
+                <svg class="ic ic-sm"><use href="#i-message"/></svg>
+                New conversation
+              </button>
+              <button class="btn">
+                <svg class="ic ic-sm"><use href="#i-file"/></svg>
+                Open recent session
+              </button>
+            </div>
+            <div class="empty-meta">
+              <span>claude-sonnet-4.5</span>
+              <span>anthropic</span>
+              <span>mock mode</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="view view-sessions" data-view="sessions">
+          <div class="view-toolbar">
+            <div class="search">
+              <svg class="ic ic-sm"><use href="#i-search"/></svg>
+              <input placeholder="Filter sessions…" aria-label="Filter sessions" />
+            </div>
+            <button class="btn">
+              <svg class="ic ic-sm"><use href="#i-refresh"/></svg>
+              Refresh
+            </article>
+            <span class="spacer"></span>
+            <button class="btn btn-primary">
+              <svg class="ic ic-sm"><use href="#i-plus"/></svg>
+              New session
+            </article>
+          </div>
+          <div class="session-grid">
+            <article class="session-card current">
+              <div class="session-top">
+                <h2 class="session-name">ui-response-polish</h2>
+                <span class="badge">current</span>
+              </div>
+              <p class="session-preview">帮我优化 tool window UI 的布局和响应式，优先简洁易用。</p>
+              <div class="session-foot">
+                <span class="muted">2h ago</span>
+                <span class="muted">6 msgs</span>
+                <span class="spacer"></span>
+                <div class="session-actions">
+                  <button class="icon-btn" title="Rename" aria-label="Rename"><svg class="ic ic-sm"><use href="#i-pencil"/></svg></button>
+                  <button class="icon-btn" title="Clone as HTML" aria-label="Clone as HTML"><svg class="ic ic-sm"><use href="#i-download"/></svg></button>
+                  <button class="icon-btn" title="Delete" aria-label="Delete"><svg class="ic ic-sm"><use href="#i-trash"/></svg></button>
+                </div>
+              </div>
+            </article>
+
+            <article class="session-card">
+              <div class="session-top">
+                <h2 class="session-name">rpc-process-refactor</h2>
+              </div>
+              <p class="session-preview">重构 BridgeService 的重启逻辑，处理 stderr 和退出码。</p>
+              <div class="session-foot">
+                <span class="muted">yesterday</span>
+                <span class="muted">14 msgs</span>
+                <span class="spacer"></span>
+                <div class="session-actions">
+                  <button class="icon-btn" title="Rename" aria-label="Rename"><svg class="ic ic-sm"><use href="#i-pencil"/></svg></button>
+                  <button class="icon-btn" title="Clone as HTML" aria-label="Clone as HTML"><svg class="ic ic-sm"><use href="#i-download"/></svg></button>
+                  <button class="icon-btn" title="Delete" aria-label="Delete"><svg class="ic ic-sm"><use href="#i-trash"/></svg></button>
+                </div>
+              </div>
+            </article>
+
+            <article class="session-card">
+              <div class="session-top">
+                <h2 class="session-name">mcp-panel</h2>
+              </div>
+              <p class="session-preview">完善 MCP 管理页的增删改和状态展示。</p>
+              <div class="session-foot">
+                <span class="muted">3 days ago</span>
+                <span class="muted">9 msgs</span>
+                <span class="spacer"></span>
+                <div class="session-actions">
+                  <button class="icon-btn" title="Rename" aria-label="Rename"><svg class="ic ic-sm"><use href="#i-pencil"/></svg></button>
+                  <button class="icon-btn" title="Clone as HTML" aria-label="Clone as HTML"><svg class="ic ic-sm"><use href="#i-download"/></svg></button>
+                  <button class="icon-btn" title="Delete" aria-label="Delete"><svg class="ic ic-sm"><use href="#i-trash"/></svg></button>
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="view view-manage" data-view="manage">
+          <div class="manage-env">
+            <span class="env-dot"></span>
+            <span>pi <b>1.4.0</b></span>
+            <span class="env-path">C:\Users\...\pi-coding-agent</span>
+            <span class="spacer"></span>
+            <span>~/.pi/agent</span>
+          </div>
+          <nav class="subnav" role="tablist">
+            <button class="subtab active">MCP Servers</button>
+            <button class="subtab">Packages</button>
+            <button class="subtab">Skills</button>
+            <button class="subtab">Auth</button>
+            <button class="subtab">Settings</button>
+          </nav>
+          <div class="manage-content">
+            <header class="panel-head">
+              <h2 class="panel-title">MCP Servers</h2>
+              <span class="panel-count">3</span>
+              <span class="spacer"></span>
+              <button class="btn"><svg class="ic ic-sm"><use href="#i-refresh"/></svg> Refresh</button>
+              <button class="btn btn-primary"><svg class="ic ic-sm"><use href="#i-plus"/></svg> Add server</button>
+            </header>
+            <div class="form-row">
+              <input class="input" placeholder="Name" />
+              <input class="input" placeholder="Command (e.g. npx ...)" />
+              <button class="btn btn-primary">Add</button>
+            </div>
+            <div class="rows">
+              <article class="row">
+                <div class="row-icon"><svg class="ic"><use href="#i-terminal"/></svg></div>
+                <div class="row-main">
+                  <div class="row-title">filesystem</div>
+                  <div class="row-sub">stdio · npx -y @modelcontextprotocol/server-filesystem D:/code</div>
+                </div>
+                <span class="pill ok"><span class="status-dot"></span>Running</span>
+                <div class="row-actions">
+                  <button class="icon-btn" title="Restart" aria-label="Restart"><svg class="ic ic-sm"><use href="#i-refresh"/></svg></button>
+                  <button class="icon-btn" title="Logout" aria-label="Logout"><svg class="ic ic-sm"><use href="#i-key"/></svg></button>
+                  <button class="icon-btn" title="Remove" aria-label="Remove"><svg class="ic ic-sm"><use href="#i-trash"/></svg></button>
+                </div>
+              </article>
+              <article class="row">
+                <div class="row-icon"><svg class="ic"><use href="#i-shield"/></svg></div>
+                <div class="row-main">
+                  <div class="row-title">github</div>
+                  <div class="row-sub">stdio · npx -y @modelcontextprotocol/server-github</div>
+                </div>
+                <span class="pill off">Stopped</span>
+                <button class="switch"></button>
+                <div class="row-actions">
+                  <button class="icon-btn" title="Start" aria-label="Start"><svg class="ic ic-sm"><use href="#i-arrow-up"/></svg></button>
+                  <button class="icon-btn" title="Remove" aria-label="Remove"><svg class="ic ic-sm"><use href="#i-trash"/></svg></button>
+                </div>
+              </article>
+              <article class="row">
+                <div class="row-icon"><svg class="ic"><use href="#i-package"/></svg></div>
+                <div class="row-main">
+                  <div class="row-title">context7</div>
+                  <div class="row-sub">http · https://mcp.context7.com/mcp</div>
+                </div>
+                <span class="pill ok"><span class="status-dot"></span>Running</span>
+                <div class="row-actions">
+                  <button class="icon-btn" title="Restart" aria-label="Restart"><svg class="ic ic-sm"><use href="#i-refresh"/></svg></button>
+                  <button class="icon-btn" title="Remove" aria-label="Remove"><svg class="ic ic-sm"><use href="#i-trash"/></svg></button>
+                </div>
+              </article>
+            </div>
+            <p class="panel-note">设置项尽量简短，图标只用来区分类别，不做装饰。</p>
+          </div>
+        </section>
+
+        <footer class="statusbar">
+          <span class="status-item"><span class="status-dot running busy"></span>running</span>
+          <span class="status-item">pi 1.4.0</span>
+          <span class="status-item hide-sm status-session" title="ui-response-polish">ui-response-polish</span>
+          <span class="spacer"></span>
+          <span class="ctx warn" title="Context window usage">
+            <span class="ctx-bar"><span style="width: 78%"></span></span>
+            ctx 78%
+          </span>
+          <span class="status-item hide-xs">$0.42</span>
+          <span class="status-item hide-xs">12 msgs</span>
+          <span class="status-item hide-xs muted">MOCK</span>
+        </footer>
+      </div>
+    </div>
+  </div>
+
+  <footer class="proto-notes">
+    <span><b>原则</b>：简洁、克制、IDE 密度</span>
+    <span><b>响应式</b>：容器查询 + 隐藏次要信息（窄窗口自动适配）</span>
+    <span><b>主题</b>：统一 CSS 变量，light/dark 一致</span>
+    <span><b>可用性</b>：focus-visible、键盘友好的交互区域</span>
+    <span><b>图标</b>：内联 SVG，14–16px，currentColor</span>
+  </footer>
+</div>
+
+<script src="./prototype.js"></script>
+</body>
+</html>

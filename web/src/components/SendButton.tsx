@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { SendMode } from "../store/store";
+import Icon from "./Icon";
 
 /**
  * Split Send button: the main area sends with the selected queue mode, the
@@ -49,23 +50,24 @@ export default function SendButton({
   return (
     <div className="split-btn" ref={rootRef}>
       <button
-        className="btn btn-send split-main"
+        className="send-btn split-main"
         data-testid="send-btn"
+        aria-label="Send"
         onClick={onMain}
         disabled={disabled}
         title={isStreaming ? `Send as ${activeLabel}` : "Send"}
       >
-        Send
+        <Icon name="arrow-up" />
       </button>
       <button
-        className={`btn btn-send split-caret ${isStreaming ? "" : "split-caret-disabled"}`}
+        className={`send-btn split-caret ${isStreaming ? "" : "split-caret-disabled"}`}
         data-testid="send-mode-caret"
         aria-label="Queue mode"
         disabled={!isStreaming}
         title={isStreaming ? "Queue mode" : "Queue modes apply while the agent is running"}
         onClick={() => setMenuOpen((o) => !o)}
       >
-        ▾
+        <Icon name="chev-down" className="ic-sm" />
       </button>
       {menuOpen ? (
         <div className="send-mode-menu" data-testid="send-mode-menu">

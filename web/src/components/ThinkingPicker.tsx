@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { usePiStore } from "../store/store";
+import Icon from "./Icon";
 
 /**
  * Bottom-bar thinking-level dropdown. The composer sits at the bottom of the
@@ -39,10 +40,12 @@ export default function ThinkingPicker() {
         onKeyDown={(e) => {
           if (e.key === "Escape") setOpen(false);
         }}
-        title="Thinking level"
+        title={`Thinking level: ${thinkingLevel}`}
+        aria-label={`Thinking level: ${thinkingLevel}`}
       >
-        <span>💭 {thinkingLevel}</span>
-        <span className="chip-caret">{open ? "▾" : "▸"}</span>
+        <Icon name="gauge" className="ic-sm" />
+        <span className="chip-label">{thinkingLevel}</span>
+        <Icon name="chev-down" className="ic-sm chip-caret" />
       </button>
       {open ? (
         <div className="thinking-menu" data-testid="thinking-menu">

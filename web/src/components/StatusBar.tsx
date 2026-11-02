@@ -1,4 +1,5 @@
 import { usePiStore } from "../store/store";
+import Icon from "./Icon";
 
 export default function StatusBar() {
   const stats = usePiStore((s) => s.stats);
@@ -27,7 +28,8 @@ export default function StatusBar() {
             {exitStderr ? ` — ${exitStderr.split("\n").slice(-3).join(" | ").slice(0, 300)}` : ""}
           </span>
           <button className="btn btn-restart" data-testid="restart-btn" onClick={() => void restartPi()}>
-            ↻ Restart
+            <Icon name="refresh" className="ic-sm" />
+            Restart
           </button>
         </div>
       ) : null}

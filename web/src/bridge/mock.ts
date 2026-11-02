@@ -2,6 +2,22 @@ import type { Bridge, BridgeEventName } from "./types";
 
 type Listener = (name: BridgeEventName, data: unknown) => void;
 
+/** Query-string knobs for e2e; null outside a browser (vitest). */
+function query(): URLSearchParams | null {
+  return typeof location !== "undefined" ? new URLSearchParams(location.search) : null;
+}
+
+const MOCK_PROJECT_PATH = "/tmp/mock-project";
+const MOCK_TRUST_STORE = "/tmp/mock-home/.pi/agent/trust.json";
+
+/** The four project-local categories pi gates on trust. */
+const MOCK_TRUST_RESOURCES = [
+  { type: "skills", label: "Project skills", path: `${MOCK_PROJECT_PATH}/.pi/skills` },
+  { type: "mcp", label: "MCP servers", path: `${MOCK_PROJECT_PATH}/.pi/mcp.json` },
+  { type: "settings", label: "Project settings", path: `${MOCK_PROJECT_PATH}/.pi/settings.json` },
+  { type: "extensions", label: "Extensions", path: `${MOCK_PROJECT_PATH}/.pi/extensions` },
+] as const;
+
 interface MockModel {
   id: string;
   name: string;
@@ -31,7 +47,18 @@ export class MockBridge implements Bridge {
   private sessionSeq = 0;
   private autoCompactionEnabled = true;
   private autoRetryEnabled: boolean | null = null;
-  private approvalMode: "ask" | "yolo" = "ask";
+  private themePreference: "system" | "light" | "dark" = "system";
+  // Project trust. Defaults to trusted so the standalone UI looks like a
+  // normal working project; `?trusted=0` exercises the untrusted banner and
+  // `?trust=broken` the unreadable-store path.
+  private projectTrusted = query()?.get("trusted") !== "0";
+  private readonly trustBroken = query()?.get("trust") === "broken";
+  // Mirrors the plugin default (auto-approve). ?approval=1 starts in "ask" so
+  // the gated approval-card specs still see a dialog.
+  private approvalMode: "ask" | "yolo" =
+    typeof location !== "undefined" && new URLSearchParams(location.search).has("approval")
+      ? "ask"
+      : "yolo";
   /** Resolver of the currently pending approval dialog, if any. */
   private approvalResolve: ((confirmed: boolean) => void) | null = null;
   // Approval gating for the bash tool call, enabled via ?approval=1 so the
@@ -99,13 +126,17 @@ export class MockBridge implements Bridge {
       return Promise.resolve({ ok: true } as T);
     }
     if (method === "config.getPrefs") {
-      return Promise.resolve(
-        (this.autoRetryEnabled == null ? {} : { autoRetry: this.autoRetryEnabled }) as T,
-      );
+      return Promise.resolve({
+        ...(this.autoRetryEnabled == null ? {} : { autoRetry: this.autoRetryEnabled }),
+        theme: this.themePreference,
+      } as T);
     }
     if (method === "config.setPrefs") {
-      const autoRetry = (params as { autoRetry?: boolean })?.autoRetry;
-      if (typeof autoRetry === "boolean") this.autoRetryEnabled = autoRetry;
+      const prefs = params as { autoRetry?: boolean; theme?: string } | undefined;
+      if (typeof prefs?.autoRetry === "boolean") this.autoRetryEnabled = prefs.autoRetry;
+      if (prefs?.theme === "system" || prefs?.theme === "light" || prefs?.theme === "dark") {
+        this.themePreference = prefs.theme;
+      }
       return Promise.resolve({ ok: true } as T);
     }
     if (method === "approval.getPolicy") {
@@ -116,8 +147,8 @@ export class MockBridge implements Bridge {
       if (mode === "ask" || mode === "yolo") this.approvalMode = mode;
       return Promise.resolve({ ok: true } as T);
     }
-    if (method.startsWith("manage.")) {
-      return Promise.resolve(this.handleManage(method) as T);
+    if (method.startsWith("manage.") || method.startsWith("trust.")) {
+      return Promise.resolve(this.handleManage(method, params) as T);
     }
     if (method !== "rpc.request") {
       return Promise.reject(new Error(`mock bridge: unsupported method ${method}`));
@@ -126,7 +157,7 @@ export class MockBridge implements Bridge {
     return Promise.resolve(this.handleCommand(command) as T);
   }
 
-  private handleManage(method: string): unknown {
+  private handleManage(method: string, params?: unknown): unknown {
     switch (method) {
       case "manage.env":
         return {
@@ -165,6 +196,14 @@ export class MockBridge implements Bridge {
               name: "pdf-tools",
               description: "Extract text and tables from PDF files.",
               path: "/tmp/mock-home/.pi/agent/skills/pdf-tools/SKILL.md",
+              scope: "user",
+              disableModelInvocation: false,
+            },
+            {
+              name: "project-conventions",
+              description: "House rules for this repository.",
+              path: `${MOCK_PROJECT_PATH}/.pi/skills/project-conventions`,
+              scope: "project",
               disableModelInvocation: false,
             },
           ],
@@ -181,6 +220,54 @@ export class MockBridge implements Bridge {
         return { ok: true, path: "/tmp/mock-home/.pi/agent/settings.json", text: "{\n  \"theme\": \"dark\"\n}" };
       case "manage.settingsWrite":
         return { ok: true, output: "saved" };
+      case "trust.get": {
+        if (this.trustBroken) {
+          return {
+            ok: false,
+            error: "trust.json is not valid JSON (unexpected token at line 1)",
+            trusted: false,
+            path: MOCK_PROJECT_PATH,
+            store: MOCK_TRUST_STORE,
+            exists: true,
+            resources: [],
+          };
+        }
+        return {
+          ok: true,
+          trusted: this.projectTrusted,
+          path: MOCK_PROJECT_PATH,
+          store: MOCK_TRUST_STORE,
+          exists: true,
+          resources: MOCK_TRUST_RESOURCES.map((r) => ({
+            type: r.type,
+            label: r.label,
+            scope: "project" as const,
+            active: this.projectTrusted,
+            path: r.path,
+            ...(this.projectTrusted ? {} : { reason: "project is not trusted" }),
+          })),
+        };
+      }
+      case "trust.grant": {
+        if ((params as { confirmed?: boolean } | undefined)?.confirmed !== true) {
+          return { ok: false, error: "confirmation required" };
+        }
+        if (this.trustBroken) {
+          return { ok: false, error: "trust.json is not valid JSON; fix or delete it first" };
+        }
+        this.projectTrusted = true;
+        return { ok: true, trusted: true, path: MOCK_PROJECT_PATH, restartRequired: false };
+      }
+      case "trust.revoke": {
+        if ((params as { confirmed?: boolean } | undefined)?.confirmed !== true) {
+          return { ok: false, error: "confirmation required" };
+        }
+        if (this.trustBroken) {
+          return { ok: false, error: "trust.json is not valid JSON; fix or delete it first" };
+        }
+        this.projectTrusted = false;
+        return { ok: true, trusted: false, path: MOCK_PROJECT_PATH, restartRequired: false };
+      }
       default:
         return { ok: false, error: `mock bridge: unsupported method ${method}` };
     }

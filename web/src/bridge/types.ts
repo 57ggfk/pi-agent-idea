@@ -6,13 +6,61 @@
  * Java → JS event   : { t: "event", name: eventName, data }
  */
 
-export type BridgeEventName = "pi" | "pi-state" | "ide";
+export type BridgeEventName = "pi" | "pi-state" | "ide" | "theme";
+
+/**
+ * Every method the Java side dispatches (keep in sync with
+ * `BridgeService.dispatch`). Typing the name here makes a typo in a caller a
+ * compile error instead of a runtime "unknown bridge method".
+ */
+export type BridgeMethod =
+  | "ping"
+  | "env"
+  | "rpc.request"
+  | "rpc.restart"
+  | "sessions.list"
+  | "sessions.delete"
+  | "sessions.exportHtml"
+  | "files.list"
+  | "ide.openFile"
+  | "ide.showFileDiff"
+  | "config.getLastModel"
+  | "config.setLastModel"
+  | "config.getPrefs"
+  | "config.setPrefs"
+  | "approval.getPolicy"
+  | "approval.setPolicy"
+  | "manage.env"
+  | "manage.mcpList"
+  | "manage.mcpAdd"
+  | "manage.mcpRemove"
+  | "manage.mcpLogin"
+  | "manage.mcpLogout"
+  | "manage.packagesList"
+  | "manage.packageInstall"
+  | "manage.packageRemove"
+  | "manage.skillsList"
+  | "manage.skillCreate"
+  | "manage.authOverview"
+  | "manage.authCheck"
+  | "manage.settingsRead"
+  | "manage.settingsWrite"
+  | "trust.get"
+  | "trust.grant"
+  | "trust.revoke";
+
+export type AppTheme = "light" | "dark";
+export type ThemePreference = "system" | "light" | "dark";
 
 export interface EnvInfo {
   projectName: string;
   projectPath: string;
-  theme: "light" | "dark";
+  theme: AppTheme;
   editorFontFamily: string;
+}
+
+export interface ThemeEventData {
+  theme: AppTheme;
 }
 
 export interface PiStateEvent {

@@ -3,6 +3,7 @@ import { usePiStore } from "../store/store";
 import type { ChatItem, ContentBlock } from "../store/types";
 import Markdown from "./Markdown";
 import ToolCard from "./ToolCard";
+import Icon from "./Icon";
 
 function BlockView({ block }: { block: ContentBlock }) {
   const [open, setOpen] = useState(false);
@@ -18,11 +19,17 @@ function BlockView({ block }: { block: ContentBlock }) {
   if (block.kind === "thinking") {
     const streaming = !block.done;
     return (
-      <div className="thinking-block" data-testid="thinking-block">
-        <div className="thinking-head" onClick={() => setOpen((o) => !o)}>
-          <span className="thinking-label">💭 Thinking{streaming ? "…" : ""}</span>
-          <span className="thinking-toggle">{open ? "▾" : "▸"}</span>
-        </div>
+      <div className={`thinking-block ${open ? "thinking-open" : ""}`} data-testid="thinking-block">
+        <button
+          type="button"
+          className="thinking-head"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+        >
+          <Icon name="sparkles" className="ic-sm" />
+          <span className="thinking-label">Thinking{streaming ? "…" : ""}</span>
+          <Icon name="chev" className="ic-sm thinking-chevron" />
+        </button>
         {open && <div className="thinking-body">{block.text}</div>}
       </div>
     );
@@ -41,7 +48,10 @@ function ItemView({ item }: { item: ChatItem }) {
   const streaming = item.role === "assistant" && !item.done;
   return (
     <div className={`item item-${item.role} ${item.isError ? "item-error" : ""}`} data-testid={`item-${item.role}`}>
-      <div className="item-header">{item.role === "user" ? "You" : "Pi"}</div>
+      <div className="item-header">
+        <span className="avatar" aria-hidden="true">π</span>
+        <span className="who">Pi</span>
+      </div>
       <div className="item-body">
         {item.blocks.map((b, i) => (
           <BlockView key={i} block={b} />

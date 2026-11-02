@@ -1,4 +1,5 @@
 import { usePiStore } from "../store/store";
+import Icon from "./Icon";
 
 /**
  * Pending tool-approval dialogs forwarded by the bundled pi-approve extension
@@ -14,7 +15,8 @@ export default function ApprovalCard() {
   return (
     <div className="approval-card" data-testid="approval-card">
       <div className="approval-title" data-testid="approval-title">
-        🛡 {a.title || `Allow ${a.method}?`}
+        <Icon name="shield" className="ic-sm approval-icon" />
+        <span>{a.title || `Allow ${a.method}?`}</span>
       </div>
       {a.message ? (
         <pre className="approval-message" data-testid="approval-message">

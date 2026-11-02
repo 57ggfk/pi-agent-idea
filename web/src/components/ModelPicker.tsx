@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePiStore } from "../store/store";
+import Icon from "./Icon";
 
 const MAX_RENDERED = 200;
 
@@ -59,11 +60,12 @@ export default function ModelPicker() {
         className="chip"
         data-testid="model-chip"
         onClick={() => setOpen((o) => !o)}
-        title={model ? `${model.provider}/${model.id}` : "Select model"}
+        title={model ? `${label} — ${model.provider}/${model.id}` : "Select model"}
+        aria-label={model ? `Model: ${label}` : "Select model"}
       >
-        <span className="chip-icon">🤖</span>
+        <Icon name="sparkles" className="ic-sm chip-icon" />
         <span className="chip-label">{label}</span>
-        <span className="chip-caret">{open ? "▾" : "▸"}</span>
+        <Icon name="chev-down" className="ic-sm chip-caret" />
       </button>
 
       {open ? (

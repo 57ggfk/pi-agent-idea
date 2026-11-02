@@ -6,6 +6,7 @@ import ApprovalCard from "./components/ApprovalCard";
 import StatusBar from "./components/StatusBar";
 import SessionsView from "./components/SessionsView";
 import ManageView from "./components/ManageView";
+import { IconSprite } from "./components/Icon";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -55,14 +56,17 @@ export default function App() {
 
   return (
     <ErrorBoundary>
+      <IconSprite />
       {!ready ? (
         <div className="loading">Connecting to pi…</div>
       ) : (
         <div className="app">
-          <div className="tabs" data-testid="tabs">
+          <div className="tabs" role="tablist" aria-label="Pi Agent" data-testid="tabs">
             {(["chat", "sessions", "manage"] as const).map((t) => (
               <button
                 key={t}
+                role="tab"
+                aria-selected={tab === t}
                 className={`tab ${tab === t ? "tab-active" : ""}`}
                 data-testid={`tab-${t}`}
                 onClick={() => setTab(t)}

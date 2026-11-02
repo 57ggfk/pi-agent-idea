@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ContentBlock } from "../store/types";
 import { usePiStore } from "../store/store";
+import Icon from "./Icon";
 
 function argSummary(argsJson: string, toolName: string): string {
   try {
@@ -106,7 +107,7 @@ export default function ToolCard({ block }: { block: Extract<ContentBlock, { kin
   return (
     <div className={`tool-card ${isError ? "tool-error" : ""}`} data-testid="tool-card">
       <div className="tool-card-head" onClick={() => output && setOpen((o) => !o)}>
-        <span className="tool-icon">{toolGlyph(block.toolName)}</span>
+        <span className="tool-icon">{toolIcon(block.toolName)}</span>
         <span className="tool-name">{block.toolName}</span>
         <span
           className={filePath ? "tool-args tool-file-link" : "tool-args"}
@@ -144,21 +145,21 @@ export default function ToolCard({ block }: { block: Extract<ContentBlock, { kin
   );
 }
 
-function toolGlyph(toolName: string): string {
+function toolIcon(toolName: string) {
   switch (toolName) {
     case "bash":
     case "powershell":
-      return "❯";
+      return <Icon name="terminal" className="ic-sm" />;
     case "read":
-      return "📄";
+      return <Icon name="file" className="ic-sm" />;
     case "edit":
-      return "✏️";
+      return <Icon name="pencil" className="ic-sm" />;
     case "write":
-      return "💾";
+      return <Icon name="download" className="ic-sm" />;
     case "grep":
     case "find":
-      return "🔍";
+      return <Icon name="search" className="ic-sm" />;
     default:
-      return "⚙";
+      return <Icon name="settings" className="ic-sm" />;
   }
 }

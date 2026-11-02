@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { usePiStore } from "../store/store";
+import Icon from "./Icon";
 
 function formatTime(ms: number): string {
   const d = new Date(ms);
@@ -16,7 +17,6 @@ export default function SessionsView() {
   const refreshSessions = usePiStore((s) => s.refreshSessions);
   const switchSession = usePiStore((s) => s.switchSession);
   const sessionId = usePiStore((s) => s.sessionId);
-  const newSession = usePiStore((s) => s.newSession);
   const deleteSession = usePiStore((s) => s.deleteSession);
   const cloneSession = usePiStore((s) => s.cloneSession);
   const exportSession = usePiStore((s) => s.exportSession);
@@ -40,15 +40,12 @@ export default function SessionsView() {
     <div className="sessions-view" data-testid="sessions-view">
       <div className="sessions-toolbar">
         <input
-          className="select sessions-filter"
+          className="sessions-filter-input"
           data-testid="sessions-filter"
           placeholder="Filter sessions…"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
         />
-        <button className="btn" data-testid="sessions-new" onClick={() => void newSession()}>
-          + New session
-        </button>
       </div>
       <div className="sessions-list">
         {filtered.length === 0 ? (
@@ -80,7 +77,7 @@ export default function SessionsView() {
                 title="Clone this session"
                 onClick={() => void cloneSession(s.file)}
               >
-                ⧉
+                <Icon name="copy" className="ic-sm" />
               </button>
               <button
                 className="btn session-action"
@@ -88,7 +85,7 @@ export default function SessionsView() {
                 title="Export as HTML"
                 onClick={() => void exportSession(s.file)}
               >
-                ⇩
+                <Icon name="download" className="ic-sm" />
               </button>
               <button
                 className="btn session-action"
@@ -100,7 +97,7 @@ export default function SessionsView() {
                   }
                 }}
               >
-                ✕
+                <Icon name="trash" className="ic-sm" />
               </button>
             </div>
           </div>

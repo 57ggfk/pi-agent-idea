@@ -1,42 +1,111 @@
 /* Pi Agent web UI — themeable via [data-theme] (set from the IDE theme). */
 
-:root,
-:root[data-theme="light"] {
-  --bg: #ffffff;
-  --bg-secondary: #f7f8fa;
-  --bg-input: #ffffff;
-  --border: #e3e5e8;
-  --text: #1e1f22;
-  --text-secondary: #6c7078;
-  --accent: #3574f0;
-  --accent-contrast: #ffffff;
-  --user-bubble: #eef3fe;
-  --tool-bg: #f4f5f7;
-  --tool-border: #e3e5e8;
-  --error: #d92b2b;
-  --error-bg: #fdeeee;
-  --code-bg: #f4f5f7;
-  --success: #1a7f37;
-  --success-bg: #e9f5ee;
+:root {
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-base: 13px;
+  --fs-md: 14px;
+  --fs-lg: 16px;
+
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 10px;
+  --r-xl: 12px;
+
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas,
+    "Liberation Mono", monospace;
+
+  --dur: 120ms;
 }
 
-:root[data-theme="dark"] {
-  --bg: #1e1f22;
-  --bg-secondary: #2b2d30;
-  --bg-input: #2b2d30;
-  --border: #393b40;
-  --text: #dfe1e5;
-  --text-secondary: #9da0a8;
-  --accent: #3574f0;
+/* Light theme */
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #ffffff;
+  --bg-secondary: #f7f8fa;
+  --bg-subtle: #f7f8fa;
+  --bg-input: #ffffff;
+  --bg-elevated: #ffffff;
+  --surface-hover: #f0f2f5;
+  --border: #e4e7ec;
+  --border-strong: #d3d8df;
+  --text: #1f2329;
+  --text-secondary: #5f6673;
+  --text-tertiary: #6a7280;
+  --accent: #2f6fe4;
+  --accent-hover: #2761cc;
+  --accent-text: #2b62d9;
   --accent-contrast: #ffffff;
-  --user-bubble: #26303f;
-  --tool-bg: #26282c;
-  --tool-border: #393b40;
-  --error: #f75464;
-  --error-bg: #3a2226;
-  --code-bg: #26282c;
-  --success: #4ec96a;
-  --success-bg: #22352a;
+  --accent-soft: #eaf1fe;
+  --accent-ring: rgba(47, 111, 228, 0.28);
+  --user-bubble: var(--accent-soft);
+  --tool-bg: var(--bg-subtle);
+  --tool-border: var(--border);
+  --success: #1a7f37;
+  --success-soft: #e9f5ee;
+  --success-bg: var(--success-soft);
+  --warning: #9a6700;
+  --warning-soft: #fdf6e3;
+  --warning-border: #ead9a8;
+  --error: #cf2e2e;
+  --danger: #cf2e2e;
+  --error-bg: #fdeeee;
+  --danger-soft: #fdeeee;
+  --code-bg: #f6f7f9;
+  --shadow-pop: 0 10px 28px rgba(16, 24, 40, 0.14), 0 1px 2px rgba(16, 24, 40, 0.06);
+  /* Scrollbars stay a couple of steps quieter than the text they sit next to. */
+  --sb-size: 10px;
+  --sb-thumb: rgba(95, 102, 115, 0.22);
+  --sb-thumb-hover: rgba(95, 102, 115, 0.4);
+}
+
+/* Dark theme */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #1e1f22;
+  --bg-secondary: #26282c;
+  --bg-subtle: #26282c;
+  --bg-input: #2b2d30;
+  --bg-elevated: #2b2d30;
+  --surface-hover: #303237;
+  --border: #393b40;
+  --border-strong: #4a4e55;
+  --text: #e6e8eb;
+  --text-secondary: #a0a4ab;
+  --text-tertiary: #8b9099;
+  --accent: #2f6fe4;
+  --accent-hover: #3f7cf0;
+  --accent-text: #7ba7ff;
+  --accent-contrast: #ffffff;
+  --accent-soft: #1e2b45;
+  --accent-ring: rgba(74, 134, 247, 0.32);
+  --user-bubble: var(--accent-soft);
+  --tool-bg: var(--bg-subtle);
+  --tool-border: var(--border);
+  --success: #5cc77a;
+  --success-soft: #1f3325;
+  --success-bg: var(--success-soft);
+  --warning: #e0b45c;
+  --warning-soft: #3a3020;
+  --warning-border: #5a4a24;
+  --error: #f26b6b;
+  --danger: #f26b6b;
+  --error-bg: #3a2426;
+  --danger-soft: #3a2426;
+  --code-bg: #1a1b1e;
+  --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --sb-thumb: rgba(160, 164, 171, 0.18);
+  --sb-thumb-hover: rgba(160, 164, 171, 0.36);
 }
 
 * {
@@ -51,16 +120,86 @@ body,
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  font-size: 13px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-base);
+  line-height: 1.5;
   color: var(--text);
   background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: 2px;
+}
+
+/* Scrollbars — thin, translucent, derived from the theme text tone so they
+   read as part of the surface in both light and dark. */
+@supports selector(::-webkit-scrollbar) {
+  ::-webkit-scrollbar {
+    width: var(--sb-size);
+    height: var(--sb-size);
+  }
+
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-color: var(--sb-thumb);
+    background-clip: padding-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover,
+  ::-webkit-scrollbar-thumb:active {
+    background-color: var(--sb-thumb-hover);
+    background-clip: padding-box;
+  }
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--sb-thumb) transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 .app {
   display: flex;
   flex-direction: column;
   height: 100%;
+  /* The tool window is the viewport: anything wider than it would widen the
+     containing block every centered column is measured against (the empty
+     state drifting right) and add a page-level scrollbar. Clipping here keeps
+     the axis correct; the real fix is that no child grows past 100%. */
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: clip;
 }
 
 .loading {
@@ -152,6 +291,9 @@ body {
 
 .item-error {
   color: var(--error);
+  background: var(--error-bg);
+  border-radius: var(--r-md);
+  padding: 6px 10px;
 }
 
 .system-item {
@@ -167,12 +309,6 @@ body {
 .system-item.retry {
   color: var(--accent);
   border-color: var(--accent);
-}
-
-.item-error {
-  background: var(--error-bg);
-  border-radius: 8px;
-  padding: 6px 10px;
 }
 
 .item-cost {
@@ -510,29 +646,7 @@ body {
   font-weight: 700;
 }
 
-/* Empty state */
-.empty-state {
-  margin: auto;
-  text-align: center;
-  color: var(--text-secondary);
-}
-
-.empty-logo {
-  font-size: 42px;
-  color: var(--accent);
-}
-
-.empty-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text);
-  margin-top: 4px;
-}
-
-.empty-sub {
-  margin-top: 4px;
-  font-size: 12px;
-}
+/* Empty state — defined once, in the design-refresh block below. */
 
 /* Tabs */
 .tabs {
@@ -559,142 +673,8 @@ body {
   border-bottom-color: var(--accent);
 }
 
-/* Sessions view */
-.sessions-view {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.sessions-toolbar {
-  display: flex;
-  gap: 6px;
-  padding: 8px 10px;
-}
-
-.sessions-filter {
-  flex: 1;
-}
-
-.sessions-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0 10px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.sessions-empty {
-  color: var(--text-secondary);
-  text-align: center;
-  padding: 24px 0;
-}
-
-.session-row {
-  display: flex;
-  align-items: stretch;
-  gap: 6px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 8px 10px;
-  cursor: pointer;
-  color: var(--text);
-  font-size: 12px;
-}
-
-.session-row-main {
-  flex: 1;
-  min-width: 0;
-  text-align: left;
-  background: none;
-  border: none;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-  padding: 0;
-}
-
-.session-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  justify-content: center;
-}
-
-.session-action {
-  padding: 1px 6px;
-  font-size: 11px;
-  line-height: 1.4;
-}
-
-.session-row:hover {
-  border-color: var(--accent);
-}
-
-.session-current {
-  border-color: var(--accent);
-}
-
-.session-row-top {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.session-name {
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.session-time {
-  color: var(--text-secondary);
-  flex-shrink: 0;
-}
-
-.session-preview {
-  color: var(--text-secondary);
-  margin-top: 3px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.session-badge {
-  background: var(--user-bubble);
-  border-radius: 6px;
-  padding: 2px 8px;
-  font-size: 11px;
-  color: var(--text-secondary);
-  max-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Slash command menu */
-.slash-menu {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-input);
-  margin-bottom: 4px;
-  overflow: hidden;
-}
-
-/* @ file completion menu */
-.file-menu {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-input);
-  margin-bottom: 4px;
-  max-height: 240px;
-  overflow-y: auto;
-}
-
+/* Slash command / @ file menus — the box itself is defined once in the
+   design-refresh block below; only the rows live here. */
 .file-item {
   padding: 5px 10px;
   cursor: pointer;
@@ -858,6 +838,7 @@ body {
 .manage-content {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 10px;
 }
 
@@ -1105,10 +1086,15 @@ body {
   position: relative;
 }
 
+/* Matches .chip metrics so the model and thinking pickers line up exactly. */
 .thinking-picker .select {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
+  height: 26px;
+  padding: 0 7px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-xs);
   cursor: pointer;
 }
 
@@ -1296,73 +1282,11 @@ body {
 }
 
 /* Options popover — opens upward like the thinking menu (the composer sits
-   at the bottom of the tool window). */
+   at the bottom of the tool window). Layout lives in the design-refresh block
+   below: one definition only, so a change there cannot be shadowed by a second
+   copy further down the file. */
 .options-picker {
   position: relative;
-}
-
-.options-menu {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 0;
-  min-width: 280px;
-  background: var(--bg-input);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.25);
-  z-index: 60;
-  padding: 6px 10px;
-}
-
-.options-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 6px 2px;
-  cursor: pointer;
-}
-
-.options-row + .options-row {
-  border-top: 1px solid var(--border);
-}
-
-.options-label {
-  font-size: 12px;
-}
-
-/* Small toggle switch */
-.switch {
-  position: relative;
-  width: 30px;
-  height: 16px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--bg-secondary);
-  padding: 0;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.switch .knob {
-  position: absolute;
-  top: 1px;
-  left: 1px;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--text-secondary);
-  transition: left 0.15s ease, background 0.15s ease;
-}
-
-.switch-on {
-  background: var(--accent);
-  border-color: var(--accent);
-}
-
-.switch-on .knob {
-  left: 15px;
-  background: var(--accent-contrast);
 }
 
 /* Status bar context-usage bar */
@@ -1399,137 +1323,1249 @@ body {
 }
 
 /* ==========================================================================
-   Responsive layout v2 — the tool window can be any size; the layout must
-   follow. Viewport == JCEF content area, so plain media queries are exact.
-   Breakpoints: ≤480 narrow tool window, ≥720 wide, ≥1100 extra wide.
+   Design refresh (prototype-aligned)
    ========================================================================== */
 
-/* --- Chat column: readable measure on wide windows, full bleed on narrow --- */
+.ic {
+  width: 16px;
+  height: 16px;
+  display: inline-block;
+  vertical-align: middle;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ic-sm {
+  width: 14px;
+  height: 14px;
+}
+
+.icon-sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.app {
+  container-type: inline-size;
+}
+
+/* Tabs - prototype style */
+.tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 40px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  flex: 0 0 auto;
+}
+
+.tab {
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  transition: background var(--dur), color var(--dur), box-shadow var(--dur);
+  cursor: pointer;
+}
+
+.tab:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.tab-active {
+  color: var(--text);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/* Message list - prototype style */
 .message-list {
-  padding: clamp(10px, 2vw, 20px) clamp(10px, 3vw, 26px);
+  flex: 1;
+  min-height: 0;
+  /* A stray wide child must never widen the containing block the message
+     column is centered in — that is what made the empty state drift right. */
+  min-width: 0;
+  max-width: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* Same 16px inline inset as `.composer`: the message column and the input
+     box share one visual edge, without depending on how wide the platform's
+     scrollbar gutter happens to be. */
+  padding: 20px 16px 8px;
 }
 
 .message-col {
   width: 100%;
-  max-width: 860px;
+  min-width: 0;
+  max-width: 780px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 20px;
+}
+
+.item {
+  min-width: 0;
+  max-width: 92%;
+}
+
+.item-user {
+  align-self: flex-end;
+  max-width: 82%;
+}
+
+.item-user .item-body {
+  padding: 8px 12px;
+  border-radius: var(--r-xl) var(--r-xl) 4px var(--r-xl);
+  background: var(--accent-soft);
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.item-assistant {
+  align-self: stretch;
+  padding: 2px 0;
+}
+
+.item-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 6px;
+  font-size: var(--fs-sm);
+  color: var(--text);
+}
+
+.item-user .item-header {
+  display: none;
+}
+
+.avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--r-sm);
+  display: grid;
+  place-items: center;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.who {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.item-body {
+  font-size: var(--fs-base);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.item-body > *:first-child {
+  margin-top: 0;
+}
+
+.item-body > *:last-child {
+  margin-bottom: 0;
+}
+
+.item-body p {
+  margin: 0 0 10px;
+}
+
+.item-body ul,
+.item-body ol {
+  margin: 0 0 10px;
+  padding-left: 20px;
+}
+
+.item-body li {
+  margin: 3px 0;
+}
+
+.item-body li::marker {
+  color: var(--text-tertiary);
+}
+
+.item-body a {
+  color: var(--accent-text);
+  text-underline-offset: 2px;
+}
+
+.item-body strong {
+  font-weight: 650;
+}
+
+.item-body code:not(pre code) {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+.item-error {
+  color: var(--error);
+  background: var(--error-bg);
+  border-radius: var(--r-md);
+  padding: 6px 10px;
+}
+
+.system-item {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 90%;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+}
+
+.system-item.retry {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Thinking block - prototype style */
+.thinking-block {
+  margin: 8px 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--border-strong);
+}
+
+.thinking-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.thinking-head:hover {
+  color: var(--text);
+}
+
+.thinking-chevron {
+  margin-left: 2px;
+  transition: transform var(--dur);
+}
+
+.thinking-open .thinking-chevron {
+  transform: rotate(90deg);
+}
+
+.thinking-body {
+  display: none;
+  padding: 6px 0 2px;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.thinking-open .thinking-body {
+  display: block;
+}
+
+/* Tool card - prototype style */
+.tool-card {
+  margin: 10px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-subtle);
+  overflow: hidden;
+}
+
+.tool-error {
+  border-color: var(--error);
+}
+
+.tool-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur);
+}
+
+.tool-card-head:hover {
+  background: var(--surface-hover);
+}
+
+.tool-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-sm);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+
+.tool-name {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.tool-args {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.tool-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.tool-error-tag {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.tool-duration {
+  font-variant-numeric: tabular-nums;
+}
+
+.tool-output {
+  margin: 0;
+  padding: 9px 12px;
+  border-top: 1px solid var(--border);
+  overflow: auto;
+  max-height: 260px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+/* Composer - prototype style */
+.composer {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 100%;
+  /* 16px inline == `.message-list`'s inset, so the input box and the message
+     column share one left/right edge at any width. */
+  padding: 0 16px 12px;
 }
 
 .composer-inner {
   width: 100%;
-  max-width: 860px;
+  min-width: 0;
+  max-width: 780px;
   margin: 0 auto;
+  /* The file/slash menus are absolute children of this box. */
+  position: relative;
 }
 
-/* --- Composer toolbar: pickers left, actions right; wraps when squeezed --- */
+.composer-box {
+  width: 100%;
+  padding: 6px 6px 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg);
+  background: var(--bg-elevated);
+  transition: border-color var(--dur), box-shadow var(--dur);
+}
+
+.composer-box:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.composer-input {
+  display: block;
+  width: 100%;
+  min-height: 38px;
+  max-height: 140px;
+  padding: 4px 5px 6px;
+  border: 0;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-base);
+  line-height: 1.5;
+}
+
+.composer-input::placeholder {
+  color: var(--text-tertiary);
+}
+
 .composer-controls {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 6px;
   flex-wrap: wrap;
-  row-gap: 6px;
+  gap: 2px;
+  row-gap: 4px;
+  min-width: 0;
 }
 
 .tools-left,
 .tools-right {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
   min-width: 0;
 }
 
-/* Icon+label tool buttons: the label collapses first on narrow windows */
+/* The left cluster yields space first (pickers ellipsize); the send cluster
+   never shrinks, so the send button can't be pushed past the window edge. */
+.tools-left {
+  flex: 1 1 auto;
+}
+
+.tools-right {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.composer-controls .divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 3px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.queue-note {
+  font-size: 11px;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+
+.image-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.image-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-subtle);
+  font-size: var(--fs-xs);
+}
+
+.chip-remove {
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.chip-remove:hover {
+  color: var(--text);
+}
+
+/* Icon buttons */
+.icon-btn {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  transition: background var(--dur), color var(--dur), border-color var(--dur);
+  cursor: pointer;
+}
+
+.icon-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.icon-btn:active {
+  background: var(--border);
+}
+
+.icon-btn-danger {
+  color: var(--danger);
+}
+
+.icon-btn-danger:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background var(--dur), border-color var(--dur), color var(--dur);
+  cursor: pointer;
+}
+
+.btn:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+
+.btn:active {
+  background: var(--border);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.btn-ghost:hover {
+  border-color: transparent;
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
 .btn-tool {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px;
+}
+
+.btn-lbl {
+  font-size: var(--fs-xs);
+}
+
+/* Send button */
+.send-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  transition: background var(--dur), opacity var(--dur);
+  cursor: pointer;
+}
+
+.send-btn:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Split button */
+.split-btn {
+  display: inline-flex;
+  position: relative;
+  margin-left: 4px;
+}
+
+.split-main {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.split-caret {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.25);
+  padding: 0 4px;
+  width: 20px;
+}
+
+.split-caret-disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Chips/pickers */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: min(190px, 100%);
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition: background var(--dur), border-color var(--dur);
+}
+
+.chip:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+
+.chip-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
+  font-weight: 500;
 }
 
-.btn-ico {
-  font-size: 12px;
-  line-height: 1;
+.chip-icon {
+  color: var(--accent-text) !important;
+  flex-shrink: 0;
 }
 
-/* Pickers must never blow the row up — truncate instead */
-.model-picker {
+.chip-caret {
+  margin-left: 1px;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.model-picker,
+.thinking-picker,
+.options-picker {
+  position: relative;
   min-width: 0;
 }
 
-.model-picker .chip,
-.thinking-picker .select,
-.options-picker .btn {
-  max-width: 200px;
+/* Status bar */
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 28px;
+  padding: 0 12px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  flex: 0 0 auto;
+  overflow: hidden;
 }
 
-.chip-label,
-.model-picker .chip {
+.statusbar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--text-tertiary);
+}
+
+.status-dot.running {
+  background: var(--success);
+}
+
+.status-dot.starting {
+  background: var(--accent);
+}
+
+.status-dot.exited {
+  background: var(--error);
+}
+
+.status-dot.busy {
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.status-session {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.status-opt,
+.status-version,
+.status-bridge {
+  white-space: nowrap;
+}
+
+.btn-restart {
+  flex-shrink: 0;
+  height: 22px;
+  padding: 0 8px;
+  font-size: var(--fs-xs);
+}
+
+/* Empty state */
+.empty-state {
+  /* Full width so the icon and text center on the message column's axis,
+     instead of on the shrink-to-fit box of a plain text block. */
+  width: 100%;
+  max-width: 100%;
+  margin: auto;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.empty-logo {
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 12px;
+  border-radius: var(--r-lg);
+  display: grid;
+  place-items: center;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.empty-title {
+  margin: 0 0 4px;
+  font-size: var(--fs-lg);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.empty-sub {
+  margin: 0 auto;
+  max-width: 340px;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+}
+
+/* Sessions */
+.sessions-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sessions-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  flex: 0 0 auto;
+}
+
+/* The filter is a plain <input>; it used to wear `.sessions-filter`, which is
+   a *container* rule (flex + height + a `.sessions-filter input` child
+   selector), so the field itself got the wrapper styling. */
+.sessions-filter-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 340px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: var(--fs-sm);
+  outline: none;
+  transition: border-color var(--dur), box-shadow var(--dur);
+}
+
+.sessions-filter-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.sessions-filter-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.sessions-list {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: grid;
+  /* `1fr` implies `minmax(auto, 1fr)`: a long session name/preview raised the
+     column's min-content width, widened the track and pushed the action
+     buttons out of the clipped area. `minmax(0, 1fr)` lets the track shrink. */
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 8px;
+  padding: 0 20px 16px;
+  scrollbar-gutter: stable;
+}
+
+.sessions-empty {
+  color: var(--text-secondary);
+  text-align: center;
+  padding: 24px 0;
+}
+
+.session-row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-elevated);
+  cursor: pointer;
+  transition: border-color var(--dur), background var(--dur);
+}
+
+.session-row:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-subtle);
+}
+
+.session-current {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.session-row-main {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.session-row-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.session-name {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-base);
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* --- Tabs: roomier touch targets, centered on wide --- */
-.tabs {
-  gap: 4px;
-  padding: 2px 10px 0;
+.session-time {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  font-size: var(--fs-xs);
 }
 
-.tab {
-  padding: 6px 14px;
-  font-size: 12.5px;
+.session-preview {
+  margin: 5px 0 0;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
 }
 
-/* --- Status bar: wraps gracefully, low-priority items hide first --- */
-.statusbar-row {
-  flex-wrap: wrap;
-  row-gap: 2px;
-  padding: 4px clamp(10px, 3vw, 26px);
+.session-badge {
+  flex-shrink: 0;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 10.5px;
+  font-weight: 500;
 }
 
-/* --- Sessions: rows become a card grid when there is room --- */
-.sessions-toolbar {
-  padding: 8px clamp(10px, 3vw, 26px);
+.session-current .session-badge {
+  background: var(--bg-elevated);
+  border-color: var(--accent);
+  color: var(--accent-text);
 }
 
-.sessions-list {
-  padding: 0 clamp(10px, 3vw, 26px) 12px;
+.session-actions {
+  display: flex;
+  gap: 1px;
+  margin-left: 2px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.session-action {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  display: inline-grid;
+  place-items: center;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.session-action:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+/* Options menu — the only definition (the older one at the top of the file
+   left a stray `left: 0` behind and silently overrode this width). Width and
+   position are measured in OptionsPopover.tsx; the fallbacks below keep the
+   menu usable before that runs. */
+.options-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: auto;
+  width: min(300px, calc(100cqw - 16px));
+  max-height: 340px;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-pop);
+  z-index: 60;
+  padding: 6px 10px;
 }
 
-/* --- Manage: centered content column --- */
-.manage-view-full {
+.options-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 2px;
+}
+
+.options-row + .options-row {
+  border-top: 1px solid var(--border);
+}
+
+.options-row-stack {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.options-label {
+  flex: 1 1 auto;
+  /* Long labels ("Auto-approve tool calls") wrap instead of pushing the switch
+     out of the menu — the row is what used to overflow. */
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+
+.options-hint {
+  font-size: var(--fs-xs);
+  color: var(--text-tertiary);
+}
+
+.segmented {
+  display: flex;
+  gap: 2px;
   width: 100%;
-  max-width: 980px;
-  margin: 0 auto;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-subtle);
+}
+
+.segment {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: calc(var(--r-sm) - 2px);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  /* A very narrow window shrinks the labels; they must ellipsize rather than
+     push the segmented control past the menu edge. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.segment:hover {
+  color: var(--text);
+}
+
+.segment-active {
+  background: var(--bg-elevated);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+/* Switch */
+.switch {
+  position: relative;
+  width: 30px;
+  height: 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  padding: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.switch .knob {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  transition: left 0.15s ease, background 0.15s ease;
+}
+
+.switch-on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.switch-on .knob {
+  left: 15px;
+  background: var(--accent-contrast);
+}
+
+/* Approval card */
+.approval-card {
+  margin: 0 12px 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--r-lg);
+  background: var(--warning-soft);
+}
+
+.approval-title {
+  font-size: var(--fs-sm);
+  font-weight: 650;
+  line-height: 1.35;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.approval-icon {
+  color: var(--warning);
+  flex-shrink: 0;
+}
+
+.approval-message {
+  margin: 2px 0 8px;
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+}
+
+.approval-queued {
+  margin-bottom: 6px;
+  color: var(--warning);
+  font-size: var(--fs-xs);
+}
+
+.approval-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-approve {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.btn-deny {
+  color: var(--danger);
+}
+
+/* Menus (file/slash) — absolutely positioned inside `.composer-inner`, which
+   must therefore stay `position: relative` (it once lost that and both menus
+   rendered above the top of the tool window: they "never opened"). */
+.file-menu,
+.slash-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 12px;
+  width: min(420px, calc(100% - 24px));
+  max-height: 260px;
+  overflow-x: hidden;
   overflow-y: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-pop);
+  z-index: 50;
 }
 
-.manage-env {
-  flex-wrap: wrap;
-  gap: 4px 10px;
+/* Shown when the query matches nothing — silence reads as "the menu is
+   broken", which is exactly the bug report this came from. */
+.menu-empty {
+  padding: 8px 10px;
+  color: var(--text-tertiary);
+  font-size: var(--fs-sm);
+  font-style: italic;
 }
 
-/* --- Empty state: calmer, centered --- */
-.empty-state {
-  margin: auto;
-  padding: 24px 12px;
+.file-item,
+.slash-item {
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  display: flex;
+  gap: 8px;
 }
 
-@media (min-width: 720px) {
+.file-item:hover,
+.file-active,
+.slash-item:hover,
+.slash-active {
+  background: var(--surface-hover);
+}
+
+.slash-name {
+  color: var(--accent-text);
+  font-weight: 500;
+}
+
+.slash-desc {
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Container queries for responsiveness */
+/* Control-row density comes from Composer.tsx (data-density), measured against
+   the row's real need instead of fixed breakpoints: labels are dropped one tier
+   at a time and wrapping is only the last resort. Fixed widths were wrong twice
+   — a long model name ("Free Models Router") or the extra abort button made the
+   row wrap while both labels were still shown. */
+.composer-controls[data-measuring] {
+  flex-wrap: nowrap;
+}
+
+/* While measuring, children keep their natural size so "does it fit" is judged
+   on the full text, not on an already-ellipsized label. */
+.composer-controls[data-measuring] > * {
+  flex: 0 0 auto;
+}
+
+/* Tier 1: action buttons drop their text (icon + tooltip is enough). */
+.composer-controls[data-density="1"] .tools-right .btn-lbl,
+.composer-controls[data-density="1"] .options-picker .btn .btn-lbl {
+  display: none;
+}
+
+/* Tier 2: pickers collapse to their icon, current value stays in the tooltip. */
+.composer-controls[data-density="2"] .tools-right .btn-lbl,
+.composer-controls[data-density="2"] .options-picker .btn .btn-lbl,
+.composer-controls[data-density="2"] .model-picker .chip-label,
+.composer-controls[data-density="2"] .thinking-picker .chip-label {
+  display: none;
+}
+
+.composer-controls[data-density="2"] .model-picker .chip,
+.composer-controls[data-density="2"] .thinking-picker .select {
+  padding: 0 6px;
+}
+
+@container (min-width: 720px) {
   .empty-logo {
     font-size: 44px;
   }
 
   .sessions-list {
-    display: grid;
     grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
     gap: 10px;
-    align-content: start;
   }
 
   .session-row {
@@ -1537,34 +2573,40 @@ body {
   }
 }
 
-@media (min-width: 1100px) {
+@container (min-width: 1100px) {
   .sessions-list {
     grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   }
 }
 
-/* --- Narrow tool window: labels go icon-only, secondary info hides --- */
-@media (max-width: 480px) {
+@container (max-width: 480px) {
   .btn-lbl {
     display: none;
   }
 
   .btn-tool {
-    padding: 5px 8px;
+    padding: 0 6px;
   }
 
-  .model-picker .chip,
-  .thinking-picker .select,
-  .options-picker .btn {
-    max-width: 132px;
+  .chip {
+    max-width: min(132px, 100%);
   }
 
-  .options-picker .btn .btn-lbl {
-    display: none;
+  /* Below this width a code block that cannot wrap is the only thing left
+     that would need a horizontal bar — wrap it instead. */
+  .markdown pre,
+  .tool-output,
+  .tool-diff {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
 
   .item {
     max-width: 100%;
+  }
+
+  .item-user {
+    max-width: 88%;
   }
 
   .status-opt,
@@ -1573,26 +2615,164 @@ body {
   }
 
   .tab {
-    padding: 6px 9px;
+    padding: 0 9px;
     font-size: 12px;
   }
 
   .composer {
-    padding: 6px 8px;
+    padding: 0 8px 6px;
+  }
+
+  /* Keep the message column and the composer on the same 8px inset — the old
+     0px here guaranteed an 8px mismatch at narrow widths. */
+  .message-list {
+    padding: 12px 8px 8px;
+  }
+
+  .sessions-toolbar {
+    padding: 8px 10px;
+  }
+
+  .sessions-list {
+    padding: 0 10px 12px;
   }
 
   .approval-card {
     margin: 0 8px 6px;
   }
 
-  /* The options menu opens from the left-aligned gear; anchored left its
-     280px would clip past the tool window's right edge — open leftwards. */
-  .options-menu {
-    left: auto;
-    right: 0;
-  }
-
   .exit-banner {
     flex-wrap: wrap;
   }
+}
+
+/* -- project trust ------------------------------------------------------- */
+
+.trust-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent-text);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.link-btn:hover {
+  color: var(--accent-hover);
+}
+
+.trust-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--r-md);
+  background: var(--warning-soft);
+}
+
+.trust-banner-error {
+  border-color: var(--error);
+  background: var(--error-bg);
+}
+
+.trust-banner-text {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.trust-banner-detail {
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.trust-banner-actions {
+  flex: 0 0 auto;
+}
+
+.trust-resources {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.trust-resource-path {
+  margin-left: 8px;
+  font-size: var(--fs-xs);
+  color: var(--text-tertiary);
+}
+
+.trust-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-pop);
+}
+
+.trust-confirm-title {
+  font-weight: 600;
+}
+
+.trust-confirm-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.trust-notice {
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--accent-ring);
+  border-radius: var(--r-md);
+  background: var(--accent-soft);
+  font-size: var(--fs-sm);
+}
+
+.scope-tag {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.scope-tag[data-inert="true"] {
+  border-color: var(--warning-border);
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+/* Untrusted project-level rows stay visible but visibly inert. */
+.panel-row-inactive {
+  border-style: dashed;
+  opacity: 0.75;
+}
+
+.panel-row-warn {
+  color: var(--warning);
 }

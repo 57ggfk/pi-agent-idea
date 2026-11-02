@@ -101,23 +101,42 @@ object PiManage {
 
     // -- Skills --------------------------------------------------------------
 
-    fun skillsList(): JsonObject {
-        val dirs = listOf(
-            File(PiCliRunner.agentDir(), "skills"),
-            File(".pi/skills"),
-            File(".agents/skills"),
-        )
+    /**
+     * Lists skills from the user dir and — when [projectBasePath] is known —
+     * from the project's own `.pi/skills` and `.agents/skills`.
+     *
+     * The project dirs used to be resolved as `File(".pi/skills")`, i.e.
+     * relative to the *IDE process* working directory rather than the project
+     * root: multi-project windows listed the wrong project's skills (or none).
+     */
+    fun skillsList(projectBasePath: String? = null): JsonObject {
+        data class Source(val dir: File, val scope: String)
+
+        val sources = buildList {
+            add(Source(File(PiCliRunner.agentDir(), "skills"), "user"))
+            projectBasePath?.takeIf { it.isNotBlank() }?.let { base ->
+                val root = File(base)
+                add(Source(File(root, ".pi/skills"), "project"))
+                add(Source(File(root, ".agents/skills"), "project"))
+            }
+        }
         val skills = mutableListOf<JsonObject>()
-        for (dir in dirs) {
-            if (!dir.isDirectory) continue
-            dir.walkTopDown()
+        // The same directory can be reachable twice (symlinked .agents/skills);
+        // dedupe on the resolved SKILL.md so it is listed once.
+        val seen = mutableSetOf<String>()
+        for (source in sources) {
+            if (!source.dir.isDirectory) continue
+            source.dir.walkTopDown()
                 .filter { it.name == "SKILL.md" && it.isFile }
                 .forEach { file ->
+                    val key = runCatching { file.canonicalPath }.getOrElse { file.absolutePath }
+                    if (!seen.add(key)) return@forEach
                     val front = parseFrontmatter(file)
                     skills.add(buildJsonObject {
                         put("name", front["name"] ?: file.parentFile.name)
                         put("description", front["description"] ?: "")
                         put("path", file.parentFile.absolutePath)
+                        put("scope", source.scope)
                         put("disableModelInvocation", front["disable-model-invocation"] == "true")
                     })
                 }

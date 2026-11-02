@@ -23,6 +23,39 @@ sealed class PiConnectionState {
 }
 
 /**
+ * Assembled start arguments, extracted so the trust branch is testable
+ * without an IDE project (see `PiStartArgsTest`).
+ */
+internal object PiStartArgs {
+
+    /**
+     * @param model last-used provider/model pair, restored on start
+     * @param approvalExtension absolute path of the tool-approval extension
+     * @param approveProjectFiles append `--approve`: honoured only for a start
+     *   the user explicitly authorised in this session
+     */
+    fun build(
+        model: Pair<String, String>?,
+        approvalExtension: String?,
+        approveProjectFiles: Boolean,
+    ): List<String> = buildList {
+        add("--mode")
+        add("rpc")
+        model?.let { (provider, name) ->
+            add("--provider")
+            add(provider)
+            add("--model")
+            add(name)
+        }
+        approvalExtension?.let {
+            add("--extension")
+            add(it)
+        }
+        if (approveProjectFiles) add("--approve")
+    }
+}
+
+/**
  * Owns the per-project `pi --mode rpc` child process and its [PiRpcClient].
  *
  * The process intentionally outlives tool window visibility so agent tasks keep
@@ -75,19 +108,15 @@ class PiProcessManager(private val project: Project) : Disposable {    private v
         setState(PiConnectionState.Starting(installation))
         val cwd = project.basePath ?: System.getProperty("user.home")
 
-        val piArgs = mutableListOf(
-            "--mode", "rpc",
-        )
-        // Resume the user's last model choice (persisted on set_model).
-        PiModelPreferences.getInstance(project).get()?.let { (provider, model) ->
-            piArgs += listOf("--provider", provider, "--model", model)
-        }
         // Tool-approval extension: extracted per start so upgrades propagate;
         // its policy file is re-read per tool call, so toggling never needs a
         // restart. When extraction fails pi simply runs without approval.
-        PiApprovalSupport.ensureExtensionInstalled()?.let { ext ->
-            piArgs += listOf("--extension", ext.absolutePath)
-        }
+        val piArgs = PiStartArgs.build(
+            // Resume the user's last model choice (persisted on set_model).
+            model = PiModelPreferences.getInstance(project).get(),
+            approvalExtension = PiApprovalSupport.ensureExtensionInstalled()?.absolutePath,
+            approveProjectFiles = consumeApproveOnNextStart(),
+        )
         val command = PiLocator.spawnCommand(installation.path, piArgs)
 
         val pb = ProcessBuilder(command)
@@ -169,6 +198,25 @@ class PiProcessManager(private val project: Project) : Disposable {    private v
     fun restart(): PiRpcClient? {
         shutdownProcess(keepState = true)
         return start()
+    }
+
+    /**
+     * Records that the user authorised this project's local files in this
+     * session (they just granted trust in the panel). Only the *next* start
+     * picks it up: a running process is never re-created behind the user's
+     * back, and the flag is single-use.
+     */
+    fun approveOnNextStart() {
+        pendingApprove = true
+    }
+
+    @Volatile
+    private var pendingApprove = false
+
+    private fun consumeApproveOnNextStart(): Boolean {
+        if (!pendingApprove) return false
+        pendingApprove = false
+        return true
     }
 
     private fun setState(newState: PiConnectionState) {
