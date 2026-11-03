@@ -5,15 +5,21 @@
 **新增**
 - **消息悬停操作条**：复制（Pi 回复为 Markdown 源码，自己的消息为原文）、引用到输入框（追加在草稿之后不覆盖）、重新生成、编辑重发。
 - 重新生成与编辑重发会以该消息为界新开一个会话分支，旧会话文件保留，可在 Sessions 里切回。
+- **Manage 面板新增 Diagnostics**：列出文件、命令、模型等数据源各自的状态与最近错误，可逐个重试。
 
 **修复**
+- 输入 `@` 或 `/` 时列表是空的，不再一律显示「没有匹配」：加载失败会写明原因并可原地重试，加载中也会单独提示。
+- 文件列表改为 30 秒过期并在打开菜单时自动重读，菜单底部可手动刷新，新建或删除的文件不必重开工具窗即可看到。
 - Fork 之后界面还停在旧消息上：pi 1.4.0 不再返回会话路径，消息列表与新分支不同步。
 
 **Added**
 - **Hover actions on any message**: copy (Markdown source for Pi replies, verbatim text for your own), quote into the composer after your draft, regenerate the last reply, and edit-and-resend the last message.
 - Regenerate and edit branch the conversation into a new session; the old session file stays and can be switched back to.
+- **Diagnostics tab in Manage**: every data source lists its own status and last error, with a per-source retry.
 
 **Fixed**
+- An empty `@` or `/` menu no longer always claims "no match": a failed load now says what went wrong and offers a retry, and a load in progress says so.
+- The file list expires after 30 seconds and is re-read when the menu opens; a refresh button picks up files created or deleted without reopening the tool window.
 - Fork left the UI on the old transcript: pi 1.4.0 no longer returns a session path, so the message list did not follow the new branch.
 
 ## 0.5.0 — 2026-11-03

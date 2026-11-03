@@ -40,6 +40,19 @@
 - [ ] 编辑态按 **Esc**（或点徽标右侧 Esc）→ 输入框清空、徽标消失、**消息列表完全不变**（此时 pi 侧尚未分叉）
 - [ ] 运行中：历史消息仍可复制/引用，但 **Regenerate / Edit 都不出现**（同一时刻只允许一个历史改写操作）
 
+## 静默失败可见化（v0.5.1 新增）
+
+- [ ] pi 还在启动时立刻输入 `@` → 菜单显示「Loading files…」（或已有文件列表），**不再**显示「No matching files」
+- [ ] 停掉 pi 后输入 `@` → 菜单显示 **Failed to load files** + 一行原因 + **Retry**；点 Retry 后（pi 已恢复）菜单就地变成文件列表，**不重开工具窗、不弹任何对话框**
+- [ ] 同样的失败态对 `/` 命令菜单独立成立（`@` 成功时 `/` 失败也会如实显示，互不影响）
+- [ ] 项目里确实没有匹配文件时 → 显示「No matching files」且**没有** Retry 按钮（空 ≠ 失败）
+- [ ] 新建一个文件后回到插件，打开 `@` 等 30 秒 → 新文件出现；或直接点菜单底部的 **↻ Refresh** → 立即出现
+- [ ] 删除一个文件后点 **↻ Refresh** → 该文件从列表消失
+- [ ] Manage → **Diagnostics** → 8 个数据源逐个列出状态徽标；失败项有原因摘要与 Retry，超长错误可展开 **Full error** 看全文（菜单里只显示截断后的摘要）
+- [ ] 全部正常时 Diagnostics 顶部只有一行「All good」，**没有**红点、没有残留的旧错误
+- [ ] 从没打开过的 Sessions 显示 **Not loaded**（而不是 Failed）；点其 Retry 或打开 Sessions 后变 Ready
+- [ ] 桥接不支持的调用（如某版本没有 approval.getPolicy）显示 **Not supported**，且**不计入**失败、顶部不报红
+
 ## IDE 集成（v0.2 新增）
 
 - [ ] 编辑器选中一段代码 → 右键菜单出现 **Pi Agent** 组（Explain / Fix / Send Selection to Pi）
