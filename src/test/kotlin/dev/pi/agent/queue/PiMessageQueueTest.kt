@@ -335,6 +335,34 @@ class PiMessageQueueTest {
     }
 
     @Test
+    fun `operations on a parked queue work on the mirror without touching pi`() {
+        val ids = enqueue("followUp", "F1", "F2", images = listOf("img-1"))
+        queue.handle("pause", buildJsonObject { })
+        rpc.clear()
+
+        // Reorganize while parked — found by the real-machine pass: the old
+        // clear→reconcile path compared against pi's empty queue and wiped
+        // the parked entries.
+        queue.handle("move", buildJsonObject { put("id", ids[1]); put("delta", -1) })
+        assertEquals(listOf("F2", "F1"), texts())
+
+        queue.handle("promote", buildJsonObject { put("id", ids[1]) })
+        assertEquals(listOf("steer", "followUp"), modes())
+
+        val restored = queue.handle("restore", buildJsonObject { put("id", ids[0]) })
+        assertEquals("true", restored["ok"]!!.jsonPrimitive.content)
+        assertEquals("F1", restored["text"]!!.jsonPrimitive.content)
+        assertEquals(listOf("F2"), texts())
+
+        assertEquals(emptyList(), rpc.types(), "a parked queue must not touch pi")
+
+        // Resume delivers the reorganized queue; idle → first entry as prompt.
+        queue.handle("resume", buildJsonObject { })
+        assertEquals(listOf("get_state", "prompt"), rpc.types())
+        assertEquals(listOf("F2"), rpc.messages())
+    }
+
+    @Test
     fun `clear wipes mirror and pause state`() {
         enqueue("followUp", "F1")
         queue.handle("pause", buildJsonObject { })

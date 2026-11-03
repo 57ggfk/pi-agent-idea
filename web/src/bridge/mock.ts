@@ -821,6 +821,11 @@ export class MockBridge implements Bridge {
         const swapped = [...this.queueItems];
         [swapped[idx], swapped[target]] = [swapped[target], swapped[idx]];
         this.queueItems = swapped;
+        if (this.queuePaused) {
+          // Parked: the mirror is the only truth — same guard as the service.
+          this.syncQueue();
+          return { ok: true };
+        }
         this.rebuildPiFromMirror();
         this.emitQueueUpdate();
         this.syncQueue();
@@ -832,6 +837,10 @@ export class MockBridge implements Bridge {
         const target = this.queueItems.find((i) => i.id === id);
         if (!target || target.status === "failed") return { ok: false, error: `no queue item ${id}` };
         this.queueItems = this.queueItems.filter((i) => i.id !== id);
+        if (this.queuePaused) {
+          this.syncQueue();
+          return { ok: true };
+        }
         this.rebuildPiFromMirror();
         this.emitQueueUpdate();
         this.syncQueue();
@@ -843,8 +852,10 @@ export class MockBridge implements Bridge {
         const target = this.queueItems.find((i) => i.id === id);
         if (!target) return { ok: false, error: `no queue item ${id}` };
         this.queueItems = this.queueItems.filter((i) => i.id !== id);
-        this.rebuildPiFromMirror();
-        this.emitQueueUpdate();
+        if (!this.queuePaused) {
+          this.rebuildPiFromMirror();
+          this.emitQueueUpdate();
+        }
         this.syncQueue();
         return { ok: true, id, text: target.text, images: target.images.map((img) => ({ ...img })) };
       }
@@ -855,6 +866,11 @@ export class MockBridge implements Bridge {
         if (!target) return { ok: false, error: `no queue item ${id}` };
         if (target.mode === "steer") return { ok: true };
         target.mode = "steer";
+        if (this.queuePaused) {
+          this.normalizeQueue();
+          this.syncQueue();
+          return { ok: true };
+        }
         this.rebuildPiFromMirror();
         this.emitQueueUpdate();
         this.syncQueue();

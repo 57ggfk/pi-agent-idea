@@ -219,6 +219,15 @@ class PiMessageQueue(
         if (target < 0 || target >= items.size || items[target].mode != items[idx].mode) {
             return buildJsonObject { put("ok", false); put("error", "at edge") }
         }
+        if (paused) {
+            // Parked: pi's queue is empty and the mirror is the only truth.
+            // clear→reconcile here would compare against empty arrays and wipe
+            // the parked entries (found by the real-machine pass) — operate
+            // locally; resume re-enqueues in the new order.
+            items[idx] = items[target].also { items[target] = items[idx] }
+            push(snapshotJson())
+            return okJson()
+        }
         val rc = clearAndReconcile()
         if (!rc.matched || items.none { it.id == id }) {
             reEnqueue(rc.cleared)
@@ -240,6 +249,12 @@ class PiMessageQueue(
     private fun doRemove(params: JsonObject): JsonObject {
         val id = params.string("id") ?: return errorJson("queue.remove requires id")
         if (items.none { it.id == id }) return errorJson("no queue item $id")
+        if (paused) {
+            // Parked: the mirror is the only truth (see doMove).
+            items.removeIf { it.id == id }
+            push(snapshotJson())
+            return okJson()
+        }
         val rc = clearAndReconcile()
         val target = items.firstOrNull { it.id == id }
         if (!rc.matched || target == null || target.status == "failed") {
@@ -257,23 +272,33 @@ class PiMessageQueue(
     private fun doRestore(params: JsonObject): JsonObject {
         val id = params.string("id") ?: return errorJson("queue.restore requires id")
         if (items.none { it.id == id }) return errorJson("no queue item $id")
-        val rc = clearAndReconcile()
         val target = items.firstOrNull { it.id == id }
-        if (!rc.matched || target == null) {
+        if (paused) {
+            // Parked: the mirror is the only truth (see doMove).
+            if (target == null) return errorJson("no queue item $id")
+            items.removeIf { it.id == id }
+            push(snapshotJson())
+            return restoredJson(target)
+        }
+        val rc = clearAndReconcile()
+        val reconciled = items.firstOrNull { it.id == id }
+        if (!rc.matched || reconciled == null) {
             reEnqueue(rc.cleared)
             return buildJsonObject { put("ok", false); put("error", "no queue item $id") }
         }
         items.removeIf { it.id == id }
         reEnqueueQueued()
         push(snapshotJson())
-        return buildJsonObject {
-            put("ok", true)
-            put("id", target.id)
-            put("text", target.text)
-            put("images", JsonArray(target.images.map {
-                buildJsonObject { put("data", it.data); put("mimeType", it.mimeType) }
-            }))
-        }
+        return restoredJson(reconciled)
+    }
+
+    private fun restoredJson(item: Item): JsonObject = buildJsonObject {
+        put("ok", true)
+        put("id", item.id)
+        put("text", item.text)
+        put("images", JsonArray(item.images.map {
+            buildJsonObject { put("data", it.data); put("mimeType", it.mimeType) }
+        }))
     }
 
     /** Turns a follow-up into a steer; pi injects it during the current run. */
@@ -281,7 +306,13 @@ class PiMessageQueue(
         val id = params.string("id") ?: return errorJson("queue.promote requires id")
         val target = items.firstOrNull { it.id == id } ?: return errorJson("no queue item $id")
         if (target.mode == "steer") return okJson() // already a steer
-        if (paused) return buildJsonObject { put("ok", false); put("error", "queue is paused") }
+        if (paused) {
+            // Parked: relabel locally; resume fires steers first (see doResume).
+            replace(id) { it.copy(mode = "steer") }
+            normalize()
+            push(snapshotJson())
+            return okJson()
+        }
         if (piIsIdle()) {
             // US6-2: an idle promote degrades to a direct send — no queueing,
             // no touching the rest of the queue.
