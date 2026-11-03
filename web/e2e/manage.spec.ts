@@ -124,6 +124,111 @@ test.describe("manage view (MockBridge)", () => {
     // Optimistically flipping the switch would have been a lie.
     await expect(page.getByTestId("mcp-server-row").first()).toHaveAttribute("data-enabled", "true");
   });
+
+  // -- Package update (spec 001 US2) ----------------------------------------
+
+  test("package update refreshes the version in the list", async ({ page }) => {
+    await page.getByTestId("manage-tab-packages").click();
+    await expect(page.getByTestId("package-row")).toContainText("1.0.0");
+
+    await page.getByTestId("package-update-0").click();
+
+    await expect(page.getByTestId("update-result")).toContainText(
+      "updated npm:@example/pi-tools@1.0.0 -> npm:@example/pi-tools@1.1.0",
+    );
+    await expect(page.getByTestId("package-row")).toContainText("1.1.0");
+  });
+
+  test("a failed package update shows the raw output and the stale-version note", async ({ page }) => {
+    await openManage(page, "fail=update");
+    await page.getByTestId("manage-tab-packages").click();
+    await page.getByTestId("package-update-0").click();
+
+    const result = page.getByTestId("update-result");
+    await expect(result).toContainText("npm error 404");
+    await expect(result).toContainText("exit code 1");
+    await expect(result).toContainText("may still be the old one");
+    // A failed update must not silently bump the listed version.
+    await expect(page.getByTestId("package-row")).toContainText("1.0.0");
+  });
+
+  // -- pi self-update (spec 001 US3) -----------------------------------------
+
+  test("pi update from the env area refreshes the version without a confirm", async ({ page }) => {
+    // Default mock reports no pi-state events: no process running, no gate.
+    await page.getByTestId("pi-update").click();
+    await expect(page.getByTestId("env-update-confirm")).toHaveCount(0);
+    await expect(page.getByTestId("env-update-result")).toContainText("updated to 1.5.0-mock", {
+      timeout: 15_000,
+    });
+    await expect(page.getByTestId("pi-version")).toHaveText("1.5.0-mock");
+  });
+
+  test("updating pi while a session is running asks first, and cancel does nothing", async ({ page }) => {
+    await openManage(page, "pistate=1");
+    // pi reports running ~300ms after load (mock pi-state events).
+    await expect(page.getByTestId("status-dot")).toHaveClass(/running/, { timeout: 5_000 });
+
+    await page.getByTestId("pi-update").click();
+    const confirm = page.getByTestId("env-update-confirm");
+    await expect(confirm).toBeVisible();
+
+    await page.getByTestId("env-update-confirm-no").click();
+    await expect(confirm).toHaveCount(0);
+    await expect(page.getByTestId("pi-version")).toHaveText("1.4.0-mock");
+
+    await page.getByTestId("pi-update").click();
+    await expect(confirm).toBeVisible();
+    await page.getByTestId("env-update-confirm-yes").click();
+    await expect(page.getByTestId("pi-version")).toHaveText("1.5.0-mock", { timeout: 15_000 });
+  });
+
+  test("a failed pi update shows the raw error", async ({ page }) => {
+    await openManage(page, "fail=update");
+    await page.getByTestId("pi-update").click();
+    await expect(page.getByTestId("env-update-result")).toContainText("EACCES", { timeout: 15_000 });
+  });
+
+  // -- Provider details (spec 001 US4) ----------------------------------------
+
+  test("provider details expand with configured flags and no secret values", async ({ page }) => {
+    await page.getByTestId("manage-tab-auth").click();
+    await page.getByTestId("provider-toggle-mock-provider").click();
+
+    const detail = page.getByTestId("provider-detail-mock-provider");
+    await expect(detail).toBeVisible();
+    await expect(detail).toContainText("openai_completions");
+    await expect(detail).toContainText("https://api.mock.dev/v1");
+    // Sensitive keys show a flag, never a value (FR-011).
+    await expect(detail.getByTestId("provider-config-apiKey")).toContainText("configured");
+    await expect(detail.getByTestId("provider-config-Authorization")).toContainText("not configured");
+    await expect(detail).not.toContainText(/sk-|Bearer /);
+
+    await page.getByTestId("provider-open-file-mock-provider").click();
+    await expect(page.getByTestId("models-open-note")).toContainText("models.json");
+  });
+
+  test("a corrupt models.json is explained with the parse position", async ({ page }) => {
+    await openManage(page, "models=broken");
+    await page.getByTestId("manage-tab-auth").click();
+
+    const state = page.getByTestId("models-state");
+    await expect(state).toHaveAttribute("data-state", "corrupt");
+    await expect(state).toContainText("not valid JSON");
+    await expect(state).toContainText("line 3, column 8");
+    // The panel must not go blank over it: the provider list still renders.
+    await expect(page.getByTestId("auth-provider-row")).toHaveCount(1);
+  });
+
+  test("a missing models.json says nothing is configured yet", async ({ page }) => {
+    await openManage(page, "models=missing");
+    await page.getByTestId("manage-tab-auth").click();
+
+    const state = page.getByTestId("models-state");
+    await expect(state).toHaveAttribute("data-state", "missing");
+    await expect(state).toContainText("not found");
+    await expect(state).toContainText("no custom providers configured yet");
+  });
 });
 
 test.describe("project trust (MockBridge)", () => {
