@@ -10,8 +10,9 @@
 - **控制栏按实测宽度分级折叠**，360–900px 保持单行，长模型名与流式 Stop 按钮都算在内。
 
 **修复**
-- 多窗口下项目级 skills 列出错误项目。
-- `/` 与 `@` 菜单不显示、Options 菜单被裁、Sessions 卡片被切、深色主题工具窗口图标变白块、窄窗横向滚动条等布局问题。
+- 多窗口下，项目级 skills 会列出别的项目的条目。
+- `/` 与 `@` 菜单不显示、Options 菜单被裁、Sessions 卡片被切。
+- 深色主题下工具窗口图标显示为白块；窄窗口出现横向滚动条。
 
 **Added**
 - **Project trust model**: view, grant or revoke trust for the current project in the Manage panel; untrusted projects list the project-level skills, MCP servers and settings that pi will ignore.
@@ -22,7 +23,8 @@
 
 **Fixed**
 - Project-level skills listing entries from the wrong project in multi-window sessions.
-- Layout fixes: missing `/` and `@` menus, clipped Options menu, cut-off Sessions cards, white tool-window icons on dark themes, horizontal scrollbars in narrow windows.
+- Missing `/` and `@` menus, a clipped Options menu, and cut-off Sessions cards.
+- White tool-window icons on dark themes; horizontal scrollbars in narrow windows.
 
 ## 0.4.0 — 2026-11-02
 

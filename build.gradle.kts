@@ -200,6 +200,19 @@ intellijPlatform {
         // Marketplace change-notes: the topmost CHANGELOG section for the
         // current version (## <version> ... up to the next section), with
         // the heading line itself dropped.
+        //
+        // RELEASE-NOTES RULES (enforced by review, see .workbuddy/memory/MEMORY.md):
+        //   1. concise — 1-3 bullets per section, <= 10 bullets total;
+        //      one change per bullet, never implementation details;
+        //   2. written for humans — no class names, file paths, commits,
+        //      no emoji, no upgrade instructions;
+        //   3. Chinese block FIRST, English block second, section by section
+        //      aligned;
+        //   4. bold section labels only — **新增**/**变更**/**修复** and
+        //      **Added**/**Changed**/**Fixed**; no `###` headings.
+        // This text lands in three places at once: the packaged change-notes,
+        // the Marketplace "What's New" and the GitHub release body — so it is
+        // edited here only, never re-typed elsewhere.
         changeNotes = provider {
             val v = project.version.toString()
             file("CHANGELOG.md").readText()
