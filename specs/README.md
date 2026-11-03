@@ -19,7 +19,7 @@
 `pi update` 原生支持 `--self` / `--extensions` / `--models`，不需要自拼 `npm i -g`；
 `pi mcp` **没有** enable/disable，停用只能在配置层实现。
 
-## 四个 Feature
+## 五个 Feature
 
 | # | 名称 | 优先级 | 缺口本质 | 关键证据 |
 |---|---|---|---|---|
@@ -27,6 +27,7 @@
 | 002 | [项目级资源的信任模型](./002-project-trust/spec.md) | P1 | 配置做对了却不生效，且界面不解释 | `trust.json` 中 `pi-agent-idea` 未被信任；`skillsList()` 用 `File(".pi/skills")` 相对路径 |
 | 003 | [静默失败可见化](./003-error-visibility/spec.md) | P1 | 空列表分不清「为空」还是「失败」 | `store.ts` 有 12 处 `.catch(() => undefined)` / 空 catch |
 | 004 | [IDE 侧动作的自动化覆盖](./004-action-coverage/spec.md) | P2 | 动作注册/可用性无任何自动化 | UI_ISSUES 第 8 条自述「无自动化覆盖」；TASK_PLAN Phase 7/8 真机验收连续跳过 |
+| 005 | [插件自持消息队列](./005-message-queue/spec.md) | P1 | 流式排队不可见、不可操作；真实环境队列计数恒为 0 | `queue_update` 仅 mock 存在（`mock.ts:332`）；pi 1.4.0 RPC 无队列内容读写（`rpc-types.ts:33-61`）。**新提需求，非审计缺口** |
 
 ### 严重度排序逻辑
 
@@ -45,6 +46,7 @@
 001 ── 独立可交付
 003 ── 独立可交付（仅前端）
 004 ── 独立可交付（仅宿主测试）
+005 ── 独立可交付（Kotlin QueueService + web 队列条 + mock 重写）
 ```
 
 **建议执行顺序**：`002 → 001 → 003 → 004`
@@ -60,7 +62,8 @@
 | 002 | 24 | **已实现（23/24）** | 新增 `PiTrust.kt`、`skillsList` 签名变更、ManageView 横幅 |
 | 003 | 24 | 待开工 | 新增 `store/sources.ts`、`store.ts` 局部重构、新增诊断面板 |
 | 004 | 23 | 待开工 | `build.gradle.kts`、3 个新测试类、新增 `SMOKE_TEST.md` |
-| **合计** | **97** | — | — |
+| 005 | 待规划 | spec 已起草 | 新增 Kotlin QueueService、web 队列条、`types.ts`/mock 重写 |
+| **合计** | **97 + 005 待规划** | — | — |
 
 002 的验收结果见 [其 tasks.md 的「实现记录」](./002-project-trust/tasks.md#实现记录2026-11-02)：
 `./gradlew test` 与 `npx playwright test`（55 passed）全绿，仅 T024 真机目视未做。
