@@ -65,6 +65,14 @@ export class MockBridge implements Bridge {
   // existing specs keep the ungated timing.
   private readonly approvalScenario =
     typeof location !== "undefined" && new URLSearchParams(location.search).has("approval");
+  // Transcript of the current branch. Kept so get_messages / fork behave like
+  // pi 1.4.0: a fork branches at the *parent* of the chosen user entry, so that
+  // entry and everything after it belong to the abandoned side of the tree.
+  private history: Array<{ role: "user" | "assistant"; content: unknown; entryId?: string }> = [];
+  private forkEntries: Array<{ entryId: string; text: string }> = [];
+  private entrySeq = 0;
+  /** Prompt → times sent. Drives the "regenerated answer differs" scenario. */
+  private promptCounts = new Map<string, number>();
   private mockSessions = [
     {
       file: "/tmp/mock-sessions/2026-10-27T10-00-00_aaa.jsonl",
@@ -320,6 +328,16 @@ export class MockBridge implements Bridge {
         };
       case "sessions.list":
         return { success: true, data: { sessions: this.mockSessions } };
+      case "get_messages":
+        return {
+          success: true,
+          data: {
+            messages: this.history.map(({ role, content }) => ({ role, content })),
+          },
+        };
+      case "get_fork_messages":
+        // pi returns the forkable user entries in order; no sessionPath/id.
+        return { success: true, data: this.forkEntries.map((e) => ({ ...e })) };
       case "prompt": {
         const message = String(command["message"] ?? "");
         if (this.isStreaming && !command["streamingBehavior"]) {
@@ -327,7 +345,13 @@ export class MockBridge implements Bridge {
         }
         const disposition = this.isStreaming ? "queued" : "started";
         if (!this.isStreaming) {
-          void this.startRun(message);
+          const take = (this.promptCounts.get(message) ?? 0) + 1;
+          this.promptCounts.set(message, take);
+          this.entrySeq += 1;
+          const entryId = `entry-${this.entrySeq}`;
+          this.history.push({ role: "user", content: message, entryId });
+          this.forkEntries.push({ entryId, text: message });
+          void this.startRun(message, take);
         } else {
           this.emit("pi", { type: "queue_update", steering: [message], followUp: [] });
         }
@@ -342,28 +366,32 @@ export class MockBridge implements Bridge {
       }
       case "new_session":
         this.messageCount = 0;
+        this.resetBranch();
         return { success: true, data: { cancelled: false } };
       case "switch_session":
         this.messageCount = 0;
+        this.resetBranch();
         return { success: true, data: { cancelled: false } };
-      case "fork":
+      case "fork": {
+        // pi 1.4.0: fork {entryId} switches the pi process to a new branch and
+        // answers { text, cancelled } — no sessionPath, no sessionId.
+        const entryId = String(command["entryId"] ?? "");
+        const entryIndex = this.forkEntries.findIndex((e) => e.entryId === entryId);
+        const historyIndex = this.history.findIndex((m) => m.entryId === entryId);
+        if (!entryId || entryIndex < 0 || historyIndex < 0) {
+          return { success: false, error: "Invalid entry ID for forking" };
+        }
+        const text = this.forkEntries[entryIndex].text;
+        this.history = this.history.slice(0, historyIndex);
+        this.forkEntries = this.forkEntries.slice(0, entryIndex);
+        this.pushBranchSession("fork");
+        return { success: true, data: { text, cancelled: false } };
+      }
       case "clone": {
-        // Branch semantics only mocked: a new empty session entry is created
-        // and returned so the UI can exercise the switch/refresh flow.
-        this.sessionSeq += 1;
-        const kind = String(command["type"]);
-        const id = `session-${kind}-${this.sessionSeq}`;
-        const session = {
-          file: `/tmp/mock-sessions/2026-10-29T09-00-00_${id}.jsonl`,
-          id,
-          timestamp: new Date().toISOString(),
-          name: kind === "clone" ? "Cloned session" : "Forked session",
-          preview: "Branched conversation",
-          modifiedAt: Date.now(),
-          messageCount: this.messageCount,
-        };
-        this.mockSessions = [session, ...this.mockSessions];
-        return { success: true, data: { sessionId: session.id, sessionPath: session.file } };
+        // Same as fork: the runtime switches sessions in-process, so the
+        // response carries no path for the UI to follow.
+        this.pushBranchSession("clone");
+        return { success: true, data: { cancelled: false } };
       }
       case "set_session_name":
         return { success: true };
@@ -395,6 +423,31 @@ export class MockBridge implements Bridge {
     }
   }
 
+  /** Empties the simulated transcript (new / switch session). */
+  private resetBranch() {
+    this.history = [];
+    this.forkEntries = [];
+    this.promptCounts.clear();
+  }
+
+  /** fork / clone land in a new session file; the list has to show it. */
+  private pushBranchSession(kind: "fork" | "clone") {
+    this.sessionSeq += 1;
+    const id = `session-${kind}-${this.sessionSeq}`;
+    this.mockSessions = [
+      {
+        file: `/tmp/mock-sessions/2026-10-29T09-00-00_${id}.jsonl`,
+        id,
+        timestamp: new Date().toISOString(),
+        name: kind === "clone" ? "Cloned session" : "Forked session",
+        preview: "Branched conversation",
+        modifiedAt: Date.now(),
+        messageCount: this.history.length,
+      },
+      ...this.mockSessions,
+    ];
+  }
+
   /**
    * Emits a confirm dialog and waits for extension_ui_response (or abort),
    * mirroring the extension_ui round-trip of the real pi-approve extension.
@@ -409,7 +462,7 @@ export class MockBridge implements Bridge {
     });
   }
 
-  private async startRun(prompt: string) {
+  private async startRun(prompt: string, take = 1) {
     this.isStreaming = true;
     this.aborted = false;
     this.emittedForPrompt = false;
@@ -574,7 +627,11 @@ export class MockBridge implements Bridge {
     // second turn: final text (with a fenced code block for the copy button)
     await sleep(40);
     emit({ type: "turn_start" });
+    // Sending the same prompt again (regenerate) must produce a visibly
+    // different answer, otherwise an e2e cannot tell "regenerated" from "the
+    // old reply never went away".
     const finalText =
+      (take > 1 ? `Regenerated answer, take ${take}.\n\n` : "") +
       "The command printed `hello from mock pi`. All good ✅\n\n" +
       "```bash\necho hello from mock pi\n```\n\n" +
       "Also see src/main.tsx and src/store/store.ts:1 for details.";
@@ -598,6 +655,14 @@ export class MockBridge implements Bridge {
     await sleep(30);
     emit({ type: "agent_end", messages: [finalMessage], willRetry: false });
     await sleep(50);
+
+    // An aborted run never made it into the transcript, so neither does it here.
+    if (!this.aborted) {
+      this.history.push(
+        { role: "assistant", content: assistantMessage.content },
+        { role: "assistant", content: finalMessage.content },
+      );
+    }
 
     if (!this.emittedForPrompt) {
       this.emittedForPrompt = true;

@@ -198,6 +198,58 @@ export const usePiStore = create<PiStore>((set, get) => {
     }
   };
 
+  /** Appends a visible error item (spec 003: failures must never be silent). */
+  const appendError = (text: string) => {
+    const item = emptyItem("system", [{ kind: "text", text, done: true }]);
+    item.done = true;
+    item.isError = true;
+    set({ items: [...get().items, item] });
+  };
+
+  /**
+   * pi 1.4.0's `fork` / `clone` switch the session *inside* the pi process and
+   * answer without `sessionPath` / `sessionId`. The UI therefore cannot follow
+   * the response — it has to rebuild from the authoritative session state,
+   * which is also why the old flow silently did nothing on a real pi.
+   */
+  const syncAfterBranch = async () => {
+    if (!bridge) return;
+    const b = bridge;
+    set({ tab: "chat", isStreaming: false, aborted: false, stats: undefined });
+    await get().replayMessages();
+    try {
+      const state = await rpc<{
+        sessionId?: string;
+        sessionName?: string;
+        model?: ModelInfo;
+        thinkingLevel?: string;
+      }>(b, { type: "get_state" });
+      set({
+        sessionId: state.sessionId,
+        sessionName: state.sessionName,
+        thinkingLevel: state.thinkingLevel ?? get().thinkingLevel,
+        ...(state.model ? { model: state.model } : {}),
+      });
+    } catch {
+      // Best effort: the transcript is already restored by the replay above.
+    }
+    await get().refreshSessions();
+    await get().refreshStats();
+  };
+
+  /**
+   * The forkable user entries, oldest first. `get_fork_messages` answers a bare
+   * array in pi 1.4.0; the wrapper shape is accepted too so a protocol tweak
+   * cannot silently break the Fork button.
+   */
+  const forkEntries = async (b: Bridge): Promise<Array<{ entryId: string; text: string }>> => {
+    const resp = await rpc<
+      Array<{ entryId: string; text: string }> | { messages?: Array<{ entryId: string; text: string }> }
+    >(b, { type: "get_fork_messages" });
+    const list = Array.isArray(resp) ? resp : (resp?.messages ?? []);
+    return list.filter((e) => e && typeof e.entryId === "string" && e.entryId.length > 0);
+  };
+
   const handlePiEvent = (event: Record<string, unknown>) => {
     const type = event["type"];
     const state = get();
@@ -578,14 +630,12 @@ export const usePiStore = create<PiStore>((set, get) => {
     async cloneSession(file: string) {
       if (!bridge) return;
       try {
-        const result = await rpc<{ sessionId?: string; sessionPath?: string }>(
-          bridge,
-          { type: "clone", sessionPath: file },
-        );
-        await get().refreshSessions();
-        const path =
-          result.sessionPath ?? get().sessions.find((s) => s.id === result.sessionId)?.file;
-        if (path) await get().switchSession(path);
+        const result = await rpc<{ cancelled?: boolean }>(bridge, { type: "clone", sessionPath: file });
+        if (result?.cancelled) {
+          appendError("clone cancelled by a pi extension");
+          return;
+        }
+        await syncAfterBranch();
       } catch (e) {
         const item = emptyItem("system", [
           { kind: "text", text: `clone failed: ${(e as Error).message}`, done: true },
@@ -599,14 +649,24 @@ export const usePiStore = create<PiStore>((set, get) => {
     async forkSession() {
       if (!bridge) return;
       try {
-        const result = await rpc<{ sessionId?: string; sessionPath?: string }>(
-          bridge,
-          { type: "fork" },
-        );
-        await get().refreshSessions();
-        const path =
-          result.sessionPath ?? get().sessions.find((s) => s.id === result.sessionId)?.file;
-        if (path) await get().switchSession(path);
+        // pi branches at a specific user entry; the Fork button means "the last
+        // one", so resolve it instead of forking without an id (which pi
+        // rejects with "Invalid entry ID for forking").
+        const entries = await forkEntries(bridge);
+        const last = entries[entries.length - 1];
+        if (!last) {
+          appendError("fork failed: there is no user message to fork from");
+          return;
+        }
+        const result = await rpc<{ text?: string; cancelled?: boolean }>(bridge, {
+          type: "fork",
+          entryId: last.entryId,
+        });
+        if (result?.cancelled) {
+          appendError("fork cancelled by a pi extension");
+          return;
+        }
+        await syncAfterBranch();
       } catch (e) {
         const item = emptyItem("system", [
           { kind: "text", text: `fork failed: ${(e as Error).message}`, done: true },
