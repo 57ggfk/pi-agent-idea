@@ -102,6 +102,15 @@
 
 - [ ] 顶部横幅显示 pi 版本与二进制路径（找不到 pi 时显示安装引导命令）
 - [ ] **MCP Servers**：`pi mcp add demo -- echo hi` 后 Refresh 出现条目；Remove 可删除；有 OAuth 的服务器可 Login/Logout
+- [ ] **MCP 停用（v0.5.1 新增）**：对一个已配置的服务器点开关 → 条目变虚线灰显、按钮显示 `Disabled`、副标题写 `configuration kept`；
+  打开 `~/.pi/agent/mcp.json` 确认该条**只是多了 `"enabled": false`**，command / args / env 一字未改
+- [ ] **MCP 停用 · 生效**：停用后重启 pi（或新开项目）→ `pi mcp list` 里该服务器不再连接、状态为 `disabled`；
+  面板里它仍在列表中（可随时启用），不是消失了
+- [ ] **MCP 启用**：点回开关 → `mcp.json` 里 `enabled` 字段被删掉（不是写成 true），`pi mcp list` 里恢复连接，无需重填任何配置
+- [ ] **MCP 层级徽标**：用户级服务器显示 `user`，`.pi/mcp.json` 里的显示 `project`；
+  若某服务器在本项目被覆盖，副标题出现 `overridden in this project`
+- [ ] **MCP 需新会话**：对一个当前会话已连接的服务器点停用 → 出现一行提示「下个会话起生效，当前会话仍连着它」
+- [ ] **MCP 写入失败**：手工把 `mcp.json` 改成非法 JSON 后点开关 → 横幅显示原始解析错误，开关**不翻转**，文件内容不变
 - [ ] **Packages**：`pi install npm:@example/pi-tools` 后出现条目；Remove 可卸载
 - [ ] **Skills**：用户级（`~/.pi/agent/skills`）与项目级（`.pi/skills`、`.agents/skills`）都列出，条目带「用户级 / 项目级」标签；项目未受信任时项目级条目显示「项目级 · 未生效」+ 虚线弱化 + 原因行；**+ New skill** 可创建模板
 - [ ] **项目信任**：打开一个从未信任过的项目 → 面板顶部出现横幅，列出仓库里存在但会被 pi 忽略的 skills/MCP/settings/扩展；点「信任本项目」→ 二次确认逐项列出将生效内容 → 确认后横幅消失，保留一行状态 + 撤销入口

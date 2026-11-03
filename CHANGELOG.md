@@ -3,9 +3,13 @@
 ## 未发布
 
 **新增**
+- **MCP 服务器可临时停用**：在 Manage 面板一键关掉某个服务器再打开，命令、参数、环境变量全部原地保留，不必删了重填。
 - **消息悬停操作条**：复制（Pi 回复为 Markdown 源码，自己的消息为原文）、引用到输入框（追加在草稿之后不覆盖）、重新生成、编辑重发。
 - 重新生成与编辑重发会以该消息为界新开一个会话分支，旧会话文件保留，可在 Sessions 里切回。
 - **Manage 面板新增 Diagnostics**：列出文件、命令、模型等数据源各自的状态与最近错误，可逐个重试。
+
+**变更**
+- MCP 列表现已标出每个服务器来自用户配置还是本项目；停用只影响新会话，当前会话保持已建立的连接。
 
 **修复**
 - 输入 `@` 或 `/` 时列表是空的，不再一律显示「没有匹配」：加载失败会写明原因并可原地重试，加载中也会单独提示。
@@ -13,9 +17,13 @@
 - Fork 之后界面还停在旧消息上：pi 1.4.0 不再返回会话路径，消息列表与新分支不同步。
 
 **Added**
+- **MCP servers can be switched off without deleting them**: turn one off in the Manage panel and back on later; command, args and env stay exactly where they were.
 - **Hover actions on any message**: copy (Markdown source for Pi replies, verbatim text for your own), quote into the composer after your draft, regenerate the last reply, and edit-and-resend the last message.
 - Regenerate and edit branch the conversation into a new session; the old session file stays and can be switched back to.
 - **Diagnostics tab in Manage**: every data source lists its own status and last error, with a per-source retry.
+
+**Changed**
+- The MCP list now says whether a server comes from your own config or from this project, and a disabled server keeps the current session connected until the next one starts.
 
 **Fixed**
 - An empty `@` or `/` menu no longer always claims "no match": a failed load now says what went wrong and offers a retry, and a load in progress says so.

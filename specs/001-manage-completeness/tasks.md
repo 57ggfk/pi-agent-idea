@@ -34,7 +34,7 @@ description: "Task list for 001-manage-completeness"
 - [ ] **T002** 在 `src/main/kotlin/dev/pi/agent/bridge/BridgeService.kt` 注册上述 5 个方法的分发分支
   （先返回 `not_implemented` 占位） — 验证：`./gradlew compileKotlin` 通过，且前端调用拿到结构化错误而非 bridge 500
 - [ ] **T003** [P] 在 `web/src/bridge/mock.ts` 为 5 个方法补 mock（含失败分支：`?fail=mcp`、`?fail=update`）— 验证：Vitest 里可断言失败态
-- [ ] **T004** [P] 新增 `src/main/kotlin/dev/pi/agent/manage/PiMcpConfig.kt` 骨架：
+- [x] **T004** [P] 新增 `src/main/kotlin/dev/pi/agent/manage/PiMcpConfig.kt` 骨架：
   读/写 `mcp.json`（用户级 + 项目级）、备份、原子写入 — 验证：`PiMcpConfigTest` 能读写临时目录
 
 **Checkpoint**: 契约就位，四个 story 可以并行开工。
@@ -45,18 +45,18 @@ description: "Task list for 001-manage-completeness"
 
 **Goal**: 停用不丢配置，启用不重填。
 
-- [ ] **T005** [US1] `PiMcpConfig` 实现停用仓库 `<IDE config>/pi-agent/mcp-disabled.json`
+- ~~[ ]~~ **T005** [US1] **（作废）** `PiMcpConfig` 实现停用仓库 `<IDE config>/pi-agent/mcp-disabled.json`
   （`version` + `user`/`project` 两段，条目含 `entry` 原文与 `_scope`）— 验证：单测覆盖「停用→仓库有该条目且 mcp.json 已无」
-- [ ] **T006** [US1] `PiMcpConfig.disable(name, scope)`：写前备份 `mcp.json`、从文件移除条目、存仓库；
+- ~~[ ]~~ **T006** [US1] **（作废）** `PiMcpConfig.disable(name, scope)`：写前备份 `mcp.json`、从文件移除条目、存仓库；
   文件不存在或条目不存在时返回结构化错误 — 验证：单测覆盖正常、条目不存在、文件损坏三种
-- [ ] **T007** [US1] `PiMcpConfig.enable(name, scope)`：文件已有同名条目时以文件为准并返回 `conflict`，
+- ~~[ ]~~ **T007** [US1] **（作废）** `PiMcpConfig.enable(name, scope)`：文件已有同名条目时以文件为准并返回 `conflict`，
   否则回填仓库原文并删除仓库条目 — 验证：单测覆盖回填成功、外部手改冲突
-- [ ] **T008** [US1] `PiManage.mcpSetEnabled(params)` 串联 T006/T007，`mcpList()` 合并显示已停用项
+- [x] **T008** [US1] `PiManage.mcpSetEnabled(params)` 串联 T006/T007，`mcpList()` 合并显示已停用项
   （标记 `enabled:false` + `scope`）— 验证：单测断言 list 输出同时含启用与停用项
-- [ ] **T009** [US1] `McpPanel.tsx` 加启停开关：停用项灰显 + 层级徽标（user/project）；
+- [x] **T009** [US1] `McpPanel.tsx` 加启停开关：停用项灰显 + 层级徽标（user/project）；
   停用时若当前会话在用该服务器，显示「需新会话生效」提示 — 验证：Playwright 断言开关状态切换后列表文案变化
-- [ ] **T010** [US1] e2e：`web/e2e/manage.spec.ts` 覆盖「停用→项变灰→启用→配置字段仍在」 — 验证：用例通过，且断言配置字段值不变
-- [ ] **T011** [US1] 项目级分支：``scope==="project"`` 且项目未信任时，禁用项目级停用并提示原因
+- [x] **T010** [US1] e2e：`web/e2e/manage.spec.ts` 覆盖「停用→项变灰→启用→配置字段仍在」 — 验证：用例通过，且断言配置字段值不变
+- [x] **T011** [US1] 项目级分支：``scope==="project"`` 且项目未信任时，禁用项目级停用并提示原因
   （依赖 002，可先留 TODO 注释）— 验证：mock 下断言提示可见
 
 **Checkpoint**: US1 可独立交付 —— 用户已经能安全停用 MCP。
@@ -126,3 +126,81 @@ US1–US4 之间**无**相互依赖，可任意顺序或并行。
 ## 总计
 
 26 个 task：Foundational 4 + US1 7 + US2 3 + US3 4 + US4 4 + Polish 4。
+
+---
+
+## 实现记录（2026-11-03，US1 / T004–T011）
+
+分支 `001-manage-completeness`（从 `003-error-visibility` 的 tip 上叠，三个 spec 进同一个版本）。
+本批**只做 US1（MCP 启停）**，US2/US3/US4 未动，故 T001–T003 保持未勾——它们要求五个方法一次落齐。
+
+### 首要发现：plan 的核心方案建立在错误假设上
+
+plan「关键技术决策 1」写的是：
+
+> 方案 A：改 `mcp.json` 加 `"disabled": true` → pi 不认识该字段 → 无效
+> 方案 C（选用）：从 `mcp.json` 移除条目，原文存入插件停用仓库
+
+实测 pi 1.4.0 的 `docs/mcp.md` 第 69 行：
+
+> `enabled: false`: keep the entry without connecting to it.
+
+**字段名是 `enabled`，pi 认识，而且这是官方支持的能力。** 于是：
+
+- 停用 = 把该条目 `enabled` 置 false，配置原地不动 → **不需要停用仓库**，T005–T007 作废；
+- 启用 = 删掉 `enabled` 字段（pi 缺省为 true），保持文件干净、下次停用仍是单键 diff；
+- 项目级覆盖也是官方语义：不带 `command`/`url`/`type` 的项目条目只覆盖 `enabled`/`exposure`/`toolExposure`。
+
+`pi mcp list --json` 的实测输出（临时 `PI_CODING_AGENT_DIR` + 临时项目 + trust.json）：
+
+```json
+{ "name": "user-srv", "scope": "global", "enabled": false, "state": "disabled",
+  "source": "...\\mcp.json", "override": "...\\.pi\\mcp.json" }
+{ "name": "proj-srv", "scope": "project", "enabled": true, "state": "failed" }
+```
+
+也就是说：**禁用项照样出现在列表里**，`enabled` / `scope` / `state` / `override` 全都有。
+所以 `mcpList` 不需要合并任何东西，前端也不需要自己算生效状态。
+
+### 顺带修掉的一个真 bug
+
+`PiCliRunner.run()` 用 `ProcessBuilder` 但**从不设 working directory**，子进程继承 IDE 进程的 cwd。
+而 `pi mcp list` 与 `pi mcp add --local` 都是按 cwd 找 `.pi/mcp.json` 的：
+
+- 多项目窗口里 `mcpList` 读到的是别的项目（或什么也没有）；
+- `mcp add --local` 会把服务器写到 GUI 进程的当前目录里。
+
+修法：`run(..., workingDir)`；`mcpList` 传项目根，`mcpAdd`/`mcpRemove` 在 `local=true` 时传项目根。
+`BridgeService.withProjectPath()` 统一注入，前端不必知道项目路径。
+
+### 落地清单
+
+| 项 | 内容 |
+|---|---|
+| T004 | `manage/PiMcpConfig.kt`（**完整实现，不是骨架**）：`fileFor` / `entries` / `setEnabled` / `overrideWarning`；备份 → 校验 → 原子移动，沿用 `PiTrust` 的写盘纪律 |
+| T005–T007 | **作废**（见上）。`setEnabled` 一个方法覆盖启用与停用 |
+| T008 | `PiManage.mcpSetEnabled` + `mcpList(projectPath)`；`mcpAdd`/`mcpRemove` 支持 `projectPath` |
+| T009 | `McpPanel` 加 `role="switch"` 开关（文案 Enabled/Disabled，不靠颜色）、`scope` 徽标、禁用行虚线灰显、停用已连接服务器时提示「下一个会话生效」、`warning` 单独一行提示；Login/Logout 在禁用时 disable（对着关掉的服务器登录是死路） |
+| T010 | `manage.spec.ts` 新增 4 例：停用→配置保留→再启用、scope 徽标与禁用态、overlay 覆盖提示、写入失败不翻转开关 |
+| T011 | 项目未信任时 `setEnabled(scope=project)` 直接拒绝并说明原因（写了 pi 也不读，看起来像成功最糟） |
+
+### 两处有意偏差
+
+1. **`enabled` 徽标文案用英文 user/project**，而 `SkillsPanel` 用「用户级 / 未生效」。同一个面板里两种语言更糟，
+   McpPanel 本身全英文（Add server / No MCP servers configured），所以跟随本面板。
+2. **前端只把 `scope` 用于显示，回传仍是 pi 的 `global`**。第一版把 `global` 映射成 `user` 后连回传也用了 `user`，
+   后端报 `unknown scope: user`，4 条 e2e 里 3 条直接挂——**显示层的词不要流进协议层**。
+
+### 验证
+
+- `cd web && npm run typecheck` → 0 error
+- `cd web && npx playwright test` → **87 passed**（新增 4 条，既有 83 条无回归）
+- `cd web && npm test` → 未跑（本批无前端单测改动，逻辑全在 Kotlin）
+- `./gradlew compileKotlin` → 通过
+- `./gradlew test --tests "dev.pi.agent.manage.PiMcpConfigTest"` → **12 passed**
+
+### 未做
+
+- T001–T003 的其余部分（`packages.update` / `env.update` / `models.readProvider` / `models.openFile`）→ US2–US4。
+- T023–T026（全量回归 / `verifyPlugin` / CHANGELOG / 真机冒烟）：CHANGELOG 已随本批补 US1 一条，
+  其余等 US2–US4 一起做，避免 What's New 写半截。
