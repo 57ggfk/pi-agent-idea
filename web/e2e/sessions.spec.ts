@@ -37,8 +37,15 @@ test("fork branches the conversation into a new session", async ({ page }) => {
   await page.getByTestId("send-btn").click();
   // Wait for the run to settle so the Fork button is enabled again.
   await expect(page.getByTestId("fork-btn")).toBeEnabled({ timeout: 30_000 });
+  await expect(page.getByTestId("item-user")).toHaveCount(1);
 
   await page.getByTestId("fork-btn").click();
+
+  // pi answers a fork without a session path, so the UI rebuilds from the
+  // branch itself. The forked-at message and everything after it now belong to
+  // the abandoned side of the tree: the transcript must not keep showing them.
+  await expect(page.getByTestId("empty-state")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("item-user")).toHaveCount(0);
 
   // Fork switches to the new session; it shows up in the sessions list.
   await page.getByTestId("tab-sessions").click();

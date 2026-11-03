@@ -190,6 +190,66 @@ for (const width of [360, 680, 900, 1440]) {
   });
 }
 
+/** #8 — the hover toolbar is absolutely positioned on purpose. If it ever took
+ *  part in layout, hovering would reflow the list and shift the message under
+ *  the cursor; if it were positioned off the wrong ancestor it would be clipped
+ *  by `.message-list`'s horizontal overflow and drag the column sideways. */
+for (const width of [360, 680, 900]) {
+  test(`message toolbar stays inside the window without moving the message at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 760 });
+    await page.goto("/");
+    await page.getByTestId("composer-input").fill("measure the toolbar");
+    await page.getByTestId("send-btn").click();
+    // Busy first, then idle: "not busy" alone is true before the run starts.
+    await expect(page.getByTestId("status-dot")).toHaveClass(/busy/, { timeout: 20_000 });
+    await expect(page.getByTestId("status-dot")).not.toHaveClass(/busy/, { timeout: 30_000 });
+
+    for (const role of ["user", "assistant"] as const) {
+      const item = page.locator(`[data-testid="item-${role}"]`).last();
+      // Scroll first, then measure: hovering must not be what brings it into
+      // view, otherwise the rect comparison below would compare two scrolls.
+      await item.scrollIntoViewIfNeeded();
+      const before = (await item.boundingBox())!;
+
+      await item.hover();
+      await expect(item.getByTestId("msg-actions")).toBeVisible();
+
+      const r = await page.evaluate((role) => {
+        const all = document.querySelectorAll(`[data-testid="item-${role}"]`);
+        const el = all[all.length - 1]!;
+        const app = document.querySelector(".app")!.getBoundingClientRect();
+        const bar = el.querySelector('[data-testid="msg-actions"]')!.getBoundingClientRect();
+        const itemBox = el.getBoundingClientRect();
+        const list = document.querySelector(".message-list")!;
+        return {
+          app: { left: app.left, right: app.right, top: app.top, bottom: app.bottom },
+          bar: { left: bar.left, right: bar.right, top: bar.top, bottom: bar.bottom, width: bar.width },
+          item: { left: itemBox.left, top: itemBox.top, width: itemBox.width, height: itemBox.height },
+          overflowX: list.scrollWidth - list.clientWidth,
+        };
+      }, role);
+
+      // Inside the tool window on all four edges.
+      expect(r.bar.left, "toolbar overflows left").toBeGreaterThanOrEqual(r.app.left - 0.5);
+      expect(r.bar.right, "toolbar overflows right").toBeLessThanOrEqual(r.app.right + 1);
+      expect(r.bar.top, "toolbar overflows the top").toBeGreaterThanOrEqual(r.app.top - 1);
+      expect(r.bar.bottom, "toolbar overflows the bottom").toBeLessThanOrEqual(r.app.bottom + 1);
+      expect(r.bar.width).toBeGreaterThan(0);
+
+      // No horizontal scrollbar appears in the list.
+      expect(r.overflowX, "the message list scrolls sideways").toBeLessThanOrEqual(0);
+
+      // The message did not move: same rect before and after the hover.
+      expect(r.item.left).toBeCloseTo(before.x, 0);
+      expect(r.item.top).toBeCloseTo(before.y, 0);
+      expect(r.item.width).toBeCloseTo(before.width, 0);
+      expect(r.item.height).toBeCloseTo(before.height, 0);
+    }
+  });
+}
+
 /** #7 — `+` used to drop a running answer without asking. */
 test("New confirms before discarding a running session", async ({ page }) => {
   await page.goto("/");
