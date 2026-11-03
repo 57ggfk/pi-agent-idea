@@ -7,8 +7,9 @@ import PackagesPanel from "./manage/PackagesPanel";
 import SkillsPanel from "./manage/SkillsPanel";
 import AuthPanel from "./manage/AuthPanel";
 import SettingsPanel from "./manage/SettingsPanel";
+import DiagnosticsPanel from "./manage/DiagnosticsPanel";
 
-export type ManageTab = "mcp" | "packages" | "skills" | "auth" | "settings";
+export type ManageTab = "mcp" | "packages" | "skills" | "auth" | "settings" | "diagnostics";
 
 const TABS: Array<{ id: ManageTab; label: string }> = [
   { id: "mcp", label: "MCP Servers" },
@@ -16,6 +17,7 @@ const TABS: Array<{ id: ManageTab; label: string }> = [
   { id: "skills", label: "Skills" },
   { id: "auth", label: "Auth" },
   { id: "settings", label: "Settings" },
+  { id: "diagnostics", label: "Diagnostics" },
 ];
 
 /** Resource categories shown in the trust confirmation, even before they exist. */
@@ -271,6 +273,8 @@ export default function ManageView() {
           <SkillsPanel api={api} trusted={trusted} />
         ) : tab === "auth" ? (
           <AuthPanel api={api} />
+        ) : tab === "diagnostics" ? (
+          <DiagnosticsPanel />
         ) : (
           <SettingsPanel api={api} />
         )}

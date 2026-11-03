@@ -2587,6 +2587,58 @@ button {
   color: var(--text-tertiary);
   font-size: var(--fs-sm);
   font-style: italic;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Failed is a fault, not an answer: it gets the error colour, a readable
+   reason, and the only action in the menu that changes anything. */
+.menu-failed {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  font-style: normal;
+  color: var(--text-secondary);
+}
+
+.menu-failed-title {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.menu-failed-detail {
+  font-size: var(--fs-xs);
+  color: var(--text-tertiary);
+  /* Long bridge errors wrap inside the menu instead of widening it. */
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.menu-action {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.menu-action:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.menu-action:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .file-item,
@@ -2869,4 +2921,108 @@ button {
 
 .panel-row-warn {
   color: var(--warning);
+}
+
+/* ---------------------------------------------------------------------------
+   Diagnostics (spec 003 US4)
+   A row per data source. The badge is the primary signal, so it never relies
+   on colour alone: the label says Ready / Failed / Not loaded in words.
+   --------------------------------------------------------------------------- */
+.diagnostics-summary {
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.diagnostics-summary[data-state="failed"] {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.diag-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.diag-item {
+  margin-bottom: 6px;
+}
+
+.diag-badge {
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+  color: var(--text-secondary);
+  background: var(--bg-subtle);
+}
+
+.diag-badge-ready {
+  color: var(--success);
+  border-color: currentColor;
+}
+
+.diag-badge-failed {
+  color: var(--danger);
+  border-color: currentColor;
+}
+
+.diag-badge-loading {
+  color: var(--accent);
+  border-color: currentColor;
+}
+
+.diag-error:empty {
+  display: none;
+}
+
+.diag-details {
+  margin: -2px 0 8px 10px;
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+
+.diag-details summary {
+  cursor: pointer;
+}
+
+.diag-full {
+  margin: 4px 0 0;
+  padding: 6px 8px;
+  max-height: 140px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--bg-subtle);
+  border-radius: var(--r-sm);
+}
+
+/* Footer of the @ menu: the list is cached, so say where it came from and let
+   the user force a re-read instead of waiting for the TTL (spec 003 US3). */
+.menu-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-xs);
+  color: var(--text-tertiary);
+}
+
+.menu-footer-hint {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu-footer .menu-action {
+  margin-top: 0;
 }

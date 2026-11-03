@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { usePiStore, type SendMode } from "../store/store";
-import { getBridge } from "../bridge";
+import { needsRefresh } from "../store/sources";
 import ModelPicker from "./ModelPicker";
 import SendButton from "./SendButton";
 import ThinkingPicker from "./ThinkingPicker";
@@ -29,45 +29,74 @@ type Density = 0 | 1 | 2;
 // `user@example.com` still reads as an email, not as a file token.
 const AT_QUERY_RE = /(?:^|[^\w@])@([^\s@]*)$/;
 
-// Project files for @ completion. Cached only after a successful answer: an
-// empty list is a legitimate result, but a failed request (pi still starting,
-// project index still building) must not be remembered — that used to leave @
-// permanently dead for the rest of the UI session.
-let filesCache: string[] | null = null;
-let filesInFlight: Promise<string[]> | null = null;
-let filesFailedAt = 0;
-/** Back-off after a failure so a racing bridge is not hammered per keystroke. */
-const FILES_RETRY_MS = 2000;
-
-async function loadProjectFiles(force = false): Promise<string[]> {
-  if (filesCache && !force) return filesCache;
-  if (filesInFlight) return filesInFlight;
-  if (!force && filesFailedAt > 0 && Date.now() - filesFailedAt < FILES_RETRY_MS) {
-    return filesCache ?? [];
-  }
-  const request = (async () => {
-    const bridge = await getBridge();
-    const resp = await bridge.request<{ files?: string[] }>("files.list");
-    filesCache = resp.files ?? [];
-    filesFailedAt = 0;
-    return filesCache;
-  })();
-  filesInFlight = request;
-  try {
-    return await request;
-  } catch (e) {
-    filesFailedAt = Date.now();
-    console.warn("files.list failed", e);
-    return filesCache ?? [];
-  } finally {
-    if (filesInFlight === request) filesInFlight = null;
-  }
-}
-
 /** Grows the textarea to its content, capped so it cannot eat the message list. */
 function autosize(ta: HTMLTextAreaElement) {
   ta.style.height = "auto";
   ta.style.height = Math.min(ta.scrollHeight, 160) + "px";
+}
+
+type MenuState = "list" | "loading" | "failed" | "empty";
+
+/**
+ * What a completion menu shows when it has no row to offer.
+ *
+ * The three non-list states must be distinguishable at a glance (spec 003
+ * FR-002): "loading" is in progress, "empty" is an answer, "failed" is a fault
+ * — and only the last one offers a retry. Sharing one text for all three is
+ * exactly the bug this replaces.
+ */
+function MenuNotice({
+  state,
+  testId,
+  label,
+  error,
+  busy,
+  onRetry,
+}: {
+  state: Exclude<MenuState, "list">;
+  testId: string;
+  label: string;
+  error?: string;
+  busy?: boolean;
+  onRetry: () => void;
+}) {
+  if (state === "loading") {
+    return (
+      <div className="menu-empty menu-loading" data-testid={`${testId}-loading`} data-state="loading">
+        Loading {label}…
+      </div>
+    );
+  }
+  if (state === "failed") {
+    return (
+      <div className="menu-empty menu-failed" data-testid={`${testId}-failed`} data-state="failed">
+        <div className="menu-failed-title">Failed to load {label}</div>
+        {error ? (
+          <div className="menu-failed-detail" data-testid={`${testId}-failed-detail`}>
+            {error}
+          </div>
+        ) : null}
+        <button
+          type="button"
+          className="menu-action"
+          data-testid={`${testId}-retry`}
+          disabled={busy}
+          // mousedown, not click: the textarea must not lose focus first.
+          onMouseDown={(e) => {
+            e.preventDefault();
+            onRetry();
+          }}
+        >
+          {busy ? "Retrying…" : "Retry"}
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="menu-empty" data-testid={`${testId}-empty`} data-state="empty">
+      No matching {label}
+    </div>
+  );
 }
 
 export default function Composer() {
@@ -75,7 +104,6 @@ export default function Composer() {
   const [mode, setMode] = useState<SendMode>("auto");
   const [images, setImages] = useState<PendingImage[]>([]);
   const [highlightIndex, setHighlightIndex] = useState(0);
-  const [files, setFiles] = useState<string[]>([]);
   // Menus dismissed with Escape stay closed until the text changes.
   const [slashDismissed, setSlashDismissed] = useState(false);
   const [fileDismissed, setFileDismissed] = useState(false);
@@ -86,7 +114,11 @@ export default function Composer() {
   const isStreaming = usePiStore((s) => s.isStreaming);
   const queue = usePiStore((s) => s.queue);
   const commands = usePiStore((s) => s.commands);
-  const refreshCommands = usePiStore((s) => s.refreshCommands);
+  const files = usePiStore((s) => s.files);
+  const filesSource = usePiStore((s) => s.sources.files);
+  const commandsSource = usePiStore((s) => s.sources.commands);
+  const loadFiles = usePiStore((s) => s.loadFiles);
+  const retrySource = usePiStore((s) => s.retrySource);
   const compact = usePiStore((s) => s.compact);
   const newSession = usePiStore((s) => s.newSession);
   const pendingPrompt = usePiStore((s) => s.pendingPrompt);
@@ -148,8 +180,8 @@ export default function Composer() {
   }, [measureDensity]);
 
   useEffect(() => {
-    void loadProjectFiles().then(setFiles);
-  }, []);
+    void loadFiles();
+  }, [loadFiles]);
 
   // Editor actions ("Explain with Pi" etc.) push a pre-filled prompt through
   // the ide event; quote / edit reuse the same channel with a different mode.
@@ -195,26 +227,37 @@ export default function Composer() {
     ? files.filter((f) => f.toLowerCase().includes(atQuery.toLowerCase())).slice(0, FILE_MENU_MAX)
     : [];
 
-  // init() fetches the command list once, which can race the pi process: the
-  // RPC fails, the error is swallowed and the list stays empty forever. Retry
-  // every time the menu is opened on an empty list instead.
-  useEffect(() => {
-    if (!slashOpen || commands.length > 0) return;
-    void refreshCommands();
-  }, [slashOpen, commands.length, refreshCommands]);
+  // "No matching files" is only the truth once the list has actually loaded.
+  // Before, an empty menu meant one of four things and looked identical in all
+  // of them (spec 003 US1).
+  const fileMenuState: MenuState =
+    fileMatches.length > 0
+      ? "list"
+      : filesSource.status === "failed"
+        ? "failed"
+        : filesSource.status === "ready"
+          ? "empty"
+          : "loading";
+  const slashMenuState: MenuState =
+    slashMatches.length > 0
+      ? "list"
+      : commandsSource.status === "failed"
+        ? "failed"
+        : commandsSource.status === "ready"
+          ? "empty"
+          : "loading";
+  // A bridge that does not implement the call at all gets no menu: showing a
+  // permanent "failed" badge for a feature that cannot exist is noise.
+  const fileMenuShown = atOpen && filesSource.status !== "unsupported";
+  const slashMenuShown = slashOpen && commandsSource.status !== "unsupported";
 
-  // Same for the project files — the first load may run before the index has
-  // anything to report.
+  // Opening `@` re-reads the file list once it is stale (FR-006). Keyed on
+  // *opening* the menu, not on every keystroke: the old code fired a request
+  // per character and had to back off to survive it.
   useEffect(() => {
-    if (!atOpen || files.length > 0) return;
-    let cancelled = false;
-    void loadProjectFiles(true).then((list) => {
-      if (!cancelled) setFiles(list);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [atOpen, files.length]);
+    if (!atOpen) return;
+    if (needsRefresh(usePiStore.getState().sources.files)) void loadFiles();
+  }, [atOpen, loadFiles]);
 
   const doSend = () => {
     const t = text.trim();
@@ -300,13 +343,9 @@ export default function Composer() {
       }}
     >
       <div className="composer-inner">
-      {atOpen ? (
-        <div className="file-menu" data-testid="file-menu">
-          {fileMatches.length === 0 ? (
-            <div className="menu-empty" data-testid="file-menu-empty">
-              No matching files
-            </div>
-          ) : (
+      {fileMenuShown ? (
+        <div className="file-menu" data-testid="file-menu" data-state={fileMenuState}>
+          {fileMenuState === "list" ? (
             fileMatches.map((f, i) => (
               <div
                 key={f}
@@ -319,16 +358,39 @@ export default function Composer() {
                 @{f}
               </div>
             ))
+          ) : (
+            <MenuNotice
+              state={fileMenuState}
+              testId="file-menu"
+              label="files"
+              error={filesSource.error}
+              busy={filesSource.inflight}
+              onRetry={() => void retrySource("files")}
+            />
           )}
+          {/* FR-006 does not require waiting for the TTL: a file created a
+              minute ago should be findable now. */}
+          <div className="menu-footer">
+            <span className="menu-footer-hint">Files from the project index</span>
+            <button
+              type="button"
+              className="menu-action"
+              data-testid="file-menu-refresh"
+              aria-label="Refresh file list"
+              disabled={filesSource.inflight}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                void loadFiles();
+              }}
+            >
+              ↻ Refresh
+            </button>
+          </div>
         </div>
       ) : null}
-      {slashOpen ? (
-        <div className="slash-menu" data-testid="slash-menu">
-          {slashMatches.length === 0 ? (
-            <div className="menu-empty" data-testid="slash-menu-empty">
-              No matching commands
-            </div>
-          ) : (
+      {slashMenuShown ? (
+        <div className="slash-menu" data-testid="slash-menu" data-state={slashMenuState}>
+          {slashMenuState === "list" ? (
             slashMatches.map((c, i) => (
               <div
                 key={c.name}
@@ -342,6 +404,15 @@ export default function Composer() {
                 <span className="slash-desc">{c.description ?? c.source}</span>
               </div>
             ))
+          ) : (
+            <MenuNotice
+              state={slashMenuState}
+              testId="slash-menu"
+              label="commands"
+              error={commandsSource.error}
+              busy={commandsSource.inflight}
+              onRetry={() => void retrySource("commands")}
+            />
           )}
         </div>
       ) : null}
