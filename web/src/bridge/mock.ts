@@ -7,6 +7,52 @@ function query(): URLSearchParams | null {
   return typeof location !== "undefined" ? new URLSearchParams(location.search) : null;
 }
 
+/**
+ * `?fail=<name>[:<count>][,<name>[:<count>]...]` — makes the first `count`
+ * requests for that name fail (default 1). Names are the spec-003 source ids
+ * (`files`, `commands`, `models`, `thinkingLevels`, `policy`, `prefs`,
+ * `sessions`, `stats`) plus `prompt`.
+ *
+ * A *finite* failure budget is the point: "fail once, then work" is what makes
+ * "Retry recovers in place" testable, and it keeps a multi-step test honest
+ * about how many attempts it really made.
+ */
+function parseFailPlan(raw: string | null | undefined): Map<string, number> {
+  const plan = new Map<string, number>();
+  if (!raw) return plan;
+  for (const entry of raw.split(",")) {
+    const [name, count] = entry.split(":");
+    if (!name) continue;
+    const n = count === undefined ? 1 : Number(count);
+    plan.set(name.trim(), Number.isFinite(n) && n > 0 ? n : 1);
+  }
+  return plan;
+}
+
+/**
+ * `?slow=files:800` delays the first request for that name by 800 ms. The
+ * "loading" state is otherwise a single microtask and impossible to assert.
+ */
+function delay(ms: number): Promise<void> {
+  if (ms <= 0) return Promise.resolve();
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** bridge method / rpc command → the source id it feeds (spec 003). */
+const METHOD_SOURCE: Record<string, string> = {
+  "files.list": "files",
+  "sessions.list": "sessions",
+  "approval.getPolicy": "policy",
+  "config.getPrefs": "prefs",
+};
+
+const COMMAND_SOURCE: Record<string, string> = {
+  get_commands: "commands",
+  get_available_models: "models",
+  get_available_thinking_levels: "thinkingLevels",
+  get_session_stats: "stats",
+};
+
 const MOCK_PROJECT_PATH = "/tmp/mock-project";
 const MOCK_TRUST_STORE = "/tmp/mock-home/.pi/agent/trust.json";
 
@@ -75,8 +121,26 @@ export class MockBridge implements Bridge {
   private promptCounts = new Map<string, number>();
   // `?fail=prompt` rejects the first prompt so the error-visibility path (spec
   // 003) has an item-error to render; nothing else can produce one in the UI.
-  private readonly failPromptOnce = query()?.get("fail") === "prompt";
-  private promptFailed = false;
+  private readonly failPlan = parseFailPlan(query()?.get("fail"));
+  /** How many failures each name has already served. */
+  private failServed = new Map<string, number>();
+  /** `?slow=files:800` — first request for that name is held back (loading state). */
+  private readonly slowPlan = parseFailPlan(query()?.get("slow"));
+  private slowServed = new Map<string, number>();
+  /** `?unsupported=policy` — that source answers `not_implemented` (FR-009). */
+  private readonly unsupported = new Set(
+    (query()?.get("unsupported") ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
+  /** `?files=volatile` — the file list loses one entry after the first read. */
+  private readonly volatileFiles = query()?.get("files") === "volatile";
+  private fileReads = 0;
+  /** `?pistate=1` — report starting → running, so auto-recovery can be observed. */
+  private readonly reportPiState = query()?.get("pistate") === "1";
+  /** `?longerror=1` — pad bridge errors past the 200-char summary limit (FR-011). */
+  private readonly longErrors = query()?.get("longerror") === "1";
   private mockSessions = [
     {
       file: "/tmp/mock-sessions/2026-10-27T10-00-00_aaa.jsonl",
@@ -98,11 +162,69 @@ export class MockBridge implements Bridge {
     },
   ];
 
-  request<T>(method: string, params?: unknown): Promise<T> {
+  /**
+   * Consumes one unit of the failure budget for `name`. Returns false once the
+   * budget is spent, so a retry genuinely succeeds instead of failing forever.
+   */
+  private shouldFail(name: string): boolean {
+    const budget = this.failPlan.get(name) ?? 0;
+    const used = this.failServed.get(name) ?? 0;
+    if (used >= budget) return false;
+    this.failServed.set(name, used + 1);
+    return true;
+  }
+
+  /**
+   * Single place where the query-string knobs apply, so "unsupported" cannot be
+   * counted as "failed" (FR-009) and a slow response still respects its budget.
+   */
+  private gate(source: string): { error?: string; wait: Promise<void> } {
+    if (this.unsupported.has(source)) {
+      return {
+        error: this.pad(`not_implemented: ${source} is not available`),
+        wait: Promise.resolve(),
+      };
+    }
+    if (this.shouldFail(source)) {
+      return {
+        error: this.pad(`${source} failed: pi is still loading its configuration`),
+        wait: Promise.resolve(),
+      };
+    }
+    const ms = this.slowPlan.get(source) ?? 0;
+    const served = this.slowServed.get(source) ?? 0;
+    if (ms <= 0 || served >= 1) return { wait: Promise.resolve() };
+    this.slowServed.set(source, served + 1);
+    return { wait: delay(ms) };
+  }
+
+  /**
+   * Real bridge errors carry stack-ish detail. `?longerror=1` reproduces that
+   * so the 200-character summary limit has something to cut.
+   */
+  private pad(message: string): string {
+    if (!this.longErrors) return message;
+    return `${message} · ${"upstream detail ".repeat(40)}`;
+  }
+
+  async request<T>(method: string, params?: unknown): Promise<T> {
     this.seq += 1;
-    if (method === "ping") return Promise.resolve({ pong: true } as T);
+    if (method === "ping") return { pong: true } as T;
+    const source = METHOD_SOURCE[method];
+    if (source) {
+      const gate = this.gate(source);
+      if (gate.error) throw new Error(gate.error);
+      await gate.wait;
+    }
     if (method === "files.list") {
-      return Promise.resolve({ files: MOCK_FILES } as T);
+      this.fileReads += 1;
+      // `?files=volatile`: the second read is missing a file, so "refresh picks
+      // up a deletion" can be asserted without a moving file system.
+      const files =
+        this.volatileFiles && this.fileReads > 1
+          ? MOCK_FILES.filter((f) => f !== "src/store/store.ts")
+          : MOCK_FILES;
+      return { files } as T;
     }
     if (method === "ide.openFile") {
       return Promise.resolve({ ok: true } as T);
@@ -166,7 +288,13 @@ export class MockBridge implements Bridge {
       return Promise.reject(new Error(`mock bridge: unsupported method ${method}`));
     }
     const command = (params as { command?: Record<string, unknown> })?.command ?? {};
-    return Promise.resolve(this.handleCommand(command) as T);
+    const commandSource = COMMAND_SOURCE[String(command["type"] ?? "")];
+    if (commandSource) {
+      const gate = this.gate(commandSource);
+      if (gate.error) return { success: false, error: gate.error } as T;
+      await gate.wait;
+    }
+    return this.handleCommand(command) as T;
   }
 
   private handleManage(method: string, params?: unknown): unknown {
@@ -344,8 +472,7 @@ export class MockBridge implements Bridge {
         return { success: true, data: this.forkEntries.map((e) => ({ ...e })) };
       case "prompt": {
         const message = String(command["message"] ?? "");
-        if (this.failPromptOnce && !this.promptFailed) {
-          this.promptFailed = true;
+        if (this.shouldFail("prompt")) {
           return { success: false, error: "the model endpoint is unavailable" };
         }
         if (this.isStreaming && !command["streamingBehavior"]) {
@@ -686,6 +813,14 @@ export class MockBridge implements Bridge {
 
   onEvent(listener: Listener) {
     this.listeners.push(listener);
+    if (!this.reportPiState) return;
+    // The real bridge reports the process lifecycle; the mock is silent by
+    // default so a `?fail=` fixture is not healed by auto-recovery (FR-005)
+    // before a test can look at the failed state.
+    this.timers.push(setTimeout(() => this.emit("pi-state", { status: "starting" }), 0));
+    this.timers.push(
+      setTimeout(() => this.emit("pi-state", { status: "running", version: "1.4.0-mock" }), 300),
+    );
   }
 }
 

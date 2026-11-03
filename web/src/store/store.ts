@@ -15,6 +15,15 @@ import {
   type PendingApproval,
   type SessionStats,
 } from "./types";
+import {
+  beginLoad,
+  emptySources,
+  failedForAutoRetry,
+  rejectLoad,
+  resolveLoad,
+  type SourceId,
+  type Sources,
+} from "./sources";
 
 export type SendMode = "auto" | "steer" | "followUp";
 export type Tab = "chat" | "sessions" | "manage";
@@ -131,10 +140,30 @@ interface PiStore {
   thinkingLevel: string;
   thinkingLevels: string[];
   commands: CommandInfo[];
+  /** Project files for `@` completion; owned here so `sources.files` can describe them. */
+  files: string[];
   stats?: SessionStats;
   sessionName?: string;
   sessionId?: string;
   sessions: SessionInfo[];
+
+  /**
+   * Per-data-source status (spec 003). "Empty" and "failed" must be
+   * distinguishable everywhere, so every async read reports through here.
+   */
+  sources: Sources;
+  /**
+   * Single entry point for those reads: dedupes in-flight requests, records the
+   * outcome, and hands the value back. Returns undefined on failure — the error
+   * lives in `sources[id]`.
+   */
+  loadSource<T>(id: SourceId, fetcher: () => Promise<T>): Promise<T | undefined>;
+  /** Re-runs the last fetcher registered for `id`; no-op when nothing was loaded yet. */
+  retrySource(id: SourceId): Promise<void>;
+  /** FR-005: one more chance for everything that failed (pi just became ready). */
+  retryFailedSources(): void;
+  /** Project files, re-read when the `@` menu opens on stale data (FR-006). */
+  loadFiles(): Promise<void>;
 
   /** Pending tool-approval dialogs forwarded by the pi-approve extension. */
   approvals: PendingApproval[];
@@ -210,29 +239,54 @@ export const usePiStore = create<PiStore>((set, get) => {
   }
 
   /**
-   * Re-fetches the metadata init() asked for while the pi process might still
-   * have been starting. Nothing here is fatal on its own, but a silently empty
-   * command/model list makes the composer's menus look broken, so we retry once
-   * pi reports itself running instead of leaving them empty for the session.
+   * `id` → the last fetcher used for it, so "Retry" can replay a request
+   * without every caller having to re-supply its own closure.
+   */
+  const sourceLoaders = new Map<SourceId, () => Promise<unknown>>();
+
+  /**
+   * Runs a source read through the state machine (spec 003).
+   *
+   * In-flight dedupe lives here rather than in each caller: the composer's
+   * menus used to fire a request per keystroke, and a retry button that can be
+   * pressed twice must not double the load.
+   */
+  const runSource = async <T,>(id: SourceId, fetcher: () => Promise<T>): Promise<T | undefined> => {
+    sourceLoaders.set(id, fetcher);
+    if (get().sources[id].inflight) return undefined;
+    set({ sources: beginLoad(get().sources, id) });
+    try {
+      const value = await fetcher();
+      set({ sources: resolveLoad(get().sources, id) });
+      return value;
+    } catch (e) {
+      set({ sources: rejectLoad(get().sources, id, e) });
+      return undefined;
+    }
+  };
+
+  /**
+   * Re-fetches whatever init() asked for while the pi process might still have
+   * been starting. A silently empty command/model list makes the composer's
+   * menus look broken, so this retries once pi reports itself running.
+   *
+   * Two categories qualify: sources that *failed*, and metadata sources that
+   * answered "ready" with nothing in them — pi returns an empty model list
+   * before its provider config is loaded, which is not a failure but is just
+   * as useless to show.
    */
   const refreshMeta = () => {
     if (!bridge) return;
-    const b = bridge;
-    if (get().commands.length === 0) void get().refreshCommands();
-    if (get().models.length === 0) {
-      void rpc<{ models: ModelInfo[] }>(b, { type: "get_available_models" })
-        .then((r) => {
-          if (r.models?.length) set({ models: r.models });
-        })
-        .catch(() => undefined);
+    // FR-005: whatever failed while pi was starting gets one more chance.
+    get().retryFailedSources();
+    const s = get();
+    const empty: SourceId[] = [];
+    if (s.sources.commands.status === "ready" && s.commands.length === 0) empty.push("commands");
+    if (s.sources.models.status === "ready" && s.models.length === 0) empty.push("models");
+    if (s.sources.thinkingLevels.status === "ready" && s.thinkingLevels.length === 0) {
+      empty.push("thinkingLevels");
     }
-    if (get().thinkingLevels.length === 0) {
-      void rpc<{ levels: string[] }>(b, { type: "get_available_thinking_levels" })
-        .then((r) => {
-          if (r.levels?.length) set({ thinkingLevels: r.levels });
-        })
-        .catch(() => undefined);
-    }
+    for (const id of empty) void get().retrySource(id);
   };
 
   /** Appends a visible error item (spec 003: failures must never be silent). */
@@ -392,7 +446,9 @@ export const usePiStore = create<PiStore>((set, get) => {
     thinkingLevel: "medium",
     thinkingLevels: [],
     commands: [],
+    files: [],
     sessions: [],
+    sources: emptySources(),
 
     setTab(tab: Tab) {
       set({ tab });
@@ -446,9 +502,12 @@ export const usePiStore = create<PiStore>((set, get) => {
         // standalone mock provides env as well; ignore failures
       }
 
+      // Every source read goes through loadSource so its outcome is visible in
+      // the diagnostics panel instead of dying in a console.warn.
+      const b = bridge;
       await Promise.all([
         rpc<{ model?: ModelInfo; thinkingLevel?: string; isStreaming?: boolean; sessionName?: string; sessionId?: string; autoCompactionEnabled?: boolean }>(
-          bridge,
+          b,
           { type: "get_state" },
         ).then((s) =>
           set({
@@ -460,12 +519,26 @@ export const usePiStore = create<PiStore>((set, get) => {
             autoCompaction: typeof s.autoCompactionEnabled === "boolean" ? s.autoCompactionEnabled : null,
           }),
         ).catch(() => undefined),
-        rpc<{ models: ModelInfo[] }>(bridge, { type: "get_available_models" })
-          .then((r) => set({ models: r.models ?? [] }))
-          .catch(() => undefined),
-        rpc<{ levels: string[] }>(bridge, { type: "get_available_thinking_levels" })
-          .then((r) => set({ thinkingLevels: r.levels ?? [] }))
-          .catch(() => undefined),
+        get().loadSource("models", async () => {
+          const r = await rpc<{ models: ModelInfo[] }>(b, { type: "get_available_models" });
+          set({ models: r.models ?? [] });
+        }),
+        get().loadSource("thinkingLevels", async () => {
+          const r = await rpc<{ levels: string[] }>(b, { type: "get_available_thinking_levels" });
+          set({ thinkingLevels: r.levels ?? [] });
+        }),
+        // Approval policy (bundled pi-approve extension) and preferences pi does
+        // not expose via get_state.
+        get().loadSource("policy", async () => {
+          const policy = await b.request<{ mode?: string }>("approval.getPolicy");
+          if (policy.mode === "yolo" || policy.mode === "ask") set({ approvalMode: policy.mode });
+        }),
+        get().loadSource("prefs", async () => {
+          const prefs = await b.request<{ autoRetry?: boolean; theme?: unknown }>("config.getPrefs");
+          if (typeof prefs.autoRetry === "boolean") set({ autoRetry: prefs.autoRetry });
+          // IDE-side preference wins over the dev localStorage fallback.
+          if (isThemePreference(prefs.theme)) applyThemePreference(prefs.theme, false);
+        }),
         get().refreshCommands(),
         get().refreshStats(),
       ]);
@@ -479,22 +552,9 @@ export const usePiStore = create<PiStore>((set, get) => {
         // mock bridge without get_messages support
       }
 
-      // Approval policy (bundled pi-approve extension) and preferences pi does
-      // not expose via get_state. Both non-fatal on bridges without them.
-      try {
-        const policy = await bridge.request<{ mode?: string }>("approval.getPolicy");
-        if (policy.mode === "yolo" || policy.mode === "ask") set({ approvalMode: policy.mode });
-      } catch {
-        // mock bridge without approval support
-      }
-      try {
-        const prefs = await bridge.request<{ autoRetry?: boolean; theme?: unknown }>("config.getPrefs");
-        if (typeof prefs.autoRetry === "boolean") set({ autoRetry: prefs.autoRetry });
-        // IDE-side preference wins over the dev localStorage fallback.
-        if (isThemePreference(prefs.theme)) applyThemePreference(prefs.theme, false);
-      } catch {
-        // mock bridge without prefs support
-      }
+      // Approval policy and preferences are loaded in the Promise.all above,
+      // through the source machine — a bridge that does not implement them is
+      // recorded as `unsupported`, not as a failure.
       // Re-apply the persisted auto-retry choice to the fresh pi process.
       const retry = get().autoRetry;
       if (retry != null) void get().setAutoRetry(retry);
@@ -620,12 +680,11 @@ export const usePiStore = create<PiStore>((set, get) => {
 
     async refreshSessions() {
       if (!bridge) return;
-      try {
-        const result = await bridge.request<{ sessions: SessionInfo[] }>("sessions.list");
+      const b = bridge;
+      await get().loadSource("sessions", async () => {
+        const result = await b.request<{ sessions: SessionInfo[] }>("sessions.list");
         set({ sessions: result.sessions ?? [] });
-      } catch {
-        // non-fatal (mock bridge may not implement it)
-      }
+      });
     },
 
     async switchSession(file: string) {
@@ -800,25 +859,45 @@ export const usePiStore = create<PiStore>((set, get) => {
 
     async refreshStats() {
       if (!bridge) return;
-      try {
-        const stats = await rpc<SessionStats>(bridge, { type: "get_session_stats" });
+      const b = bridge;
+      await get().loadSource("stats", async () => {
+        const stats = await rpc<SessionStats>(b, { type: "get_session_stats" });
         set({ stats });
-      } catch {
-        // non-fatal
-      }
+      });
     },
 
     async refreshCommands() {
       if (!bridge) return;
-      try {
-        const r = await rpc<{ commands: CommandInfo[] }>(bridge, { type: "get_commands" });
+      const b = bridge;
+      await get().loadSource("commands", async () => {
+        const r = await rpc<{ commands: CommandInfo[] }>(b, { type: "get_commands" });
         // Keep the previous list on an empty answer: pi has no commands until
         // its extensions are loaded, and wiping it would blink the menu empty.
         if (r.commands?.length) set({ commands: r.commands });
-      } catch (e) {
-        // pi may not be running yet; the composer retries when the menu opens.
-        console.warn("get_commands failed", e);
-      }
+      });
+    },
+
+    loadSource(id, fetcher) {
+      return runSource(id, fetcher);
+    },
+
+    async retrySource(id) {
+      const loader = sourceLoaders.get(id);
+      if (!loader) return;
+      await runSource(id, loader);
+    },
+
+    retryFailedSources() {
+      for (const id of failedForAutoRetry(get().sources)) void get().retrySource(id);
+    },
+
+    async loadFiles() {
+      if (!bridge) return;
+      const b = bridge;
+      await get().loadSource("files", async () => {
+        const resp = await b.request<{ files?: string[] }>("files.list");
+        set({ files: resp.files ?? [] });
+      });
     },
 
     clearPendingPrompt() {
