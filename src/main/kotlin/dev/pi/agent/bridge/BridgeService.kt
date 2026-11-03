@@ -111,7 +111,7 @@ class BridgeService(private val project: Project) : Disposable {
                 "sessions.list" -> sessionsList()
                 "sessions.delete" -> sessionsDelete(params)
                 "sessions.exportHtml" -> sessionsExportHtml(params)
-                "files.list" -> filesList()
+                "files.list" -> filesList(params)
                 "ide.openFile" -> openFileInEditor(params)
                 "ide.showFileDiff" -> showFileDiff(params)
                 "config.getLastModel" -> lastModel()
@@ -429,8 +429,12 @@ class BridgeService(private val project: Project) : Disposable {
     // -- IDE integration ----------------------------------------------------
 
     /** Relative source paths for @-completions (cached, capped, excluded dirs filtered). */
-    private fun filesList(): JsonObject {
-        val files = projectFilesCached()
+    private fun filesList(params: JsonObject): JsonObject {
+        // The menu's ↻ Refresh must see files created seconds ago: `force`
+        // bypasses the 30s server-side cache (a cached refresh would make the
+        // button a lie — found by the real-machine pass).
+        val force = (params["force"] as? JsonPrimitive)?.content?.toBooleanStrictOrNull() == true
+        val files = projectFilesCached(force)
         return buildJsonObject {
             put("files", buildJsonArray {
                 files.forEach { add(it) }
@@ -441,9 +445,9 @@ class BridgeService(private val project: Project) : Disposable {
     @Volatile
     private var filesCache: Pair<Long, List<String>>? = null
 
-    private fun projectFilesCached(): List<String> {
+    private fun projectFilesCached(force: Boolean = false): List<String> {
         val now = System.currentTimeMillis()
-        filesCache?.let { (at, files) -> if (now - at < FILES_TTL_MS) return files }
+        if (!force) filesCache?.let { (at, files) -> if (now - at < FILES_TTL_MS) return files }
         val root = project.basePath?.let { java.nio.file.Path.of(it) }
             ?: return emptyList()
         val index = com.intellij.openapi.roots.ProjectFileIndex.getInstance(project)

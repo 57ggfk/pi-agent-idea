@@ -1093,7 +1093,9 @@ export const usePiStore = create<PiStore>((set, get) => {
       if (!bridge) return;
       const b = bridge;
       await get().loadSource("files", async () => {
-        const resp = await b.request<{ files?: string[] }>("files.list");
+        // force: the menu's ↻ Refresh must bypass the bridge's 30s file cache,
+        // otherwise "new file → Refresh" shows a stale list (real-machine bug).
+        const resp = await b.request<{ files?: string[] }>("files.list", { force: true });
         set({ files: resp.files ?? [] });
       });
     },
