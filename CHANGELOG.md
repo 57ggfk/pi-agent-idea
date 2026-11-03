@@ -7,6 +7,8 @@
 - **消息悬停操作条**：复制（Pi 回复为 Markdown 源码，自己的消息为原文）、引用到输入框（追加在草稿之后不覆盖）、重新生成、编辑重发。
 - 重新生成与编辑重发会以该消息为界新开一个会话分支，旧会话文件保留，可在 Sessions 里切回。
 - **Manage 面板新增 Diagnostics**：列出文件、命令、模型等数据源各自的状态与最近错误，可逐个重试。
+- **扩展包与 pi 本体一键更新**：Packages 页签对已装扩展包点「更新」，环境区可更新 pi 本体；失败时显示原始错误输出与退出码。
+- **自定义 Provider 配置可查看**：认证面板展开 provider 看 base URL、模型清单等配置，密钥只显示是否已配置，并可一键在编辑器打开 models.json。
 
 **变更**
 - MCP 列表现已标出每个服务器来自用户配置还是本项目；停用只影响新会话，当前会话保持已建立的连接。
@@ -21,6 +23,8 @@
 - **Hover actions on any message**: copy (Markdown source for Pi replies, verbatim text for your own), quote into the composer after your draft, regenerate the last reply, and edit-and-resend the last message.
 - Regenerate and edit branch the conversation into a new session; the old session file stays and can be switched back to.
 - **Diagnostics tab in Manage**: every data source lists its own status and last error, with a per-source retry.
+- **One-click updates for packages and pi itself**: update an installed extension from the Packages tab, or update pi from the Manage header; failures show the raw error output and exit code.
+- **Custom provider configuration, visible at last**: expand a provider in the Auth tab to see its type, base URL and models; secrets show only whether they are configured, and models.json opens in the editor in one click.
 
 **Changed**
 - The MCP list now says whether a server comes from your own config or from this project, and a disabled server keeps the current session connected until the next one starts.

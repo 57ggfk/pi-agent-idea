@@ -27,13 +27,14 @@ description: "Task list for 001-manage-completeness"
 
 **Purpose**: 先把跨端契约立起来，否则四个 story 会各自发明字段。
 
-- [ ] **T001** 在 `web/src/bridge/types.ts` 声明本规格全部新方法与数据结构：
+- [x] **T001** 在 `web/src/bridge/types.ts` 声明本规格全部新方法与数据结构：
   `mcp.setEnabled`、`packages.update`、`env.update`、
   `models.readProvider`、`models.openFile`；MCP 条目补 `enabled` / `scope` 字段 — 验证：`tsc --noEmit` 通过
   （**不声明 `env.checkUpdate`**：pi 无 check-update 子命令，见 plan「3. pi 本体更新」）
-- [ ] **T002** 在 `src/main/kotlin/dev/pi/agent/bridge/BridgeService.kt` 注册上述 5 个方法的分发分支
+- [x] **T002** 在 `src/main/kotlin/dev/pi/agent/bridge/BridgeService.kt` 注册上述 5 个方法的分发分支
   （先返回 `not_implemented` 占位） — 验证：`./gradlew compileKotlin` 通过，且前端调用拿到结构化错误而非 bridge 500
-- [ ] **T003** [P] 在 `web/src/bridge/mock.ts` 为 5 个方法补 mock（含失败分支：`?fail=mcp`、`?fail=update`）— 验证：Vitest 里可断言失败态
+  （**偏差**：US2–US4 与契约同批落地，占位步骤被真实实现直接覆盖，未单独提交占位版）
+- [x] **T003** [P] 在 `web/src/bridge/mock.ts` 为 5 个方法补 mock（含失败分支：`?fail=mcp`、`?fail=update`）— 验证：Vitest 里可断言失败态
 - [x] **T004** [P] 新增 `src/main/kotlin/dev/pi/agent/manage/PiMcpConfig.kt` 骨架：
   读/写 `mcp.json`（用户级 + 项目级）、备份、原子写入 — 验证：`PiMcpConfigTest` 能读写临时目录
 
@@ -65,10 +66,11 @@ description: "Task list for 001-manage-completeness"
 
 ## Phase 3: US2 — 扩展包更新（P2）
 
-- [ ] **T012** [P] [US2] `PiManage.packageUpdate(params)`：转发 `pi update <source>`（或 `--extension <source>`），
+- [x] **T012** [P] [US2] `PiManage.packageUpdate(params)`：转发 `pi update <source>`（或 `--extension <source>`），
   非 0 退出码透传 stdout+stderr；不做「前后 diff 判有无更新」 — 验证：单测用 mock CLI 断言成功/失败两种返回
-- [ ] **T013** [US2] `PackagesPanel.tsx` 加「更新」按钮（仅在可识别源时显示）、进行中禁用、失败展示原始 stderr — 验证：Playwright 断言点击后按钮 disabled、失败时有 stderr 文本
-- [ ] **T014** [US2] e2e：`manage.spec.ts` 覆盖「更新成功刷新版本」与「更新失败显示原始错误」 — 验证：用例通过
+- [x] **T013** [US2] `PackagesPanel.tsx` 加「更新」按钮（仅在可识别源时显示）、进行中禁用、失败展示原始 stderr — 验证：Playwright 断言点击后按钮 disabled、失败时有 stderr 文本
+  （**偏差**：列表行本就只由可识别前缀过滤而来（npm:/git:/http/路径），故每行都有 Update；「无可用更新不显示入口」由 pi update 的输出如实说明，见 plan 风险表）
+- [x] **T014** [US2] e2e：`manage.spec.ts` 覆盖「更新成功刷新版本」与「更新失败显示原始错误」 — 验证：用例通过
 
 **Checkpoint**: US2 独立可交付。
 
@@ -76,14 +78,16 @@ description: "Task list for 001-manage-completeness"
 
 ## Phase 4: US3 — pi 本体更新（P3）
 
-- [ ] **T015** [P] [US3] `PiManage.envUpdate()`：`pi update --self`，成功后
+- [x] **T015** [P] [US3] `PiManage.envUpdate()`：`pi update --self`，成功后
   `PiLocator.locate(forceRefresh = true)` 刷新版本 — 验证：单测用 mock CLI 断言命令拼装与刷新调用
-- [ ] **T016** [US3] 环境区**只显示当前版本 + 更新按钮**，不实现「有新版本」角标
+- [x] **T016** [US3] 环境区**只显示当前版本 + 更新按钮**，不实现「有新版本」角标
   （pi 无 check-update 子命令，离线判定不可信；结果由 `pi update` 自己的输出说明）— 验证：面板上不存在「可用版本」占位
-- [ ] **T017** [US3] `ManageView.tsx` 环境区展示当前版本 + 更新入口；
+- [x] **T017** [US3] `ManageView.tsx` 环境区展示当前版本 + 更新入口；
   触发前若有活跃会话弹确认（复用 `Composer` 的 confirm 模式）— 验证：Playwright 断言有会话时出确认、取消不执行
-- [ ] **T018** [US3] 更新成功后 `PiLocator.locate(forceRefresh=true)` 并重建进程，
+  （**偏差**：确认用 Manage 内联两段式（同信任确认样式），不复用 Composer；「有会话」判据是 pi 进程 running/starting，与 plan「活跃会话→先确认」一致）
+- [x] **T018** [US3] 更新成功后 `PiLocator.locate(forceRefresh=true)` 并重建进程，
   状态栏版本号同步刷新 — 验证：单测断言刷新后 version 变化
+  （**偏差**：进程重建由前端在成功后调 `rpc.restart`，仅当 pi 进程在跑时调用；状态栏版本随 pi-state 事件刷新）
 
 **Checkpoint**: US3 独立可交付。
 
@@ -91,12 +95,13 @@ description: "Task list for 001-manage-completeness"
 
 ## Phase 5: US4 — 自定义 Provider 查看（P4）
 
-- [ ] **T019** [P] [US4] `PiManage.modelsReadProvider(name)`：反向白名单（除敏感键外全量输出），
+- [x] **T019** [P] [US4] `PiManage.modelsReadProvider(name)`：反向白名单（除敏感键外全量输出），
   敏感键替换为 `configured: bool` — 验证：单测断言 `apiKey` 值绝不出现在返回 JSON 中（**宪法第 VI 条的硬断言**）
-- [ ] **T020** [US4] `PiManage.modelsOpenFile(provider)`：走 `FileEditorManager` 打开
+- [x] **T020** [US4] `PiManage.modelsOpenFile(provider)`：走 `FileEditorManager` 打开
   `~/.pi/agent/models.json`，不存在则创建 `{"providers":{}}` 骨架 — 验证：单测断言骨架内容合法
-- [ ] **T021** [US4] `AuthPanel.tsx` 每个 provider 可展开看详情（敏感项显示「已配置/未配置」）+「在编辑器中打开」 — 验证：Playwright 断言展开后有字段但无密钥值
-- [ ] **T022** [US4] `models.json` 缺失/损坏时面板显示具体原因（含解析错误位置）而非空白 — 验证：mock 损坏文件后断言错误文案可见
+- [x] **T021** [US4] `AuthPanel.tsx` 每个 provider 可展开看详情（敏感项显示「已配置/未配置」）+「在编辑器中打开」 — 验证：Playwright 断言展开后有字段但无密钥值
+  （**偏差**：面板语言跟随既有英文（configured / not configured），与 McpPanel 的先例一致）
+- [x] **T022** [US4] `models.json` 缺失/损坏时面板显示具体原因（含解析错误位置）而非空白 — 验证：mock 损坏文件后断言错误文案可见
 
 **Checkpoint**: 四个 story 全部可独立交付。
 
@@ -104,10 +109,12 @@ description: "Task list for 001-manage-completeness"
 
 ## Phase 6: Polish
 
-- [ ] **T023** [P] 汇总 `manage.spec.ts` 全量跑通；`npx playwright test` 全绿 — 验证：≥ 现有 51 条不回归
-- [ ] **T024** [P] `./gradlew compileKotlin test verifyPlugin` 全绿 — 验证：三条命令退出码 0
-- [ ] **T025** CHANGELOG「未发布」补四条变更（MCP 启停 / 包更新 / pi 更新 / Provider 查看），
+- [x] **T023** [P] 汇总 `manage.spec.ts` 全量跑通；`npx playwright test` 全绿 — 验证：≥ 现有 51 条不回归
+  （实测 **95 passed**，基线 87 + 新增 8）
+- [x] **T024** [P] `./gradlew compileKotlin test verifyPlugin` 全绿 — 验证：三条命令退出码 0
+- [x] **T025** CHANGELOG「未发布」补四条变更（MCP 启停 / 包更新 / pi 更新 / Provider 查看），
   标注 MCP 停用为「新增能力，不涉及迁移」 — 验证：人工核对条目与实现一致
+  （「未发布」段已随版本分支建立切为 `## 0.5.1 — 2026-11-04`；四条以三条呈现：包更新与 pi 更新合并为一条，全段 10 条封顶）
 - [ ] **T026** 真机冒烟：装插件后确认 4 个入口可见可点（宪法第 4 条：不可连续两版跳过真机）
   — 验证：截图留档或 MANUAL_TEST.md 打勾
 
@@ -204,3 +211,40 @@ plan「关键技术决策 1」写的是：
 - T001–T003 的其余部分（`packages.update` / `env.update` / `models.readProvider` / `models.openFile`）→ US2–US4。
 - T023–T026（全量回归 / `verifyPlugin` / CHANGELOG / 真机冒烟）：CHANGELOG 已随本批补 US1 一条，
   其余等 US2–US4 一起做，避免 What's New 写半截。
+
+## 实现记录（2026-11-04，US2–US4 / T001–T003 + T012–T025）
+
+分支 `release/0.5.1`（版本分支，自 main 拉出后 +1 patch 并合入三个 spec 分支；US2–US4 直接在版本分支上做）。
+提交 07f89bf（feat）→ 72bc1d3（test）→ docs（本记录）。
+
+### 方案与偏差
+
+| 项 | 落地 | 与 tasks/plan 的差异 |
+|---|---|---|
+| T002 | 5 个方法一次注册并**直接实现**（US 同批落地，无 not_implemented 占位阶段） | 有意：占位只是分批开发的检查点 |
+| T012/T015 | `packageUpdate` / `envUpdate` 接受注入 runner（`(List<String>, Long) -> CliResult`），单测可断言命令拼装与超时 300s；`envUpdate` 另注入 refresh / currentVersion | 比原设想多了可注入缝，换来无 pi 环境可测 |
+| T013 | 列表行由可识别前缀过滤而来，故每行都有 Update；「无可用更新不给入口」交给 `pi update` 输出如实说明（plan 风险表既定口径） | 有意，已记录 |
+| T017 | 确认是 Manage 内联两段式（trust-confirm 样式），判据为 pi 进程 running/starting；不复用 Composer | 有意 |
+| T018 | 进程重建由前端成功后调 `rpc.restart`（仅当 pi 在跑），状态栏版本随 pi-state 事件刷新；Kotlin 侧只负责强刷 PiLocator 并回传新 version | 拆到前端，原因见记录 |
+| T019 | 敏感键**键名保留、值替换为布尔**（`"apiKey": true`），嵌套 headers 按 header 名单判敏感；未知键全透传 | 同 plan「反向白名单」 |
+| T022 | authOverview 返回 `modelsState: ok\|missing\|corrupt` + `modelsError`（含行/列位置）；AuthPanel 顶部单点提示，面板不空 | 补到了列表接口上，expand 的 error 也单独显示 |
+| T021 | 详情为只读 + Open models.json in editor；文案跟随面板英文（configured / not configured） | 有意（McpPanel 先例） |
+
+### 教训
+
+- Kotlin 反引号测试函数名不能含 `.`（`a missing models.json …` 编译报 illegal characters），改名去掉点。
+- MockBridge 不认识 `rpc.restart`，前端更新成功后的重启调用必须 `.catch(() => null)`——mock 里 pi 未运行时
+  重启本来就是 no-op，真实桥接下该方法存在。
+- e2e 断言 pi 运行态要看 `status-dot` 的 **running** class（busy 是 isStreaming，语义不同）。
+
+### 验证
+
+- `npm run typecheck` → 0 error
+- `npm test` → **91 passed**（本批无新增 vitest 用例，mock 逻辑由 e2e 与 Kotlin 覆盖）
+- `npx playwright test` → **95 passed**（+8：包更新 2、pi 更新 3、Provider 3）
+- `./gradlew test` → 全绿（+17：PiManageUpdateTest 7 + PiManageProviderTest 10，含 apiKey 硬断言）
+- `./gradlew compileKotlin test verifyPlugin` → BUILD SUCCESSFUL（2m52s）
+
+### 未做
+
+- T026 真机冒烟（装插件后确认 4 个入口可见可点）：需真机，判据已在 MANUAL_TEST.md。
