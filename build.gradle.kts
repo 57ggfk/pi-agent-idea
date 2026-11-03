@@ -6,6 +6,12 @@ plugins {
 }
 
 group = "dev.pi"
+// VERSIONING RULE: every new development cycle starts on a feature branch with
+// the PATCH digit bumped (0.5.0 -> 0.5.1). Bump this line AND open a matching
+// "## <version>" section in CHANGELOG.md in the same commit — changeNotes below
+// reads that section, and without it the release notes degrade to a bare
+// "Release x.y.z". Never reuse a version that was already uploaded: Marketplace
+// rejects duplicates.
 version = "0.5.0"
 
 repositories {
