@@ -524,6 +524,22 @@ export function itemToMarkdownSource(item: ChatItem): string | null {
 }
 
 /**
+ * The text a quote drops into the composer: the message source as a Markdown
+ * blockquote, one `> ` per line.
+ *
+ * Fenced code inside the quote is left unescaped — the composer is a plain
+ * textarea, so a ``` inside a blockquote has no rendering semantics there; pi
+ * parses it back out after sending. Blank lines keep their `>` so the quote
+ * stays one block instead of collapsing into paragraphs.
+ */
+export function quoteMarkdownSource(source: string): string {
+  return source
+    .split("\n")
+    .map((line) => (line.trim().length === 0 ? ">" : `> ${line}`))
+    .join("\n");
+}
+
+/**
  * The action matrix — the single source of truth for "which buttons does this
  * message get". Both the toolbar and its tests call this, so the two can never
  * drift apart.

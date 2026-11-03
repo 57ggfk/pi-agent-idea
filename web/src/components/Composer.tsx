@@ -64,6 +64,12 @@ async function loadProjectFiles(force = false): Promise<string[]> {
   }
 }
 
+/** Grows the textarea to its content, capped so it cannot eat the message list. */
+function autosize(ta: HTMLTextAreaElement) {
+  ta.style.height = "auto";
+  ta.style.height = Math.min(ta.scrollHeight, 160) + "px";
+}
+
 export default function Composer() {
   const [text, setText] = useState("");
   const [mode, setMode] = useState<SendMode>("auto");
@@ -85,6 +91,9 @@ export default function Composer() {
   const newSession = usePiStore((s) => s.newSession);
   const pendingPrompt = usePiStore((s) => s.pendingPrompt);
   const clearPendingPrompt = usePiStore((s) => s.clearPendingPrompt);
+  const editing = usePiStore((s) => s.editing);
+  const cancelEditMessage = usePiStore((s) => s.cancelEditMessage);
+  const sendEdited = usePiStore((s) => s.sendEdited);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const controlsRef = useRef<HTMLDivElement>(null);
@@ -143,19 +152,32 @@ export default function Composer() {
   }, []);
 
   // Editor actions ("Explain with Pi" etc.) push a pre-filled prompt through
-  // the ide event; the store lands it here for the composer to pick up.
+  // the ide event; quote / edit reuse the same channel with a different mode.
+  //   replace — overwrite the draft (the original behaviour)
+  //   quote   — append after the draft, never overwriting typing (FR-006)
+  //   edit    — overwrite, and the store's `editing` flag marks the mode
   useEffect(() => {
     if (!pendingPrompt) return;
     const value = pendingPrompt.text;
-    setText(value);
+    const promptMode = pendingPrompt.mode ?? "replace";
     setSlashDismissed(false);
     setFileDismissed(false);
-    clearPendingPrompt();
-    const ta = taRef.current;
-    if (ta) {
-      ta.focus();
-      ta.setSelectionRange(value.length, value.length);
+    if (promptMode === "quote") {
+      setText((prev) => (prev.trim().length > 0 ? `${prev.replace(/\s+$/, "")}\n\n${value}` : value));
+    } else {
+      setText(value);
     }
+    clearPendingPrompt();
+    // The caret has to land at the end of the *new* value, which is only
+    // readable from the DOM after React commits it.
+    requestAnimationFrame(() => {
+      const ta = taRef.current;
+      if (!ta) return;
+      ta.focus();
+      const end = ta.value.length;
+      ta.setSelectionRange(end, end);
+      autosize(ta);
+    });
   }, [pendingPrompt, clearPendingPrompt]);
 
   const slashQuery = /^\//.test(text) && !text.includes(" ") ? text.slice(1).toLowerCase() : null;
@@ -197,12 +219,26 @@ export default function Composer() {
   const doSend = () => {
     const t = text.trim();
     if (!t && images.length === 0) return;
+    // Read the mode before clearing: an edit owns the composer, and sending it
+    // must branch the old version off rather than append to it.
+    const isEditing = editing != null;
     setText("");
     setImages([]);
     setHighlightIndex(0);
     setFileHighlight(0);
     if (taRef.current) taRef.current.style.height = "auto";
+    if (isEditing) {
+      void sendEdited(t);
+      return;
+    }
     void send(t, images.map((img) => ({ data: img.data, mimeType: img.mimeType })), mode);
+  };
+
+  /** Drops the edit target and the draft it filled in — no RPC, no history change. */
+  const cancelEdit = () => {
+    cancelEditMessage();
+    setText("");
+    if (taRef.current) taRef.current.style.height = "auto";
   };
 
   const applySlashCommand = (name: string) => {
@@ -332,6 +368,21 @@ export default function Composer() {
           {queuedCount} queued message{queuedCount > 1 ? "s" : ""}
         </div>
       ) : null}
+      {editing ? (
+        <div className="edit-mode-note" data-testid="edit-mode-note">
+          <Icon name="pencil" className="ic-sm" />
+          <span>Editing message · sending replaces it and the reply below</span>
+          <button
+            type="button"
+            className="edit-mode-cancel"
+            data-testid="edit-mode-cancel"
+            aria-label="Cancel editing"
+            onClick={cancelEdit}
+          >
+            Esc
+          </button>
+        </div>
+      ) : null}
       <div className="composer-box">
         <input
           ref={fileRef}
@@ -356,8 +407,7 @@ export default function Composer() {
             setHighlightIndex(0);
             setSlashDismissed(false);
             setFileDismissed(false);
-            e.target.style.height = "auto";
-            e.target.style.height = Math.min(e.target.scrollHeight, 160) + "px";
+            autosize(e.target);
           }}
           onPaste={(e) => {
             const pasted = Array.from(e.clipboardData.files).filter((f) => f.type.startsWith("image/"));
@@ -420,6 +470,13 @@ export default function Composer() {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               doSend();
+            }
+            if (editing && e.key === "Escape") {
+              // Esc leaves edit mode without touching the transcript. The
+              // menus above consume Escape first: closing a menu is the
+              // smaller, more expected action.
+              e.preventDefault();
+              cancelEdit();
             }
           }}
         />

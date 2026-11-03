@@ -73,6 +73,10 @@ export class MockBridge implements Bridge {
   private entrySeq = 0;
   /** Prompt → times sent. Drives the "regenerated answer differs" scenario. */
   private promptCounts = new Map<string, number>();
+  // `?fail=prompt` rejects the first prompt so the error-visibility path (spec
+  // 003) has an item-error to render; nothing else can produce one in the UI.
+  private readonly failPromptOnce = query()?.get("fail") === "prompt";
+  private promptFailed = false;
   private mockSessions = [
     {
       file: "/tmp/mock-sessions/2026-10-27T10-00-00_aaa.jsonl",
@@ -340,6 +344,10 @@ export class MockBridge implements Bridge {
         return { success: true, data: this.forkEntries.map((e) => ({ ...e })) };
       case "prompt": {
         const message = String(command["message"] ?? "");
+        if (this.failPromptOnce && !this.promptFailed) {
+          this.promptFailed = true;
+          return { success: false, error: "the model endpoint is unavailable" };
+        }
         if (this.isStreaming && !command["streamingBehavior"]) {
           return { success: false, error: "agent is streaming; specify streamingBehavior" };
         }

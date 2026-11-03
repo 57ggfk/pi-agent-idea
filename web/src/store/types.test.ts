@@ -7,6 +7,7 @@ import {
   itemHasText,
   itemToMarkdownSource,
   itemsFromMessages,
+  quoteMarkdownSource,
   resetItemIds,
   type ActionContext,
   type ChatItem,
@@ -523,5 +524,23 @@ describe("actionsForItem", () => {
       "quote",
       "regenerate",
     ]);
+  });
+});
+
+describe("quoteMarkdownSource", () => {
+  it("prefixes every line so the quote stays one block", () => {
+    expect(quoteMarkdownSource("one\ntwo")).toBe("> one\n> two");
+  });
+
+  it("keeps blank lines as a bare > instead of splitting the quote", () => {
+    expect(quoteMarkdownSource("para one\n\npara two")).toBe("> para one\n>\n> para two");
+  });
+
+  it("leaves fenced code untouched — the composer is plain text", () => {
+    expect(quoteMarkdownSource("```js\nx()\n```")).toBe("> ```js\n> x()\n> ```");
+  });
+
+  it("round-trips a single line unchanged apart from the prefix", () => {
+    expect(quoteMarkdownSource("hello")).toBe("> hello");
   });
 });

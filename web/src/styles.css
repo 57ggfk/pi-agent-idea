@@ -558,6 +558,45 @@ button {
   margin-bottom: 4px;
 }
 
+/* Edit-and-resend banner. It has to be loud: what sits in the box is not a
+   draft, it is the message itself, and sending it rewrites history. */
+.edit-mode-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--r-sm);
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: var(--fs-xs);
+}
+
+.edit-mode-note span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.edit-mode-cancel {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.edit-mode-cancel:hover {
+  background: var(--warning-border);
+}
+
 .composer-row {
   display: flex;
   gap: 6px;
@@ -1416,6 +1455,7 @@ button {
 }
 
 .item {
+  position: relative;
   min-width: 0;
   max-width: 92%;
 }
@@ -1528,6 +1568,7 @@ button {
 }
 
 .system-item {
+  position: relative;
   align-self: center;
   display: inline-flex;
   align-items: center;
@@ -1539,6 +1580,59 @@ button {
   background: var(--bg-subtle);
   color: var(--text-secondary);
   font-size: var(--fs-xs);
+}
+
+/* Message action toolbar.
+   Absolutely positioned on purpose: it must never join layout, otherwise
+   hovering a message would reflow the list and shift the message under the
+   cursor (spec FR-011). It hangs off the message's top edge — the gap between
+   messages (and the list's own padding) is what it floats over. */
+.msg-actions {
+  position: absolute;
+  top: 0;
+  inset-inline-end: 0;
+  transform: translateY(-58%);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-elevated);
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.12);
+  /* Hidden with visibility (not opacity alone) so "not hovered" is also
+     invisible to accessibility trees and to test assertions. */
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--dur) ease, visibility 0s linear var(--dur);
+}
+
+/* A tight pill leaves no corner to hang a toolbar off — float it above. */
+.system-item .msg-actions {
+  transform: translateY(-100%);
+}
+
+.item:hover > .msg-actions,
+.item:focus-within > .msg-actions,
+.system-item:hover > .msg-actions,
+.system-item:focus-within > .msg-actions {
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+.msg-act {
+  width: 22px;
+  height: 22px;
+}
+
+.msg-act-fail {
+  color: var(--error);
+}
+
+.msg-act[data-state="ok"] {
+  color: var(--success);
 }
 
 .system-item.retry {

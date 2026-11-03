@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-type IconName =
+export type IconName =
   | "alert"
   | "arrow-up"
   | "check"

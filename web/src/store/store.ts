@@ -6,7 +6,9 @@ import {
   applyEvent,
   approvalFromEvent,
   emptyItem,
+  itemToMarkdownSource,
   itemsFromMessages,
+  quoteMarkdownSource,
   type ChatItem,
   type CommandInfo,
   type ModelInfo,
@@ -16,6 +18,27 @@ import {
 
 export type SendMode = "auto" | "steer" | "followUp";
 export type Tab = "chat" | "sessions" | "manage";
+
+/**
+ * How the composer should consume a pending prompt:
+ *  - replace: overwrite the draft (IDE "Explain with Pi" and friends)
+ *  - quote:   append it after the draft, never overwriting typing (FR-006)
+ *  - edit:    overwrite and switch the composer into edit-and-resend mode
+ */
+export type PromptMode = "replace" | "quote" | "edit";
+
+export interface PendingPrompt {
+  text: string;
+  id: number;
+  mode: PromptMode;
+}
+
+/** The user message an edit-and-resend will branch from. */
+export interface EditTarget {
+  entryId: string;
+  /** Original text, kept so cancelling can restore without another RPC. */
+  text: string;
+}
 
 // Dev / Vite fallback. Inside the IDE the preference is persisted through
 // PiUserPrefs (config.getPrefs), because the loopback port — and therefore
@@ -96,7 +119,12 @@ interface PiStore {
   retryInfo: { attempt: number; maxAttempts: number; delayMs: number; errorMessage: string } | null;
   queue: { steering: string[]; followUp: string[] };
   /** Editor-initiated prompt ("ide" event) waiting for the Composer to pick up. */
-  pendingPrompt: { text: string; id: number } | null;
+  pendingPrompt: PendingPrompt | null;
+  /**
+   * Edit-and-resend target while the composer owns it. Null when idle; the
+   * action matrix hides regenerate/edit whenever this is set (FR-010).
+   */
+  editing: EditTarget | null;
 
   model?: ModelInfo;
   models: ModelInfo[];
@@ -140,6 +168,15 @@ interface PiStore {
   exportSession(file: string): Promise<void>;
   replayMessages(): Promise<void>;
   clearPendingPrompt(): void;
+  /** Puts the message into the composer as a blockquote, after the draft. */
+  quoteToComposer(item: ChatItem): void;
+  /** Branches at the last user message and re-answers it (FR-008). */
+  regenerate(): Promise<void>;
+  /** Opens edit-and-resend for a message without touching the transcript yet. */
+  beginEditMessage(item: ChatItem): Promise<void>;
+  cancelEditMessage(): void;
+  /** Sends the edited text, branching the old version off first (FR-009). */
+  sendEdited(text: string): Promise<void>;
   openFile(path: string, line: number): Promise<void>;
   showFileDiff(path: string): Promise<void>;
   respondApproval(id: string, confirmed: boolean): Promise<void>;
@@ -250,6 +287,23 @@ export const usePiStore = create<PiStore>((set, get) => {
     return list.filter((e) => e && typeof e.entryId === "string" && e.entryId.length > 0);
   };
 
+  /**
+   * Branches the conversation at `entryId` and rebuilds the UI from the
+   * authoritative state. Returns false when an extension cancelled the branch
+   * (pi reports that in-band, not as an RPC error).
+   */
+  const branchTo = async (b: Bridge, entryId: string): Promise<boolean> => {
+    const result = await rpc<{ text?: string; cancelled?: boolean }>(b, { type: "fork", entryId });
+    if (result?.cancelled) return false;
+    await syncAfterBranch();
+    return true;
+  };
+
+  /** Hands a pre-filled prompt to the Composer; `mode` decides how it lands. */
+  const pushPendingPrompt = (text: string, mode: PromptMode) => {
+    set({ pendingPrompt: { text, id: ++promptSeq, mode } });
+  };
+
   const handlePiEvent = (event: Record<string, unknown>) => {
     const type = event["type"];
     const state = get();
@@ -326,6 +380,7 @@ export const usePiStore = create<PiStore>((set, get) => {
     retryInfo: null,
     queue: { steering: [], followUp: [] },
     pendingPrompt: null,
+    editing: null,
 
     approvals: [],
     // Auto-approve by default; "ask" is opt-in from the options menu.
@@ -362,7 +417,7 @@ export const usePiStore = create<PiStore>((set, get) => {
           // switch to chat. The Composer consumes pendingPrompt and focuses.
           const d = (data ?? {}) as { kind?: string; text?: string };
           if (d.kind === "prompt") {
-            set({ tab: "chat", pendingPrompt: { text: String(d.text ?? ""), id: ++promptSeq } });
+            set({ tab: "chat", pendingPrompt: { text: String(d.text ?? ""), id: ++promptSeq, mode: "replace" } });
           }
         } else if (name === "theme") {
           const t = (data ?? {}) as { theme?: unknown };
@@ -502,7 +557,14 @@ export const usePiStore = create<PiStore>((set, get) => {
       if (!bridge) return;
       try {
         await rpc(bridge, { type: "new_session" });
-        set({ items: [], stats: undefined, aborted: false, isStreaming: false, sessionName: undefined });
+        set({
+          items: [],
+          stats: undefined,
+          aborted: false,
+          isStreaming: false,
+          sessionName: undefined,
+          editing: null,
+        });
         await get().refreshStats();
         await get().refreshSessions();
       } catch (e) {
@@ -573,7 +635,7 @@ export const usePiStore = create<PiStore>((set, get) => {
       if (get().isStreaming) await get().abort();
       try {
         await rpc(bridge, { type: "switch_session", sessionPath: file });
-        set({ items: [], stats: undefined, aborted: false, isStreaming: false, tab: "chat" });
+        set({ items: [], stats: undefined, aborted: false, isStreaming: false, tab: "chat", editing: null });
         await get().replayMessages();
         await get().refreshStats();
         const state = await rpc<{ sessionName?: string; sessionId?: string; model?: ModelInfo; thinkingLevel?: string }>(
@@ -761,6 +823,91 @@ export const usePiStore = create<PiStore>((set, get) => {
 
     clearPendingPrompt() {
       set({ pendingPrompt: null });
+    },
+
+    quoteToComposer(item) {
+      // Nothing to quote on a pure-image message; the button is hidden there,
+      // so this is a guard for programmatic callers.
+      const source = itemToMarkdownSource(item);
+      if (!source) return;
+      pushPendingPrompt(quoteMarkdownSource(source), "quote");
+    },
+
+    async regenerate() {
+      if (!bridge) return;
+      const b = bridge;
+      if (get().isStreaming) {
+        appendError("regenerate needs an idle session; stop the current run first");
+        return;
+      }
+      if (get().editing) {
+        appendError("regenerate is unavailable while a message is being edited");
+        return;
+      }
+      try {
+        // The action only exists on the last answer, so the entry to re-ask is
+        // the last forkable user message — the same one pi would branch at.
+        const entries = await forkEntries(b);
+        const last = entries[entries.length - 1];
+        if (!last) {
+          appendError("regenerate failed: there is no user message to re-ask");
+          return;
+        }
+        if (!(await branchTo(b, last.entryId))) {
+          appendError("regenerate cancelled by a pi extension");
+          return;
+        }
+        // Re-ask verbatim: a rewritten prompt would be a different question.
+        await get().sendImages(last.text, [], "auto");
+      } catch (e) {
+        appendError(`regenerate failed: ${(e as Error).message}`);
+      }
+    },
+
+    async beginEditMessage(item) {
+      if (!bridge) return;
+      const b = bridge;
+      const source = itemToMarkdownSource(item);
+      if (!source) return;
+      if (get().isStreaming || get().editing) return;
+      try {
+        // Resolve the entry without branching: forking here would rewrite the
+        // transcript before the user typed anything, so cancelling could no
+        // longer be side-effect free (spec US4 scenario 3).
+        const entries = await forkEntries(b);
+        const last = entries[entries.length - 1];
+        if (!last) {
+          appendError("edit failed: there is no user message to edit");
+          return;
+        }
+        set({ editing: { entryId: last.entryId, text: source } });
+        pushPendingPrompt(source, "edit");
+      } catch (e) {
+        appendError(`edit failed: ${(e as Error).message}`);
+      }
+    },
+
+    cancelEditMessage() {
+      set({ editing: null });
+    },
+
+    async sendEdited(text) {
+      const target = get().editing;
+      if (!bridge || !target) return;
+      if (!text.trim()) return;
+      // Clear first: the composer must not stay in edit mode while fork runs.
+      set({ editing: null });
+      try {
+        if (!(await branchTo(bridge, target.entryId))) {
+          appendError("edit cancelled by a pi extension");
+          return;
+        }
+        // The branch dropped the old version and everything after it, so the
+        // optimistic user item lands on a transcript that no longer has it.
+        await get().sendImages(text, [], "auto");
+      } catch (e) {
+        appendError(`edit failed: ${(e as Error).message}`);
+      }
     },
 
     async openFile(path: string, line: number) {
