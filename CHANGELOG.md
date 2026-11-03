@@ -4,8 +4,8 @@
 
 **新增**
 - **MCP 服务器可临时停用**：在 Manage 面板一键关掉某个服务器再打开，命令、参数、环境变量全部原地保留，不必删了重填。
-- **消息悬停操作条**：复制（Pi 回复为 Markdown 源码，自己的消息为原文）、引用到输入框（追加在草稿之后不覆盖）、重新生成、编辑重发。
-- 重新生成与编辑重发会以该消息为界新开一个会话分支，旧会话文件保留，可在 Sessions 里切回。
+- **消息悬停操作条**：复制（Pi 回复为 Markdown 源码，自己的消息为原文）、引用到输入框、重新生成、编辑重发；后两者以该消息为界新开会话分支，旧会话可在 Sessions 里切回。
+- **消息排队**：pi 工作时新消息进入输入框上方的队列条，可排序、取回编辑、插话、暂停；执行顺序由 pi 负责，暂停期间的消息不会自动补发。
 - **Manage 面板新增 Diagnostics**：列出文件、命令、模型等数据源各自的状态与最近错误，可逐个重试。
 - **扩展包与 pi 本体一键更新**：Packages 页签对已装扩展包点「更新」，环境区可更新 pi 本体；失败时显示原始错误输出与退出码。
 - **自定义 Provider 配置可查看**：认证面板展开 provider 看 base URL、模型清单等配置，密钥只显示是否已配置，并可一键在编辑器打开 models.json。
@@ -20,8 +20,8 @@
 
 **Added**
 - **MCP servers can be switched off without deleting them**: turn one off in the Manage panel and back on later; command, args and env stay exactly where they were.
-- **Hover actions on any message**: copy (Markdown source for Pi replies, verbatim text for your own), quote into the composer after your draft, regenerate the last reply, and edit-and-resend the last message.
-- Regenerate and edit branch the conversation into a new session; the old session file stays and can be switched back to.
+- **Hover actions on any message**: copy (Markdown source for Pi replies, verbatim text for your own), quote into the composer, regenerate, and edit-and-resend; the last two branch the conversation into a new session you can switch back to.
+- **Message queue**: while pi is working, new messages line up in a bar above the composer — reorder, take back to edit, steer into the running turn, or pause. Pi owns the execution order; paused messages are never sent automatically.
 - **Diagnostics tab in Manage**: every data source lists its own status and last error, with a per-source retry.
 - **One-click updates for packages and pi itself**: update an installed extension from the Packages tab, or update pi from the Manage header; failures show the raw error output and exit code.
 - **Custom provider configuration, visible at last**: expand a provider in the Auth tab to see its type, base URL and models; secrets show only whether they are configured, and models.json opens in the editor in one click.
