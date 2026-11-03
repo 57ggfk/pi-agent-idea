@@ -477,3 +477,89 @@ export function itemsFromMessages(messages: unknown[]): ChatItem[] {
   }
   return items;
 }
+
+// ---------------------------------------------------------------------------
+// Message-level actions (copy / quote / regenerate / edit)
+// ---------------------------------------------------------------------------
+
+export type MessageAction = "copy" | "quote" | "regenerate" | "edit";
+
+/** Everything about the *conversation* that decides which actions apply. */
+export interface ActionContext {
+  /** This item is the last user message in the transcript. */
+  isLastUser: boolean;
+  /** This item is the last assistant message in the transcript. */
+  isLastAssistant: boolean;
+  /** A run is in flight (or a history-rewriting action already started). */
+  sessionBusy: boolean;
+  /** An edit-and-resend is in progress; it owns the composer. */
+  editing: boolean;
+}
+
+/** True when the item carries copyable text (a pure-image item does not). */
+export function itemHasText(item: ChatItem): boolean {
+  return item.blocks.some((b) => b.kind === "text" && b.text.trim().length > 0);
+}
+
+/**
+ * The text a message-level copy should put on the clipboard.
+ *
+ * User messages: the text they were sent with (one text block).
+ * Pi messages: the Markdown source — text blocks joined in order, so fenced
+ * code keeps its ``` markers and lists keep their `-`. Thinking blocks, tool
+ * cards and image data are deliberately excluded (spec FR-003).
+ *
+ * Returns null when there is nothing to copy (pure-image message), which is
+ * what hides the copy/quote buttons instead of rendering dead ones (FR-007).
+ */
+export function itemToMarkdownSource(item: ChatItem): string | null {
+  const parts = item.blocks
+    .filter((b): b is Extract<ContentBlock, { kind: "text" }> => b.kind === "text")
+    .filter((b) => b.text.trim().length > 0)
+    .map((b) => b.text);
+  if (parts.length === 0) return null;
+  // Join so separate text blocks keep their paragraph break; a single block is
+  // returned verbatim (no trim) so a user message copies back character-exact.
+  return parts.join("\n\n");
+}
+
+/**
+ * The action matrix — the single source of truth for "which buttons does this
+ * message get". Both the toolbar and its tests call this, so the two can never
+ * drift apart.
+ *
+ * Precedence and exclusions, mapped to the spec:
+ *  - FR-001: a still-streaming assistant message has no toolbar at all.
+ *  - FR-001/FR-013: ordinary system notices have none either, but error items
+ *    (item-error) stay copyable — copying an error into a bug report is the
+ *    most common reason to touch one.
+ *  - FR-007: copy/quote need text; a pure-image message hides them.
+ *  - FR-008: regenerate only on the last assistant message while idle.
+ *  - FR-009: edit only on the last user message while idle.
+ *  - FR-010: regenerate and edit never both apply — `sessionBusy` covers a run
+ *    in flight, `editing` covers an edit that already owns the composer.
+ *
+ * `hasText` is derived from the item rather than passed in: a second source of
+ * truth for the same fact is exactly how button logic starts to drift.
+ */
+export function actionsForItem(item: ChatItem, ctx: ActionContext): MessageAction[] {
+  const hasText = itemHasText(item);
+
+  if (item.role === "assistant" && !item.done) return [];
+  if (item.role === "system") return item.isError && hasText ? ["copy"] : [];
+  if (!hasText) {
+    // Nothing to copy or quote, but the last answer can still be regenerated.
+    return item.role === "assistant" && ctx.isLastAssistant && !ctx.sessionBusy && !ctx.editing
+      ? ["regenerate"]
+      : [];
+  }
+
+  const actions: MessageAction[] = ["copy", "quote"];
+  if (item.role === "assistant" && ctx.isLastAssistant && !ctx.sessionBusy && !ctx.editing) {
+    actions.push("regenerate");
+  }
+  if (item.role === "user" && ctx.isLastUser && !ctx.sessionBusy && !ctx.editing) {
+    actions.push("edit");
+  }
+  return actions;
+}

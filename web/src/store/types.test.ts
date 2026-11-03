@@ -1,10 +1,14 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import {
+  actionsForItem,
   applyEvent,
   approvalFromEvent,
   emptyItem,
+  itemHasText,
+  itemToMarkdownSource,
   itemsFromMessages,
   resetItemIds,
+  type ActionContext,
   type ChatItem,
   type ContentBlock,
 } from "./types";
@@ -346,5 +350,178 @@ describe("approvalFromEvent", () => {
     expect(approvalFromEvent({ type: "agent_start" })).toBeNull();
     expect(approvalFromEvent({ type: "message_update" })).toBeNull();
     expect(approvalFromEvent({ type: "extension_ui_request", method: "confirm" })).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Message actions: Markdown source + applicability matrix
+// ---------------------------------------------------------------------------
+
+function userItem(text: string, extra: ContentBlock[] = []): ChatItem {
+  const item = emptyItem("user", [{ kind: "text", text, done: true }, ...extra]);
+  item.done = true;
+  return item;
+}
+
+function assistantItem(blocks: ContentBlock[]): ChatItem {
+  const item = emptyItem("assistant", blocks);
+  item.done = true;
+  return item;
+}
+
+const IDLE: ActionContext = { isLastUser: false, isLastAssistant: false, sessionBusy: false, editing: false };
+
+describe("itemToMarkdownSource", () => {
+  it("joins multiple text blocks with a paragraph break, keeping Markdown markers", () => {
+    const item = assistantItem([
+      { kind: "text", text: "Intro with a list:/n/n- one\n- two", done: true },
+      { kind: "text", text: "```kotlin\nval x = 1\n```", done: true },
+    ]);
+    expect(itemToMarkdownSource(item)).toBe(
+      "Intro with a list:/n/n- one\n- two\n\n```kotlin\nval x = 1\n```",
+    );
+  });
+
+  it("returns a single block verbatim — a user message copies character-exact", () => {
+    const item = userItem("line 1\nline 2\n");
+    expect(itemToMarkdownSource(item)).toBe("line 1\nline 2\n");
+  });
+
+  it("ignores thinking, tool calls and image data", () => {
+    const item = assistantItem([
+      { kind: "thinking", text: "SECRET REASONING", done: true },
+      { kind: "image", data: "AAAA", mimeType: "image/png" },
+      {
+        kind: "toolcall",
+        id: "c1",
+        toolName: "bash",
+        argsJson: '{"command":"ls"}',
+        done: true,
+        result: { output: "TOOL OUTPUT", isError: false },
+      },
+      { kind: "text", text: "Only this survives.", done: true },
+    ]);
+    expect(itemToMarkdownSource(item)).toBe("Only this survives.");
+  });
+
+  it("returns null for a pure-image message", () => {
+    const item = userItem("", [{ kind: "image", data: "AAAA", mimeType: "image/png" }]);
+    const imageOnly = { ...item, blocks: item.blocks.filter((b) => b.kind !== "text") };
+    expect(itemToMarkdownSource(imageOnly)).toBeNull();
+  });
+
+  it("returns null when every text block is blank", () => {
+    const item = assistantItem([
+      { kind: "text", text: "", done: true },
+      { kind: "text", text: "   \n", done: true },
+    ]);
+    expect(itemToMarkdownSource(item)).toBeNull();
+  });
+
+  it("skips blank blocks but keeps the real ones", () => {
+    const item = assistantItem([
+      { kind: "text", text: "", done: true },
+      { kind: "text", text: "answer", done: true },
+    ]);
+    expect(itemToMarkdownSource(item)).toBe("answer");
+  });
+});
+
+describe("itemHasText", () => {
+  it("is false for whitespace-only content", () => {
+    expect(itemHasText(assistantItem([{ kind: "text", text: "  \n", done: true }]))).toBe(false);
+    expect(itemHasText(assistantItem([{ kind: "image", data: "AA", mimeType: "image/png" }]))).toBe(false);
+  });
+
+  it("is true when a text block has content", () => {
+    expect(itemHasText(userItem("hi"))).toBe(true);
+  });
+});
+
+describe("actionsForItem", () => {
+  it("gives a middle user message copy and quote but no edit (FR-002/FR-009)", () => {
+    expect(actionsForItem(userItem("earlier prompt"), IDLE)).toEqual(["copy", "quote"]);
+  });
+
+  it("adds edit to the last user message while idle (FR-009)", () => {
+    expect(actionsForItem(userItem("last prompt"), { ...IDLE, isLastUser: true })).toEqual([
+      "copy",
+      "quote",
+      "edit",
+    ]);
+  });
+
+  it("adds regenerate to the last assistant message while idle (FR-008)", () => {
+    const item = assistantItem([{ kind: "text", text: "answer", done: true }]);
+    expect(actionsForItem(item, { ...IDLE, isLastAssistant: true })).toEqual([
+      "copy",
+      "quote",
+      "regenerate",
+    ]);
+  });
+
+  it("never offers regenerate on a middle assistant message (FR-008)", () => {
+    const item = assistantItem([{ kind: "text", text: "answer", done: true }]);
+    expect(actionsForItem(item, IDLE)).toEqual(["copy", "quote"]);
+  });
+
+  it("hides the whole toolbar on a streaming assistant message (FR-001)", () => {
+    const item = emptyItem("assistant", [{ kind: "text", text: "partial", done: false }]);
+    expect(actionsForItem(item, { ...IDLE, isLastAssistant: true })).toEqual([]);
+  });
+
+  it("keeps copy on history messages while a later run is streaming", () => {
+    const item = assistantItem([{ kind: "text", text: "old answer", done: true }]);
+    expect(actionsForItem(item, { ...IDLE, sessionBusy: true })).toEqual(["copy", "quote"]);
+  });
+
+  it("hides copy and quote on a pure-image message (FR-007)", () => {
+    const item = assistantItem([{ kind: "image", data: "AAAA", mimeType: "image/png" }]);
+    expect(actionsForItem(item, { ...IDLE, isLastAssistant: true })).toEqual(["regenerate"]);
+  });
+
+  it("offers nothing on a pure-image user message — there is no text to edit", () => {
+    const item = userItem("", [{ kind: "image", data: "AAAA", mimeType: "image/png" }]);
+    expect(actionsForItem(item, { ...IDLE, isLastUser: true })).toEqual([]);
+  });
+
+  it("offers copy on an error item so it can be pasted into a bug report (FR-013)", () => {
+    const item = emptyItem("system", [{ kind: "text", text: "⚠ 404: no endpoints", done: true }]);
+    item.done = true;
+    item.isError = true;
+    expect(actionsForItem(item, IDLE)).toEqual(["copy"]);
+  });
+
+  it("offers nothing on an ordinary system notice (FR-001)", () => {
+    const item = emptyItem("system", [{ kind: "text", text: "Context compacted", done: true }]);
+    item.done = true;
+    expect(actionsForItem(item, IDLE)).toEqual([]);
+  });
+
+  it("blocks regenerate and edit while a run is in flight (FR-010)", () => {
+    const busy: ActionContext = { ...IDLE, sessionBusy: true, isLastUser: true, isLastAssistant: true };
+    expect(actionsForItem(userItem("last"), busy)).toEqual(["copy", "quote"]);
+    expect(actionsForItem(assistantItem([{ kind: "text", text: "answer", done: true }]), busy)).toEqual([
+      "copy",
+      "quote",
+    ]);
+  });
+
+  it("blocks regenerate while an edit owns the composer (FR-010)", () => {
+    const editing: ActionContext = { ...IDLE, editing: true, isLastAssistant: true };
+    expect(actionsForItem(assistantItem([{ kind: "text", text: "answer", done: true }]), editing)).toEqual([
+      "copy",
+      "quote",
+    ]);
+  });
+
+  it("leaves a failed assistant answer copyable and regenerable", () => {
+    const item = assistantItem([{ kind: "text", text: "⚠ connection reset", done: true }]);
+    item.isError = true;
+    expect(actionsForItem(item, { ...IDLE, isLastAssistant: true })).toEqual([
+      "copy",
+      "quote",
+      "regenerate",
+    ]);
   });
 });

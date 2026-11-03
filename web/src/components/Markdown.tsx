@@ -3,6 +3,7 @@ import { marked } from "marked";
 import DOMPurify from "dompurify";
 import hljs from "highlight.js/lib/common";
 import { usePiStore } from "../store/store";
+import { copyText } from "../lib/clipboard";
 
 marked.setOptions({ gfm: true, breaks: true });
 
@@ -107,8 +108,8 @@ function addCopyButtons(root: ParentNode, copiedUntil: Map<number, number>) {
       copiedUntil.set(idx, Date.now() + COPY_FLASH_MS);
       // Read at click time: the block may still be streaming.
       const code = pre.querySelector("code")?.textContent ?? "";
-      void copyText(code).then(() => {
-        btn.textContent = "✓";
+      void copyText(code).then((ok) => {
+        btn.textContent = ok ? "✓" : "✗";
         setTimeout(() => {
           btn.textContent = "Copy";
         }, COPY_FLASH_MS);
@@ -116,22 +117,6 @@ function addCopyButtons(root: ParentNode, copiedUntil: Map<number, number>) {
     });
     pre.appendChild(btn);
   });
-}
-
-async function copyText(text: string): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(text);
-  } catch {
-    // Fallback for JCEF builds without the async clipboard API.
-    const ta = document.createElement("textarea");
-    ta.value = text;
-    ta.style.position = "fixed";
-    ta.style.opacity = "0";
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand("copy");
-    ta.remove();
-  }
 }
 
 export default function Markdown({ text }: { text: string }) {
