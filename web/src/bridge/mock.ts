@@ -151,6 +151,12 @@ export class MockBridge implements Bridge {
   ];
   /** `?mcpoverride=1` — the write lands but another layer still decides the value. */
   private readonly mcpOverride = query()?.get("mcpoverride") === "1";
+  /** Reported by manage.env; bumped by a successful manage.envUpdate. */
+  private piVersion = "1.4.0-mock";
+  /** Installed packages as `pi list` lines; packageUpdate bumps the version. */
+  private packages = ["npm:@example/pi-tools@1.0.0"];
+  /** `?models=broken|missing` — the models.json world the Auth panel must explain. */
+  private readonly modelsKnob = query()?.get("models");
   private mockSessions = [
     {
       file: "/tmp/mock-sessions/2026-10-27T10-00-00_aaa.jsonl",
@@ -314,7 +320,7 @@ export class MockBridge implements Bridge {
           ok: true,
           found: true,
           path: "/usr/local/bin/pi",
-          version: "1.4.0-mock",
+          version: this.piVersion,
           agentDir: "/tmp/mock-home/.pi/agent",
         };
       case "manage.mcpList":
@@ -355,8 +361,43 @@ export class MockBridge implements Bridge {
       case "manage.packageRemove":
       case "manage.skillCreate":
         return { ok: true, output: "mock: done" };
+      case "manage.packageUpdate": {
+        const p = (params ?? {}) as { source?: string };
+        if (!p.source) return { ok: false, error: "missing source" };
+        if (this.shouldFail("update")) {
+          return {
+            ok: false,
+            exitCode: 1,
+            output:
+              "npm error code E404\nnpm error 404 '@example/pi-extra@latest' is not in the npm registry",
+          };
+        }
+        const idx = this.packages.findIndex((l) => l.includes(p.source!));
+        if (idx < 0) return { ok: false, exitCode: 1, output: `not installed: ${p.source}` };
+        // A successful update changes the version the list reports, so the
+        // "update refreshes the version" e2e can assert on the row text.
+        const bumped = this.packages[idx].replace(
+          /(\d+)\.(\d+)\.(\d+)/,
+          (_m, a: string, b: string, c: string) => `${a}.${Number(b) + 1}.${c}`,
+        );
+        this.packages[idx] = bumped;
+        return { ok: true, exitCode: 0, output: `updated ${p.source} -> ${bumped}` };
+      }
+      case "manage.envUpdate": {
+        if (this.shouldFail("update")) {
+          return {
+            ok: false,
+            exitCode: 1,
+            version: this.piVersion,
+            output:
+              "npm error code EACCES\nnpm error mkdir /usr/local/lib/node_modules: permission denied",
+          };
+        }
+        this.piVersion = "1.5.0-mock";
+        return { ok: true, exitCode: 0, output: "pi updated to 1.5.0-mock", version: this.piVersion };
+      }
       case "manage.packagesList":
-        return { ok: true, lines: ["npm:@example/pi-tools@1.0.0", "No packages installed."] };
+        return { ok: true, lines: [...this.packages, "No packages installed."] };
       case "manage.skillsList":
         return {
           ok: true,
@@ -377,11 +418,73 @@ export class MockBridge implements Bridge {
             },
           ],
         };
-      case "manage.authOverview":
-        return {
+      case "manage.authOverview": {
+        const base = {
           ok: true,
           providers: ["mock-provider"],
           withCredentials: ["mock-provider"],
+        };
+        if (this.modelsKnob === "broken") {
+          return {
+            ...base,
+            modelsState: "corrupt",
+            modelsPath: "/tmp/mock-home/.pi/agent/models.json",
+            modelsError:
+              "models.json is not valid JSON (Unexpected JSON token at offset 42: Expected ',' or '}') (line 3, column 8)",
+          };
+        }
+        if (this.modelsKnob === "missing") {
+          return {
+            ...base,
+            modelsState: "missing",
+            modelsPath: "/tmp/mock-home/.pi/agent/models.json",
+          };
+        }
+        return { ...base, modelsState: "ok", modelsPath: "/tmp/mock-home/.pi/agent/models.json" };
+      }
+      case "manage.modelsReadProvider": {
+        if (this.modelsKnob === "broken") {
+          return {
+            ok: false,
+            error:
+              "models.json is not valid JSON (Unexpected JSON token at offset 42: Expected ',' or '}') (line 3, column 8)",
+          };
+        }
+        if (this.modelsKnob === "missing") {
+          return {
+            ok: false,
+            missing: true,
+            error: "models.json not found at /tmp/mock-home/.pi/agent/models.json",
+          };
+        }
+        const p = (params ?? {}) as { name?: string };
+        const name = p.name ?? "";
+        if (name !== "mock-provider") {
+          return { ok: false, error: `no provider named "${name}" in models.json` };
+        }
+        return {
+          ok: true,
+          name,
+          path: "/tmp/mock-home/.pi/agent/models.json",
+          // The values at sensitive keys are already booleans on the wire —
+          // the secret never crosses the bridge (spec 001 T019).
+          config: {
+            type: "openai_completions",
+            baseUrl: "https://api.mock.dev/v1",
+            apiKey: true,
+            headers: { Authorization: false },
+            models: [
+              { id: "mock-model-pro", contextWindow: 200000 },
+              { id: "mock-model-mini", contextWindow: 128000 },
+            ],
+          },
+        };
+      }
+      case "manage.modelsOpenFile":
+        return {
+          ok: true,
+          path: "/tmp/mock-home/.pi/agent/models.json",
+          created: this.modelsKnob === "missing",
         };
       case "manage.authCheck":
         return { ok: true, status: "ready", detail: { provider: "mock-provider" } };

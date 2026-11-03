@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { usePiStore } from "../store/store";
 import { getBridge } from "../bridge";
-import { manageApi, type EnvironmentResult, type TrustState, type TrustWriteResult } from "../manage";
+import type { Bridge } from "../bridge/types";
+import { manageApi, type EnvironmentResult, type EnvUpdateResult, type TrustState, type TrustWriteResult } from "../manage";
 import McpPanel from "./manage/McpPanel";
 import PackagesPanel from "./manage/PackagesPanel";
 import SkillsPanel from "./manage/SkillsPanel";
@@ -30,21 +31,27 @@ const TRUST_CATEGORIES: Array<{ type: string; label: string }> = [
 
 export function useManageApi() {
   const [api, setApi] = useState<ReturnType<typeof manageApi> | null>(null);
+  const [bridge, setBridge] = useState<Bridge | null>(null);
   const [env, setEnv] = useState<EnvironmentResult | null>(null);
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const bridge = await getBridge();
-      const a = manageApi(bridge);
+      const b = await getBridge();
+      const a = manageApi(b);
       if (cancelled) return;
       setApi(a);
+      setBridge(b);
       setEnv(await a.environment().catch(() => null));
     })();
     return () => {
       cancelled = true;
     };
   }, []);
-  return { api, env };
+  const refreshEnv = useCallback(async () => {
+    if (!api) return;
+    setEnv(await api.environment().catch(() => null));
+  }, [api]);
+  return { api, bridge, env, refreshEnv };
 }
 
 export function OutcomeBanner({ outcome }: { outcome: { ok: boolean; error?: string; output?: string } | null }) {
@@ -125,10 +132,54 @@ function useTrust(api: ReturnType<typeof manageApi> | null) {
 
 export default function ManageView() {
   const [tab, setTab] = useState<ManageTab>("mcp");
-  const { api, env } = useManageApi();
+  const { api, bridge, env, refreshEnv } = useManageApi();
   const trust = useTrust(api);
   const trusted = trust.state?.trusted === true;
   const unreadable = !trusted && trust.error != null;
+
+  // pi self-update (spec 001 US3). There is no check-update subcommand, so the
+  // env area only shows the current version plus an on-demand entry; the
+  // outcome is whatever `pi update --self` prints (T016 — no "new version
+  // available" badge, the plugin must not guess).
+  const piStatus = usePiStatus();
+  const piRunning = piStatus === "running" || piStatus === "starting";
+  const [updating, setUpdating] = useState(false);
+  const [updateConfirm, setUpdateConfirm] = useState(false);
+  const [updateOutcome, setUpdateOutcome] = useState<EnvUpdateResult | null>(null);
+
+  const runEnvUpdate = useCallback(async () => {
+    if (!api) return;
+    setUpdateConfirm(false);
+    setUpdating(true);
+    try {
+      const res = await api.envUpdate();
+      setUpdateOutcome(res);
+      if (res.ok) {
+        // The old binary is gone: replace a running process (T018); the status
+        // bar version follows the pi-state events. Not running → nothing to
+        // replace, the restart call would only fail.
+        if (piRunning && bridge) {
+          await bridge.request("rpc.restart").catch(() => null);
+        }
+        await refreshEnv();
+      }
+    } catch (e) {
+      setUpdateOutcome({ ok: false, error: (e as Error).message });
+    } finally {
+      setUpdating(false);
+    }
+  }, [api, bridge, piRunning, refreshEnv]);
+
+  const requestEnvUpdate = () => {
+    setUpdateOutcome(null);
+    // An update swaps the binary out from under a live session (FR-010):
+    // confirm first, and cancelling must not touch anything.
+    if (piRunning) {
+      setUpdateConfirm(true);
+    } else {
+      void runEnvUpdate();
+    }
+  };
 
   return (
     <div className="manage-view-full" data-testid="manage-view">
@@ -136,7 +187,7 @@ export default function ManageView() {
         {env ? (
           env.found ? (
             <span>
-              pi <b>{env.version || "?"}</b> · <span className="mono">{env.path}</span>
+              pi <b data-testid="pi-version">{env.version || "?"}</b> · <span className="mono">{env.path}</span>
             </span>
           ) : (
             <span className="manage-env-missing">
@@ -157,7 +208,40 @@ export default function ManageView() {
           </span>
         ) : null}
         {env?.agentDir ? <span className="mono">~/.pi/agent</span> : null}
+        {env?.found ? (
+          <button className="btn" data-testid="pi-update" disabled={updating} onClick={requestEnvUpdate}>
+            {updating ? "Updating…" : "Update pi"}
+          </button>
+        ) : null}
       </div>
+
+      {updateConfirm ? (
+        <div className="trust-confirm" data-testid="env-update-confirm">
+          <div className="trust-confirm-title">pi 正在运行。更新会重启 pi 进程，进行中的会话将中断。</div>
+          <div className="trust-confirm-actions">
+            <button
+              className="btn btn-send"
+              data-testid="env-update-confirm-yes"
+              onClick={() => void runEnvUpdate()}
+              disabled={updating}
+            >
+              继续更新
+            </button>
+            <button className="btn" data-testid="env-update-confirm-no" onClick={() => setUpdateConfirm(false)} disabled={updating}>
+              取消
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {updateOutcome ? (
+        <div
+          className={`outcome-banner ${updateOutcome.ok ? "outcome-ok" : "outcome-fail"}`}
+          data-testid="env-update-result"
+        >
+          {updateOutcome.ok ? "✓ " : "✗ "}
+          {updateOutcome.output || updateOutcome.error}
+        </div>
+      ) : null}
 
       {/* Only the *problem* states get a banner; a trusted project stays quiet.
           Nothing renders until the state has been read: a warning that flashes

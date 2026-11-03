@@ -106,6 +106,10 @@ class BridgeService(private val project: Project) : Disposable {
                 "manage.packagesList" -> dev.pi.agent.manage.PiManage.packagesList()
                 "manage.packageInstall" -> dev.pi.agent.manage.PiManage.packageInstall(params)
                 "manage.packageRemove" -> dev.pi.agent.manage.PiManage.packageRemove(params)
+                "manage.packageUpdate" -> dev.pi.agent.manage.PiManage.packageUpdate(params)
+                "manage.envUpdate" -> dev.pi.agent.manage.PiManage.envUpdate()
+                "manage.modelsReadProvider" -> dev.pi.agent.manage.PiManage.modelsReadProvider(params)
+                "manage.modelsOpenFile" -> modelsOpenFile(params)
                 "manage.skillsList" -> dev.pi.agent.manage.PiManage.skillsList(project.basePath)
                 "manage.skillCreate" -> dev.pi.agent.manage.PiManage.skillCreate(params)
                 "manage.authOverview" -> dev.pi.agent.manage.PiManage.authOverview()
@@ -551,6 +555,28 @@ class BridgeService(private val project: Project) : Disposable {
     private fun resolveFile(path: String): com.intellij.openapi.vfs.VirtualFile? {
         val io = resolveIoFile(path) ?: return null
         return com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByIoFile(io)
+    }
+
+    /**
+     * Opens models.json in the editor, navigating to the provider's line
+     * (spec 001 FR-012). The skeleton is created only when the file is absent;
+     * an existing file is opened as-is even when it does not parse.
+     */
+    private fun modelsOpenFile(params: JsonObject): JsonObject {
+        val provider = (params["provider"] as? JsonPrimitive)?.content
+        val outcome = dev.pi.agent.manage.PiManage.modelsEnsureFile()
+        if (outcome.error != null) throw IllegalStateException(outcome.error)
+        val vf = com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByIoFile(outcome.file)
+            ?: throw IllegalStateException("file not found: ${outcome.file.absolutePath}")
+        val line = dev.pi.agent.manage.PiManage.modelsProviderLine(outcome.file, provider)
+        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
+            com.intellij.openapi.fileEditor.OpenFileDescriptor(project, vf, line - 1, 0).navigate(true)
+        }
+        return buildJsonObject {
+            put("ok", true)
+            put("path", outcome.file.absolutePath)
+            put("created", outcome.created)
+        }
     }
 
     // -- push channel -------------------------------------------------------

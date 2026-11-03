@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { OutcomeBanner } from "../ManageView";
-import type { manageApi, PackagesListResult } from "../../manage";
+import type { CliOutcome, manageApi, PackagesListResult } from "../../manage";
 
 export default function PackagesPanel({ api }: { api: ReturnType<typeof manageApi> }) {
   const [result, setResult] = useState<PackagesListResult | null>(null);
   const [outcome, setOutcome] = useState<{ ok: boolean; error?: string; output?: string } | null>(null);
+  const [updateResult, setUpdateResult] = useState<CliOutcome | null>(null);
   const [busy, setBusy] = useState(false);
   const [source, setSource] = useState("");
 
@@ -42,9 +43,42 @@ export default function PackagesPanel({ api }: { api: ReturnType<typeof manageAp
     }
   };
 
+  /**
+   * `pi update <source>` — the CLI reports the outcome in its own output, so
+   * the raw text is shown verbatim (spec 001 FR-007); the plugin does not
+   * diff install state to decide whether anything actually changed.
+   */
+  const update = async (pkg: string) => {
+    setBusy(true);
+    setOutcome(null);
+    setUpdateResult(null);
+    try {
+      const res = await api.packageUpdate({ source: pkg });
+      setUpdateResult(res);
+      await refresh();
+    } catch (e) {
+      setUpdateResult({ ok: false, error: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div data-testid="packages-panel">
       <OutcomeBanner outcome={outcome} />
+      {updateResult ? (
+        <div
+          className={`outcome-banner ${updateResult.ok ? "outcome-ok" : "outcome-fail"}`}
+          data-testid="update-result"
+        >
+          {updateResult.ok ? "✓ " : "✗ "}
+          {updateResult.exitCode !== undefined ? `exit code ${updateResult.exitCode} · ` : ""}
+          {updateResult.output || updateResult.error}
+          {!updateResult.ok ? (
+            <div>The installed version may still be the old one.</div>
+          ) : null}
+        </div>
+      ) : null}
       <div className="panel-toolbar">
         <input
           className="select packages-input"
@@ -81,6 +115,14 @@ export default function PackagesPanel({ api }: { api: ReturnType<typeof manageAp
                 <span className="panel-row-title mono">{pkg}</span>
               </div>
               <div className="panel-row-actions">
+                <button
+                  className="btn"
+                  data-testid={`package-update-${i}`}
+                  disabled={busy}
+                  onClick={() => void update(pkg)}
+                >
+                  Update
+                </button>
                 <button className="btn btn-abort" onClick={() => void act(api.packageRemove({ source: pkg }))}>
                   Remove
                 </button>

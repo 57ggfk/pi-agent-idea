@@ -3065,3 +3065,38 @@ button {
   color: var(--text-secondary);
   overflow-wrap: anywhere;
 }
+
+/* ---------------------------------------------------------------------------
+   Provider details (spec 001 US4)
+   The detail block is read-only: models.json stays the editing surface and
+   the panel only explains what is in it. Secret keys are booleans by the
+   time they get here — the flag words must not be colour-only either.
+   --------------------------------------------------------------------------- */
+.provider-detail {
+  margin: 4px 0 8px 0;
+  padding: 6px 10px;
+  border-left: 2px solid var(--border);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: var(--bg-subtle);
+}
+
+.provider-detail-actions {
+  margin-bottom: 4px;
+}
+
+.provider-config-row {
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 2px 0;
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+}
+
+.config-flag.config-set {
+  color: var(--success);
+}
+
+.config-flag.config-unset {
+  color: var(--text-secondary);
+}

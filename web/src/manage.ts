@@ -83,6 +83,28 @@ export interface PackagesListResult extends CliOutcome {
   lines?: string[];
 }
 
+/** `pi update` reports the outcome itself; the plugin only relays it. */
+export interface EnvUpdateResult extends CliOutcome {
+  /** Version after the update, re-read from the located binary. */
+  version?: string;
+}
+
+export interface ProviderInfoResult extends CliOutcome {
+  name?: string;
+  /** Absolute path of models.json. */
+  path?: string;
+  /** True when models.json does not exist (nothing configured yet). */
+  missing?: boolean;
+  /** Provider entry with every sensitive value replaced by a boolean. */
+  config?: Record<string, unknown>;
+}
+
+export interface ModelsOpenResult extends CliOutcome {
+  path?: string;
+  /** True when the file did not exist and the skeleton was just created. */
+  created?: boolean;
+}
+
 export interface SkillInfo {
   name: string;
   description: string;
@@ -95,6 +117,10 @@ export interface SkillInfo {
 export interface AuthOverviewResult extends CliOutcome {
   providers?: string[];
   withCredentials?: string[];
+  /** "ok" | "missing" | "corrupt" — drives the Auth panel's models.json notice. */
+  modelsState?: string;
+  modelsPath?: string;
+  modelsError?: string;
 }
 
 export interface EnvironmentResult extends CliOutcome {
@@ -131,6 +157,10 @@ export function manageApi(bridge: Bridge) {
     packagesList: () => call<PackagesListResult>("manage.packagesList"),
     packageInstall: (p: { source: string }) => call<CliOutcome>("manage.packageInstall", p),
     packageRemove: (p: { source: string }) => call<CliOutcome>("manage.packageRemove", p),
+    packageUpdate: (p: { source: string }) => call<CliOutcome>("manage.packageUpdate", p),
+    envUpdate: () => call<EnvUpdateResult>("manage.envUpdate"),
+    modelsReadProvider: (p: { name: string }) => call<ProviderInfoResult>("manage.modelsReadProvider", p),
+    modelsOpenFile: (p: { provider: string }) => call<ModelsOpenResult>("manage.modelsOpenFile", p),
     skillsList: () => call<{ ok: boolean; skills: SkillInfo[] }>("manage.skillsList"),
     skillCreate: (p: { name: string; description: string; body?: string }) => call<CliOutcome>("manage.skillCreate", p),
     authOverview: () => call<AuthOverviewResult>("manage.authOverview"),
