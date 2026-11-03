@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { emptySources } from "./sources";
 import { emptyItem } from "./types";
 
 /**
@@ -190,5 +191,91 @@ describe("message actions: store orchestration", () => {
     expect(commandTypes()).not.toContain("fork");
     // Still editing: the user has not decided anything yet.
     expect(usePiStore.getState().editing).not.toBeNull();
+  });
+});
+
+describe("data sources: loadSource orchestration (spec 003)", () => {
+  beforeEach(async () => {
+    h.state.calls.length = 0;
+    h.state.rpc.clear();
+    h.state.methods.clear();
+    await usePiStore.getState().init();
+    h.state.calls.length = 0;
+    usePiStore.setState({ sources: emptySources(), files: [] });
+  });
+
+  it("runs a source read once even when two callers ask at the same time (FR-004)", async () => {
+    let served = 0;
+    let release!: (value: string[]) => void;
+    const fetcher = () => {
+      served += 1;
+      return new Promise<string[]>((resolve) => {
+        release = resolve;
+      });
+    };
+
+    const first = usePiStore.getState().loadSource("files", fetcher);
+    const second = usePiStore.getState().loadSource("files", fetcher);
+
+    expect(served).toBe(1);
+    expect(usePiStore.getState().sources.files.status).toBe("loading");
+    expect(usePiStore.getState().sources.files.inflight).toBe(true);
+
+    release(["a.ts"]);
+    expect(await first).toEqual(["a.ts"]);
+    expect(await second).toBeUndefined();
+    expect(usePiStore.getState().sources.files.status).toBe("ready");
+    expect(usePiStore.getState().sources.files.inflight).toBe(false);
+  });
+
+  it("records the error instead of swallowing it, and keeps the value undefined", async () => {
+    const value = await usePiStore.getState().loadSource("commands", () =>
+      Promise.reject(new Error("get_commands failed: pi is still starting")),
+    );
+
+    expect(value).toBeUndefined();
+    const state = usePiStore.getState().sources.commands;
+    expect(state.status).toBe("failed");
+    expect(state.error).toContain("still starting");
+    expect(state.retries).toBe(1);
+  });
+
+  it("retrySource re-runs the *last* fetcher, so a recovered read updates the store", async () => {
+    let attempt = 0;
+    await usePiStore.getState().loadSource("stats", async () => {
+      attempt += 1;
+      if (attempt === 1) throw new Error("boom");
+      return "second time lucky";
+    });
+    expect(usePiStore.getState().sources.stats.status).toBe("failed");
+
+    await usePiStore.getState().retrySource("stats");
+
+    expect(attempt).toBe(2);
+    expect(usePiStore.getState().sources.stats.status).toBe("ready");
+    expect(usePiStore.getState().sources.stats.error).toBeUndefined();
+    expect(usePiStore.getState().sources.stats.retries).toBe(0);
+  });
+
+  it("marks a missing bridge method as unsupported, which is never a failure (FR-009)", async () => {
+    await usePiStore.getState().loadSource("prefs", () =>
+      Promise.reject(new Error("mock bridge: unsupported method config.getPrefs")),
+    );
+    expect(usePiStore.getState().sources.prefs.status).toBe("unsupported");
+    // retryFailedSources must not chase it forever.
+    usePiStore.getState().retryFailedSources();
+    expect(usePiStore.getState().sources.prefs.status).toBe("unsupported");
+  });
+
+  it("retries every failed source at once but leaves healthy ones alone (FR-005)", async () => {
+    await usePiStore.getState().loadSource("files", () => Promise.reject(new Error("nope")));
+    await usePiStore.getState().loadSource("models", () => Promise.resolve(["m"]));
+    const before = usePiStore.getState().sources.models.lastAttemptAt;
+
+    usePiStore.getState().retryFailedSources();
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(usePiStore.getState().sources.files.status).toBe("failed");
+    expect(usePiStore.getState().sources.models.lastAttemptAt).toBe(before);
   });
 });
