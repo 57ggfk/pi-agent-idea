@@ -10,29 +10,43 @@
 探索后决策：**队列由插件自持**，不依赖 pi 上游未暴露的队列 RPC（实测 pi 1.4.0 的 RPC 面
 没有队列内容读写，见下）。
 
-## 背景：为什么自持队列（实测）
+## 背景：pi 队列的真实能力（2026-11-03 实测，修订初版断言）
 
-- pi 的队列原语在核心层齐全（`peekSteeringQueue` / `peekFollowUpQueue` / `replaceQueues`，
-  `agent-session.ts:925`），但只对 TUI 私有：**RPC 面只暴露入队
-  （`prompt`+`streamingBehavior`、`steer`、`follow_up`）与计数（`get_state.queuedMessageCount`），
-  无内容读取、无单条增删改、无队列变化事件**（`rpc-types.ts:33-61`；pi 1.4.0 全源码 grep 无 `queue_update`）。
-- 插件现有的 `queue_update` 事件契约**只存在于 mock**（`web/src/bridge/mock.ts:332`），
-  Kotlin 桥接与 pi 均不发出——真实环境下队列计数永远为 0，属静默失效（与 002 同款问题）。
-- pi 扩展也拿不到队列写能力（extension 只获 `ReadonlySessionManager` 只读快照）。
-- 本机 pi 为 1.4.0，npm 上游最新 18.16.0，CHANGELOG 亦无队列 RPC 暴露迹象。
-  依赖上游 = 排序 / 取回 / 删除 / 提升全部悬空，故**放弃上游路线，队列状态与调度由插件自持**；
-  唯一无法自实现的动作是「注入运行中的轮次」，仍调用 pi 的 `steer` RPC（fire-and-forget，
-  `rpc-types.ts:34`，原生支持 images）。
+初版规格断言「pi 的 RPC 面只暴露入队与计数，无内容读取、无队列事件」，据此决定由插件**完全自持**队列。
+**该断言经实测证伪**。本段记录实测结果与随之修订的方案。
 
-**自持后的语义**：
+实测方法：`pi --mode rpc --no-session`（1.4.0），依次发
+`prompt` → `steer` → `follow_up` → `clear_queue`，读 stdout 的 JSONL；
+另用一次 `abort` 观察队列是否继续执行。
 
-- **追加（followUp）**：完全自持。条目存插件队列，`agent_settled` 后逐条发新 `prompt`。
-  插件不再使用 pi 自身的 followUp 队列（保持为空）。
-- **插话（steer）**：排队、节奏、展示自持；注入瞬间借 `steer` RPC。
-  注入无确认事件（`pi-agent-core/agent.ts:1054` dequeue 处不发任何事件），
-  因此 UI 只渲染「已插话」这一 fire 动作，不谎称注入时刻。
-- **排序 / 删除 / 取回编辑 / 提升**：全部是对插件本地条目的操作，零 pi 依赖。
-- 关键触发器 `agent_settled` 已端到端接通（pi → Kotlin `BridgeService.kt:586` → web `store.ts:208`）。
+| 能力 | 初版断言 | 实测结果 |
+|---|---|---|
+| 队列变化事件 | 不存在（全源码 grep 无 `queue_update`） | **存在**。`queue_update` 带 `steering` / `followUp` 两个**完整文本数组**，每次入队与消费都推送 |
+| 队列内容读取 | 只有 `get_state.queuedMessageCount` | **可读**。`queue_update` 即内容 |
+| 全量取出（Alt+Up） | RPC 下不可达 | **可达**。`clear_queue` 返回 `{steering, followUp}` 文本数组 |
+| 单条增删 / 移动 | 无 | **确实无**。只能全量取出后重新入队 |
+| 队列中的图片 | — | **取不回**。两个接口都只给字符串 |
+| abort 与队列 | — | 文档称 “abort continues queued messages”，实测 abort 后 6 秒内**无**新 turn。**两者矛盾，行为不可依赖** |
+
+（`docs/json.md` 的 “RPC mode emits the same session-event shapes” 说明了为什么源码里 grep 不到：
+事件类型定义在会话事件层，不在 `rpc-types.ts` 的命令表里。）
+
+**修订后的方案：pi 是队列真源，插件只做镜像与重排。**
+
+- **显示与调度**：订阅 `queue_update`，由 pi 自己按序执行。插件**不再**驱动
+  「`agent_settled` 后发下一条」——compaction / retry 的时序门闩与 fire 竞争正是最容易做错的部分，
+  交给 pi 更准。
+- **插件侧镜像**：条目要带 id、模式与**图片**（`queue_update` 没有图片），故 Kotlin 保留影子列表，
+  作为「图片补全 + 顺序操作」的依据；文本与条数以 `queue_update` 为准，冲突时以 pi 为准。
+- **排序 / 删除 / 单条取回**：`clear_queue` 取出 → 按影子顺序重建（扣掉目标条）→ 重新入队。
+  这是唯一可行路径，代价是这一瞬间必须原子完成。
+- **暂停（US7）**：`clear_queue` 取出并暂存到插件，pi 侧队列真的空了；恢复时按原序重新入队。
+  不依赖 abort 的可疑行为。
+- **插话（US5 / US6）**：`steer` RPC。响应 `{disposition:"queued"}` 只表示「已入队」，
+  不表示已注入，因此 UI 渲染发起的动作，不声称注入时刻。
+- 关键触发器 `agent_settled` 已端到端接通（pi → Kotlin `BridgeService` → web `store.ts`），
+  暂停态与「空闲直发」判定仍复用它。
+
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -58,13 +72,13 @@
 
 ### User Story 2 - 队列自动按序执行 (Priority: P1)
 
-用户排了 3 条追加消息，然后去做别的事。agent 每结束一轮，插件自动把下一条作为新一轮发出，
+用户排了 3 条追加消息，然后去做别的事。agent 每结束一轮，下一条自动作为新一轮发出，
 顺序与队列一致，直到队列清空。auto-compaction / auto-retry 进行中不打断、不提前发。
 
 **Why this priority**: 「排队」的价值就是无人值守地依次执行；没有自动执行，队列只是便签。
 
-**Independent Test**: mock 驱动 `agent_settled` 事件 → 下一条被作为 prompt 发出；
-注入 auto_compaction 活动事件期间 fire 被门闩拦住。
+**Independent Test**: 按序执行由 pi 保证（`follow_up` 语义），插件侧断言队列条与 pi 队列一致、
+且重排操作既不造成重复执行也不漏执行。
 
 **Acceptance Scenarios**:
 
@@ -192,19 +206,21 @@ abort / pi 重启后队列保留并暂停，横幅说明原因，用户点「继
 
 **架构与契约**
 
-- **FR-001**: 队列状态 MUST 由 Kotlin 侧持有（per-project 服务），webview 重载后 MUST 完整恢复；
-  web 仅作为视图与命令发送方（宪法 V：通信走 HTTP bridge）。
+- **FR-001**: 队列内容 MUST 以 pi 为真源（`queue_update`）；Kotlin MUST 持有带 id、模式与图片的镜像
+  以及暂停态（per-project 服务），webview 重载后 MUST 完整恢复；web 仅作为视图与命令发送方
+  （宪法 V：通信走 HTTP bridge）。
 - **FR-002**: 队列的类型与命令 MUST 先落 `web/src/store/types.ts`（QueueItem、queue_state 事件、
   queue.* 命令），Kotlin 数据类与 mock 在同一次变更内对齐（宪法 I）。
-- **FR-003**: 现有 mock 的 `queue_update` 假事件与「`streamingBehavior` 入队」路径 MUST 删除；
-  `SendMode` 语义改为插件队列条目属性：空闲直发；流式中 steer→插话条目，followUp/auto→追加条目。
+- **FR-003**: mock 的 `queue_update` MUST 改为真实契约的仿真（pi 确实发该事件，两个字段是完整队列，
+  不是增量或计数）；`SendMode` 语义下沉为队列条目属性：空闲直发；流式中 steer→插话条目，
+  followUp/auto→追加条目。
 - **FR-004**: 队列条 UI MUST 位于 composer 与消息流之间，不引入横向滚动，条目 rect 落在容器内；
   验收断言按宪法 II（几何 + 行为）。
 
 **入队与执行**
 
-- **FR-005**: 追加条目 MUST 仅在 `agent_settled` 且无 compaction/retry 活动时 fire，一次一条，
-  顺序 = 队列顺序。
+- **FR-005**: 追加条目的按序执行 MUST 由 pi 负责（`follow_up` 语义：一次一条、顺序 = 队列顺序）；
+  插件 MUST NOT 在 `agent_settled` 后自行发起新一轮——双重调度正是重复执行的来源。
 - **FR-006**: 空闲时发送 MUST 直接发送，任何模式都不入队。
 - **FR-007**: 插话条目 MUST 逐条 fire；仅当上一条 fire 后观察到轮次活动（pi 事件流的 turn/message 事件）
   才 fire 下一条；fire 后条目立即从队列移除并带「插话」标记渲染进消息流。
@@ -247,12 +263,15 @@ abort / pi 重启后队列保留并暂停，横幅说明原因，用户点「继
 
 ## Assumptions
 
-- 队列为**内存态**（Kotlin 服务生命周期 = project 生命周期）：IDE 关闭即丢，不落盘。
-  跨 IDE 会话持久化属后续版本（若做，结构带版本号，宪法 I）。
+- 队列本体在 **pi 进程内存**里（`queue_update` 是真源），插件镜像与暂停态在 Kotlin 服务内存里：
+  IDE 关闭 / pi 进程退出即丢，不落盘。跨 IDE 会话持久化属后续版本（若做，结构带版本号，宪法 I）。
 - 插话的注入时机与节奏由 pi 保证（steeringMode 默认 one-at-a-time 语义）；插件不复刻注入逻辑，
   也**不改用户 pi 的全局 steeringMode 偏好**。
-- pi 版本基准：本机 1.4.0（上游最新 18.16.0）。升级 pi 是独立事项，不阻塞本规格；
-  若未来 pi 暴露队列读写 RPC，可将 pi 内部队列并入展示，作为增强而非依赖。
+- pi 版本基准：本机 1.4.0（上游最新 18.16.0）。升级 pi 是独立事项，不阻塞本规格。
+  若后续 pi 提供单条队列命令（move / remove / 带 id 的读取），`clear_queue` + 重新入队的重排路径
+  可整体替换——契约收敛在 `queue.* 命令` 一层，UI 不动。
+- 队列中的图片只能由插件镜像提供：pi 的 `queue_update` / `clear_queue` 都只回文本。
+  因此镜像与 pi 队列的文本一致性 MUST 可校验，冲突时以 pi 为准并提示。
 - 已排队的「插话」与「追加」条目均以用户身份发送；不实现系统级/匿部队列条目。
 
 ## Non-goals
