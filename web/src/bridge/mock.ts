@@ -141,6 +141,16 @@ export class MockBridge implements Bridge {
   private readonly reportPiState = query()?.get("pistate") === "1";
   /** `?longerror=1` — pad bridge errors past the 200-char summary limit (FR-011). */
   private readonly longErrors = query()?.get("longerror") === "1";
+  // MCP servers as `pi mcp list --json` reports them: a disabled entry stays in
+  // the list with `state: "disabled"` and `enabled: false` (checked against pi
+  // 1.4.0), which is what lets the panel offer a switch instead of a re-add form.
+  private mcpServers: Array<Record<string, unknown>> = [
+    { name: "filesystem", state: "connected", toolCount: 11, enabled: true, scope: "global" },
+    { name: "docs", state: "needs-login", enabled: true, scope: "global" },
+    { name: "internal-tools", state: "disabled", enabled: false, scope: "project" },
+  ];
+  /** `?mcpoverride=1` — the write lands but another layer still decides the value. */
+  private readonly mcpOverride = query()?.get("mcpoverride") === "1";
   private mockSessions = [
     {
       file: "/tmp/mock-sessions/2026-10-27T10-00-00_aaa.jsonl",
@@ -310,14 +320,33 @@ export class MockBridge implements Bridge {
       case "manage.mcpList":
         return {
           ok: true,
-          raw: {
-            servers: [
-              { name: "filesystem", state: "connected", toolCount: 11, enabled: true },
-              { name: "docs", state: "needs-login", enabled: true },
-            ],
-            errors: [],
-          },
+          raw: { servers: this.mcpServers.map((s) => ({ ...s })), errors: [] },
         };
+      case "manage.mcpSetEnabled": {
+        const p = (params ?? {}) as { name?: string; scope?: string; enabled?: boolean };
+        if (this.shouldFail("mcp")) {
+          return { ok: false, error: "mcp.json is not valid JSON (unexpected token at line 3)" };
+        }
+        const target = this.mcpServers.find(
+          (s) => s.name === p.name && (p.scope == null || s.scope === p.scope),
+        );
+        if (!target) {
+          return { ok: false, error: `no MCP server named "${p.name}" at ${p.scope ?? "global"} scope` };
+        }
+        target.enabled = p.enabled !== false;
+        // pi reports a disabled entry as state "disabled" and keeps listing it.
+        target.state = target.enabled ? "connected" : "disabled";
+        return {
+          ok: true,
+          name: p.name,
+          scope: target.scope,
+          enabled: target.enabled,
+          error: "",
+          warning: this.mcpOverride && p.enabled === false
+            ? "This project's .pi/mcp.json overrides the setting; the server stays enabled here."
+            : "",
+        };
+      }
       case "manage.mcpAdd":
       case "manage.mcpRemove":
       case "manage.mcpLogin":

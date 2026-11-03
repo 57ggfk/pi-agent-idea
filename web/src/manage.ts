@@ -45,14 +45,38 @@ export interface TrustWriteResult extends CliOutcome {
 
 export interface McpServerInfo {
   name?: string;
+  /**
+   * Effective state, as pi resolved it: a project entry overrides a user-level
+   * one, so this is not simply the value in `mcp.json`.
+   */
   enabled?: boolean;
   state?: string;
+  /** `global` (the user file) or `project` (`.pi/mcp.json`). */
+  scope?: string;
+  /** File that defines the server. */
+  source?: string;
+  /** Set when a project entry overrides a user-level server. */
+  override?: string;
+  transport?: string;
+  tools?: unknown[];
+  error?: string;
   [key: string]: unknown;
 }
 
 export interface McpListResult extends CliOutcome {
-  raw?: { servers?: McpServerInfo[]; errors?: unknown[] };
+  raw?: { servers?: McpServerInfo[]; errors?: unknown[]; note?: string };
   text?: string;
+}
+
+export interface McpSetEnabledResult extends CliOutcome {
+  name?: string;
+  scope?: string;
+  enabled?: boolean;
+  /**
+   * The write landed but another layer still decides the effective value
+   * (e.g. a project override keeps a user-level server running here).
+   */
+  warning?: string;
 }
 
 export interface PackagesListResult extends CliOutcome {
@@ -98,6 +122,12 @@ export function manageApi(bridge: Bridge) {
     mcpRemove: (p: { name: string; local?: boolean }) => call<CliOutcome>("manage.mcpRemove", p),
     mcpLogin: (p: { name: string }) => call<CliOutcome>("manage.mcpLogin", p),
     mcpLogout: (p: { name: string }) => call<CliOutcome>("manage.mcpLogout", p),
+    /**
+     * Enables or disables a server without touching its configuration: pi keeps
+     * the entry and honours `enabled: false` (there is no `mcp disable` command).
+     */
+    mcpSetEnabled: (p: { name: string; scope: string; enabled: boolean }) =>
+      call<McpSetEnabledResult>("manage.mcpSetEnabled", p),
     packagesList: () => call<PackagesListResult>("manage.packagesList"),
     packageInstall: (p: { source: string }) => call<CliOutcome>("manage.packageInstall", p),
     packageRemove: (p: { source: string }) => call<CliOutcome>("manage.packageRemove", p),

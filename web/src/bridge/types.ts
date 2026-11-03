@@ -36,6 +36,7 @@ export type BridgeMethod =
   | "manage.mcpRemove"
   | "manage.mcpLogin"
   | "manage.mcpLogout"
+  | "manage.mcpSetEnabled"
   | "manage.packagesList"
   | "manage.packageInstall"
   | "manage.packageRemove"

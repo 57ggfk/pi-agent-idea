@@ -3026,3 +3026,42 @@ button {
 .menu-footer .menu-action {
   margin-top: 0;
 }
+
+/* ---------------------------------------------------------------------------
+   MCP enable / disable (spec 001 US1)
+   The switch is the only control here that must never be mistaken for
+   "remove": a disabled row keeps its configuration and says so in words.
+   --------------------------------------------------------------------------- */
+.mcp-row-disabled {
+  border-style: dashed;
+}
+
+.mcp-row-disabled .panel-row-title {
+  color: var(--text-secondary);
+}
+
+/* Not a decorative toggle: the label states the current value, so colour is
+   never the only signal (same rule as the diagnostics badges). */
+.mcp-toggle {
+  min-width: 74px;
+}
+
+.mcp-toggle-on {
+  color: var(--success);
+  border-color: currentColor;
+}
+
+.mcp-toggle-off {
+  color: var(--text-secondary);
+}
+
+.panel-note {
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-left: 2px solid var(--accent);
+  background: var(--bg-subtle);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}

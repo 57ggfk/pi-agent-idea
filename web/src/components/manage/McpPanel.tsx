@@ -6,6 +6,7 @@ export default function McpPanel({ api }: { api: ReturnType<typeof manageApi> })
   const [result, setResult] = useState<McpListResult | null>(null);
   const [outcome, setOutcome] = useState<{ ok: boolean; error?: string; output?: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: "", command: "", args: "", url: "" });
 
@@ -29,9 +30,49 @@ export default function McpPanel({ api }: { api: ReturnType<typeof manageApi> })
   const act = async (action: Promise<{ ok: boolean; error?: string; output?: string }>) => {
     setBusy(true);
     setOutcome(null);
+    setNotice(null);
     try {
       const res = await action;
       setOutcome(res);
+      await refresh();
+    } catch (e) {
+      setOutcome({ ok: false, error: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * Toggles a server without touching its configuration.
+   *
+   * Two things the UI must not hide: a project override can keep the server
+   * running after a user-level disable, and a server that is already connected
+   * stays connected until the session restarts (spec 001 FR-004).
+   */
+  const toggle = async (args: {
+    name: string;
+    scope: string;
+    enabled: boolean;
+    wasConnected: boolean;
+  }) => {
+    setBusy(true);
+    setOutcome(null);
+    setNotice(null);
+    try {
+      const res = await api.mcpSetEnabled({
+        name: args.name,
+        scope: args.scope,
+        enabled: args.enabled,
+      });
+      if (!res.ok) {
+        setOutcome({ ok: false, error: res.error || "could not change the server state" });
+      } else if (res.warning) {
+        setNotice(res.warning);
+      } else if (!args.enabled && args.wasConnected) {
+        setNotice(
+          `"${args.name}" is off from the next session on. This session stays connected to it.`,
+        );
+      }
       await refresh();
     } catch (e) {
       setOutcome({ ok: false, error: (e as Error).message });
@@ -59,6 +100,11 @@ export default function McpPanel({ api }: { api: ReturnType<typeof manageApi> })
   return (
     <div data-testid="mcp-panel">
       <OutcomeBanner outcome={outcome} />
+      {notice ? (
+        <div className="panel-note" data-testid="mcp-notice">
+          {notice}
+        </div>
+      ) : null}
       <div className="panel-toolbar">
         <button className="btn" data-testid="mcp-refresh" onClick={() => void refresh()} disabled={busy}>
           Refresh
@@ -108,21 +154,67 @@ export default function McpPanel({ api }: { api: ReturnType<typeof manageApi> })
 
       {servers.map((s, i) => {
         const name = String(s.name ?? `server-${i}`);
+        const enabled = s.enabled !== false;
+        // pi calls the user-level file "global"; the badge says "user" because
+        // that is the layer the spec talks about. The value sent back to the
+        // bridge stays pi's own word — that is what PiMcpConfig accepts, and
+        // translating it on the way out made every write fail as "unknown scope".
+        const scope = s.scope === "project" ? "project" : "global";
+        const scopeLabel = scope === "project" ? "project" : "user";
         return (
-          <div className="panel-row" key={name + i} data-testid="mcp-server-row">
+          <div
+            className={`panel-row ${enabled ? "" : "mcp-row-disabled"}`}
+            key={name + i}
+            data-testid="mcp-server-row"
+            data-enabled={enabled ? "true" : "false"}
+          >
             <div className="panel-row-main">
-              <span className="panel-row-title">{name}</span>
+              <span className="panel-row-title">
+                {name}
+                <span
+                  className="scope-tag"
+                  data-testid={`mcp-scope-${name}`}
+                  data-inert="false"
+                  title={
+                    scope === "project"
+                      ? "Defined in this project's .pi/mcp.json"
+                      : "Defined in the user-level mcp.json"
+                  }
+                >
+                  {scopeLabel}
+                </span>
+              </span>
               <span className="panel-row-sub">
-                {s.state ? String(s.state) : ""}
-                {typeof s["toolCount"] === "number" ? ` · ${s["toolCount"]} tools` : ""}
-                {s.enabled === false ? " · disabled" : ""}
+                {enabled
+                  ? [s.state ? String(s.state) : "", typeof s["toolCount"] === "number" ? `${s["toolCount"]} tools` : ""]
+                      .filter(Boolean)
+                      .join(" · ")
+                  : "disabled · configuration kept"}
+                {s.override ? " · overridden in this project" : ""}
               </span>
             </div>
             <div className="panel-row-actions">
-              <button className="btn" onClick={() => void act(api.mcpLogin({ name }))} title="OAuth sign-in">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={enabled}
+                aria-label={`${enabled ? "Disable" : "Enable"} ${name}`}
+                className={`btn mcp-toggle ${enabled ? "mcp-toggle-on" : "mcp-toggle-off"}`}
+                data-testid={`mcp-toggle-${name}`}
+                disabled={busy}
+                onClick={() => void toggle({ name, scope, enabled: !enabled, wasConnected: s.state === "connected" })}
+              >
+                {enabled ? "Enabled" : "Disabled"}
+              </button>
+              <button
+                className="btn"
+                onClick={() => void act(api.mcpLogin({ name }))}
+                title="OAuth sign-in"
+                disabled={!enabled}
+              >
                 Login
               </button>
-              <button className="btn" onClick={() => void act(api.mcpLogout({ name }))}>
+              <button className="btn" onClick={() => void act(api.mcpLogout({ name }))} disabled={!enabled}>
                 Logout
               </button>
               <button
@@ -138,6 +230,11 @@ export default function McpPanel({ api }: { api: ReturnType<typeof manageApi> })
       })}
 
       {result?.text ? <pre className="panel-raw">{result.text}</pre> : null}
+      {result?.raw?.note ? (
+        <div className="panel-note" data-testid="mcp-note">
+          {result.raw.note}
+        </div>
+      ) : null}
     </div>
   );
 }
