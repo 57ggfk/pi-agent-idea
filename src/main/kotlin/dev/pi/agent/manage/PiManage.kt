@@ -23,8 +23,18 @@ object PiManage {
 
     // -- MCP -----------------------------------------------------------------
 
-    fun mcpList(): JsonObject {
-        val result = PiCliRunner.run(listOf("mcp", "list", "--json"))
+    /**
+     * MCP servers as pi sees them.
+     *
+     * [projectPath] is the CLI's working directory: `pi mcp list` resolves
+     * `.pi/mcp.json` from the cwd, so without it a project's own servers are
+     * never listed (the child would inherit the IDE process cwd).
+     */
+    fun mcpList(projectPath: String? = null): JsonObject {
+        val result = PiCliRunner.run(
+            listOf("mcp", "list", "--json"),
+            workingDir = projectPath?.takeIf { it.isNotBlank() }?.let { File(it) },
+        )
         val parsed = PiCliRunner.parseJsonOrNull(result)
         if (parsed is JsonObject && parsed.containsKey("servers")) {
             return buildJsonObject {
@@ -53,16 +63,46 @@ object PiManage {
             params.array("args")?.forEach { args += it }
             params.objectEntries("env").forEach { (k, v) -> args += listOf("--env", "$k=$v") }
         }
-        if (params.boolean("local") == true) args += "--local"
-        val result = PiCliRunner.run(args)
-        return cliToElement(result)
+        val local = params.boolean("local") == true
+        if (local) args += "--local"
+        // `--local` writes `<cwd>/.pi/mcp.json`, so the cwd has to be the project.
+        val dir = if (local) params.string("projectPath")?.let { File(it) } else null
+        return cliToElement(PiCliRunner.run(args, workingDir = dir))
     }
 
     fun mcpRemove(params: JsonObject): JsonObject {
         val name = params.string("name") ?: return error("missing name")
         val args = mutableListOf("mcp", "remove", name)
-        if (params.boolean("local") == true) args += "--local"
-        return cliToElement(PiCliRunner.run(args))
+        val local = params.boolean("local") == true
+        if (local) args += "--local"
+        val dir = if (local) params.string("projectPath")?.let { File(it) } else null
+        return cliToElement(PiCliRunner.run(args, workingDir = dir))
+    }
+
+    /**
+     * Enables or disables a server by editing the file that defines it.
+     *
+     * pi has no `mcp enable|disable` subcommand, but it honours `enabled: false`
+     * on an entry — so this is a config edit, not a removal. See [PiMcpConfig].
+     */
+    fun mcpSetEnabled(params: JsonObject): JsonObject {
+        val name = params.string("name") ?: return error("missing name")
+        val scope = params.string("scope") ?: PiMcpConfig.SCOPE_GLOBAL
+        val enabled = params.boolean("enabled") ?: return error("missing enabled")
+        val outcome = PiMcpConfig.setEnabled(
+            name = name,
+            scope = scope,
+            enabled = enabled,
+            projectPath = params.string("projectPath"),
+        )
+        return buildJsonObject {
+            put("ok", outcome.ok)
+            put("name", name)
+            put("scope", scope)
+            outcome.enabled?.let { put("enabled", it) }
+            put("error", outcome.error ?: "")
+            put("warning", outcome.warning ?: "")
+        }
     }
 
     fun mcpLogin(params: JsonObject): JsonObject {

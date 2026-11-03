@@ -97,9 +97,10 @@ class BridgeService(private val project: Project) : Disposable {
                 "approval.setPolicy" -> approvalSetPolicy(params)
                 "rpc.restart" -> restartPi()
                 "manage.env" -> dev.pi.agent.manage.PiManage.environment()
-                "manage.mcpList" -> dev.pi.agent.manage.PiManage.mcpList()
-                "manage.mcpAdd" -> dev.pi.agent.manage.PiManage.mcpAdd(params)
-                "manage.mcpRemove" -> dev.pi.agent.manage.PiManage.mcpRemove(params)
+                "manage.mcpList" -> dev.pi.agent.manage.PiManage.mcpList(project.basePath)
+                "manage.mcpAdd" -> dev.pi.agent.manage.PiManage.mcpAdd(withProjectPath(params))
+                "manage.mcpRemove" -> dev.pi.agent.manage.PiManage.mcpRemove(withProjectPath(params))
+                "manage.mcpSetEnabled" -> dev.pi.agent.manage.PiManage.mcpSetEnabled(withProjectPath(params))
                 "manage.mcpLogin" -> dev.pi.agent.manage.PiManage.mcpLogin(params)
                 "manage.mcpLogout" -> dev.pi.agent.manage.PiManage.mcpLogout(params)
                 "manage.packagesList" -> dev.pi.agent.manage.PiManage.packagesList()
@@ -140,6 +141,17 @@ class BridgeService(private val project: Project) : Disposable {
     }
 
     private fun currentTheme(): String = if (JBColor.isBright()) "light" else "dark"
+
+    /**
+     * Adds the project root to management params that need it: `--local` MCP
+     * edits and `mcp.setEnabled` resolve `.pi/mcp.json` against the project, and
+     * the frontend has no reliable way to know that path.
+     */
+    private fun withProjectPath(params: JsonObject): JsonObject {
+        val base = project.basePath?.takeIf { it.isNotBlank() } ?: return params
+        if (params.containsKey("projectPath")) return params
+        return JsonObject(params.toMutableMap().apply { put("projectPath", JsonPrimitive(base)) })
+    }
 
     private suspend fun rpcRequest(params: JsonObject): JsonObject {
         val command = params["command"] as? JsonObject

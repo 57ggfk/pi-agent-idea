@@ -27,13 +27,24 @@ object PiCliRunner {
      * Runs `pi` with [args]. When [stdinText] is non-null it is piped to the
      * child's stdin (and stdin is closed right after): prompts bigger than
      * the OS command-line limit (e.g. large diffs) must travel this way.
+     *
+     * [workingDir] matters for every command that reads or writes project-local
+     * files (`pi mcp list`, `pi mcp add --local`): without it the child inherits
+     * the IDE process cwd, so a multi-project window would report — or worse,
+     * edit — some other project's `.pi/` directory (or nothing at all).
      */
-    fun run(args: List<String>, timeoutSeconds: Long = 60, stdinText: String? = null): CliResult {
+    fun run(
+        args: List<String>,
+        timeoutSeconds: Long = 60,
+        stdinText: String? = null,
+        workingDir: File? = null,
+    ): CliResult {
         val pi = PiLocator.locate()?.path
             ?: return CliResult(-1, "", "pi executable not found")
 
         val command = PiLocator.spawnCommand(pi, args)
         val pb = ProcessBuilder(command)
+        workingDir?.takeIf { it.isDirectory }?.let { pb.directory(it) }
         pb.redirectErrorStream(false)
         OsProcess.augmentPathEnv(pb, buildList {
             PiLocator.nodeBinDirFor(pi)?.let { add(it) }
