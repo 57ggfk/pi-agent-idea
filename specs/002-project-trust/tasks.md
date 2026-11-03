@@ -82,7 +82,7 @@ description: "Task list for 002-project-trust"
 - [x] **T021** [P] `./gradlew test compileKotlin` 全绿 — 验证：退出码 0
 - [x] **T022** [P] `npx playwright test` + `vitest` 全绿，现有 51 条 e2e 不回归 — 验证：用例计数
 - [x] **T023** CHANGELOG 补：项目信任模型（新增）+ skills 相对路径修正（修复）— 验证：人工核对
-- [ ] **T024** 真机验证：在 `pi-agent-idea`（当前未信任）中确认横幅出现；信任后项目级 skills 出现 — 验证：截图留档
+- [x] **T024** 真机验证：在 `pi-agent-idea`（当前未信任）中确认横幅出现；信任后项目级 skills 出现 — 验证：截图留档
 
 ## 依赖关系
 
