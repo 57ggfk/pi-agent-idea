@@ -1,5 +1,12 @@
 import { test, expect } from "@playwright/test";
 
+async function openManage(page: import("@playwright/test").Page, query: string) {
+  await page.goto(query ? `/?${query}` : "/");
+  await expect(page.getByTestId("empty-state")).toBeVisible();
+  await page.getByTestId("tab-manage").click();
+  await expect(page.getByTestId("manage-view")).toBeVisible();
+}
+
 test.describe("manage view (MockBridge)", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
@@ -10,7 +17,7 @@ test.describe("manage view (MockBridge)", () => {
   });
 
   test("mcp panel lists servers and supports add/remove flow", async ({ page }) => {
-    await expect(page.getByTestId("mcp-server-row")).toHaveCount(2);
+    await expect(page.getByTestId("mcp-server-row")).toHaveCount(3);
     await expect(page.getByTestId("mcp-server-row").first()).toContainText("filesystem");
 
     // Add form submits and refreshes
@@ -60,17 +67,66 @@ test.describe("manage view (MockBridge)", () => {
     await page.getByTestId("settings-save").click();
     await expect(page.getByTestId("outcome-banner")).toContainText("✓");
   });
+
+  // -- MCP enable / disable (spec 001 US1) ---------------------------------
+
+  test("disabling a server keeps its configuration and enables it again", async ({ page }) => {
+    const row = page.locator('[data-testid="mcp-server-row"]', { hasText: "filesystem" });
+    await expect(row).toHaveAttribute("data-enabled", "true");
+    await expect(row.getByTestId("mcp-scope-filesystem")).toHaveText("user");
+
+    await page.getByTestId("mcp-toggle-filesystem").click();
+
+    const toggle = page.getByTestId("mcp-toggle-filesystem");
+    await expect(row).toHaveAttribute("data-enabled", "false");
+    await expect(toggle).toHaveAttribute("aria-checked", "false");
+    await expect(toggle).toHaveText("Disabled");
+    // The row stays behind and says the configuration survived: disabling is
+    // not removing (FR-003), and nothing has to be retyped.
+    await expect(row).toContainText("configuration kept");
+    // It was connected, so this session keeps the connection (FR-004).
+    await expect(page.getByTestId("mcp-notice")).toContainText("next session");
+
+    await toggle.click();
+    await expect(row).toHaveAttribute("data-enabled", "true");
+    await expect(toggle).toHaveText("Enabled");
+  });
+
+  test("the scope badge tells a project server from a user-level one", async ({ page }) => {
+    const project = page.locator('[data-testid="mcp-server-row"]', { hasText: "internal-tools" });
+    await expect(project.getByTestId("mcp-scope-internal-tools")).toHaveText("project");
+    // pi reports a disabled entry with `enabled: false` and state "disabled".
+    await expect(project).toHaveAttribute("data-enabled", "false");
+    // Signing in to a server that is switched off is a dead end.
+    await expect(project.getByRole("button", { name: "Login" })).toBeDisabled();
+
+    await page.getByTestId("mcp-toggle-internal-tools").click();
+    await expect(project).toHaveAttribute("data-enabled", "true");
+    await expect(project.getByRole("button", { name: "Login" })).toBeEnabled();
+  });
+
+  test("an override that still decides the value is reported, not glossed over", async ({ page }) => {
+    await openManage(page, "mcpoverride=1");
+    await page.getByTestId("mcp-toggle-filesystem").click();
+
+    // The write landed …
+    await expect(page.getByTestId("mcp-server-row").first()).toHaveAttribute("data-enabled", "false");
+    // … but the project keeps it running, and the panel says so instead of
+    // showing a switch that lies.
+    await expect(page.getByTestId("mcp-notice")).toContainText("stays enabled");
+  });
+
+  test("a failed write leaves the switch alone and shows the reason", async ({ page }) => {
+    await openManage(page, "fail=mcp");
+    await page.getByTestId("mcp-toggle-filesystem").click();
+
+    await expect(page.getByTestId("outcome-banner")).toContainText("not valid JSON");
+    // Optimistically flipping the switch would have been a lie.
+    await expect(page.getByTestId("mcp-server-row").first()).toHaveAttribute("data-enabled", "true");
+  });
 });
 
 test.describe("project trust (MockBridge)", () => {
-  /** Opens the manage tab on a specific trust scenario. */
-  async function openManage(page: import("@playwright/test").Page, query: string) {
-    await page.goto(query ? `/?${query}` : "/");
-    await expect(page.getByTestId("empty-state")).toBeVisible();
-    await page.getByTestId("tab-manage").click();
-    await expect(page.getByTestId("manage-view")).toBeVisible();
-  }
-
   test("untrusted project explains which resources are inert and can be trusted", async ({ page }) => {
     await openManage(page, "trusted=0");
 
@@ -131,4 +187,5 @@ test.describe("project trust (MockBridge)", () => {
     await expect(userRow).toHaveAttribute("data-active", "true", { timeout: 5_000 });
     await expect(userRow.getByTestId("skill-scope")).toContainText("用户级");
   });
+
 });
