@@ -65,6 +65,14 @@ class PiMessageQueue(
     @Volatile
     private var drift = false
 
+    /**
+     * Tracked from pi's own events. get_state cannot answer this: real pi
+     * 1.4.0 omits `isStreaming` from the response while streaming (probe
+     * 2026-11-04), so asking would always read as idle.
+     */
+    @Volatile
+    private var piStreaming = false
+
     // -- entry points (called from BridgeService) ------------------------------
 
     /** Dispatches a `queue.*` bridge method (without the prefix). */
@@ -91,12 +99,17 @@ class PiMessageQueue(
         }
     }
 
-    /** Consumes pi session events; only `queue_update` matters here. */
+    /** Consumes pi session events: run-state tracking + `queue_update`. */
     fun onPiEvent(event: JsonObject) {
-        if (event["type"]?.jsonPrimitive?.contentOrNull != "queue_update") return
-        val steering = event.stringList("steering")
-        val followUp = event.stringList("followUp")
-        executor.execute { alignAndPush(steering, followUp) }
+        when (event["type"]?.jsonPrimitive?.contentOrNull) {
+            "agent_start" -> piStreaming = true
+            "agent_settled" -> piStreaming = false
+            "queue_update" -> {
+                val steering = event.stringList("steering")
+                val followUp = event.stringList("followUp")
+                executor.execute { alignAndPush(steering, followUp) }
+            }
+        }
     }
 
     /**
@@ -368,14 +381,8 @@ class PiMessageQueue(
         return okJson()
     }
 
-    /** True when pi reports no streaming run; unparsable answers count as busy. */
-    private fun piIsIdle(): Boolean = try {
-        val resp = rpc(buildJsonObject { put("type", "get_state") })
-        (resp["data"] as? JsonObject)?.get("isStreaming")
-            ?.let { (it as? JsonPrimitive)?.content?.toBooleanStrictOrNull() } != true
-    } catch (_: Exception) {
-        false
-    }
+    /** True when no pi run is active (tracked from agent_start/agent_settled). */
+    private fun piIsIdle(): Boolean = !piStreaming
 
     private fun promptCommand(text: String, images: List<Image>): JsonObject = buildJsonObject {
         put("type", "prompt")

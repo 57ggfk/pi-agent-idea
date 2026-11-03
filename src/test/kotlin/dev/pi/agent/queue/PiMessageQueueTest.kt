@@ -240,24 +240,28 @@ class PiMessageQueueTest {
     @Test
     fun `promote re-enqueues the target as steer and the rest as follow-up in order`() {
         val ids = enqueue("followUp", "F1", "F2", "F3")
-        rpc.streaming = true // a run is active: the steer actually injects
+        // A run is active (tracked from agent_start, not get_state — real pi
+        // omits isStreaming there): the steer actually injects.
+        queue.onPiEvent(buildJsonObject { put("type", "agent_start") })
 
         queue.handle("promote", buildJsonObject { put("id", ids[1]) })
 
-        assertEquals(listOf("get_state", "clear_queue", "steer", "follow_up", "follow_up"), rpc.types())
+        assertEquals(listOf("clear_queue", "steer", "follow_up", "follow_up"), rpc.types())
         assertEquals(listOf("F2", "F1", "F3"), rpc.messages())
         assertEquals(listOf("steer", "followUp", "followUp"), modes())
         assertEquals(listOf("F2", "F1", "F3"), texts())
     }
 
     @Test
-    fun `promote while idle degrades to a direct send of just that entry (US6-2)`() {
+    fun `agent_settled ends the run so promote degrades to a direct send (US6-2)`() {
         val ids = enqueue("followUp", "F1", "F2")
+        queue.onPiEvent(buildJsonObject { put("type", "agent_start") })
+        queue.onPiEvent(buildJsonObject { put("type", "agent_settled") })
         rpc.clear()
 
         queue.handle("promote", buildJsonObject { put("id", ids[0]) })
 
-        assertEquals(listOf("get_state", "prompt"), rpc.types())
+        assertEquals(listOf("prompt"), rpc.types())
         assertEquals(listOf("F1"), rpc.messages())
         assertEquals(listOf("F2"), texts())
     }
@@ -285,9 +289,10 @@ class PiMessageQueueTest {
         assertEquals(listOf("F1", "F2"), texts(), "the mirror keeps the entries")
 
         rpc.clear()
-        rpc.streaming = true // a run is active: everything re-queues as-is
+        // A run is active: everything re-queues as-is.
+        queue.onPiEvent(buildJsonObject { put("type", "agent_start") })
         queue.handle("resume", buildJsonObject { })
-        assertEquals(listOf("get_state", "follow_up", "follow_up"), rpc.types())
+        assertEquals(listOf("follow_up", "follow_up"), rpc.types())
         assertEquals(listOf("F1", "F2"), rpc.messages())
         assertFalse(push.lastFlags().first)
     }
@@ -301,7 +306,7 @@ class PiMessageQueueTest {
         // Idle by default (real-pi probe: an idle follow_up never self-starts).
         queue.handle("resume", buildJsonObject { })
 
-        assertEquals(listOf("get_state", "prompt", "follow_up"), rpc.types())
+        assertEquals(listOf("prompt", "follow_up"), rpc.types())
         assertEquals(listOf("F1", "F2"), rpc.messages())
         assertFalse(push.lastFlags().first)
     }
@@ -358,7 +363,7 @@ class PiMessageQueueTest {
 
         // Resume delivers the reorganized queue; idle → first entry as prompt.
         queue.handle("resume", buildJsonObject { })
-        assertEquals(listOf("get_state", "prompt"), rpc.types())
+        assertEquals(listOf("prompt"), rpc.types())
         assertEquals(listOf("F2"), rpc.messages())
     }
 
