@@ -27,7 +27,7 @@
 | 002 | [项目级资源的信任模型](./002-project-trust/spec.md) | P1 | 配置做对了却不生效，且界面不解释 | `trust.json` 中 `pi-agent-idea` 未被信任；`skillsList()` 用 `File(".pi/skills")` 相对路径 |
 | 003 | [静默失败可见化](./003-error-visibility/spec.md) | P1 | 空列表分不清「为空」还是「失败」 | `store.ts` 有 12 处 `.catch(() => undefined)` / 空 catch |
 | 004 | [IDE 侧动作的自动化覆盖](./004-action-coverage/spec.md) | P2 | 动作注册/可用性无任何自动化 | UI_ISSUES 第 8 条自述「无自动化覆盖」；TASK_PLAN Phase 7/8 真机验收连续跳过 |
-| 005 | [插件自持消息队列](./005-message-queue/spec.md) | P1 | 流式排队不可见、不可操作；真实环境队列计数恒为 0 | `queue_update` 仅 mock 存在（`mock.ts:332`）；pi 1.4.0 RPC 无队列内容读写（`rpc-types.ts:33-61`）。**新提需求，非审计缺口** |
+| 005 | [插件镜像消息队列](./005-message-queue/spec.md) | P1 | 流式排队不可见、不可操作；假计数永不更新 | 初版「pi 无队列读写」的断言经实测证伪（2026-11-03 修订）：`queue_update` 携带完整 steering/followUp 数组、`clear_queue` 可全量取出。**新提需求，非审计缺口** |
 
 ### 严重度排序逻辑
 
@@ -58,12 +58,12 @@
 
 | Feature | Tasks | 状态 | 主要触及 |
 |---|---|---|---|
-| 001 | 26 | 待开工 | `PiManage.kt`、新增 `PiMcpConfig.kt`、4 个 manage 面板 |
+| 001 | 26 | **已实现（26/26，真机验证含）** | `PiManage.kt`、新增 `PiMcpConfig.kt`、4 个 manage 面板 |
 | 002 | 24 | **已实现（23/24）** | 新增 `PiTrust.kt`、`skillsList` 签名变更、ManageView 横幅 |
-| 003 | 24 | 待开工 | 新增 `store/sources.ts`、`store.ts` 局部重构、新增诊断面板 |
+| 003 | 24 | **已实现（23/24）** | 新增 `store/sources.ts`、`store.ts` 局部重构、新增诊断面板 |
 | 004 | 23 | 待开工 | `build.gradle.kts`、3 个新测试类、新增 `SMOKE_TEST.md` |
-| 005 | 待规划 | spec 已起草 | 新增 Kotlin QueueService、web 队列条、`types.ts`/mock 重写 |
-| **合计** | **97 + 005 待规划** | — | — |
+| 005 | 31 | **已实现（31/31，真机复验含）** | 新增 `queue/PiMessageQueue.kt`、`QueueBar.tsx`、`queue.*` 桥接与 mock 重写 |
+| **合计** | **128** | — | — |
 
 002 的验收结果见 [其 tasks.md 的「实现记录」](./002-project-trust/tasks.md#实现记录2026-11-02)：
 `./gradlew test` 与 `npx playwright test`（55 passed）全绿，仅 T024 真机目视未做。

@@ -123,12 +123,13 @@ Java → JS : GET /bridge/poll?cursor=N   （长轮询，25s 上限）
   `oldest`（缓冲区最旧 seq），前端据此检测断连期间丢事件并补救。
 - 方法集：`rpc.request`（透传 RPC 命令，可带 `timeoutMs`）、`sessions.list`、
   `files.list`（@ 补全用，30s 缓存）、`ide.openFile`（编辑器跳转）、
-  `config.*`、`manage.*`（auth/mcp/packages/skills/settings）、
-  `trust.*`（get/grant/revoke，后两者要求 `confirmed:true`）、`env`。
+  `config.*`、`manage.*`（auth/mcp/packages/skills/settings/updates/provider）、
+  `trust.*`（get/grant/revoke，后两者要求 `confirmed:true`）、
+  `queue.*`（get/enqueue/move/remove/restore/promote/pause/resume/clear，见 §7.1）、`env`。
   `manage.skillsList` 必须带 `project.basePath`——扫描基准是项目根，不是 IDE 进程的
   工作目录（多项目窗口下会串台），见 §7。
 - 事件：`pi`（原始 pi 事件）、`pi-state`（进程状态）、`ide`（编辑器动作注入的
-  prompt，如 Explain/Fix with Pi）。
+  prompt，如 Explain/Fix with Pi）、`queue`（队列全量快照，`queue_state`）。
 - 编辑器动作（`editor/`）通过 `BridgeService.pushIdePrompt` 注入 prompt 并激活
   工具窗；后台运行结束时若工具窗不可见，发 BALLOON 通知（`notificationGroup`）。
 
@@ -155,8 +156,31 @@ Java → JS : GET /bridge/poll?cursor=N   （长轮询，25s 上限）
 | 包安装/卸载/列表 | `pi install <src>` / `pi remove` / `pi list` |
 | Skills 列表 | 文件系统扫描（`SKILL.md` frontmatter 解析）+ `scope` 标注：用户级扫 `~/.pi/agent/skills`，项目级扫 `<basePath>/.pi/skills` 与 `<basePath>/.agents/skills`（以 bridge 传入的项目根为基准，按 canonical `SKILL.md` 去重）；项目未受信任时条目仍列出但标「项目级 · 未生效」 |
 | 设置/模型 | 直接读写 `~/.pi/agent/settings.json`、`models.json`（JSON 保留注释不做，pi 不支持注释） |
+| 更新 | `pi update <src>` / `pi update --self`（300s 超时，stdout+stderr+退出码原样透传，不自行判断「有无更新」） |
+| Provider 详情 | 反向白名单读 `models.json`：敏感键（apiKey/headers.Authorization 等）值替换为 `configured` 布尔，未知键全透传 |
 
 写文件前先备份 `.bak`；所有管理操作完成后提示用户 `/reload` 或自动重启 RPC 进程使配置生效。
+
+### 7.1 消息队列（`queue/`，spec 005）
+
+**pi 是队列真源**：`queue_update` 事件携带完整 `steering`/`followUp` 文本数组，
+`clear_queue` 可全量取出；两者都没有 id 与图片。`PiMessageQueue`（project 级、单线程
+执行器）维护带 id/图片的镜像，与 pi 按**文本逐条相等**对齐——不一致即重建为无图条目并置
+`drift`（镜像不可信时不猜）。规范序恒为 steer 段在前（本轮注入）+ followUp 段在后。
+
+- 本地操作（move/remove/restore/promote）= 唯一原语 `clear_queue → 重建 → 重入队`，
+  在执行器上原子完成；跨段移动视为边界（改不了 pi 的两个数组）。
+- 暂停（abort / pi 重启 / 手动）= `clear_queue` 取出并留在镜像，**不做 reconcile**
+  （abort 后 pi 侧行为文档与实测矛盾，镜像即幸存者）；暂停态下的操作只动镜像，
+  恢复时按整理后顺序重入队。空闲恢复时首条走 `prompt` 直发——真机实测空闲的
+  `follow_up` 永不自启（FR-013）。
+- 运行态（空闲/流式）从 `agent_start`/`agent_settled` 事件跟踪：真机实测 get_state 在
+  流式中**不含** `isStreaming`，不能问。
+- 执行调度完全归 pi（`follow_up` 语义），插件**不在** `agent_settled` 后代发——双重调度
+  正是重复执行的来源。失败的 steer 在镜像中保留 `failed` 条目与原始错误，对齐时只比对
+  queued 条目。
+- 前端 `queue.*` 走桥接方法，状态经 `queue` 事件全量快照推送；webview 重载后
+  `queue.get` 从 Kotlin 镜像恢复。
 
 ## 8. 线程模型
 
