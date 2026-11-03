@@ -220,3 +220,19 @@ error-visibility / manage-completeness）已先合入，队列在其上叠做。
 
 - 真机验证：MANUAL_TEST「消息队列（v0.5.1 新增）」12 条判据（queue_update 真机到达、
   插话注入时机、pi 重启后队列状态是重点）。
+
+### 真机探针驱动的修正（2026-11-04 01:20）
+
+用真 pi 1.4.0 直打 RPC 的两个探针（脚本在 Temp，不入库）回答了三件事：
+
+1. **空闲 follow_up 永不自启**（等 12s 无 agent_start）→ `doResume` 原来的「重入队」
+   在空闲态会把消息永远卡住，违反 FR-013「已空闲则立即发下一条」。修正：resume 时若
+   `get_state.isStreaming=false`，**首条走 `prompt` 直发**（带图片），其余仍走
+   follow_up 链式执行。
+2. **空闲 promote** 同理退化直发（US6-2 原文要求，此前实现漏了空闲分支）。
+3. 契约面全部命中：steer/follow_up → 完整数组 queue_update；steer 原生带 images；
+   clear_queue 回全量文本；响应 `{type:"response",command,success,data}`。
+   另实测到「切会话后队列射进新会话」的行为，印证 FR-012 先确认再清空的必要性。
+
+测试 +2：`resume while idle fires the first entry as a prompt…`、
+`promote while idle degrades to a direct send…`（FakeRpc 支持 get_state.isStreaming）。

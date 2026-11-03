@@ -282,6 +282,14 @@ class PiMessageQueue(
         val target = items.firstOrNull { it.id == id } ?: return errorJson("no queue item $id")
         if (target.mode == "steer") return okJson() // already a steer
         if (paused) return buildJsonObject { put("ok", false); put("error", "queue is paused") }
+        if (piIsIdle()) {
+            // US6-2: an idle promote degrades to a direct send — no queueing,
+            // no touching the rest of the queue.
+            items.removeIf { it.id == id }
+            runCatching { rpc(promptCommand(target.text, target.images)) }
+            push(snapshotJson())
+            return okJson()
+        }
         val rc = clearAndReconcile()
         val current = items.firstOrNull { it.id == id }
         if (!rc.matched || current == null || current.mode != "followUp") {
@@ -310,9 +318,42 @@ class PiMessageQueue(
         if (!paused) return okJson()
         paused = false
         pauseReason = null
-        reEnqueueQueued()
+        val queued = items.filter { it.status == "queued" }
+        if (queued.isNotEmpty() && piIsIdle()) {
+            // Real-pi probe (2026-11-04): a follow_up on an idle process never
+            // self-starts — it would sit there forever. Fire the first entry
+            // as a plain prompt so 继续 delivers immediately (FR-013); the
+            // rest chain after it settles. Steering on an idle process is
+            // meaningless anyway (US5-3), so every mode demotes to a prompt.
+            val first = queued.first()
+            runCatching { rpc(promptCommand(first.text, first.images)) }
+            for (item in queued.drop(1)) {
+                runCatching { rpc(enqueueCommand(item.mode, item.text, item.images)) }
+            }
+        } else {
+            reEnqueueQueued()
+        }
         push(snapshotJson())
         return okJson()
+    }
+
+    /** True when pi reports no streaming run; unparsable answers count as busy. */
+    private fun piIsIdle(): Boolean = try {
+        val resp = rpc(buildJsonObject { put("type", "get_state") })
+        (resp["data"] as? JsonObject)?.get("isStreaming")
+            ?.let { (it as? JsonPrimitive)?.content?.toBooleanStrictOrNull() } != true
+    } catch (_: Exception) {
+        false
+    }
+
+    private fun promptCommand(text: String, images: List<Image>): JsonObject = buildJsonObject {
+        put("type", "prompt")
+        put("message", text)
+        if (images.isNotEmpty()) {
+            put("images", JsonArray(images.map {
+                buildJsonObject { put("type", "image"); put("data", it.data); put("mimeType", it.mimeType) }
+            }))
+        }
     }
 
     private fun doClear(): JsonObject {
