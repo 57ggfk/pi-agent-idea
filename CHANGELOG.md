@@ -2,58 +2,27 @@
 
 ## 0.5.0 — 2026-11-03
 
-### 新增
-- **项目信任模型**：Manage 面板直接读 `~/.pi/agent/trust.json`，把「本项目是否被 pi 信任」显示出来——
-  未信任时给横幅，列出仓库里存在但会被 pi 忽略的项目级 skills / MCP / settings / 扩展，
-  并提供「信任本项目」（二次确认，逐项列出将生效的内容）与「撤销信任」。`trust.json` 缺失按未信任处理
-  且不报错；解析失败则显示「无法读取信任配置」并**拒绝写入**（否则会连其他项目的信任条目一起覆盖掉）。
-  写入走「备份 `.bak` → 只改目标键 → 重新解析校验 → 临时文件原子 move」，其他项目的键原样保留；
-  路径判定用 canonical path（Windows 才小写化），`D:\a\b` 与 `d:/a/b` 判为同一项目。
-  授权后仅对**下一次** pi 启动追加 `--approve`，运行中的进程不会被悄悄重启
+**新增**
+- **项目信任模型**：Manage 面板可查看 / 授予 / 撤销本项目的 pi 信任，未信任时列出会被忽略的项目级 skills、MCP 与设置。
 
-### 变更
-- **控制栏按需分级折叠（实测而非断点）**：动作按钮（Compact / Fork / New /
-  Options）先只留图标，仍放不下再把模型与思考等级折叠成纯图标（当前值保留在
-  tooltip 与 aria-label 里），**换行只作最后兜底**——现在按每帧实测的自然宽度
-  决定档位，长模型名（如 `Free Models Router`）、流式时的 Stop 按钮都算在内，
-  360–900px 控制栏全程单行；思考等级改用 gauge 图标，与模型选择器的 sparkles 区分开
-- **工具调用默认自动批准**：⚙ Options 里的开关从「Tool approval (ask before edits
-  & commands)」（默认关）反转为 **Auto-approve tool calls**（默认开）——IDE
-  工具窗口不再为每次编辑/命令弹确认；需要人工把关时关掉开关即回到 `ask`
-  （read-only 工具仍直接放行）。策略文件带 `version: 2`，无该字段的旧文件
-  （旧版默认 `ask`）在启动时一次性迁移到新默认，迁移后用户自己的选择持久保留
+**变更**
+- **工具调用默认自动批准**，旧配置启动时自动迁移；需要人工把关时在 Options 里关掉即回到询问模式。
+- **控制栏按实测宽度分级折叠**，360–900px 保持单行，长模型名与流式 Stop 按钮都算在内。
 
-### 修复
-- **项目级 skills 在多项目窗口下列出错误项目**：`skillsList()` 用的是 `File(".pi/skills")`
-  相对路径，解析基准是 **IDE 进程的工作目录**而不是项目根——同时开多个窗口时会列出别的项目
-  （或干脆为空）的 skills，而且完全无视信任态。改为以 bridge 传入的项目 basePath 为基准扫描
-  `.pi/skills` 与 `.agents/skills`，条目补 `scope`（用户级 / 项目级），未信任项目中的项目级
-  条目在面板里标注「项目级 · 未生效」并说明原因
-- **控制栏在长模型名下折成两行**：固定断点（≤640 收动作按钮文字、≤520 收选择器）
-  只看窗口宽度，遇到长模型名或流式时多出的 Stop 按钮就会在"两个文字都还在"的
-  宽度上溢出换行。现在先实测整行自然宽度，能放就放、放不下逐级折叠，换行仅是
-  320px 这类极端宽度的兜底
-- **深色主题下工具窗口按钮变成白色实心方块**：图标原本是「蓝底圆角方块 + 白色 π
-  描线」的品牌徽章，而 New UI 的方形 stripe 按钮会用 `toStrokeIcon` 把 SVG 里
-  **每个元素的颜色都替换成同一个主题色**——底色方块被涂白、白色 π 也涂白，选中态
-  就只剩一块白。改为无底色的纯描线图标（16×16，圆头描边，与 IDE 自带工具窗口图标
-  同风格），并补 `piAgent_dark.svg` 供经典 UI 深色主题使用
-- **窄窗横向滚动条**：底部控制栏在 320–600px 把发送按钮挤出可视区（左簇不收缩
-  + 右簇被压缩）→ 左簇优先收缩（选择器省略号）、右簇永不收缩、极窄时整行换行；
-  消息区 / 会话列表 / Manage 面板补 `overflow-x: hidden`，≤480px 代码块改为
-  换行而非横向滚动，全宽度实测页面级横向溢出为 0
-- **滚动条跟随主题**：新增 `--sb-thumb` / `--sb-thumb-hover`（浅色 22%/40%、
-  深色 18%/36% 半透明），10px 圆角细滚动条、悬停加深一档，同时覆盖
-  `::-webkit-scrollbar`（JCEF/Chromium）与 `scrollbar-width/color`（Firefox）
-- **消息列与输入框同轴**：横向内缩统一为 16px（窄窗 8px），不再依赖 `scrollbar-gutter` 恰好 10px 的环境假设——CEF 经典滚动条 17px 或 `both-edges` 未生效时会差 1~17px；消息列与输入框现在四档宽度下 `left/width` 完全相同
-- **`/` 与 `@` 菜单根本不显示**：设计刷新把 `.file-menu` / `.slash-menu` 改成绝对定位，但父级 `.composer-inner` 没有 `position`，包含块落到 `container-type` 的 `.app` 上，两个菜单被画到工具窗口上边界之外（DOM 在、肉眼看不到）。补 `position: relative`；同时修好「`files.list` 失败后空数组被当成缓存、`get_commands` 失败被静默吞掉」导致列表永远为空的问题（失败不写缓存、可重试，pi 变 running 时补拉），无匹配时显示 `No matching files / commands` 而不是静默关闭，`@` 支持中文后紧跟触发
-- **Options 菜单被窗口裁掉**：两套 `.options-menu` 叠加成 `left:0 + right:0 + width:280px`，菜单从按钮往右铺 280px 被截；合并为一套，改成按 `.app` 实测定位（宽度 clamp、水平翻转、上方余量不足时内部滚动），并整体浮到输入框之上（不再压住文本框）；label 允许换行、开关不再被挤出边界
-- **Sessions 卡片右侧被切**：`grid-template-columns: 1fr` 的隐含 `minmax(auto, 1fr)` 被长会话名的 min-content 撑开 → 改 `minmax(0, 1fr)`，卡片补 `min-width: 0 / width: 100% / overflow: hidden`，操作按钮 `flex-shrink: 0`；filter 输入框误用容器样式 `.sessions-filter` 的问题一并修掉（改用 `.sessions-filter-input`）
-- **空态图标偏右**：`.empty-state` 改为整宽居中（不再依赖文本 shrink-to-fit 盒子的宽度），`.app` 补 `max-width: 100% + overflow-x: clip`，任何宽子元素都无法再撑宽居中包含块
-- **误点 `New` 丢掉进行中的回复**：streaming 时先 `confirm` 确认，取消则不动当前会话，title 同步提示「current run will be discarded」
-- **项目树右键 Pi Agent 两项全灰**：文件取值改为 `VIRTUAL_FILE ?: VIRTUAL_FILE_ARRAY.firstOrNull()`（项目树部分场景只给数组）；`Explain File with Pi` 不再强制要求 editor，无 editor 时按整文件处理；禁用原因写进 action description
-- **Sessions 页多余的 `+ New session`**：删除（点了只会在后台新建、界面停在 Sessions 页什么也看不到），新建入口统一留在 Composer
-- **e2e 补几何断言**：`toBeVisible()` 只要求「有非空包围盒」，弹层被画到窗口外、卡片被裁这类 bug 会全绿通过。新增 `web/e2e/layout-regressions.spec.ts` 按 rect 断言弹层在 `.app` 内、消息列与输入框轴心相等、无页面级横向溢出
+**修复**
+- 多窗口下项目级 skills 列出错误项目。
+- `/` 与 `@` 菜单不显示、Options 菜单被裁、Sessions 卡片被切、深色主题工具窗口图标变白块、窄窗横向滚动条等布局问题。
+
+**Added**
+- **Project trust model**: view, grant or revoke trust for the current project in the Manage panel; untrusted projects list the project-level skills, MCP servers and settings that pi will ignore.
+
+**Changed**
+- **Tool calls are auto-approved by default** (existing configs migrate on startup); toggle it off in Options to go back to ask mode.
+- **Composer toolbar collapses in measured tiers** — stays on one line from 360–900px, long model names and the streaming Stop button included.
+
+**Fixed**
+- Project-level skills listing entries from the wrong project in multi-window sessions.
+- Layout fixes: missing `/` and `@` menus, clipped Options menu, cut-off Sessions cards, white tool-window icons on dark themes, horizontal scrollbars in narrow windows.
 
 ## 0.4.0 — 2026-11-02
 
