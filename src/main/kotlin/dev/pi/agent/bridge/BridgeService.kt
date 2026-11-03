@@ -55,6 +55,31 @@ class BridgeService(private val project: Project) : Disposable {
     /** Per-project event buffer: separate IDE windows never share a stream. */
     private val transport = BridgeTransport()
 
+    /** Mirror of pi's message queue (spec 005); per-project by construction. */
+    private var messageQueueField: dev.pi.agent.queue.PiMessageQueue? = null
+
+    private fun messageQueue(): dev.pi.agent.queue.PiMessageQueue =
+        messageQueueField ?: dev.pi.agent.queue.PiMessageQueue(::queueRpc) { payload ->
+            push(buildJsonObject {
+                put("t", "event")
+                put("name", "queue")
+                put("data", payload)
+            })
+        }.also { messageQueueField = it }
+
+    /** Blocking RPC sender for the queue executor (steer / follow_up / clear_queue). */
+    private fun queueRpc(command: JsonObject): JsonObject {
+        val client = PiProcessManager.getInstance(project).client()
+            ?: throw IllegalStateException("pi process is not running")
+        try {
+            return client.send(command, timeoutMs = 15_000)
+                .get(15, java.util.concurrent.TimeUnit.SECONDS)
+                .raw
+        } catch (e: java.util.concurrent.ExecutionException) {
+            throw (e.cause ?: e)
+        }
+    }
+
     private val wiredLock = Any()
     private var piEventsWired = false
     private var themeEventsWired = false
@@ -119,6 +144,15 @@ class BridgeService(private val project: Project) : Disposable {
                 "trust.get" -> trustGet()
                 "trust.grant" -> trustGrant(params)
                 "trust.revoke" -> trustRevoke(params)
+                "queue.get" -> messageQueue().handle("get", params)
+                "queue.enqueue" -> messageQueue().handle("enqueue", params)
+                "queue.move" -> messageQueue().handle("move", params)
+                "queue.remove" -> messageQueue().handle("remove", params)
+                "queue.restore" -> messageQueue().handle("restore", params)
+                "queue.promote" -> messageQueue().handle("promote", params)
+                "queue.pause" -> messageQueue().handle("pause", params)
+                "queue.resume" -> messageQueue().handle("resume", params)
+                "queue.clear" -> messageQueue().handle("clear", params)
                 else -> throw IllegalArgumentException("unknown bridge method: $method")
             }
             push(buildJsonObject {
@@ -595,8 +629,20 @@ class BridgeService(private val project: Project) : Disposable {
             })
             maybeCaptureBaseline(event)
             notifyIfSettledInBackground(event)
+            // spec 005: pi's queue events drive the mirror; an aborted run
+            // parks it (abort's queue behaviour must not be relied upon).
+            messageQueue().onPiEvent(event)
+            val settledAborted = (event["aborted"] as? JsonPrimitive)?.content?.toBooleanStrictOrNull()
+            if (event["type"]?.jsonPrimitive?.contentOrNull == "agent_settled" && settledAborted == true) {
+                messageQueue().onAborted()
+            }
         }
-        manager.addStateListener { state -> pushStateEvent(state) }
+        manager.addStateListener { state ->
+            pushStateEvent(state)
+            // A fresh pi process starts with an empty queue: park a non-empty
+            // mirror as paused instead of letting it be silently forgotten.
+            if (state is PiConnectionState.Running) messageQueue().onProcessRestarted()
+        }
         pushStateEvent(manager.state)
         wireThemeEvents()
     }
@@ -694,6 +740,7 @@ class BridgeService(private val project: Project) : Disposable {
     }
 
     override fun dispose() {
+        messageQueueField?.shutdown()
         scope.cancel()
     }
 

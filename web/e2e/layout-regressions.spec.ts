@@ -272,3 +272,46 @@ test("New confirms before discarding a running session", async ({ page }) => {
   await expect(page.getByTestId("item-user").first()).toBeVisible();
   await expect(page.getByTestId("empty-state")).toHaveCount(0);
 });
+
+/** spec 005 FR-004 / plan decision 7 — the queue bar lives between the message
+ *  list and the composer: rows stay inside the bar (long previews ellipsize,
+ *  never overflow), the bar does not push the document sideways, and it sits
+ *  above the composer at every supported width. */
+for (const width of [360, 680, 900]) {
+  test(`queue bar stays between the message list and the composer at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 760 });
+    await page.goto("/");
+    await page.getByTestId("composer-input").fill("start");
+    await page.getByTestId("send-btn").click();
+    await page.waitForSelector('[data-testid="abort-btn"]', { timeout: 15_000 });
+    await page.getByTestId("send-mode-caret").click();
+    await page.getByTestId("send-mode-followUp").click();
+    await page
+      .getByTestId("composer-input")
+      .fill("a queued entry with a reasonably long preview text that must truncate, not overflow");
+    await page.getByTestId("send-btn").click();
+    const bar = page.getByTestId("queue-bar");
+    await expect(bar).toBeVisible();
+
+    const r = await page.evaluate(() => {
+      const de = document.documentElement;
+      const bar = document.querySelector(".queue-bar")!.getBoundingClientRect();
+      const comp = document.querySelector(".composer")!.getBoundingClientRect();
+      const list = document.querySelector(".message-list")!.getBoundingClientRect();
+      const rows = [...document.querySelectorAll(".queue-row")].map((el) => el.getBoundingClientRect());
+      return {
+        overflow: de.scrollWidth - de.clientWidth,
+        barInsideViewport: bar.left >= 0 && bar.right <= de.clientWidth,
+        rowsInsideBar: rows.every((row) => row.left >= bar.left - 1 && row.right <= bar.right + 1),
+        barAboveComposer: bar.bottom <= comp.top + 1,
+        listEndsAboveBar: list.bottom <= bar.top + 1,
+      };
+    });
+
+    expect(r.overflow, "document overflows horizontally").toBeLessThanOrEqual(0);
+    expect(r.barInsideViewport, "queue bar leaves the viewport").toBe(true);
+    expect(r.rowsInsideBar, "queue rows escape the bar").toBe(true);
+    expect(r.barAboveComposer, "queue bar overlaps the composer").toBe(true);
+    expect(r.listEndsAboveBar, "queue bar overlaps the message list").toBe(true);
+  });
+}

@@ -132,7 +132,11 @@ test("queue mode lives on the send button dropdown, grayed out when idle", async
   // queue a follow-up via Enter, then stop the run
   await page.getByTestId("composer-input").fill("afterwards summarize");
   await page.getByTestId("composer-input").press("Enter");
-  await expect(page.getByTestId("queue-note")).toContainText("1 queued", { timeout: 10_000 });
+  // spec 005: the queue bar shows WHAT is queued, not just a count.
+  const row = page.getByTestId("queue-row");
+  await expect(row).toHaveCount(1, { timeout: 10_000 });
+  await expect(row).toContainText("afterwards summarize");
+  await expect(row).toContainText("追加");
   await page.getByTestId("abort-btn").click();
   await expect(page.getByTestId("send-mode-caret")).toBeDisabled({ timeout: 20_000 });
 });

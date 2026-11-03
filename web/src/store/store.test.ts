@@ -279,3 +279,142 @@ describe("data sources: loadSource orchestration (spec 003)", () => {
     expect(usePiStore.getState().sources.models.lastAttemptAt).toBe(before);
   });
 });
+
+describe("message queue: store orchestration (spec 005)", () => {
+  beforeEach(async () => {
+    h.state.calls.length = 0;
+    h.state.methods.clear();
+    h.state.rpc.clear();
+    await usePiStore.getState().init();
+    h.state.calls.length = 0;
+    usePiStore.setState({
+      items: [],
+      isStreaming: false,
+      editing: null,
+      pendingPrompt: null,
+      queue: { items: [], paused: false, pauseReason: null, drift: false },
+      queueDiscardConfirm: null,
+    });
+  });
+
+  it("a streaming send goes to queue.enqueue and never to prompt (FR-005)", async () => {
+    h.state.methods.set("queue.enqueue", () => ({ ok: true, id: "q-1" }));
+    usePiStore.setState({ isStreaming: true });
+
+    await usePiStore.getState().sendImages("while busy", [], "followUp");
+
+    expect(h.state.calls.some((c) => c.method === "queue.enqueue")).toBe(true);
+    expect(
+      h.state.calls.find((c) => c.method === "queue.enqueue")?.params["mode"],
+    ).toBe("followUp");
+    expect(commandTypes()).not.toContain("prompt");
+  });
+
+  it("an idle send goes straight to prompt in any mode (FR-006)", async () => {
+    usePiStore.setState({ isStreaming: false });
+
+    await usePiStore.getState().send("direct", "steer");
+
+    expect(commandTypes()).toContain("prompt");
+    expect(h.state.calls.some((c) => c.method === "queue.enqueue")).toBe(false);
+  });
+
+  it("a fired steer leaves an ephemeral, marked user item (US5-1)", async () => {
+    h.state.methods.set("queue.enqueue", () => ({ ok: true, id: "q-2" }));
+    usePiStore.setState({ isStreaming: true });
+
+    await usePiStore.getState().sendImages("interrupt!", [], "steer");
+
+    const items = usePiStore.getState().items;
+    expect(items).toHaveLength(1);
+    expect(items[0].ephemeral).toBe(true);
+    expect(items[0].steer).toBe(true);
+  });
+
+  it("queue.get restores the full snapshot into the store (FR-001)", async () => {
+    h.state.methods.set("queue.get", () => ({
+      items: [
+        {
+          id: "q-9",
+          mode: "followUp",
+          text: "restored",
+          images: [{ data: "abc", mimeType: "image/png" }],
+          status: "queued",
+          createdAt: 1,
+        },
+      ],
+      paused: true,
+      pauseReason: "aborted",
+      drift: false,
+    }));
+
+    await usePiStore.getState().refreshQueue();
+
+    const queue = usePiStore.getState().queue;
+    expect(queue.items).toHaveLength(1);
+    expect(queue.items[0].id).toBe("q-9");
+    expect(queue.items[0].images).toHaveLength(1);
+    expect(queue.paused).toBe(true);
+    expect(queue.pauseReason).toBe("aborted");
+    expect(queue.drift).toBe(false);
+  });
+
+  it("replayMessages drops ephemeral items — the transcript wins (plan 5)", async () => {
+    h.state.rpc.set("get_messages", () => ({
+      messages: [{ role: "user", content: "real recorded message" }],
+    }));
+    usePiStore.setState({ items: [userItem("real recorded message")] });
+    const ephemeral = userItem("steer fire trace");
+    ephemeral.ephemeral = true;
+    ephemeral.steer = true;
+    usePiStore.setState({ items: [...usePiStore.getState().items, ephemeral] });
+
+    await usePiStore.getState().replayMessages();
+
+    const items = usePiStore.getState().items;
+    expect(items).toHaveLength(1);
+    expect(items.every((i) => !i.ephemeral)).toBe(true);
+  });
+
+  it("queueRestore fills the composer in restore mode with the images (US3)", async () => {
+    h.state.methods.set("queue.restore", () => ({
+      ok: true,
+      text: "take me back",
+      images: [{ data: "abc", mimeType: "image/png" }],
+    }));
+
+    const ok = await usePiStore.getState().queueRestore("q-3");
+
+    expect(ok).toBe(true);
+    const prompt = usePiStore.getState().pendingPrompt;
+    expect(prompt?.mode).toBe("restore");
+    expect(prompt?.text).toBe("take me back");
+    expect(prompt?.images).toHaveLength(1);
+  });
+
+  it("a session change with queued entries asks first and only proceeds on confirm (FR-012)", async () => {
+    usePiStore.setState({
+      queue: {
+        items: [
+          { id: "q-1", mode: "followUp", text: "t", images: [], status: "queued", createdAt: 1 },
+        ],
+        paused: false,
+        pauseReason: null,
+        drift: false,
+      },
+    });
+
+    await usePiStore.getState().newSession();
+    expect(usePiStore.getState().queueDiscardConfirm).toMatchObject({ count: 1, kind: "new" });
+    expect(commandTypes()).not.toContain("new_session");
+
+    await usePiStore.getState().confirmQueueDiscard(false);
+    expect(usePiStore.getState().queueDiscardConfirm).toBeNull();
+    expect(commandTypes()).not.toContain("new_session");
+
+    await usePiStore.getState().newSession();
+    await usePiStore.getState().confirmQueueDiscard(true);
+    expect(h.state.calls.some((c) => c.method === "queue.clear")).toBe(true);
+    expect(commandTypes()).toContain("new_session");
+  });
+});

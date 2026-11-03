@@ -157,6 +157,34 @@ export class MockBridge implements Bridge {
   private packages = ["npm:@example/pi-tools@1.0.0"];
   /** `?models=broken|missing` — the models.json world the Auth panel must explain. */
   private readonly modelsKnob = query()?.get("models");
+
+  // -- Message queue (spec 005) ----------------------------------------------
+  //
+  // The mock plays BOTH roles the production system splits in two: pi (the
+  // text arrays) and the Kotlin queue service (the mirror with ids/images).
+  // `syncQueue` is the alignment point and emits the "queue" event the store
+  // listens on, exactly like the real service's queue_state push.
+  private queueItems: Array<{
+    id: string;
+    mode: "steer" | "followUp";
+    text: string;
+    images: Array<{ data: string; mimeType: string }>;
+    status: "queued" | "failed";
+    error?: string;
+    createdAt: number;
+  }> = [];
+  private piSteering: string[] = [];
+  private piFollowUp: string[] = [];
+  private queuePaused = false;
+  private queuePauseReason: string | null = null;
+  private queueDrift = false;
+  private queueIdSeq = 0;
+  /** `?queuedrift=1` — an external writer touches pi's queue once. */
+  private readonly queueDriftKnob = query()?.get("queuedrift") === "1";
+  private driftInjected = false;
+  /** `?queuefail=<cmd>` — first call of that queue command fails. */
+  private readonly queueFailPlan = parseFailPlan(query()?.get("queuefail"));
+  private queueFailServed = new Map<string, number>();
   private mockSessions = [
     {
       file: "/tmp/mock-sessions/2026-10-27T10-00-00_aaa.jsonl",
@@ -221,6 +249,43 @@ export class MockBridge implements Bridge {
   private pad(message: string): string {
     if (!this.longErrors) return message;
     return `${message} · ${"upstream detail ".repeat(40)}`;
+  }
+
+  constructor() {
+    // Seed the queue from sessionStorage so a webview reload (F5 in the tool
+    // window, or an e2e page.reload) restores entries — the contract T027
+    // pins for the real Kotlin-backed service.
+    try {
+      if (typeof sessionStorage !== "undefined") {
+        const raw = sessionStorage.getItem("mock-queue-state");
+        if (raw) {
+          const seeded = JSON.parse(raw) as {
+            items?: Array<{
+              id: string;
+              mode: "steer" | "followUp";
+              text: string;
+              images: Array<{ data: string; mimeType: string }>;
+              status: "queued" | "failed";
+              error?: string;
+              createdAt: number;
+            }>;
+            steering?: string[];
+            followUp?: string[];
+            paused?: boolean;
+            pauseReason?: string | null;
+            drift?: boolean;
+          };
+          this.queueItems = seeded.items ?? [];
+          this.piSteering = seeded.steering ?? [];
+          this.piFollowUp = seeded.followUp ?? [];
+          this.queuePaused = Boolean(seeded.paused);
+          this.queuePauseReason = seeded.pauseReason ?? null;
+          this.queueDrift = Boolean(seeded.drift);
+        }
+      }
+    } catch {
+      // Storage unavailable (vitest, privacy settings): start empty.
+    }
   }
 
   async request<T>(method: string, params?: unknown): Promise<T> {
@@ -299,6 +364,9 @@ export class MockBridge implements Bridge {
     }
     if (method.startsWith("manage.") || method.startsWith("trust.")) {
       return Promise.resolve(this.handleManage(method, params) as T);
+    }
+    if (method.startsWith("queue.")) {
+      return Promise.resolve(this.handleQueue(method.slice("queue.".length), params) as T);
     }
     if (method !== "rpc.request") {
       return Promise.reject(new Error(`mock bridge: unsupported method ${method}`));
@@ -542,6 +610,290 @@ export class MockBridge implements Bridge {
       }
       default:
         return { ok: false, error: `mock bridge: unsupported method ${method}` };
+    }
+  }
+
+  // -- queue machinery (the Kotlin service's stand-in) -----------------------
+
+  private shouldFailQueue(cmd: string): boolean {
+    const budget = this.queueFailPlan.get(cmd) ?? 0;
+    const used = this.queueFailServed.get(cmd) ?? 0;
+    if (used >= budget) return false;
+    this.queueFailServed.set(cmd, used + 1);
+    return true;
+  }
+
+  private newQueueItem(
+    mode: "steer" | "followUp",
+    text: string,
+    images: Array<{ data: string; mimeType: string }>,
+  ): {
+    id: string;
+    mode: "steer" | "followUp";
+    text: string;
+    images: Array<{ data: string; mimeType: string }>;
+    status: "queued" | "failed";
+    error?: string;
+    createdAt: number;
+  } {
+    this.queueIdSeq += 1;
+    return {
+      id: `q-${this.queueIdSeq}`,
+      mode,
+      text,
+      images: images.map((img) => ({ ...img })),
+      status: "queued" as const,
+      createdAt: Date.now(),
+    };
+  }
+
+  /** Canonical display order: steering (fires during the run) first. */
+  private normalizeQueue() {
+    this.queueItems.sort((a, b) => (a.mode === "steer" ? 0 : 1) - (b.mode === "steer" ? 0 : 1));
+  }
+
+  /** pi's arrays, re-derived from the queued mirror items. */
+  private rebuildPiFromMirror() {
+    this.piSteering = this.queueItems
+      .filter((i) => i.status === "queued" && i.mode === "steer")
+      .map((i) => i.text);
+    this.piFollowUp = this.queueItems
+      .filter((i) => i.status === "queued" && i.mode === "followUp")
+      .map((i) => i.text);
+  }
+
+  private emitQueueUpdate() {
+    this.emit("pi", {
+      type: "queue_update",
+      steering: [...this.piSteering],
+      followUp: [...this.piFollowUp],
+    });
+  }
+
+  /**
+   * Aligns the mirror against pi's arrays (by text, item by item — spec 005
+   * plan decision 3), then pushes a full queue_state snapshot. This is the
+   * exact contract the Kotlin service implements against a real pi.
+   */
+  private syncQueue() {
+    if (this.queueDriftKnob && !this.driftInjected) {
+      this.driftInjected = true;
+      // Someone queued from another terminal; the mirror cannot know it yet.
+      this.piFollowUp = [...this.piFollowUp, "queued from another terminal"];
+    }
+    // While paused the mirror intentionally diverges (pi's queue is empty by
+    // design) — an alignment here would wipe it, exactly what the service
+    // guards against.
+    if (!this.queuePaused) {
+      const piOrder = [
+        ...this.piSteering.map((text) => ({ text, mode: "steer" as const })),
+        ...this.piFollowUp.map((text) => ({ text, mode: "followUp" as const })),
+      ];
+      const queued = this.queueItems.filter((i) => i.status === "queued");
+      const equal =
+        queued.length === piOrder.length &&
+        queued.every((item, i) => item.text === piOrder[i].text && item.mode === piOrder[i].mode);
+      if (!equal) {
+        // Rebuild from pi: no images, fresh ids (identical texts cannot be
+        // matched reliably); failed items survive in their section.
+        const failed = this.queueItems.filter((i) => i.status === "failed");
+        const rebuilt = piOrder.map((p) => this.newQueueItem(p.mode, p.text, []));
+        for (const f of failed) {
+          const sectionEnd = rebuilt.map((r) => r.mode).lastIndexOf(f.mode) + 1;
+          rebuilt.splice(sectionEnd, 0, f);
+        }
+        this.queueItems = rebuilt;
+        this.queueDrift = true;
+      }
+    }
+    this.persistQueue();
+    this.emit("queue", {
+      type: "queue_state",
+      items: this.queueItems.map((i) => ({ ...i, images: i.images.map((img) => ({ ...img })) })),
+      paused: this.queuePaused,
+      pauseReason: this.queuePauseReason,
+      drift: this.queueDrift,
+    });
+  }
+
+  private persistQueue() {
+    try {
+      if (typeof sessionStorage === "undefined") return;
+      sessionStorage.setItem(
+        "mock-queue-state",
+        JSON.stringify({
+          items: this.queueItems,
+          steering: this.piSteering,
+          followUp: this.piFollowUp,
+          paused: this.queuePaused,
+          pauseReason: this.queuePauseReason,
+          drift: this.queueDrift,
+        }),
+      );
+    } catch {
+      // Storage unavailable; the queue still works in memory.
+    }
+  }
+
+  /** Follow-ups run one at a time, each as its own turn after the previous settles. */
+  private scheduleFollowUp() {
+    if (this.queuePaused || this.piFollowUp.length === 0) return;
+    const next = this.piFollowUp.shift()!;
+    this.emitQueueUpdate();
+    this.syncQueue();
+    this.timers.push(
+      setTimeout(() => {
+        const take = (this.promptCounts.get(next) ?? 0) + 1;
+        this.promptCounts.set(next, take);
+        this.entrySeq += 1;
+        const entryId = `entry-${this.entrySeq}`;
+        this.history.push({ role: "user", content: next, entryId });
+        this.forkEntries.push({ entryId, text: next });
+        void this.startRun(next, take);
+      }, 250),
+    );
+  }
+
+  /** abort parks the queue: pi's own queue state after abort is untrustworthy. */
+  private pauseQueueOnAbort() {
+    const queued = this.queueItems.filter((i) => i.status === "queued");
+    if (queued.length === 0 || this.queuePaused) return;
+    this.piSteering = [];
+    this.piFollowUp = [];
+    this.queuePaused = true;
+    this.queuePauseReason = "aborted";
+    this.syncQueue();
+  }
+
+  private handleQueue(cmd: string, params?: unknown): unknown {
+    const p = (params ?? {}) as Record<string, unknown>;
+    switch (cmd) {
+      case "get":
+        return {
+          items: this.queueItems.map((i) => ({ ...i, images: i.images.map((img) => ({ ...img })) })),
+          paused: this.queuePaused,
+          pauseReason: this.queuePauseReason,
+          drift: this.queueDrift,
+        };
+      case "enqueue": {
+        const mode = p.mode === "steer" ? "steer" : "followUp";
+        const text = String(p.text ?? "");
+        const images = Array.isArray(p.images)
+          ? (p.images as Array<{ data?: unknown; mimeType?: unknown }>).map((img) => ({
+              data: String(img.data ?? ""),
+              mimeType: String(img.mimeType ?? "image/png"),
+            }))
+          : [];
+        const item = this.newQueueItem(mode, text, images);
+        if (this.shouldFailQueue(cmd)) {
+          // Production contract: the entry is retained and marked failed, the
+          // raw error stays visible (US5-4) — never a silent loss.
+          item.status = "failed";
+          item.error = "steer failed: the model endpoint is unavailable (?queuefail)";
+          this.queueItems.push(item);
+          this.normalizeQueue();
+          this.syncQueue();
+          return { ok: false, retained: true, id: item.id, error: item.error };
+        }
+        this.queueItems.push(item);
+        if (mode === "steer") this.piSteering = [...this.piSteering, text];
+        else this.piFollowUp = [...this.piFollowUp, text];
+        this.normalizeQueue();
+        this.emitQueueUpdate();
+        this.syncQueue();
+        return { ok: true, id: item.id };
+      }
+      case "move": {
+        if (this.shouldFailQueue(cmd)) return { ok: false, error: "queue.move failed (?queuefail)" };
+        const id = String(p.id ?? "");
+        const delta = Number(p.delta ?? 0);
+        const idx = this.queueItems.findIndex((i) => i.id === id);
+        if (idx < 0) return { ok: false, error: `no queue item ${id}` };
+        const target = idx + delta;
+        if (
+          target < 0 ||
+          target >= this.queueItems.length ||
+          this.queueItems[target].mode !== this.queueItems[idx].mode
+        ) {
+          // Edge (or section crossing): pi untouched (T016).
+          return { ok: false, error: "at edge" };
+        }
+        const swapped = [...this.queueItems];
+        [swapped[idx], swapped[target]] = [swapped[target], swapped[idx]];
+        this.queueItems = swapped;
+        this.rebuildPiFromMirror();
+        this.emitQueueUpdate();
+        this.syncQueue();
+        return { ok: true };
+      }
+      case "remove": {
+        if (this.shouldFailQueue(cmd)) return { ok: false, error: "queue.remove failed (?queuefail)" };
+        const id = String(p.id ?? "");
+        const target = this.queueItems.find((i) => i.id === id);
+        if (!target || target.status === "failed") return { ok: false, error: `no queue item ${id}` };
+        this.queueItems = this.queueItems.filter((i) => i.id !== id);
+        this.rebuildPiFromMirror();
+        this.emitQueueUpdate();
+        this.syncQueue();
+        return { ok: true };
+      }
+      case "restore": {
+        if (this.shouldFailQueue(cmd)) return { ok: false, error: "queue.restore failed (?queuefail)" };
+        const id = String(p.id ?? "");
+        const target = this.queueItems.find((i) => i.id === id);
+        if (!target) return { ok: false, error: `no queue item ${id}` };
+        this.queueItems = this.queueItems.filter((i) => i.id !== id);
+        this.rebuildPiFromMirror();
+        this.emitQueueUpdate();
+        this.syncQueue();
+        return { ok: true, id, text: target.text, images: target.images.map((img) => ({ ...img })) };
+      }
+      case "promote": {
+        if (this.shouldFailQueue(cmd)) return { ok: false, error: "queue.promote failed (?queuefail)" };
+        const id = String(p.id ?? "");
+        const target = this.queueItems.find((i) => i.id === id);
+        if (!target) return { ok: false, error: `no queue item ${id}` };
+        if (target.mode === "steer") return { ok: true };
+        target.mode = "steer";
+        this.rebuildPiFromMirror();
+        this.emitQueueUpdate();
+        this.syncQueue();
+        return { ok: true };
+      }
+      case "pause": {
+        if (this.shouldFailQueue(cmd)) return { ok: false, error: "queue.pause failed (?queuefail)" };
+        this.queuePaused = true;
+        this.queuePauseReason = typeof p.reason === "string" ? p.reason : "manual";
+        // pi's queue is truly empty now; the mirror keeps everything.
+        this.piSteering = [];
+        this.piFollowUp = [];
+        this.syncQueue();
+        return { ok: true };
+      }
+      case "resume": {
+        if (this.shouldFailQueue(cmd)) return { ok: false, error: "queue.resume failed (?queuefail)" };
+        this.queuePaused = false;
+        this.queuePauseReason = null;
+        this.rebuildPiFromMirror();
+        this.emitQueueUpdate();
+        this.syncQueue();
+        if (!this.isStreaming) this.scheduleFollowUp();
+        return { ok: true };
+      }
+      case "clear": {
+        if (this.shouldFailQueue(cmd)) return { ok: false, error: "queue.clear failed (?queuefail)" };
+        this.queueItems = [];
+        this.piSteering = [];
+        this.piFollowUp = [];
+        this.queuePaused = false;
+        this.queuePauseReason = null;
+        this.queueDrift = false;
+        this.emitQueueUpdate();
+        this.syncQueue();
+        return { ok: true };
+      }
+      default:
+        return { ok: false, error: `mock bridge: unsupported queue method ${cmd}` };
     }
   }
 
@@ -891,6 +1243,26 @@ export class MockBridge implements Bridge {
       durationMs: 8,
     });
 
+    // pi injects one queued steering message at the next turn boundary; the
+    // mock reproduces that so the queue bar can be watched draining (US5).
+    if (!this.aborted && this.piSteering.length > 0) {
+      const injected = this.piSteering.shift()!;
+      this.entrySeq += 1;
+      const entryId = `entry-${this.entrySeq}`;
+      this.history.push({ role: "user", content: injected, entryId });
+      this.forkEntries.push({ entryId, text: injected });
+      emit({
+        type: "message_start",
+        message: { role: "user", content: injected, timestamp: Date.now() },
+      });
+      emit({
+        type: "message_end",
+        message: { role: "user", content: injected, timestamp: Date.now() },
+      });
+      this.emitQueueUpdate();
+      this.syncQueue();
+    }
+
     // second turn: final text (with a fenced code block for the copy button)
     await sleep(40);
     emit({ type: "turn_start" });
@@ -936,6 +1308,13 @@ export class MockBridge implements Bridge {
       this.isStreaming = false;
       this.messageCount += 2;
       emit({ type: "agent_settled", aborted: this.aborted });
+      // Queue continuation (spec 005): an aborted run parks the queue; a
+      // settled one hands the next follow-up to pi as a fresh turn.
+      if (this.aborted) {
+        this.pauseQueueOnAbort();
+      } else {
+        this.scheduleFollowUp();
+      }
     }
   }
 

@@ -112,7 +112,6 @@ export default function Composer() {
   const abort = usePiStore((s) => s.abort);
   const forkSession = usePiStore((s) => s.forkSession);
   const isStreaming = usePiStore((s) => s.isStreaming);
-  const queue = usePiStore((s) => s.queue);
   const commands = usePiStore((s) => s.commands);
   const files = usePiStore((s) => s.files);
   const filesSource = usePiStore((s) => s.sources.files);
@@ -196,8 +195,21 @@ export default function Composer() {
     setFileDismissed(false);
     if (promptMode === "quote") {
       setText((prev) => (prev.trim().length > 0 ? `${prev.replace(/\s+$/, "")}\n\n${value}` : value));
+    } else if (promptMode === "restore") {
+      // Queue take-back (spec 005 US3): the user's own draft comes back
+      // verbatim — spacing matches quote, but no blockquote prefix.
+      setText((prev) => (prev.trim().length > 0 ? `${prev.replace(/\s+$/, "")}\n\n${value}` : value));
     } else {
       setText(value);
+    }
+    if (pendingPrompt.images && pendingPrompt.images.length > 0) {
+      setImages(
+        pendingPrompt.images.map((img, i) => ({
+          data: img.data,
+          mimeType: img.mimeType,
+          name: `image-${i + 1}`,
+        })),
+      );
     }
     clearPendingPrompt();
     // The caret has to land at the end of the *new* value, which is only
@@ -330,8 +342,6 @@ export default function Composer() {
     if (added.length) setImages((prev) => [...prev, ...added]);
   };
 
-  const queuedCount = queue.steering.length + queue.followUp.length;
-
   return (
     <div
       className="composer"
@@ -434,11 +444,8 @@ export default function Composer() {
           ))}
         </div>
       ) : null}
-      {queuedCount > 0 ? (
-        <div className="queue-note" data-testid="queue-note">
-          {queuedCount} queued message{queuedCount > 1 ? "s" : ""}
-        </div>
-      ) : null}
+      {/* The old "N queued messages" note is replaced by QueueBar (spec 005 US1):
+          it shows what is queued, not just how many. */}
       {editing ? (
         <div className="edit-mode-note" data-testid="edit-mode-note">
           <Icon name="pencil" className="ic-sm" />

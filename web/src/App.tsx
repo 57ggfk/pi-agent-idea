@@ -2,6 +2,7 @@ import { Component, useEffect, type ReactNode } from "react";
 import { usePiStore } from "./store/store";
 import MessageList from "./components/MessageList";
 import Composer from "./components/Composer";
+import QueueBar, { QueueDiscardBanner } from "./components/QueueBar";
 import ApprovalCard from "./components/ApprovalCard";
 import StatusBar from "./components/StatusBar";
 import SessionsView from "./components/SessionsView";
@@ -75,10 +76,12 @@ export default function App() {
               </button>
             ))}
           </div>
+          <QueueDiscardBanner />
           {tab === "chat" ? (
             <>
               <MessageList />
               <ApprovalCard />
+              <QueueBar />
               <Composer />
             </>
           ) : tab === "sessions" ? (

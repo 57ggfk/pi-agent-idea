@@ -52,6 +52,14 @@ function ItemView({ item, actions }: { item: ChatItem; actions: MessageAction[] 
   return (
     <div className={`item item-${item.role} ${item.isError ? "item-error" : ""}`} data-testid={`item-${item.role}`}>
       {toolbar}
+      {/* Steer fire trace (spec 005 US5): rendered at fire time, dropped on
+          replay. User items have no header (display:none), so the badge is a
+          row of its own. */}
+      {item.steer ? (
+        <div className="steer-tag" data-testid="steer-tag">
+          插话
+        </div>
+      ) : null}
       <div className="item-header">
         <span className="avatar" aria-hidden="true">π</span>
         <span className="who">Pi</span>

@@ -3100,3 +3100,137 @@ button {
 .config-flag.config-unset {
   color: var(--text-secondary);
 }
+
+/* ---------------------------------------------------------------------------
+   Message queue bar (spec 005)
+   Sits between the message list and the composer. The container scrolls at
+   34vh so a long queue cannot crush the conversation, and every row keeps
+   min-width: 0 so a long preview ellipsises instead of forcing horizontal
+   scroll at 360px (constitution II).
+   --------------------------------------------------------------------------- */
+.queue-bar {
+  max-height: 34vh;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+  background: var(--bg-subtle);
+  padding: 4px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.queue-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 3px 0;
+}
+
+.queue-row-failed {
+  color: var(--danger, #c0392b);
+}
+
+.queue-index {
+  flex: none;
+  min-width: 16px;
+  text-align: right;
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+}
+
+.queue-mode {
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+
+.queue-mode-steer {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.queue-image-count {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+
+.queue-preview {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+}
+
+.queue-error {
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  color: var(--danger, #c0392b);
+}
+
+.queue-actions {
+  flex: none;
+  display: inline-flex;
+  gap: 2px;
+}
+
+.queue-actions .btn {
+  padding: 1px 6px;
+  font-size: var(--fs-xs);
+}
+
+.btn-icon {
+  min-width: 24px;
+}
+
+.queue-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 4px 8px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-xs);
+}
+
+.queue-banner-drift {
+  border-left: 2px solid var(--warning, #b8860b);
+  background: var(--warning-soft, rgba(184, 134, 11, 0.12));
+}
+
+.queue-banner-paused {
+  border-left: 2px solid var(--accent);
+  background: var(--bg);
+}
+
+.queue-banner-hint {
+  color: var(--text-secondary);
+}
+
+.queue-banner-confirm {
+  border-left: 2px solid var(--danger, #c0392b);
+  background: var(--bg);
+}
+
+.steer-tag {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  font-size: var(--fs-xs);
+  color: var(--accent);
+}

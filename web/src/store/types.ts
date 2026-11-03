@@ -32,6 +32,58 @@ export interface ChatItem {
   done: boolean;
   isError?: boolean;
   usage?: UsageInfo;
+  /**
+   * Fire-and-trace item (spec 005 US5): a steer fired into the running turn.
+   * pi will record the real user message itself, so ephemeral items are
+   * dropped on every replay — the transcript is the only source of truth.
+   */
+  ephemeral?: boolean;
+  /** Renders the「插话」badge on an ephemeral steer item. */
+  steer?: boolean;
+}
+
+// -- Message queue (spec 005) ----------------------------------------------
+//
+// pi is the source of truth for queue content and order (`queue_update`
+// carries the FULL steering/followUp text arrays; `clear_queue` returns them
+// all). pi has no ids and no images, so the plugin keeps a mirror with both
+// and aligns it by text, item by item.
+
+export type QueueMode = "steer" | "followUp";
+
+export interface QueueImage {
+  /** Base64 without the data: URL prefix (same shape as prompt images). */
+  data: string;
+  mimeType: string;
+}
+
+export interface QueueItem {
+  /** Plugin-generated (`q-<n>`); pi has no ids, the mirror needs them. */
+  id: string;
+  mode: QueueMode;
+  text: string;
+  /** Mirror-only: `queue_update` / `clear_queue` never report images. */
+  images: QueueImage[];
+  status: "queued" | "failed";
+  /** Raw error text when status is "failed" (US5-4). */
+  error?: string;
+  /** Stable secondary sort key for identical texts. */
+  createdAt: number;
+}
+
+export type QueuePauseReason = "aborted" | "pi-restarted" | "manual";
+
+/** Full queue snapshot pushed on every change (Kotlin → web, event name "queue"). */
+export interface QueueState {
+  items: QueueItem[];
+  paused: boolean;
+  pauseReason?: QueuePauseReason | null;
+  /** Mirror and pi queue disagreed; the mirror was rebuilt from pi. */
+  drift: boolean;
+}
+
+export interface QueueStateEvent extends QueueState {
+  type: "queue_state";
 }
 
 export interface UsageInfo {

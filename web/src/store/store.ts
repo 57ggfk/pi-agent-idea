@@ -13,6 +13,10 @@ import {
   type CommandInfo,
   type ModelInfo,
   type PendingApproval,
+  type QueueImage,
+  type QueueMode,
+  type QueueState,
+  type QueueStateEvent,
   type SessionStats,
 } from "./types";
 import {
@@ -33,13 +37,17 @@ export type Tab = "chat" | "sessions" | "manage";
  *  - replace: overwrite the draft (IDE "Explain with Pi" and friends)
  *  - quote:   append it after the draft, never overwriting typing (FR-006)
  *  - edit:    overwrite and switch the composer into edit-and-resend mode
+ *  - restore: queue take-back (spec 005 US3) — verbatim text, never a
+ *             blockquote: the user is getting their own draft back
  */
-export type PromptMode = "replace" | "quote" | "edit";
+export type PromptMode = "replace" | "quote" | "edit" | "restore";
 
 export interface PendingPrompt {
   text: string;
   id: number;
   mode: PromptMode;
+  /** Images to drop into the composer chips (queue restore). */
+  images?: Array<{ data: string; mimeType: string }>;
 }
 
 /** The user message an edit-and-resend will branch from. */
@@ -126,7 +134,16 @@ interface PiStore {
   isStreaming: boolean;
   aborted: boolean;
   retryInfo: { attempt: number; maxAttempts: number; delayMs: number; errorMessage: string } | null;
-  queue: { steering: string[]; followUp: string[] };
+  /**
+   * Mirror of pi's queue (spec 005), pushed as full snapshots by the Kotlin
+   * queue service on the "queue" event. pi is the source of truth; the items
+   * add ids and images that pi's wire format lacks.
+   */
+  queue: QueueState;
+  /** The drift banner was dismissed; stays down until drift resets. */
+  driftAck: boolean;
+  /** Set when a session change would discard queued entries (FR-012). */
+  queueDiscardConfirm: { count: number; kind: "new" | "switch"; file?: string } | null;
   /** Editor-initiated prompt ("ide" event) waiting for the Composer to pick up. */
   pendingPrompt: PendingPrompt | null;
   /**
@@ -179,6 +196,18 @@ interface PiStore {
   send(text: string, mode: SendMode): Promise<void>;
   sendImages(text: string, images: Array<{ data: string; mimeType: string }>, mode: SendMode): Promise<void>;
   abort(): Promise<void>;
+  // -- message queue (spec 005) ---------------------------------------------
+  /** Pulls the current queue snapshot (webview reload restore, FR-001). */
+  refreshQueue(): Promise<void>;
+  queueMove(id: string, delta: number): Promise<void>;
+  queueRemove(id: string): Promise<void>;
+  /** Takes an entry back into the composer (text + images, draft kept). */
+  queueRestore(id: string): Promise<boolean>;
+  queuePromote(id: string): Promise<void>;
+  queueResume(): Promise<void>;
+  queueClear(): Promise<void>;
+  queueDismissDrift(): void;
+  confirmQueueDiscard(proceed: boolean): Promise<void>;
   newSession(): Promise<void>;
   setModel(provider: string, modelId: string): Promise<void>;
   setThinkingLevel(level: string): Promise<void>;
@@ -358,6 +387,20 @@ export const usePiStore = create<PiStore>((set, get) => {
     set({ pendingPrompt: { text, id: ++promptSeq, mode } });
   };
 
+  /** Full-snapshot update from the Kotlin queue service (spec 005). */
+  const applyQueueState = (data: QueueStateEvent | QueueState) => {
+    set({
+      queue: {
+        items: Array.isArray(data.items) ? data.items : [],
+        paused: Boolean(data.paused),
+        pauseReason: data.pauseReason ?? null,
+        drift: Boolean(data.drift),
+      },
+      // A snapshot without drift clears the dismissed banner too.
+      driftAck: !data.drift,
+    });
+  };
+
   const handlePiEvent = (event: Record<string, unknown>) => {
     const type = event["type"];
     const state = get();
@@ -388,12 +431,9 @@ export const usePiStore = create<PiStore>((set, get) => {
       return;
     }
     if (type === "queue_update") {
-      set({
-        queue: {
-          steering: (event["steering"] as string[]) ?? [],
-          followUp: (event["followUp"] as string[]) ?? [],
-        },
-      });
+      // spec 005: the raw pi event is the Kotlin queue service's input, not
+      // the UI's. The UI learns queue state only from `queue` events, which
+      // carry the aligned mirror (ids + images + paused/drift flags).
       return;
     }
     if (type === "session_info_changed") {
@@ -432,7 +472,9 @@ export const usePiStore = create<PiStore>((set, get) => {
     isStreaming: false,
     aborted: false,
     retryInfo: null,
-    queue: { steering: [], followUp: [] },
+    queue: { items: [], paused: false, pauseReason: null, drift: false },
+    driftAck: false,
+    queueDiscardConfirm: null,
     pendingPrompt: null,
     editing: null,
 
@@ -468,6 +510,8 @@ export const usePiStore = create<PiStore>((set, get) => {
       bridge.onEvent((name, data) => {
         if (name === "pi") {
           handlePiEvent(data as Record<string, unknown>);
+        } else if (name === "queue") {
+          applyQueueState(data as QueueStateEvent);
         } else if (name === "ide") {
           // Editor action (e.g. "Explain with Pi"): pre-fill the composer and
           // switch to chat. The Composer consumes pendingPrompt and focuses.
@@ -552,6 +596,9 @@ export const usePiStore = create<PiStore>((set, get) => {
         // mock bridge without get_messages support
       }
 
+      // Restore the queue mirror (webview reload, spec 005 FR-001).
+      void get().refreshQueue();
+
       // Approval policy and preferences are loaded in the Promise.all above,
       // through the source machine — a bridge that does not implement them is
       // recorded as `unsupported`, not as a failure.
@@ -569,16 +616,51 @@ export const usePiStore = create<PiStore>((set, get) => {
     async sendImages(text: string, images: Array<{ data: string; mimeType: string }>, mode: SendMode) {
       if (!bridge) return;
       if (!text.trim() && images.length === 0) return;
-      const { isStreaming, items } = get();
-      if (!isStreaming) {
-        // Keep the image data on the optimistic item so sent images render back.
-        const item = emptyItem("user", [
-          { kind: "text", text, done: true },
-          ...images.map((img) => ({ kind: "image" as const, data: img.data, mimeType: img.mimeType })),
-        ]);
-        item.done = true;
-        set({ items: [...items, item] });
+      const { isStreaming } = get();
+      if (isStreaming) {
+        // pi is busy (spec 005): the message joins the queue instead of
+        // interrupting the run. "auto" while busy means a plain follow-up;
+        // steer fires an插话 into the running turn.
+        const queueMode: QueueMode = mode === "steer" ? "steer" : "followUp";
+        try {
+          const res = await bridge.request<{ ok: boolean; retained?: boolean; error?: string }>(
+            "queue.enqueue",
+            {
+              mode: queueMode,
+              text,
+              images: images.map((img) => ({ data: img.data, mimeType: img.mimeType })),
+            },
+          );
+          if (!res.ok && !res.retained) {
+            appendError(`Failed to queue: ${res.error ?? "unknown error"}`);
+          }
+        } catch (e) {
+          appendError(`Failed to queue: ${(e as Error).message}`);
+          return;
+        }
+        if (queueMode === "steer") {
+          // Fire-and-trace (plan decision 5): render the fire immediately with
+          // the「插话」badge; the next replay drops it once pi has recorded the
+          // real user message — the transcript is the only source of truth.
+          const item = emptyItem("user", [
+            { kind: "text", text, done: true },
+            ...images.map((img) => ({ kind: "image" as const, data: img.data, mimeType: img.mimeType })),
+          ]);
+          item.done = true;
+          item.ephemeral = true;
+          item.steer = true;
+          set({ items: [...get().items, item] });
+        }
+        return;
       }
+      // Idle: every mode degrades to a direct send (FR-006) — no queueing.
+      const item = emptyItem("user", [
+        { kind: "text", text, done: true },
+        ...images.map((img) => ({ kind: "image" as const, data: img.data, mimeType: img.mimeType })),
+      ]);
+      item.done = true;
+      // Keep the image data on the optimistic item so sent images render back.
+      set({ items: [...get().items, item] });
       const command: Record<string, unknown> = { type: "prompt", message: text };
       if (images.length > 0) {
         command["images"] = images.map((img) => ({
@@ -587,18 +669,15 @@ export const usePiStore = create<PiStore>((set, get) => {
           mimeType: img.mimeType,
         }));
       }
-      if (isStreaming && mode !== "auto") {
-        command["streamingBehavior"] = mode;
-      }
       try {
         await rpc(bridge, command);
       } catch (e) {
-        const item = emptyItem("system", [
+        const errorItem = emptyItem("system", [
           { kind: "text", text: `Failed to send: ${(e as Error).message}`, done: true },
         ]);
-        item.done = true;
-        item.isError = true;
-        set({ items: [...get().items, item] });
+        errorItem.done = true;
+        errorItem.isError = true;
+        set({ items: [...get().items, errorItem] });
       }
     },
 
@@ -613,8 +692,120 @@ export const usePiStore = create<PiStore>((set, get) => {
       }
     },
 
+    // -- message queue (spec 005) --------------------------------------------
+
+    async refreshQueue() {
+      if (!bridge) return;
+      try {
+        const state = await bridge.request<QueueState>("queue.get");
+        applyQueueState(state);
+      } catch {
+        // A bridge without queue support keeps the empty default; the mirror
+        // stays driven by "queue" events once operations start flowing.
+      }
+    },
+
+    async queueMove(id: string, delta: number) {
+      if (!bridge) return;
+      try {
+        await bridge.request("queue.move", { id, delta });
+      } catch (e) {
+        appendError(`queue.move failed: ${(e as Error).message}`);
+      }
+      // Success pushes a queue_state snapshot; a rejection (at edge) changes
+      // nothing, so no extra refresh is needed.
+    },
+
+    async queueRemove(id: string) {
+      if (!bridge) return;
+      try {
+        await bridge.request("queue.remove", { id });
+      } catch (e) {
+        appendError(`queue.remove failed: ${(e as Error).message}`);
+      }
+    },
+
+    async queueRestore(id: string) {
+      if (!bridge) return false;
+      try {
+        const res = await bridge.request<{
+          ok: boolean;
+          text?: string;
+          images?: QueueImage[];
+          error?: string;
+        }>("queue.restore", { id });
+        if (!res.ok) {
+          appendError(res.error ?? "queue.restore failed");
+          return false;
+        }
+        set({
+          pendingPrompt: {
+            text: res.text ?? "",
+            id: ++promptSeq,
+            mode: "restore",
+            images: res.images ?? [],
+          },
+        });
+        return true;
+      } catch (e) {
+        appendError(`queue.restore failed: ${(e as Error).message}`);
+        return false;
+      }
+    },
+
+    async queuePromote(id: string) {
+      if (!bridge) return;
+      try {
+        await bridge.request("queue.promote", { id });
+      } catch (e) {
+        appendError(`queue.promote failed: ${(e as Error).message}`);
+      }
+    },
+
+    async queueResume() {
+      if (!bridge) return;
+      try {
+        await bridge.request("queue.resume");
+      } catch (e) {
+        appendError(`queue.resume failed: ${(e as Error).message}`);
+      }
+    },
+
+    async queueClear() {
+      if (!bridge) return;
+      try {
+        await bridge.request("queue.clear");
+      } catch (e) {
+        appendError(`queue.clear failed: ${(e as Error).message}`);
+      }
+    },
+
+    queueDismissDrift() {
+      set({ driftAck: true });
+    },
+
+    async confirmQueueDiscard(proceed: boolean) {
+      const confirm = get().queueDiscardConfirm;
+      set({ queueDiscardConfirm: null });
+      if (!confirm || !proceed) return;
+      await get().queueClear();
+      // Drop the local snapshot too: the session change below re-checks the
+      // queue, and the pushed snapshot may not have arrived yet.
+      set({ queue: { items: [], paused: false, pauseReason: null, drift: false } });
+      if (confirm.kind === "new") {
+        await get().newSession();
+      } else if (confirm.file) {
+        await get().switchSession(confirm.file);
+      }
+    },
+
     async newSession() {
       if (!bridge) return;
+      // FR-012: a non-empty queue would be silently dropped with the session.
+      if (get().queue.items.length > 0) {
+        set({ queueDiscardConfirm: { count: get().queue.items.length, kind: "new" } });
+        return;
+      }
       try {
         await rpc(bridge, { type: "new_session" });
         set({
@@ -689,6 +880,11 @@ export const usePiStore = create<PiStore>((set, get) => {
 
     async switchSession(file: string) {
       if (!bridge) return;
+      // FR-012: confirm before a session change discards queued entries.
+      if (get().queue.items.length > 0) {
+        set({ queueDiscardConfirm: { count: get().queue.items.length, kind: "switch", file } });
+        return;
+      }
       // A run still tied to the old session would keep streaming into the new
       // one — abort it first so the UI settles before the switch.
       if (get().isStreaming) await get().abort();
@@ -818,7 +1014,9 @@ export const usePiStore = create<PiStore>((set, get) => {
       if (!bridge) return;
       try {
         const messages = await rpc<{ messages: unknown[] }>(bridge, { type: "get_messages" });
-        const restored = itemsFromMessages(messages.messages ?? []);
+        // Ephemeral items (steer fire traces) never survive a replay: pi
+        // records the real message itself, and the transcript wins (plan 5).
+        const restored = itemsFromMessages(messages.messages ?? []).filter((i) => !i.ephemeral);
         set({ items: restored });
       } catch {
         // mock bridge without get_messages support

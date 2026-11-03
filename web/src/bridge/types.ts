@@ -6,7 +6,7 @@
  * Java → JS event   : { t: "event", name: eventName, data }
  */
 
-export type BridgeEventName = "pi" | "pi-state" | "ide" | "theme";
+export type BridgeEventName = "pi" | "pi-state" | "ide" | "theme" | "queue";
 
 /**
  * Every method the Java side dispatches (keep in sync with
@@ -52,7 +52,16 @@ export type BridgeMethod =
   | "manage.settingsWrite"
   | "trust.get"
   | "trust.grant"
-  | "trust.revoke";
+  | "trust.revoke"
+  | "queue.get"
+  | "queue.enqueue"
+  | "queue.move"
+  | "queue.remove"
+  | "queue.restore"
+  | "queue.promote"
+  | "queue.pause"
+  | "queue.resume"
+  | "queue.clear";
 
 export type AppTheme = "light" | "dark";
 export type ThemePreference = "system" | "light" | "dark";
