@@ -236,3 +236,22 @@ error-visibility / manage-completeness）已先合入，队列在其上叠做。
 
 测试 +2：`resume while idle fires the first entry as a prompt…`、
 `promote while idle degrades to a direct send…`（FakeRpc 支持 get_state.isStreaming）。
+
+### 真机验证（2026-11-04 凌晨，WebStorm 2026.2 + 真 pi 1.4.0 + openrouter/free）
+
+CDP 驱动真实 JCEF webview（锁屏不影响 CDP），31 个自动化任务全部真机复验，判据与截图
+见 MANUAL_TEST「真机验证记录」。**真机暴露并当场修掉两个 mock 层测不出的 bug**：
+
+1. **暂停态操作抹掉镜像**（数据丢失）：pause 后 pi 侧队列已空，move/remove/restore/promote
+   的 clear→reconcile 拿空数组对不上镜像 → 重建清空暂挂条目。修复：暂停态操作只动镜像，
+   恢复时按整理后顺序重入队（4517ae1）。
+2. **get_state 流式中不含 isStreaming**（mock 有此字段，真源没有——第二处 mock/真源分叉）：
+   RPC 判空闲恒真，流式中 promote 走了直发路径。修复：从 agent_start/agent_settled 事件
+   跟踪运行态，piIsIdle() 不再发 RPC（53d64b2）。
+
+真机通过（摘）：真实 queue_update 全链路、图片条目、abort 暂挂与继续、暂停态整理、
+重载恢复、插话徽标与消费、切会话确认、MCP 生命周期。未真机验证（留人工/已由单测覆盖）：
+drift 图片归属、插话失败标红、pi 重启暂挂、提升的 steer 段可视瞬间（free router 消费过快）。
+
+**教训：mock 是契约的第二份拷贝**——本轮两处 mock/真源分叉（paused 不变量、get_state 字段）
+都是真机才暴露的。探针脚本（直打真 pi 的 stdin JSONL）是定位这类问题的最快路径。
