@@ -75,8 +75,8 @@ const SHOW_COMPOSER_FORK = false;
   Tab 焦点圈定（首/末元素循环）、Esc 取消、Enter 确认、打开时聚焦主按钮。
 - 调用点：`newSession`（有内容或流式中）、`forkSession`（底部，虽然 UI 隐藏但保留能力）、
   `forkAtItem`、`deleteSession`（Sessions 页）。
-- 文案全部走 i18n key（本版 i18n 在 008 落地，先写 key 常量，字体文案暂用英文，
-  由 008 统一接 `t()`；key 命名 `confirm.newSession.title` 等）。
+- 文案先写英文原文，并在同一行用注释标出将来的 i18n key（`// i18n: confirm.newSession.title`）。
+  i18n 在 008 落地（`i18next`），此处**不要**提前建常量表或接 `t()`——008 会按 key 规约统一搬迁。
 
 ### D4. 队列与草稿的清理时机
 
