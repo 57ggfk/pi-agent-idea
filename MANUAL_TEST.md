@@ -153,6 +153,9 @@
 
 - [ ] 临时将 pi 移出 PATH（或 mock 崩溃 `MOCK_PI_FAIL=1`）→ 状态栏出现红色退出横幅与 stderr 摘要
 - [ ] 项目关闭 → pi 进程终止（macOS/Linux：`ps aux | grep "mode rpc"`；Windows：`Get-CimInstance Win32_Process -Filter "Name='node.exe'" | ? { $_.CommandLine -match 'mode rpc' }`）
+- [ ] Windows 上启动批处理用的 `cmd` 是绝对路径：把 `%ComSpec%` 临时指向一个非可执行文件（如某个 `.txt`）→
+  工具窗打开后 pi 仍应 Running（回退 `SystemRoot\System32\cmd.exe`），`idea.log` 里不出现 `CreateProcess error=193`；
+  若仍失败，那条 WARN 现在会带上完整命令，能直接看出用的是哪个解释器
 
 ## 自动化对应
 

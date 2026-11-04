@@ -79,7 +79,7 @@ class PiCliRunnerTest {
         val result = PiCliRunner.runProcess(
             proc(
                 "echo boom 1>&2; exit 3",
-                listOf(OsProcess.windowsShell, "/c", "echo boom 1>&2 & exit 3"),
+                listOf(OsProcess.windowsShell, "/d", "/c", "echo boom 1>&2 & exit 3"),
             ),
             timeoutSeconds = 10,
         )

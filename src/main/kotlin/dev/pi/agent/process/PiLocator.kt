@@ -223,9 +223,14 @@ object PiLocator {
         return candidates.firstOrNull { File(it).isFile }
     }
 
-    /** Results of `<cmd.exe> /c where <tool>`, or null when not found. */
+    /**
+     * Results of `where <tool>` run through the absolute interpreter, or null
+     * when not found. `/d` matters here in particular: an AutoRun hook can
+     * rewrite `PATH`, so without it `where` would answer for a different PATH
+     * than the one pi is later started with.
+     */
     private fun windowsWhere(tool: String): List<String>? =
-        runCapture(listOf(OsProcess.windowsShell, "/c", "where", tool), 10)
+        runCapture(listOf(OsProcess.windowsShell, "/d", "/c", "where", tool), 10)
             ?.lineSequence()
             ?.map { it.trim() }
             ?.filter { it.isNotEmpty() }

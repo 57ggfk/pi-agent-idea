@@ -21,7 +21,7 @@ class PiCliProcessCancelTest {
     fun `a running process is stopped together with its descendants`() {
         // Deterministic and offline: neither variant needs a network or a package.
         val command = if (OsProcess.isWindows) {
-            listOf(OsProcess.windowsShell, "/c", "ping", "-n", "60", "127.0.0.1")
+            listOf(OsProcess.windowsShell, "/d", "/c", "ping", "-n", "60", "127.0.0.1")
         } else {
             listOf("sleep", "60")
         }

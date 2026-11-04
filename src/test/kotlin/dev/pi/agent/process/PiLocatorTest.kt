@@ -57,8 +57,9 @@ class PiLocatorTest {
         assertEquals(
             // An absolute interpreter, never the bare name `cmd`: a bare name
             // is resolved against the IDE process's own PATH and can land on
-            // a non-executable file (CreateProcess error=193).
-            listOf(OsProcess.windowsShell, "/c", shim, "--version"),
+            // a non-executable file (CreateProcess error=193). `/d` keeps the
+            // AutoRun hook out of the child's PATH.
+            listOf(OsProcess.windowsShell, "/d", "/c", shim, "--version"),
             OsProcess.launchCommand(listOf(shim, "--version")),
         )
         assertTrue(File(OsProcess.windowsShell).isAbsolute)

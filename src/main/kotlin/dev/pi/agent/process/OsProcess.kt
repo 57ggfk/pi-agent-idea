@@ -90,12 +90,17 @@ object OsProcess {
 
     /**
      * Spawnable form of [command]: a `.cmd`/`.bat` executable on Windows is
-     * wrapped in `<absolute cmd.exe> /c …` (CreateProcess refuses them on
+     * wrapped in `<absolute cmd.exe> /d /c …` (CreateProcess refuses them on
      * recent JDKs); anything else passes through unchanged.
+     *
+     * `/d` skips the `Command Processor\AutoRun` hook — on a machine with a
+     * conda/nvm hook installed every invocation costs ~200 ms and, worse,
+     * that hook may rewrite `PATH`, which is exactly what `where pi` and
+     * `where node` are asked to resolve. pi and npm need none of it.
      */
     fun launchCommand(command: List<String>): List<String> {
         val head = command.firstOrNull() ?: return command
-        return if (isCmdLike(head)) listOf(windowsShell, "/c") + command else command
+        return if (isCmdLike(head)) listOf(windowsShell, "/d", "/c") + command else command
     }
 
     /**
