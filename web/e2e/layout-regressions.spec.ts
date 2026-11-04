@@ -149,6 +149,50 @@ for (const width of [360, 430, 900]) {
   });
 }
 
+/** Found on the real machine (20+ sessions): auto rows inside a
+ *  definite-height grid got COMPRESSED to fit — every card shrank to ~36px
+ *  and the name/preview lines clipped. Rows must keep their content height
+ *  and the list must scroll instead. The mock seeds only 2 sessions, so this
+ *  test injects enough rows to overflow the panel first. */
+test("session cards keep their content height when the list overflows", async ({ page }) => {
+  await page.setViewportSize({ width: 430, height: 600 });
+  await page.goto("/");
+  await page.getByTestId("tab-sessions").click();
+  await expect(page.getByTestId("session-row").first()).toBeVisible();
+
+  // 24 rows guarantees overflow at 600px panel height even on wide screens.
+  await page.evaluate(() => {
+    const first = document.querySelector('[data-testid="session-row"]')!;
+    const list = document.querySelector(".sessions-list")!;
+    for (let i = 0; i < 24; i++) {
+      const clone = first.cloneNode(true) as HTMLElement;
+      clone.querySelector(".session-name")!.textContent = `bulk session ${i}`;
+      list.appendChild(clone);
+    }
+  });
+
+  const r = await page.evaluate(() => {
+    const list = document.querySelector(".sessions-list")!;
+    const row = document.querySelector('[data-testid="session-row"]')!;
+    const preview = row.querySelector(".session-preview")!;
+    const pr = preview.getBoundingClientRect();
+    const rowBottom = row.getBoundingClientRect().bottom;
+    return {
+      rowH: Math.round(row.getBoundingClientRect().height),
+      previewH: Math.round(pr.height),
+      previewBottomInsideRow: Math.round(pr.bottom) <= Math.round(rowBottom) + 1,
+      listScrollable: list.scrollHeight - list.clientHeight > 100,
+    };
+  });
+
+  // Two content lines (name + 2-line preview) need ~76px; a compressed card
+  // measures ~36px.
+  expect(r.rowH).toBeGreaterThanOrEqual(60);
+  expect(r.previewH).toBeGreaterThanOrEqual(30);
+  expect(r.previewBottomInsideRow, "preview line clipped by the card").toBe(true);
+  expect(r.listScrollable, "the list must scroll instead of compressing rows").toBe(true);
+});
+
 /** #4 — the `+ New session` button was removed from the Sessions toolbar. */
 test("sessions toolbar only has the filter field", async ({ page }) => {
   await page.goto("/");

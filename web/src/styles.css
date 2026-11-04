@@ -2257,6 +2257,11 @@ button {
      column's min-content width, widened the track and pushed the action
      buttons out of the clipped area. `minmax(0, 1fr)` lets the track shrink. */
   grid-template-columns: minmax(0, 1fr);
+  /* Auto rows inside a definite-height grid get *compressed* once there are
+     more sessions than fit: every card shrank to ~36px and the name/preview
+     lines clipped (found on the real machine with 20+ sessions). Rows keep
+     their content height; the container scrolls instead. */
+  grid-auto-rows: min-content;
   align-content: start;
   gap: 8px;
   padding: 0 20px 16px;
