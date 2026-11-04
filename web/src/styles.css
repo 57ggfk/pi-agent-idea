@@ -3420,3 +3420,45 @@ button {
   color: var(--text-secondary);
   white-space: pre-wrap;
 }
+
+.setup-custom {
+  margin-bottom: var(--sp-2);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Outside `.setup-manual` there is no flex row to stretch it, so a pasted URL
+   used to sit in a ~170px box showing only its tail. */
+.setup-custom .setup-input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.setup-hint {
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  margin-top: 4px;
+}
+
+.setup-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.setup-stop {
+  border-color: var(--danger-border, var(--border));
+  color: var(--danger);
+}
+
+.setup-notice {
+  border: 1px solid var(--border);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  border-radius: var(--r-sm);
+  padding: var(--sp-2);
+  margin-bottom: var(--sp-2);
+  line-height: 1.5;
+}

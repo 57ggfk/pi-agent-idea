@@ -70,8 +70,15 @@ Windows 侧**，见下方 WSL 边界）。插件按 `PI_AGENT_EXECUTABLE` 环境
 发现失败时在设置里手动指定路径即可。
 
 首次打开工具窗会先做一次环境检测（Node.js / npm / pi）：缺什么直接写在卡片上，
-可以一键安装 pi（源可选官方 npm 或国内镜像 `registry.npmmirror.com`），也可以
-填一个已有的 pi 路径，不用自己记 `npm install -g` 的命令。
+可以一键安装 pi，也可以填一个已有的 pi 路径，不用自己记 `npm install -g` 的命令。
+
+安装源默认**不指定**，即沿用本机 npm 的配置（`npm config get registry`，卡片上会
+显示当前值）—— 公司私服、内网代理、`.npmrc` 里改过的源都不用动。需要时也可以选官方
+`registry.npmjs.org`、国内镜像 `registry.npmmirror.com`，或直接粘贴自己的源地址
+（只写域名会按 https 处理；本地 registry 保留 `http://`）。
+
+安装过程不限时（冷装依赖多，镜像慢时十几分钟很正常），按钮上会走秒数；**随时可以点
+「Stop」终止**，npm 及其子进程会被一起结束。
 
 ## 排障
 

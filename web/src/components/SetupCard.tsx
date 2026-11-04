@@ -11,7 +11,8 @@ import { usePiStore } from "../store/store";
  * pi, no indication of which path the plugin was looking for. The card answers
  * the three questions a first-time user actually has — what do I have, what am
  * I missing, how do I get it — and offers both routes: install through npm
- * (international registry or the China mirror) or point at an existing binary.
+ * (npm's own configured registry by default, the official one, the China
+ * mirror, or a URL the user pastes) or point at an existing binary.
  *
  * It hides itself as soon as detection reports a working pi, so it never
  * becomes permanent furniture.
@@ -19,14 +20,31 @@ import { usePiStore } from "../store/store";
 export default function SetupCard() {
   const [env, setEnv] = useState<EnvDetectResult | null>(null);
   const [dismissed, setDismissed] = useState(false);
-  const [source, setSource] = useState("official");
+  const [source, setSource] = useState("default");
+  const [customRegistry, setCustomRegistry] = useState("");
   const [manual, setManual] = useState("");
   const [busy, setBusy] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
   const [log, setLog] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
   const piStatus = usePiStore((s) => s.piStatus);
   const restartPi = usePiStore((s) => s.restartPi);
+
+  // A cold install downloads a large tree; on a slow mirror that is minutes,
+  // not seconds. A ticking counter is the difference between "still working"
+  // and "hung" — the button alone says nothing while it waits.
+  useEffect(() => {
+    if (!busy) {
+      setElapsed(0);
+      return;
+    }
+    const started = Date.now();
+    const id = window.setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => window.clearInterval(id);
+  }, [busy]);
 
   const detect = useCallback(async () => {
     const api = manageApi(await getBridge());
@@ -44,16 +62,32 @@ export default function SetupCard() {
     void detect();
   }, [detect]);
 
+  const customId = env?.customSource ?? "custom";
+  const isCustom = source === customId;
+  const customBlank = isCustom && customRegistry.trim() === "";
+
   const install = async () => {
+    if (customBlank) {
+      setError("Paste a registry URL first, or pick npm default.");
+      return;
+    }
     setBusy(true);
     setError("");
+    setNotice("");
     setLog("");
     try {
       const api = manageApi(await getBridge());
-      const result = await api.envInstall({ source });
+      // No deadline on this call: npm is stopped by the Stop button, not by a
+      // timer. A cold install on a slow mirror legitimately takes a long time.
+      const result = await api.envInstall({
+        source,
+        registry: isCustom ? customRegistry.trim() : undefined,
+      });
       setLog(result.output ?? "");
       if (!result.ok) {
-        setError(result.error ?? "install failed");
+        // A stop is the user's own decision: report it, do not shout.
+        if (result.cancelled) setNotice(result.error ?? "Install stopped.");
+        else setError(result.error ?? "install failed");
         return;
       }
       await restartPi();
@@ -62,6 +96,19 @@ export default function SetupCard() {
       setError((e as Error).message);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const cancel = async () => {
+    setStopping(true);
+    try {
+      const api = manageApi(await getBridge());
+      const result = await api.envCancelInstall();
+      if (!result.ok) setError(result.error ?? "nothing to stop");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setStopping(false);
     }
   };
 
@@ -124,7 +171,11 @@ export default function SetupCard() {
           <div className="setup-label">Install through npm</div>
           <div className="setup-sources">
             {(env.sources ?? []).map((s) => (
-              <label key={s.id} className={`setup-source ${source === s.id ? "setup-source-on" : ""}`}>
+              <label
+                key={s.id}
+                className={`setup-source ${source === s.id ? "setup-source-on" : ""}`}
+                data-testid={`setup-source-${s.id}`}
+              >
                 <input
                   type="radio"
                   name="setup-source"
@@ -133,14 +184,67 @@ export default function SetupCard() {
                   onChange={() => setSource(s.id)}
                   disabled={busy}
                 />
-                <span>{s.id === "china" ? "China mirror" : "International"}</span>
-                <span className="mono setup-registry">{s.registry}</span>
+                <span>{sourceLabel(s.id)}</span>
+                <span className="mono setup-registry">
+                  {s.registry || env.npmRegistry || "from npm config"}
+                </span>
               </label>
             ))}
+            <label
+              className={`setup-source ${isCustom ? "setup-source-on" : ""}`}
+              data-testid="setup-source-custom"
+            >
+              <input
+                type="radio"
+                name="setup-source"
+                value={customId}
+                checked={isCustom}
+                onChange={() => setSource(customId)}
+                disabled={busy}
+              />
+              <span>Custom…</span>
+            </label>
           </div>
-          <button className="btn" data-testid="setup-install" onClick={install} disabled={busy}>
-            {busy ? "Installing… (this can take a minute)" : `Install ${env.piPackage}`}
-          </button>
+          {isCustom ? (
+            <div className="setup-custom">
+              <input
+                className="setup-input"
+                data-testid="setup-registry-input"
+                value={customRegistry}
+                placeholder="https://registry.example.com"
+                onChange={(e) => setCustomRegistry(e.target.value)}
+                disabled={busy}
+                spellCheck={false}
+              />
+              <div className="setup-hint">
+                Paste the registry URL your network uses. A bare host works too (https is assumed);
+                a local mirror can keep <span className="mono">http://</span>.
+              </div>
+            </div>
+          ) : null}
+          <div className="setup-actions">
+            <button
+              className="btn"
+              data-testid="setup-install"
+              onClick={install}
+              disabled={busy || customBlank}
+            >
+              {busy
+                ? `Installing… ${elapsed}s (first run can take minutes)`
+                : `Install ${env.piPackage}`}
+            </button>
+            {busy ? (
+              <button
+                className="btn setup-stop"
+                data-testid="setup-cancel"
+                onClick={cancel}
+                disabled={stopping}
+                title="Stop npm and keep the current state"
+              >
+                {stopping ? "Stopping…" : "Stop"}
+              </button>
+            ) : null}
+          </div>
         </div>
       ) : (
         <div className="setup-warn" data-testid="setup-no-npm">
@@ -166,6 +270,11 @@ export default function SetupCard() {
         </div>
       </div>
 
+      {notice ? (
+        <div className="setup-notice" data-testid="setup-notice">
+          {notice}
+        </div>
+      ) : null}
       {error ? (
         <div className="setup-error" data-testid="setup-error">
           {error}
@@ -178,6 +287,19 @@ export default function SetupCard() {
       ) : null}
     </div>
   );
+}
+
+function sourceLabel(id: string): string {
+  switch (id) {
+    case "default":
+      return "npm default";
+    case "china":
+      return "China mirror";
+    case "official":
+      return "International";
+    default:
+      return id;
+  }
 }
 
 function ToolRow({ label, tool, hint }: { label: string; tool?: ToolStatus; hint: string }) {

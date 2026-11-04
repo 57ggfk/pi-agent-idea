@@ -107,6 +107,36 @@ object PiCliRunner {
         }
     }
 
+    /**
+     * Runs [pb] to completion with **no time limit**, handing the live process to
+     * [onStart] so the caller can stop it.
+     *
+     * Exists for `npm install`: a cold install over a slow mirror legitimately
+     * takes tens of minutes (measured: ~14 min), so any fixed ceiling is wrong in
+     * both directions — short kills a working download, long looks hung and
+     * cannot be told apart from a dead one. The user decides when to give up, and
+     * [onStart] is what makes "stop" reachable while we wait.
+     */
+    internal fun runProcessUntilExit(pb: ProcessBuilder, onStart: (Process) -> Unit = {}): CliResult {
+        return try {
+            val proc = pb.start()
+            onStart(proc)
+            val stdout = StringBuilder()
+            val stderr = StringBuilder()
+            val drainOut = drainThread(proc.inputStream, stdout)
+            val drainErr = drainThread(proc.errorStream, stderr)
+            val exit = proc.waitFor()
+            drainOut.join(10_000)
+            drainErr.join(10_000)
+            CliResult(exit, stdout.toString(), stderr.toString())
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            CliResult(-1, "", "interrupted")
+        } catch (e: Exception) {
+            CliResult(-1, "", "failed to run pi: ${e.message}")
+        }
+    }
+
     private fun drainThread(stream: java.io.InputStream, into: StringBuilder): Thread =
         Thread({
             try {

@@ -124,8 +124,10 @@ class BridgeService(private val project: Project) : Disposable {
                 "manage.env" -> dev.pi.agent.manage.PiManage.environment()
                 "manage.envDetect" -> dev.pi.agent.manage.PiEnvironment.detect()
                 "manage.envInstall" -> dev.pi.agent.manage.PiEnvironment.install(
-                    (params["source"] as? kotlinx.serialization.json.JsonPrimitive)?.content,
+                    source = (params["source"] as? kotlinx.serialization.json.JsonPrimitive)?.content,
+                    customRegistry = (params["registry"] as? kotlinx.serialization.json.JsonPrimitive)?.content,
                 )
+                "manage.envCancelInstall" -> dev.pi.agent.manage.PiEnvironment.cancelInstall()
                 "manage.envSetPath" -> dev.pi.agent.manage.PiEnvironment.setPiPath(params)
                 "manage.mcpList" -> dev.pi.agent.manage.PiManage.mcpList(project.basePath)
                 "manage.mcpAdd" -> dev.pi.agent.manage.PiManage.mcpAdd(withProjectPath(params))

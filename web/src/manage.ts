@@ -161,11 +161,17 @@ export interface EnvDetectResult extends CliOutcome {
   customPath?: string;
   sources?: InstallSourceInfo[];
   defaultSource?: string;
+  /** Id of the "paste your own registry" option; the URL travels separately. */
+  customSource?: string;
+  /** `npm config get registry` — what "npm default" would actually use. */
+  npmRegistry?: string;
   /** True when pi itself is missing — the setup card keys off this. */
   needsSetup?: boolean;
 }
 
 export interface EnvInstallResult extends CliOutcome {
+  /** True when the user pressed Stop; carries partial output, not a failure. */
+  cancelled?: boolean;
   found?: boolean;
   path?: string;
   version?: string;
@@ -179,13 +185,16 @@ export interface SettingsReadResult extends CliOutcome {
 
 /** Typed helpers over the bridge for management operations. */
 export function manageApi(bridge: Bridge) {
-  const call = <T>(method: BridgeMethod, params?: unknown) =>
-    bridge.request<T>(method, params) as Promise<T>;
+  const call = <T>(method: BridgeMethod, params?: unknown, timeoutMs?: number) =>
+    bridge.request<T>(method, params, timeoutMs) as Promise<T>;
 
   return {
     environment: () => call<EnvironmentResult>("manage.env"),
     envDetect: () => call<EnvDetectResult>("manage.envDetect"),
-    envInstall: (p: { source: string }) => call<EnvInstallResult>("manage.envInstall", p),
+    /** No deadline: the user stops this one with [envCancelInstall]. */
+    envInstall: (p: { source: string; registry?: string }) =>
+      call<EnvInstallResult>("manage.envInstall", p, 0),
+    envCancelInstall: () => call<{ ok: boolean; cancelled?: boolean; error?: string }>("manage.envCancelInstall"),
     envSetPath: (p: { path: string }) => call<EnvInstallResult>("manage.envSetPath", p),
     mcpList: () => call<McpListResult>("manage.mcpList"),
     mcpAdd: (p: { name: string; command?: string; args?: string[]; url?: string; env?: Record<string, string>; local?: boolean }) =>

@@ -17,6 +17,52 @@ function query(): URLSearchParams | null {
  * "Retry recovers in place" testable, and it keeps a multi-step test honest
  * about how many attempts it really made.
  */
+/** Registry per install source; `default` deliberately has none. */
+const MOCK_REGISTRIES: Record<string, string> = {
+  official: "https://registry.npmjs.org",
+  china: "https://registry.npmmirror.com",
+};
+
+function mockSources() {
+  return [
+    { id: "default", registry: "" },
+    { id: "official", registry: MOCK_REGISTRIES.official },
+    { id: "china", registry: MOCK_REGISTRIES.china },
+  ];
+}
+
+/**
+ * `?setup=missing|nonode` turns the mock machine into one the setup card has to
+ * deal with, so the card (and its registry options) can be driven through the
+ * real UI instead of only unit-tested. `?npmregistry=<url>` stands in for a
+ * corporate `npm config get registry`.
+ */
+function mockSetup(state: string, npmRegistry: string) {
+  const hasNode = state !== "nonode";
+  return {
+    ok: true,
+    node: hasNode
+      ? { found: true, path: "/usr/local/bin/node", version: "v22.0.0" }
+      : { found: false, path: "", version: "" },
+    npm: hasNode
+      ? { found: true, path: "/usr/local/bin/npm", version: "10.0.0" }
+      : { found: false, path: "", version: "" },
+    pi: { found: false, path: "", version: "" },
+    nodeMajor: hasNode ? 22 : null,
+    nodeOk: hasNode,
+    minNodeMajor: 18,
+    canInstall: hasNode,
+    piPackage: "@earendil-works/pi-coding-agent",
+    agentDir: "/tmp/mock-home/.pi/agent",
+    customPath: "",
+    sources: mockSources(),
+    defaultSource: "default",
+    customSource: "custom",
+    npmRegistry,
+    needsSetup: true,
+  };
+}
+
 function parseFailPlan(raw: string | null | undefined): Map<string, number> {
   const plan = new Map<string, number>();
   if (!raw) return plan;
@@ -137,6 +183,8 @@ export class MockBridge implements Bridge {
   /** `?files=volatile` — the file list loses one entry after the first read. */
   private readonly volatileFiles = query()?.get("files") === "volatile";
   private fileReads = 0;
+  /** `?install=hang` — the in-flight install, resolvable only by a cancel. */
+  private pendingInstall: { output: string; resolve?: (cancelled: boolean) => void } | null = null;
   /** `?pistate=1` — report starting → running, so auto-recovery can be observed. */
   private readonly reportPiState = query()?.get("pistate") === "1";
   /** `?longerror=1` — pad bridge errors past the 200-char summary limit (FR-011). */
@@ -391,9 +439,12 @@ export class MockBridge implements Bridge {
           version: this.piVersion,
           agentDir: "/tmp/mock-home/.pi/agent",
         };
-      // Standalone/mock runs already have pi; the setup card stays hidden and
-      // its states are exercised by the dedicated component tests instead.
-      case "manage.envDetect":
+      // Standalone/mock runs already have pi unless the e2e suite asks for a
+      // broken machine via `?setup=missing|nonode`; the setup card's states are
+      // otherwise exercised by the dedicated component tests instead.
+      case "manage.envDetect": {
+        const setup = query()?.get("setup");
+        if (setup) return mockSetup(setup, query()?.get("npmregistry") ?? "");
         return {
           ok: true,
           node: { found: true, path: "/usr/local/bin/node", version: "v22.0.0" },
@@ -406,15 +457,59 @@ export class MockBridge implements Bridge {
           piPackage: "@earendil-works/pi-coding-agent",
           agentDir: "/tmp/mock-home/.pi/agent",
           customPath: "",
-          sources: [
-            { id: "official", registry: "https://registry.npmjs.org" },
-            { id: "china", registry: "https://registry.npmmirror.com" },
-          ],
-          defaultSource: "official",
+          sources: mockSources(),
+          defaultSource: "default",
+          customSource: "custom",
+          npmRegistry: "https://registry.npmjs.org/",
           needsSetup: false,
         };
-      case "manage.envInstall":
-        return { ok: true, found: true, exitCode: 0, output: "added 1 package", version: this.piVersion };
+      }
+      case "manage.envInstall": {
+        // Echo the registry back so e2e can prove which value left the UI:
+        // "npm default" means no --registry flag was passed at all.
+        const payload = params as { source?: string; registry?: string } | undefined;
+        const registry =
+          payload?.source === "custom" ? payload.registry : MOCK_REGISTRIES[payload?.source ?? ""];
+        const line = `mock: npm install -g @earendil-works/pi-coding-agent${
+          registry ? ` --registry=${registry}` : " (npm default registry)"
+        }`;
+        if (query()?.get("install") === "fail") {
+          return {
+            ok: false,
+            exitCode: 1,
+            output: `${line}\nnpm ERR! code EAI_AGAIN`,
+            error: "The registry was unreachable. Try the other source, or install pi yourself and set its path.",
+          };
+        }
+        if (query()?.get("install") === "hang") {
+          // Never resolves on its own — only `manage.envCancelInstall` ends it,
+          // which is exactly what the Stop button has to be tested against.
+          this.pendingInstall = { output: line };
+          return new Promise((resolve) => {
+            this.pendingInstall!.resolve = (cancelled: boolean) => {
+              this.pendingInstall = null;
+              resolve(
+                cancelled
+                  ? {
+                      ok: false,
+                      cancelled: true,
+                      output: `${line}\n(npm stopped by the user)`,
+                      error: "Install stopped. Nothing was uninstalled.",
+                    }
+                  : { ok: true, found: true, exitCode: 0, output: line, version: this.piVersion },
+              );
+            };
+          });
+        }
+        return { ok: true, found: true, exitCode: 0, output: line, version: this.piVersion };
+      }
+      case "manage.envCancelInstall": {
+        if (!this.pendingInstall?.resolve) {
+          return { ok: false, error: "no install is running" };
+        }
+        this.pendingInstall.resolve(true);
+        return { ok: true, cancelled: true };
+      }
       case "manage.envSetPath":
         return { ok: true, found: true, path: "/usr/local/bin/pi", version: this.piVersion };
       case "manage.mcpList":

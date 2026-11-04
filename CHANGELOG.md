@@ -3,7 +3,7 @@
 ## 0.5.1 — 2026-11-04
 
 **新增**
-- **首次使用引导**：打开工具窗先检测 Node.js、npm 与 pi，缺哪个说哪个；可一键安装 pi，源选官方 npm 或国内镜像，也可直接指向已有的 pi。
+- **首次使用引导**：打开工具窗先检测 Node.js、npm 与 pi，缺哪个说哪个；可一键安装 pi，装的时候默认沿用本机 npm 已配置的源（公司私服、代理都不用改），也可选官方 npm、国内镜像，或直接粘贴自己的源地址；安装不设时限、随时可停，装不上时还能指向已有的 pi。
 - **MCP 服务器可临时停用**：在 Manage 面板一键关掉某个服务器再打开，命令、参数、环境变量全部原地保留，不必删了重填。
 - **消息悬停操作条**：复制（Pi 回复为 Markdown 源码，自己的消息为原文）、引用到输入框、重新生成、编辑重发；后两者以该消息为界新开会话分支，旧会话可在 Sessions 里切回。
 - **消息排队**：pi 工作时新消息进入输入框上方的队列条，可排序、取回编辑、插话、暂停；执行顺序由 pi 负责，暂停期间的消息不会自动补发。
@@ -24,7 +24,7 @@
 - 修复 IPv6 优先的 JVM 上 UI 服务绑到 `[::1]`、页面却访问 `127.0.0.1` 导致连不上。
 
 **Added**
-- **First-run setup**: the tool window checks for Node.js, npm and pi before anything else and names what is missing; install pi in one click from the official npm registry or the China mirror, or point at an existing binary.
+- **First-run setup**: the tool window checks for Node.js, npm and pi before anything else and names what is missing. Installing pi uses whatever registry npm is already configured with — a company proxy or private mirror needs no changes — and can equally be pinned to the official registry, the China mirror, or a URL you paste in. The install has no time limit and can be stopped at any point; pointing at an existing binary is always an option too.
 - **MCP servers can be switched off without deleting them**: turn one off in the Manage panel and back on later; command, args and env stay exactly where they were.
 - **Hover actions on any message**: copy (Markdown source for Pi replies, verbatim text for your own), quote into the composer, regenerate, and edit-and-resend; the last two branch the conversation into a new session you can switch back to.
 - **Message queue**: while pi is working, new messages line up in a bar above the composer — reorder, take back to edit, steer into the running turn, or pause. Pi owns the execution order; paused messages are never sent automatically.

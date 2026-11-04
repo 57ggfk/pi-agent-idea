@@ -33,6 +33,7 @@ export type BridgeMethod =
   | "manage.env"
   | "manage.envDetect"
   | "manage.envInstall"
+  | "manage.envCancelInstall"
   | "manage.envSetPath"
   | "manage.mcpList"
   | "manage.mcpAdd"
@@ -89,7 +90,8 @@ export interface PiStateEvent {
 
 export interface Bridge {
   readonly kind: "jcef" | "mock";
-  request<T = unknown>(method: string, params?: unknown): Promise<T>;
+  /** [timeoutMs] overrides the default deadline; 0 waits indefinitely. */
+  request<T = unknown>(method: string, params?: unknown, timeoutMs?: number): Promise<T>;
   onEvent(listener: (name: BridgeEventName, data: unknown) => void): void;
 }
 

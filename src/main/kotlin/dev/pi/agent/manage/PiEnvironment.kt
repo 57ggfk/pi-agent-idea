@@ -18,8 +18,9 @@ import java.io.File
  * runtime (pi is a node CLI) and pi itself. Both used to surface only as
  * "pi process is not running" while the user had no idea what to install or
  * where. This object answers, in one round trip, "what is on this machine",
- * and can install pi through either npm registry — the international one, or
- * the China mirror that actually resolves on an intranet-adjacent network.
+ * and can install pi through npm: by default with no registry override at all
+ * (so a corporate `.npmrc` or proxy keeps working), or pinned to the official
+ * registry, the China mirror, or any URL the user pastes.
  *
  * Detection never installs anything: it only reports, so the UI can show the
  * user exactly what is missing before touching their global npm prefix.
@@ -31,29 +32,145 @@ object PiEnvironment {
     /** npm package that provides the pi CLI. */
     const val PI_PACKAGE = "@earendil-works/pi-coding-agent"
 
+    /** Honour whatever npm is configured with — pass no `--registry` at all. */
+    const val SOURCE_DEFAULT = "default"
+
+    /** Registry the user pastes in; [normalizeCustomRegistry] vets it. */
+    const val SOURCE_CUSTOM = "custom"
+
+    const val OFFICIAL_REGISTRY = "https://registry.npmjs.org"
+    const val CHINA_REGISTRY = "https://registry.npmmirror.com"
+
     /**
-     * Registries offered at setup time. Ordered as shown in the UI: the
-     * official one first, the China mirror where npmjs.org is unreachable.
+     * Registries offered at setup time. [SOURCE_DEFAULT] comes first and
+     * deliberately maps to an empty string: the machine may already point at a
+     * corporate npm registry (`.npmrc`, `npm config set registry`) or a proxy,
+     * and pinning npmjs.org would break exactly those users. The China mirror
+     * is the fallback for networks where npmjs.org does not resolve.
      */
     val SOURCES: List<Pair<String, String>> = listOf(
-        "official" to "https://registry.npmjs.org",
-        "china" to "https://registry.npmmirror.com",
+        SOURCE_DEFAULT to "",
+        "official" to OFFICIAL_REGISTRY,
+        "china" to CHINA_REGISTRY,
     )
 
-    const val DEFAULT_SOURCE = "official"
+    const val DEFAULT_SOURCE = SOURCE_DEFAULT
 
     /** pi is published as ESM and needs a modern node; older ones install but do not run. */
     const val MIN_NODE_MAJOR = 18
 
     private const val VERSION_TIMEOUT_SECONDS = 15L
-    private const val INSTALL_TIMEOUT_SECONDS = 300L
 
+    /**
+     * The single npm install in flight, if any. Installs are unbounded — a cold
+     * one over a slow mirror takes tens of minutes — so the process handle has
+     * to be reachable from another bridge request for "stop" to work at all.
+     */
+    @Volatile
+    private var installProcess: Process? = null
+
+    @Volatile
+    private var installing = false
+
+    @Volatile
+    private var installCancelled = false
+
+    private val installGuard = Any()
+
+    /** Claims the install slot; false when another install is already running. */
+    private fun beginInstall(): Boolean = synchronized(installGuard) {
+        if (installing) {
+            false
+        } else {
+            installing = true
+            installCancelled = false
+            installProcess = null
+            true
+        }
+    }
+
+    private fun endInstall() = synchronized(installGuard) {
+        installing = false
+        installProcess = null
+        installCancelled = false
+    }
+
+    /**
+     * Stops the running install (npm plus its children). Returns "nothing to
+     * stop" rather than throwing: the UI may click Stop just as npm exits.
+     */
+    fun cancelInstall(): JsonObject {
+        if (!installing) {
+            return buildJsonObject { put("ok", false); put("error", "no install is running") }
+        }
+        installCancelled = true
+        LOG.info("pi install cancelled by the user")
+        // The process may not have started yet (the click landed between claim
+        // and spawn); install() then sees the flag and kills it right away.
+        installProcess?.let { proc ->
+            // Grandchildren (npm spawns node) outlive a plain destroy on some
+            // platforms and would keep writing into the prefix.
+            runCatching { proc.toHandle().descendants().forEach { it.destroyForcibly() } }
+            proc.destroyForcibly()
+        }
+        return buildJsonObject { put("ok", true); put("cancelled", true) }
+    }
+
+    /** Registry of a named source; empty string means "let npm decide". */
     fun registryFor(source: String?): String =
-        SOURCES.firstOrNull { it.first == source }?.second ?: SOURCES.first().second
+        SOURCES.firstOrNull { it.first == source }?.second ?: ""
 
-    /** `npm install -g <pi> --registry=<source>`, as argv (never a shell). */
-    fun installArgs(npmPath: String, source: String?): List<String> =
-        listOf(npmPath, "install", "-g", PI_PACKAGE, "--registry=${registryFor(source)}")
+    /**
+     * Cleans up a pasted registry URL. Returns null when it cannot be a registry
+     * at all, so the UI can say so instead of letting npm fail with EAI_AGAIN
+     * twenty seconds later.
+     *
+     * Accepts a bare host (`registry.example.com`, https is assumed) and keeps
+     * an explicit `http://` so on-prem mirrors on plain HTTP still work. Only
+     * http(s) is allowed: `--registry` with a `file:` or `git:` value is never
+     * what the user meant, and would make npm do something surprising.
+     */
+    fun normalizeCustomRegistry(raw: String?): String? {
+        val trimmed = raw?.trim().orEmpty()
+        if (trimmed.isEmpty()) return null
+        val url = if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+            trimmed
+        } else if (trimmed.contains("://")) {
+            return null
+        } else {
+            // Bare host: https for anything routable, plain http for a local
+            // registry (verdaccio, `npx local-npm`) that almost never has TLS.
+            val loopback = trimmed.substringBefore('/').let {
+                it.startsWith("localhost") || it.startsWith("127.") || it.startsWith("[::1]")
+            }
+            if (loopback) "http://$trimmed" else "https://$trimmed"
+        }
+        // Host must look like a host: no spaces, no credentials, at least one
+        // dot or a port (registry.local:8080) — this is what catches a pasted
+        // `.npmrc` line or an npm command instead of a URL.
+        val body = url.substringAfter("://")
+        val host = body.substringBefore('/')
+        if (body.any { it.isWhitespace() }) return null
+        if (host.contains('@')) return null
+        if (!host.contains('.') && !host.contains(':')) return null
+        return url.trimEnd('/')
+    }
+
+    /**
+     * Effective `--registry` value for an install request. null means "pass no
+     * flag" (npm's own configuration wins). An unusable custom value also
+     * yields null here — [install] reports the validation error before running.
+     */
+    fun resolveRegistry(source: String?, custom: String?): String? =
+        if (source == SOURCE_CUSTOM) normalizeCustomRegistry(custom)
+        else registryFor(source).takeIf { it.isNotEmpty() }
+
+    /** `npm install -g <pi> [--registry=<registry>]`, as argv (never a shell). */
+    fun installArgs(npmPath: String, registry: String?): List<String> =
+        buildList {
+            addAll(listOf(npmPath, "install", "-g", PI_PACKAGE))
+            registry?.takeIf { it.isNotBlank() }?.let { add("--registry=$it") }
+        }
 
     /**
      * Environment snapshot for the UI: node, npm, pi, plus everything needed to
@@ -64,6 +181,7 @@ object PiEnvironment {
         nodePath: () -> String? = { PiLocator.locateNode() },
         npmPath: () -> String? = { PiLocator.locateNpm() },
         versionOf: (String, List<String>) -> String? = ::toolVersion,
+        configuredRegistry: (String) -> String? = ::npmConfiguredRegistry,
     ): JsonObject {
         val install = locate(true)
         val node = nodePath()
@@ -71,6 +189,7 @@ object PiEnvironment {
         val nodeVersion = node?.let { versionOf(it, listOf(it, "-v")) } ?: ""
         val npmVersion = npm?.let { versionOf(it, listOf(it, "-v")) } ?: ""
         val nodeMajor = nodeMajorOf(nodeVersion)
+        val npmRegistry = npm?.let { configuredRegistry(it) }.orEmpty()
 
         return buildJsonObject {
             put("ok", true)
@@ -93,67 +212,107 @@ object PiEnvironment {
                 }
             })
             put("defaultSource", DEFAULT_SOURCE)
+            put("customSource", SOURCE_CUSTOM)
+            // What `npm config get registry` says right now, so the "npm
+            // default" option can show the concrete URL it would use instead of
+            // being an unexplained blank.
+            put("npmRegistry", npmRegistry)
             put("needsSetup", install == null)
         }
     }
 
     /**
-     * `npm install -g pi` through [source]. Blocking: npm takes tens of
-     * seconds, and the caller (bridge request) is already off the EDT.
+     * `npm install -g pi` through [source], or through [customRegistry] when the
+     * source is [SOURCE_CUSTOM]. Blocking with **no time limit** — the caller
+     * runs on a pooled bridge thread, and a cold install over a slow mirror is
+     * minutes-to-tens-of-minutes. It only ends when npm ends or the user calls
+     * [cancelInstall].
+     *
+     * When neither yields a registry the flag is omitted entirely and npm's own
+     * configuration decides — the only correct behaviour on a machine pointed at
+     * a corporate registry or a proxy.
      *
      * The located installation is refreshed afterwards so the version shown in
      * the UI comes from the binary that was just installed, never from a guess.
      */
     fun install(
         source: String?,
+        customRegistry: String? = null,
         npmPath: () -> String? = { PiLocator.locateNpm() },
         nodePath: () -> String? = { PiLocator.locateNode() },
-        runner: (ProcessBuilder, Long) -> CliResult = { pb, timeout ->
-            PiCliRunner.runProcess(pb, timeout)
+        runner: (ProcessBuilder) -> CliResult = { pb ->
+            PiCliRunner.runProcessUntilExit(pb) { proc -> installProcess = proc }
         },
         refresh: () -> dev.pi.agent.process.PiInstallation? = {
             PiLocator.locate(forceRefresh = true)
         },
     ): JsonObject {
+        if (source == SOURCE_CUSTOM && normalizeCustomRegistry(customRegistry) == null) {
+            return error(
+                "that registry does not look like a URL — expected something like " +
+                    "https://registry.example.com (a bare host works too, https is assumed)",
+            )
+        }
         val npm = npmPath()
             ?: return error("npm was not found on this machine, so pi cannot be installed automatically")
-        val node = nodePath()
-        val command = OsProcess.launchCommand(installArgs(npm, source))
-
-        val pb = ProcessBuilder(command).redirectErrorStream(true)
-        OsProcess.augmentPathEnv(pb, listOfNotNull(node?.let { File(it).parent }))
-        val registry = registryFor(source)
-        LOG.info("installing $PI_PACKAGE from $registry via $npm")
-
-        val result = runner(pb, INSTALL_TIMEOUT_SECONDS)
-        val output = (result.stdout + "\n" + result.stderr).trim()
-        if (!result.success) {
-            LOG.warn("pi install failed (exit ${result.exitCode}): $output")
-            return buildJsonObject {
-                put("ok", false)
-                put("exitCode", result.exitCode)
-                put("registry", registry)
-                put("output", output.take(4000))
-                put("error", installFailureHint(result.exitCode, output))
-            }
+        if (!beginInstall()) {
+            return error("an install is already running — stop it first")
         }
+        try {
+            val node = nodePath()
+            val registry = resolveRegistry(source, customRegistry)
+            val command = OsProcess.launchCommand(installArgs(npm, registry))
 
-        val installed = refresh()
-        LOG.info("pi installed at ${installed?.path ?: "?"} (version ${installed?.version ?: "?"})")
-        return buildJsonObject {
-            put("ok", installed != null)
-            put("exitCode", result.exitCode)
-            put("registry", registry)
-            put("output", output.take(4000))
-            put("found", installed != null)
-            put("path", installed?.path ?: "")
-            put("version", installed?.version ?: "")
-            if (installed == null) {
-                put(
-                    "error",
-                    "npm reported success but pi is still not on PATH — set its path manually below",
-                )
+            val pb = ProcessBuilder(command).redirectErrorStream(true)
+            OsProcess.augmentPathEnv(pb, listOfNotNull(node?.let { File(it).parent }))
+            LOG.info("installing $PI_PACKAGE via $npm (registry: ${registry ?: "npm default"})")
+
+            val result = runner(pb)
+            val output = (result.stdout + "\n" + result.stderr).trim()
+            if (installCancelled) {
+                LOG.info("pi install stopped by the user")
+                return buildJsonObject {
+                    put("ok", false)
+                    put("cancelled", true)
+                    put("registry", registry ?: "")
+                    put("output", output.take(4000))
+                    put(
+                        "error",
+                        "Install stopped. Nothing was uninstalled — an interrupted npm run may " +
+                            "leave a partial package, so re-run it or set pi's path manually.",
+                    )
+                }
             }
+            if (!result.success) {
+                LOG.warn("pi install failed (exit ${result.exitCode}): $output")
+                return buildJsonObject {
+                    put("ok", false)
+                    put("exitCode", result.exitCode)
+                    put("registry", registry ?: "")
+                    put("output", output.take(4000))
+                    put("error", installFailureHint(result.exitCode, output))
+                }
+            }
+
+            val installed = refresh()
+            LOG.info("pi installed at ${installed?.path ?: "?"} (version ${installed?.version ?: "?"})")
+            return buildJsonObject {
+                put("ok", installed != null)
+                put("exitCode", result.exitCode)
+                put("registry", registry ?: "")
+                put("output", output.take(4000))
+                put("found", installed != null)
+                put("path", installed?.path ?: "")
+                put("version", installed?.version ?: "")
+                if (installed == null) {
+                    put(
+                        "error",
+                        "npm reported success but pi is still not on PATH — set its path manually below",
+                    )
+                }
+            }
+        } finally {
+            endInstall()
         }
     }
 
@@ -209,8 +368,15 @@ object PiEnvironment {
         return when {
             lower.contains("eacces") || lower.contains("permission denied") ->
                 "npm could not write to its global prefix (permissions). Fix the npm prefix or set pi's path manually."
-            lower.contains("etimedout") || lower.contains("enotfound") || lower.contains("econnrefused") ->
-                "The registry was unreachable. Try the other source, or install pi yourself and set its path."
+            // Network-shaped failures: no DNS, refused, reset, a quiet proxy
+            // answering 502/504 (what an internal gateway actually returns),
+            // or any of that surfacing as a timeout after retries.
+            listOf(
+                "etimedout", "enotfound", "econnrefused", "econnreset", "eai_again",
+                "eproxy", "e502", "e503", "e504", "network", "socket hang up",
+            ).any { lower.contains(it) } ->
+                "The registry was unreachable (proxy, firewall or no internet). " +
+                    "Pick a different source, use npm's own registry, or install pi yourself and set its path."
             lower.contains("eexist") ->
                 "npm refused to overwrite an existing install. Remove it, or set pi's path manually."
             exitCode == -1 ->
@@ -226,5 +392,22 @@ object PiEnvironment {
         OsProcess.augmentPathEnv(pb, listOf(parent.absolutePath))
         val result = PiCliRunner.runProcess(pb, VERSION_TIMEOUT_SECONDS)
         (result.stdout + result.stderr).trim().lineSequence().firstOrNull { it.isNotBlank() }
+    }.getOrNull()
+
+    /**
+     * `npm config get registry` — the URL npm would use with no `--registry`
+     * flag. Shown next to the "npm default" option so the choice is concrete.
+     * Any failure (old npm, broken config) just means "unknown", never an error.
+     */
+    private fun npmConfiguredRegistry(npmPath: String): String? = runCatching {
+        val parent = File(npmPath).parentFile ?: return@runCatching null
+        val pb = ProcessBuilder(OsProcess.launchCommand(listOf(npmPath, "config", "get", "registry")))
+            .redirectErrorStream(true)
+        OsProcess.augmentPathEnv(pb, listOf(parent.absolutePath))
+        PiCliRunner.runProcess(pb, VERSION_TIMEOUT_SECONDS)
+            .stdout
+            .lineSequence()
+            .map { it.trim() }
+            .firstOrNull { it.startsWith("http://") || it.startsWith("https://") }
     }.getOrNull()
 }

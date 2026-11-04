@@ -93,13 +93,14 @@ export class JcefBridge implements Bridge {
     }, 5000);
   }
 
-  async request<T>(method: string, params?: unknown): Promise<T> {
+  async request<T>(method: string, params?: unknown, timeoutMs?: number): Promise<T> {
     const id = `js-${++this.seq}-${Date.now()}`;
     const promise = new Promise<T>((resolve, reject) => {
       this.pending.set(id, {
         resolve: resolve as (v: unknown) => void,
         reject,
-        deadline: Date.now() + 360_000, // package installs can be slow
+        // Installs pass 0: npm is stopped by the user, not by a clock.
+        deadline: timeoutMs === 0 ? Number.POSITIVE_INFINITY : Date.now() + (timeoutMs ?? 360_000),
       });
     });
     const resp = await fetch("/bridge", {
