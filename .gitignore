@@ -21,7 +21,11 @@ web/probe-*.png
 
 # Logs
 *.log
-.zcode/
+# zcode（CLI/agent）本地产物：目录、缓存、状态文件，名字以此开头即忽略。
+# 不带前导 `/`，任意层级生效；大小写差异由 core.ignorecase 兜住（Windows/macOS 默认 true）。
+.zcode*
+# 同一工具的变体写法（无前导点、首字母大写）：ZCode/、zcode/、zCode/
+[Zz][Cc]ode*
 .idea/
 
 # Agent scratch / credentials.
