@@ -21,10 +21,9 @@ web/probe-*.png
 
 # Logs
 *.log
-# zcode（CLI/agent）本地产物：目录、缓存、状态文件，名字以此开头即忽略。
-# 不带前导 `/`，任意层级生效；大小写差异由 core.ignorecase 兜住（Windows/macOS 默认 true）。
+# 外部 agent / CLI 工具的本地产物（状态目录、缓存、配置文件）。
+# 不带前导 `/`，任意层级生效；有无前导点、首字母大小写都覆盖。
 .zcode*
-# 同一工具的变体写法（无前导点、首字母大写）：ZCode/、zcode/、zCode/
 [Zz][Cc]ode*
 .idea/
 
@@ -38,6 +37,6 @@ web/probe-*.png
 .specify/
 .workbuddy/
 
-# 版本执行提示词：无人值守派发给外部 agent 的临时编排稿，只留本地。
-# 命名约定 <version>-ZCODE-PROMPT.md，任意前缀均忽略，避免每版本改一次规则。
-specs/*-ZCODE-PROMPT.md
+# 版本执行提示词：派发给外部 agent 的临时编排稿，只留本地，不入库。
+# 命名约定 <version>-PROMPT.md，任意版本前缀均忽略，避免每版本改一次规则。
+specs/*-PROMPT.md
