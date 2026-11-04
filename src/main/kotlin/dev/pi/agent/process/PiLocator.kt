@@ -161,6 +161,32 @@ object PiLocator {
         nodeInterpreterFor(piPath)?.let { File(it).parent }
 
     /**
+     * Node runtime reachable from the IDE, or null. Same discovery rules as
+     * pi's own interpreter search, but standalone: the first-run check has to
+     * answer "is node installed at all" before any pi path exists.
+     */
+    fun locateNode(): String? = if (OsProcess.isWindows) {
+        windowsNode()
+    } else {
+        loginShellPath()
+            .map { File(it, "node") }
+            .firstOrNull { isLaunchable(it) }
+            ?.absolutePath
+    }
+
+    /** npm client (the install vehicle offered on first run), or null. */
+    fun locateNpm(): String? = if (OsProcess.isWindows) {
+        windowsWhere("npm")
+            ?.firstOrNull { it.lowercase().endsWith(".cmd") || it.lowercase().endsWith(".exe") }
+            ?: windowsWhere("npm")?.firstOrNull()
+    } else {
+        loginShellPath()
+            .map { File(it, "npm") }
+            .firstOrNull { isLaunchable(it) }
+            ?.absolutePath
+    }
+
+    /**
      * Directories of the user's login shell PATH (Unix only; Windows has no
      * login shell and relies on `where` + well-known dirs instead). Resolving
      * this is essential because IDEs launched from the Dock/Finder inherit a

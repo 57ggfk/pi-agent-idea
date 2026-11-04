@@ -130,6 +130,48 @@ export interface EnvironmentResult extends CliOutcome {
   agentDir?: string;
 }
 
+/** One detected tool: node, npm or pi. */
+export interface ToolStatus {
+  found: boolean;
+  path: string;
+  version: string;
+}
+
+/** npm registry offered during first-run setup. */
+export interface InstallSourceInfo {
+  id: string;
+  registry: string;
+}
+
+/**
+ * First-run environment report. Detection only reports; installing is a
+ * separate, explicit call so the user always sees what will be touched.
+ */
+export interface EnvDetectResult extends CliOutcome {
+  node?: ToolStatus;
+  npm?: ToolStatus;
+  pi?: ToolStatus;
+  nodeMajor?: number | null;
+  nodeOk?: boolean;
+  minNodeMajor?: number;
+  /** False when node or npm is missing: the manual path is the only option. */
+  canInstall?: boolean;
+  piPackage?: string;
+  agentDir?: string;
+  customPath?: string;
+  sources?: InstallSourceInfo[];
+  defaultSource?: string;
+  /** True when pi itself is missing — the setup card keys off this. */
+  needsSetup?: boolean;
+}
+
+export interface EnvInstallResult extends CliOutcome {
+  found?: boolean;
+  path?: string;
+  version?: string;
+  registry?: string;
+}
+
 export interface SettingsReadResult extends CliOutcome {
   path?: string;
   text?: string;
@@ -142,6 +184,9 @@ export function manageApi(bridge: Bridge) {
 
   return {
     environment: () => call<EnvironmentResult>("manage.env"),
+    envDetect: () => call<EnvDetectResult>("manage.envDetect"),
+    envInstall: (p: { source: string }) => call<EnvInstallResult>("manage.envInstall", p),
+    envSetPath: (p: { path: string }) => call<EnvInstallResult>("manage.envSetPath", p),
     mcpList: () => call<McpListResult>("manage.mcpList"),
     mcpAdd: (p: { name: string; command?: string; args?: string[]; url?: string; env?: Record<string, string>; local?: boolean }) =>
       call<CliOutcome>("manage.mcpAdd", p),

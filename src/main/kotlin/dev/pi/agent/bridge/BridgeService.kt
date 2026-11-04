@@ -122,6 +122,11 @@ class BridgeService(private val project: Project) : Disposable {
                 "approval.setPolicy" -> approvalSetPolicy(params)
                 "rpc.restart" -> restartPi()
                 "manage.env" -> dev.pi.agent.manage.PiManage.environment()
+                "manage.envDetect" -> dev.pi.agent.manage.PiEnvironment.detect()
+                "manage.envInstall" -> dev.pi.agent.manage.PiEnvironment.install(
+                    (params["source"] as? kotlinx.serialization.json.JsonPrimitive)?.content,
+                )
+                "manage.envSetPath" -> dev.pi.agent.manage.PiEnvironment.setPiPath(params)
                 "manage.mcpList" -> dev.pi.agent.manage.PiManage.mcpList(project.basePath)
                 "manage.mcpAdd" -> dev.pi.agent.manage.PiManage.mcpAdd(withProjectPath(params))
                 "manage.mcpRemove" -> dev.pi.agent.manage.PiManage.mcpRemove(withProjectPath(params))

@@ -1,0 +1,195 @@
+import { useCallback, useEffect, useState } from "react";
+import { getBridge } from "../bridge";
+import { manageApi, type EnvDetectResult, type ToolStatus } from "../manage";
+import { usePiStore } from "../store/store";
+
+/**
+ * First-run setup card.
+ *
+ * Before this existed, a machine without pi showed "pi process is not running"
+ * and nothing else: no hint that a node runtime is required, no way to install
+ * pi, no indication of which path the plugin was looking for. The card answers
+ * the three questions a first-time user actually has — what do I have, what am
+ * I missing, how do I get it — and offers both routes: install through npm
+ * (international registry or the China mirror) or point at an existing binary.
+ *
+ * It hides itself as soon as detection reports a working pi, so it never
+ * becomes permanent furniture.
+ */
+export default function SetupCard() {
+  const [env, setEnv] = useState<EnvDetectResult | null>(null);
+  const [dismissed, setDismissed] = useState(false);
+  const [source, setSource] = useState("official");
+  const [manual, setManual] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [log, setLog] = useState("");
+  const [error, setError] = useState("");
+
+  const piStatus = usePiStore((s) => s.piStatus);
+  const restartPi = usePiStore((s) => s.restartPi);
+
+  const detect = useCallback(async () => {
+    const api = manageApi(await getBridge());
+    const result = await api.envDetect().catch((e: Error) => ({
+      ok: false,
+      error: e.message,
+      needsSetup: false,
+    }) as EnvDetectResult);
+    setEnv(result);
+    if (result.defaultSource) setSource(result.defaultSource);
+    if (result.customPath) setManual(result.customPath);
+  }, []);
+
+  useEffect(() => {
+    void detect();
+  }, [detect]);
+
+  const install = async () => {
+    setBusy(true);
+    setError("");
+    setLog("");
+    try {
+      const api = manageApi(await getBridge());
+      const result = await api.envInstall({ source });
+      setLog(result.output ?? "");
+      if (!result.ok) {
+        setError(result.error ?? "install failed");
+        return;
+      }
+      await restartPi();
+      setEnv((prev) => (prev ? { ...prev, needsSetup: false } : prev));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const useManual = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const api = manageApi(await getBridge());
+      const result = await api.envSetPath({ path: manual.trim() });
+      if (!result.ok) {
+        setError(result.error ?? "pi could not be started from that path");
+        return;
+      }
+      await restartPi();
+      setEnv((prev) => (prev ? { ...prev, needsSetup: false } : prev));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (dismissed || !env?.needsSetup || piStatus === "running") return null;
+
+  return (
+    <div className="setup-card" data-testid="setup-card">
+      <div className="setup-head">
+        <div className="setup-title">Set up Pi Agent</div>
+        <button className="setup-dismiss" onClick={() => setDismissed(true)} title="Hide until next time">
+          Later
+        </button>
+      </div>
+      <div className="setup-sub">
+        The agent runs on the <span className="mono">{env.piPackage}</span> CLI, which needs Node.js.
+        Here is what this machine has:
+      </div>
+
+      <div className="setup-tools">
+        <ToolRow label="Node.js" tool={env.node} hint={`${env.minNodeMajor ?? 18}+ required`} />
+        <ToolRow label="npm" tool={env.npm} hint="install vehicle" />
+        <ToolRow label="pi" tool={env.pi} hint="the agent itself" />
+      </div>
+
+      {!env.nodeOk ? (
+        <div className="setup-warn" data-testid="setup-node-warning">
+          Node.js {env.minNodeMajor ?? 18}+ was not found. Install it from{" "}
+          <a href="https://nodejs.org/en/download" target="_blank" rel="noreferrer">
+            nodejs.org
+          </a>{" "}
+          or, on a slow link,{" "}
+          <a href="https://npmmirror.com/mirrors/node/" target="_blank" rel="noreferrer">
+            the China mirror
+          </a>
+          , then reopen this tool window.
+        </div>
+      ) : null}
+
+      {env.canInstall ? (
+        <div className="setup-block">
+          <div className="setup-label">Install through npm</div>
+          <div className="setup-sources">
+            {(env.sources ?? []).map((s) => (
+              <label key={s.id} className={`setup-source ${source === s.id ? "setup-source-on" : ""}`}>
+                <input
+                  type="radio"
+                  name="setup-source"
+                  value={s.id}
+                  checked={source === s.id}
+                  onChange={() => setSource(s.id)}
+                  disabled={busy}
+                />
+                <span>{s.id === "china" ? "China mirror" : "International"}</span>
+                <span className="mono setup-registry">{s.registry}</span>
+              </label>
+            ))}
+          </div>
+          <button className="btn" data-testid="setup-install" onClick={install} disabled={busy}>
+            {busy ? "Installing… (this can take a minute)" : `Install ${env.piPackage}`}
+          </button>
+        </div>
+      ) : (
+        <div className="setup-warn" data-testid="setup-no-npm">
+          npm was not found, so the plugin cannot install pi for you. Install Node.js (it ships npm),
+          or point at an existing pi below.
+        </div>
+      )}
+
+      <div className="setup-block">
+        <div className="setup-label">Or point at an existing pi</div>
+        <div className="setup-manual">
+          <input
+            className="setup-input"
+            data-testid="setup-path-input"
+            value={manual}
+            placeholder={navigator.platform.startsWith("Win") ? "C:\\Users\\you\\AppData\\Roaming\\npm\\pi.cmd" : "/usr/local/bin/pi"}
+            onChange={(e) => setManual(e.target.value)}
+            disabled={busy}
+          />
+          <button className="btn" data-testid="setup-path-save" onClick={useManual} disabled={busy || manual.trim() === ""}>
+            Use this path
+          </button>
+        </div>
+      </div>
+
+      {error ? (
+        <div className="setup-error" data-testid="setup-error">
+          {error}
+        </div>
+      ) : null}
+      {log ? (
+        <pre className="setup-log" data-testid="setup-log">
+          {log}
+        </pre>
+      ) : null}
+    </div>
+  );
+}
+
+function ToolRow({ label, tool, hint }: { label: string; tool?: ToolStatus; hint: string }) {
+  const found = Boolean(tool?.found);
+  return (
+    <div className={`setup-tool ${found ? "setup-tool-ok" : "setup-tool-missing"}`}>
+      <span className="setup-tool-mark">{found ? "✓" : "✕"}</span>
+      <span className="setup-tool-name">{label}</span>
+      <span className="setup-tool-version mono">{found ? tool?.version || "?" : "not found"}</span>
+      <span className="setup-tool-path mono" title={tool?.path || hint}>
+        {found ? tool?.path : hint}
+      </span>
+    </div>
+  );
+}

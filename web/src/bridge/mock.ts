@@ -391,6 +391,32 @@ export class MockBridge implements Bridge {
           version: this.piVersion,
           agentDir: "/tmp/mock-home/.pi/agent",
         };
+      // Standalone/mock runs already have pi; the setup card stays hidden and
+      // its states are exercised by the dedicated component tests instead.
+      case "manage.envDetect":
+        return {
+          ok: true,
+          node: { found: true, path: "/usr/local/bin/node", version: "v22.0.0" },
+          npm: { found: true, path: "/usr/local/bin/npm", version: "10.0.0" },
+          pi: { found: true, path: "/usr/local/bin/pi", version: this.piVersion },
+          nodeMajor: 22,
+          nodeOk: true,
+          minNodeMajor: 18,
+          canInstall: true,
+          piPackage: "@earendil-works/pi-coding-agent",
+          agentDir: "/tmp/mock-home/.pi/agent",
+          customPath: "",
+          sources: [
+            { id: "official", registry: "https://registry.npmjs.org" },
+            { id: "china", registry: "https://registry.npmmirror.com" },
+          ],
+          defaultSource: "official",
+          needsSetup: false,
+        };
+      case "manage.envInstall":
+        return { ok: true, found: true, exitCode: 0, output: "added 1 package", version: this.piVersion };
+      case "manage.envSetPath":
+        return { ok: true, found: true, path: "/usr/local/bin/pi", version: this.piVersion };
       case "manage.mcpList":
         return {
           ok: true,

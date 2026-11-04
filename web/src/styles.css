@@ -3239,3 +3239,184 @@ button {
   font-size: var(--fs-xs);
   color: var(--accent);
 }
+
+/* --------------------------------------------------------------------------
+   First-run setup card (node/npm/pi detection + guided install)
+   -------------------------------------------------------------------------- */
+
+.setup-card {
+  margin: var(--sp-3) var(--sp-3) 0;
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--bg-secondary);
+  color: var(--text);
+  font-size: var(--fs-sm);
+  flex: 0 0 auto;
+  overflow-y: auto;
+  max-height: 60vh;
+}
+
+.setup-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+
+.setup-title {
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+
+.setup-dismiss {
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.setup-dismiss:hover {
+  color: var(--text);
+}
+
+.setup-sub {
+  color: var(--text-secondary);
+  margin: var(--sp-1) 0 var(--sp-3);
+  line-height: 1.5;
+}
+
+.setup-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: var(--sp-3);
+}
+
+.setup-tool {
+  display: grid;
+  grid-template-columns: 16px 70px 70px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 3px 0;
+  font-size: var(--fs-xs);
+}
+
+.setup-tool-ok .setup-tool-mark {
+  color: var(--success);
+}
+
+.setup-tool-missing .setup-tool-mark {
+  color: var(--danger);
+}
+
+.setup-tool-name {
+  font-weight: 500;
+}
+
+.setup-tool-version {
+  color: var(--text-secondary);
+}
+
+.setup-tool-path {
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.setup-warn {
+  border: 1px solid var(--warning-border);
+  background: var(--warning-soft);
+  color: var(--text);
+  border-radius: var(--r-md);
+  padding: var(--sp-2) var(--sp-3);
+  margin-bottom: var(--sp-3);
+  line-height: 1.5;
+}
+
+.setup-block {
+  margin-bottom: var(--sp-3);
+}
+
+.setup-label {
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  margin-bottom: var(--sp-1);
+}
+
+.setup-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+
+.setup-source {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 4px 8px;
+  background: var(--bg-input);
+  cursor: pointer;
+}
+
+.setup-source-on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.setup-registry {
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
+}
+
+.setup-manual {
+  display: flex;
+  gap: var(--sp-2);
+}
+
+.setup-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 4px 8px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+
+.setup-input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.setup-error {
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-radius: var(--r-sm);
+  padding: var(--sp-2);
+  margin-bottom: var(--sp-2);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.setup-log {
+  max-height: 160px;
+  overflow: auto;
+  margin: 0;
+  padding: var(--sp-2);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+}

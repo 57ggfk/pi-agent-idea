@@ -69,6 +69,10 @@ Windows 侧**，见下方 WSL 边界）。插件按 `PI_AGENT_EXECUTABLE` 环境
 （Windows 覆盖 `%APPDATA%\npm\pi.cmd`、scoop、chocolatey）的顺序自动定位 pi；
 发现失败时在设置里手动指定路径即可。
 
+首次打开工具窗会先做一次环境检测（Node.js / npm / pi）：缺什么直接写在卡片上，
+可以一键安装 pi（源可选官方 npm 或国内镜像 `registry.npmmirror.com`），也可以
+填一个已有的 pi 路径，不用自己记 `npm install -g` 的命令。
+
 ## 排障
 
 工具窗打不开、或打开是空白时，先看 `Help → Show Log in Explorer` 里的 `idea.log`：

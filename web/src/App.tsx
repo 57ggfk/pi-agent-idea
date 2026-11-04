@@ -2,6 +2,7 @@ import { Component, useEffect, type ReactNode } from "react";
 import { usePiStore } from "./store/store";
 import MessageList from "./components/MessageList";
 import Composer from "./components/Composer";
+import SetupCard from "./components/SetupCard";
 import QueueBar, { QueueDiscardBanner } from "./components/QueueBar";
 import ApprovalCard from "./components/ApprovalCard";
 import StatusBar from "./components/StatusBar";
@@ -79,6 +80,7 @@ export default function App() {
           <QueueDiscardBanner />
           {tab === "chat" ? (
             <>
+              <SetupCard />
               <MessageList />
               <ApprovalCard />
               <QueueBar />
