@@ -133,7 +133,9 @@ class PiProcessManager(private val project: Project) : Disposable {    private v
         val process: Process = try {
             pb.start()
         } catch (e: IOException) {
-            LOG.warn("failed to start pi at $installation.path", e)
+            // The command is part of the message: "Cannot run program" alone
+            // does not say which interpreter or which PATH entry was used.
+            LOG.warn("failed to start pi at ${installation.path}: ${command.joinToString(" ")}", e)
             setState(PiConnectionState.Exited("failed to start pi: ${e.message}", null))
             return null
         }

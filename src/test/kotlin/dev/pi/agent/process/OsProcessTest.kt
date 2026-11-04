@@ -1,7 +1,9 @@
 package dev.pi.agent.process
 
+import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * Process output charset handling. Native Windows tools print in the local
@@ -34,5 +36,16 @@ class OsProcessTest {
     @Test
     fun `empty output decodes to empty string`() {
         assertEquals("", OsProcess.decodeOutput(ByteArray(0)))
+    }
+
+    @Test
+    fun `windows shell is an absolute path, never the bare name`() {
+        if (!OsProcess.isWindows) return
+        val shell = OsProcess.windowsShell
+        // A bare `cmd` is resolved against the IDE process's own search path;
+        // when that lands on a non-executable file CreateProcess answers
+        // "error=193, %1 is not a valid Win32 application" and pi looks broken.
+        assertTrue(File(shell).isAbsolute, "expected an absolute path, got $shell")
+        assertTrue(shell.lowercase().endsWith("cmd.exe"), "expected cmd.exe, got $shell")
     }
 }

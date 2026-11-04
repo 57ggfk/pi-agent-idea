@@ -55,9 +55,13 @@ class PiLocatorTest {
         val shim = "C:\\Users\\dev\\AppData\\Roaming\\npm\\pi.cmd"
         assertTrue(OsProcess.isCmdLike(shim))
         assertEquals(
-            listOf("cmd", "/c", shim, "--version"),
+            // An absolute interpreter, never the bare name `cmd`: a bare name
+            // is resolved against the IDE process's own PATH and can land on
+            // a non-executable file (CreateProcess error=193).
+            listOf(OsProcess.windowsShell, "/c", shim, "--version"),
             OsProcess.launchCommand(listOf(shim, "--version")),
         )
+        assertTrue(File(OsProcess.windowsShell).isAbsolute)
         assertFalse(OsProcess.isCmdLike("C:\\Program Files\\nodejs\\node.exe"))
     }
 

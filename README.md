@@ -100,6 +100,9 @@ Windows 侧**，见下方 WSL 边界）。插件按 `PI_AGENT_EXECUTABLE` 环境
   取消勾选 `ide.browser.jcef.sandbox.enable` 后重启 IDE。
 - pi 找不到（`Cannot run program` / `pi process is not running`）：优先在
   `Settings → Tools → Pi Agent` 指定 pi 的绝对路径，绕过自动发现。
+- Windows 上启动 pi 报 `CreateProcess error=193, %1 不是有效的 Win32 应用程序`：这是启动批处理时
+  `cmd` 解析到了错误的文件。插件已改用 `%ComSpec%` 的绝对路径启动批处理；若仍复现，先在 IDE 的
+  Terminal 里 `echo %ComSpec%` 确认它指向可执行的 `cmd.exe`。
 
 ## 开发
 

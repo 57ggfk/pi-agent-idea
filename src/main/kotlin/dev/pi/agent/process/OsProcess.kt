@@ -59,13 +59,43 @@ object OsProcess {
     }
 
     /**
+     * Absolute path to the command interpreter that runs `.cmd`/`.bat` shims.
+     *
+     * Never the bare name `cmd`. CreateProcess resolves a bare name against
+     * the *parent process's* own search path, so a stale entry (a same-named
+     * file, a directory, a shell wrapper) is enough to turn a perfectly good
+     * interpreter into
+     * `CreateProcess error=193, %1 is not a valid Win32 application` — and the
+     * failure then looks like "pi is broken" while the same command works in
+     * an external terminal. `ComSpec` is what Windows itself uses; the
+     * well-known location is only a fallback for processes started with a
+     * stripped environment.
+     */
+    val windowsShell: String by lazy { resolveWindowsShell() }
+
+    private fun resolveWindowsShell(): String {
+        val candidates = listOfNotNull(
+            System.getenv("ComSpec"),
+            System.getenv("SystemRoot")?.let { "$it\\System32\\cmd.exe" },
+            System.getenv("windir")?.let { "$it\\System32\\cmd.exe" },
+            "C:\\Windows\\System32\\cmd.exe",
+        )
+        return candidates.asSequence()
+            .map { it.trim().trim('"') }
+            .firstOrNull { it.isNotEmpty() && File(it).isFile }
+            // Nothing found: keep the old behaviour rather than refusing to
+            // start at all — the error message is clearer than a silent skip.
+            ?: "cmd"
+    }
+
+    /**
      * Spawnable form of [command]: a `.cmd`/`.bat` executable on Windows is
-     * wrapped in `cmd /c …` (CreateProcess refuses them on recent JDKs);
-     * anything else passes through unchanged.
+     * wrapped in `<absolute cmd.exe> /c …` (CreateProcess refuses them on
+     * recent JDKs); anything else passes through unchanged.
      */
     fun launchCommand(command: List<String>): List<String> {
         val head = command.firstOrNull() ?: return command
-        return if (isCmdLike(head)) listOf("cmd", "/c") + command else command
+        return if (isCmdLike(head)) listOf(windowsShell, "/c") + command else command
     }
 
     /**

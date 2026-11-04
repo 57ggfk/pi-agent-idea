@@ -223,9 +223,9 @@ object PiLocator {
         return candidates.firstOrNull { File(it).isFile }
     }
 
-    /** Results of `cmd /c where <tool>`, or null when not found. */
+    /** Results of `<cmd.exe> /c where <tool>`, or null when not found. */
     private fun windowsWhere(tool: String): List<String>? =
-        runCapture(listOf("cmd", "/c", "where", tool), 10)
+        runCapture(listOf(OsProcess.windowsShell, "/c", "where", tool), 10)
             ?.lineSequence()
             ?.map { it.trim() }
             ?.filter { it.isNotEmpty() }

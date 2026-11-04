@@ -23,6 +23,7 @@
 - 修复中文路径下找不到 pi：Windows `where` 输出改按本地代码页解码，`D:\软件\…` 不再变成 `????` 导致「Cannot run program」。
 - 修复 IPv6 优先的 JVM 上 UI 服务绑到 `[::1]`、页面却访问 `127.0.0.1` 导致连不上。
 - 重新打开历史会话后，命令卡片展不开、看不到当时的执行结果：现在点开即有输出。
+- 修复 Windows 上 pi 起不来、报 `CreateProcess error=193`：启动 pi 改用系统命令解释器的绝对路径，不再让 IDE 进程的 `PATH` 去猜 `cmd` 是哪个文件。
 
 **Added**
 - **First-run setup**: the tool window checks for Node.js, npm and pi before anything else and names what is missing. Installing pi uses whatever registry npm is already configured with — a company proxy or private mirror needs no changes — and can equally be pinned to the official registry, the China mirror, or a URL you paste in. The install has no time limit and can be stopped at any point; pointing at an existing binary is always an option too.
@@ -45,6 +46,7 @@
 - pi is found again under Chinese install paths: `where` output on Windows is decoded with the local code page, so `D:\软件\…` no longer becomes `????` and fails with "Cannot run program".
 - The UI server no longer binds `[::1]` while the page requests `127.0.0.1` on JVMs that prefer IPv6.
 - Command cards in a reopened session could not be expanded, so the output was lost; they now open with what was captured at the time.
+- pi no longer fails to start on Windows with `CreateProcess error=193`: the batch shim is launched through the system command interpreter by its absolute path, so the IDE's own `PATH` no longer decides which `cmd` gets used.
 
 ## 0.5.0 — 2026-11-03
 

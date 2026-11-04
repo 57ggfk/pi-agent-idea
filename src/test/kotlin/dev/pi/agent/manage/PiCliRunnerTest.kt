@@ -1,5 +1,6 @@
 package dev.pi.agent.manage
 
+import dev.pi.agent.process.OsProcess
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -78,7 +79,7 @@ class PiCliRunnerTest {
         val result = PiCliRunner.runProcess(
             proc(
                 "echo boom 1>&2; exit 3",
-                listOf("cmd", "/c", "echo boom 1>&2 & exit 3"),
+                listOf(OsProcess.windowsShell, "/c", "echo boom 1>&2 & exit 3"),
             ),
             timeoutSeconds = 10,
         )
