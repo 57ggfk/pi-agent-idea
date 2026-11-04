@@ -209,6 +209,52 @@ describe("itemsFromMessages", () => {
     // data: URL prefixes are stripped to plain base64
     expect(items[0].blocks[2]).toEqual({ kind: "image", data: "BBBB", mimeType: "image/jpeg" });
   });
+
+  it("folds toolResult messages back into their tool card so the output survives", () => {
+    const items = itemsFromMessages([
+      { role: "user", content: "list files" },
+      {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "c1", name: "bash", arguments: { command: "ls" } }],
+      },
+      {
+        role: "toolResult",
+        toolCallId: "c1",
+        toolName: "bash",
+        content: [{ type: "text", text: "README.md\nsrc" }],
+        isError: false,
+      },
+      { role: "assistant", content: [{ type: "text", text: "done" }] },
+    ]);
+    // The result message does not become its own transcript item.
+    expect(items).toHaveLength(3);
+    const block = items[1].blocks[0];
+    expect(block).toMatchObject({
+      kind: "toolcall",
+      id: "c1",
+      done: true,
+      result: { output: "README.md\nsrc", isError: false },
+    });
+  });
+
+  it("keeps an orphaned toolResult as its own card instead of dropping it", () => {
+    const items = itemsFromMessages([
+      {
+        role: "toolResult",
+        toolCallId: "c9",
+        toolName: "bash",
+        content: [{ type: "text", text: "boom" }],
+        isError: true,
+      },
+    ]);
+    expect(items).toHaveLength(1);
+    expect(items[0].blocks[0]).toMatchObject({
+      kind: "toolcall",
+      id: "c9",
+      toolName: "bash",
+      result: { output: "boom", isError: true },
+    });
+  });
 });
 
 describe("user images", () => {

@@ -457,6 +457,11 @@ button {
   cursor: pointer;
 }
 
+/* Nothing to open: don't advertise a click that does nothing. */
+.tool-card-head[data-expandable="false"] {
+  cursor: default;
+}
+
 .tool-name {
   font-weight: 600;
 }

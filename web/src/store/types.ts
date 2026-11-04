@@ -519,7 +519,40 @@ export function itemsFromMessages(messages: unknown[]): ChatItem[] {
   for (const m of messages) {
     const rec = asRecord(m);
     if (!rec) continue;
-    const role = rec["role"] as ChatItem["role"];
+    const role = rec["role"] as ChatItem["role"] | "toolResult";
+    // pi records every tool result as its own `toolResult` message. Skipping it
+    // left a restored session's tool card with no result at all: the card could
+    // not be expanded and the command output was simply gone.
+    if (role === "toolResult") {
+      const toolCallId = String(rec["toolCallId"] ?? "");
+      const output = resultText(rec);
+      const isError = Boolean(rec["isError"]);
+      const loc = toolCallId ? findToolBlock(items, toolCallId) : undefined;
+      if (loc) {
+        const item = { ...items[loc.itemIndex] };
+        const blocks = item.blocks.slice();
+        const block = blocks[loc.blockIndex] as Extract<ContentBlock, { kind: "toolcall" }>;
+        blocks[loc.blockIndex] = { ...block, done: true, result: { output, isError } };
+        item.blocks = blocks;
+        items[loc.itemIndex] = item;
+      } else {
+        // Result without a stored call (trimmed transcript): keep it visible as
+        // its own card instead of dropping the output.
+        const item = emptyItem("assistant", [
+          {
+            kind: "toolcall",
+            id: toolCallId,
+            toolName: String(rec["toolName"] ?? "tool"),
+            argsJson: "{}",
+            done: true,
+            result: { output, isError },
+          },
+        ]);
+        item.done = true;
+        items.push(item);
+      }
+      continue;
+    }
     if (role !== "user" && role !== "assistant") continue;
     const item = emptyItem(role, messageBlocks(rec));
     item.done = true;

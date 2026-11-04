@@ -103,10 +103,20 @@ export default function ToolCard({ block }: { block: Extract<ContentBlock, { kin
 
   const longOutput = output.length > 400;
   const shownOutput = longOutput && !open ? output.slice(0, 400) + "…" : output;
+  // A finished call with an empty output still has a detail pane worth opening
+  // ("(no output)"): otherwise the whole card looks dead. A call that is still
+  // running only expands once it has something to show.
+  const hasResult = block.result !== undefined;
+  const canExpand = hasResult && (output.length > 0 || block.done);
 
   return (
     <div className={`tool-card ${isError ? "tool-error" : ""}`} data-testid="tool-card">
-      <div className="tool-card-head" onClick={() => output && setOpen((o) => !o)}>
+      <div
+        className="tool-card-head"
+        data-expandable={canExpand}
+        aria-expanded={canExpand ? open : undefined}
+        onClick={() => canExpand && setOpen((o) => !o)}
+      >
         <span className="tool-icon">{toolIcon(block.toolName)}</span>
         <span className="tool-name">{block.toolName}</span>
         <span
@@ -140,7 +150,7 @@ export default function ToolCard({ block }: { block: Extract<ContentBlock, { kin
         </span>
       </div>
       {diff ? <DiffView lines={diff} /> : null}
-      {open && output ? <pre className="tool-output">{shownOutput}</pre> : null}
+      {open && canExpand ? <pre className="tool-output">{shownOutput || "(no output)"}</pre> : null}
     </div>
   );
 }

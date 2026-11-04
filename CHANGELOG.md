@@ -22,6 +22,7 @@
 - 前端起不来时页面自己报错：脚本没下载到或一执行就失败，会显示失败原因与资源地址，而不是一块白板。
 - 修复中文路径下找不到 pi：Windows `where` 输出改按本地代码页解码，`D:\软件\…` 不再变成 `????` 导致「Cannot run program」。
 - 修复 IPv6 优先的 JVM 上 UI 服务绑到 `[::1]`、页面却访问 `127.0.0.1` 导致连不上。
+- 重新打开历史会话后，命令卡片展不开、看不到当时的执行结果：现在点开即有输出。
 
 **Added**
 - **First-run setup**: the tool window checks for Node.js, npm and pi before anything else and names what is missing. Installing pi uses whatever registry npm is already configured with — a company proxy or private mirror needs no changes — and can equally be pinned to the official registry, the China mirror, or a URL you paste in. The install has no time limit and can be stopped at any point; pointing at an existing binary is always an option too.
@@ -43,6 +44,7 @@
 - The web UI reports its own boot failure: a bundle that never arrives or throws on execution now shows the reason and the asset address instead of a white rectangle.
 - pi is found again under Chinese install paths: `where` output on Windows is decoded with the local code page, so `D:\软件\…` no longer becomes `????` and fails with "Cannot run program".
 - The UI server no longer binds `[::1]` while the page requests `127.0.0.1` on JVMs that prefer IPv6.
+- Command cards in a reopened session could not be expanded, so the output was lost; they now open with what was captured at the time.
 
 ## 0.5.0 — 2026-11-03
 
