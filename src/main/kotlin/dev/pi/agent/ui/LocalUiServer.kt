@@ -42,9 +42,14 @@ class LocalUiServer private constructor() {
 
     private val LOG = Logger.getInstance(LocalUiServer::class.java)
 
-    private val server: HttpServer = HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0)
+    // Bind the IPv4 loopback explicitly. InetAddress.getLoopbackAddress()
+    // follows java.net.preferIPv6Addresses: on such a JVM the server listens
+    // on [::1] while every URL below still says 127.0.0.1, Chromium gets
+    // connection refused, and the tool window stays white with no hint.
+    private val bindAddress: InetAddress = InetAddress.getByName("127.0.0.1")
+    private val server: HttpServer = HttpServer.create(InetSocketAddress(bindAddress, 0), 0)
     val port: Int = server.address.port
-    val baseUrl: String = "http://127.0.0.1:$port/"
+    val baseUrl: String = "http://${server.address.address.hostAddress}:$port/"
 
     private val bridgeAuth = BridgeAuth(ownOrigin = baseUrl.dropLast(1))
     private val projectTokens = ConcurrentHashMap<String, Project>()
@@ -171,6 +176,9 @@ class LocalUiServer private constructor() {
         val resourcePath = "webui" + (if (uriPath == "/") "/index.html" else uriPath)
         val resource: InputStream? = javaClass.classLoader.getResourceAsStream(resourcePath)
         if (resource == null) {
+            // A missing bundle asset is exactly what a blank panel looks like
+            // from the outside, so name the path in the log.
+            LOG.warn("UI resource not found: $resourcePath (from ${exchange.requestURI})")
             exchange.sendResponseHeaders(404, -1)
             exchange.close()
             return

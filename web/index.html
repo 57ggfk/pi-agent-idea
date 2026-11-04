@@ -4,6 +4,114 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Pi Agent</title>
+    <!--
+      Boot watchdog. Deliberately a classic inline script that runs before the
+      module bundle: it is the only code that still executes when the bundle
+      itself never arrives (404, truncated response, parse error) or throws
+      while evaluating. Without it all of those failures look identical to the
+      user — an empty white tool window with nothing to report.
+
+      It stays inert when the app mounts (the normal path) and prints a plain
+      HTML card with the reason when it does not.
+    -->
+    <script>
+      (function () {
+        var boot = (window.__piBoot = {
+          start: Date.now(),
+          scriptLoaded: false,
+          errors: [],
+        });
+
+        window.addEventListener(
+          "error",
+          function (e) {
+            var el = e.target;
+            if (el && el.tagName === "SCRIPT") {
+              boot.errors.push("script failed to load: " + (el.src || "(inline)"));
+              return;
+            }
+            if (e.message) {
+              boot.errors.push(
+                e.message + (e.filename ? " — " + e.filename + ":" + e.lineno : ""),
+              );
+            }
+          },
+          true,
+        );
+
+        window.addEventListener(
+          "load",
+          function (e) {
+            var el = e.target;
+            if (el && el.tagName === "SCRIPT" && el.type === "module") boot.scriptLoaded = true;
+          },
+          true,
+        );
+
+        window.addEventListener("unhandledrejection", function (e) {
+          var r = e.reason;
+          boot.errors.push("unhandled rejection: " + ((r && r.message) || String(r)));
+        });
+
+        function esc(s) {
+          return String(s).replace(/[&<>"]/g, function (c) {
+            return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+          });
+        }
+
+        function card() {
+          if (window.__piMounted) return;
+          var root = document.getElementById("root");
+          if (!root || root.childElementCount > 0) return;
+
+          var script = document.querySelector('script[type="module"]');
+          var src = (script && script.src) || "(no module script in this document)";
+          var reasons = boot.errors.length
+            ? boot.errors
+            : [
+                boot.scriptLoaded
+                  ? "the bundle loaded but never mounted the app"
+                  : "the bundle never finished loading (404 or truncated response)",
+              ];
+
+          var rows = reasons
+            .map(function (r) {
+              return '<li style="margin:2px 0">' + esc(r) + "</li>";
+            })
+            .join("");
+
+          root.innerHTML =
+            '<div style="font:13px/1.6 system-ui,Segoe UI,sans-serif;color:#1f2328;' +
+            "background:#fff;border:1px solid #d0d7de;border-radius:8px;padding:16px 18px;" +
+            'margin:16px;max-width:760px">' +
+            '<div style="font-size:15px;font-weight:600;margin-bottom:6px">' +
+            "Pi Agent UI did not start</div>" +
+            '<div style="color:#57606a;margin-bottom:10px">' +
+            "The web UI bundle could not be executed inside this IDE's embedded browser. " +
+            "The panel is not frozen — nothing was rendered at all.</div>" +
+            '<ul style="margin:0 0 10px 18px;padding:0;color:#1f2328">' +
+            rows +
+            "</ul>" +
+            '<div style="color:#57606a;margin-bottom:4px">Bundle:</div>' +
+            '<div style="font:12px/1.5 ui-monospace,Consolas,monospace;background:#f6f8fa;' +
+            'border:1px solid #d0d7de;border-radius:6px;padding:6px 8px;word-break:break-all;' +
+            'margin-bottom:10px">' +
+            esc(src) +
+            "</div>" +
+            '<div style="color:#57606a">Copy this text and the matching <code>idea.log</code> ' +
+            "lines to the plugin author. Opening the address in a normal browser shows " +
+            "whether the bundle itself is fine.</div>" +
+            "</div>";
+        }
+
+        // Long enough for a slow machine to finish mounting, short enough to
+        // keep the user from staring at a blank panel.
+        setTimeout(card, 6000);
+        window.addEventListener("load", function () {
+          setTimeout(card, 6000);
+        });
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

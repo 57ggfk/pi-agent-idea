@@ -17,6 +17,10 @@
 - 输入 `@` 或 `/` 时列表是空的，不再一律显示「没有匹配」：加载失败会写明原因并可原地重试，加载中也会单独提示。
 - 文件列表改为 30 秒过期并在打开菜单时自动重读，菜单底部可手动刷新，新建或删除的文件不必重开工具窗即可看到。
 - Fork 之后界面还停在旧消息上：pi 1.4.0 不再返回会话路径，消息列表与新分支不同步。
+- 工具窗不再白屏：内嵌浏览器不可用、本地 UI 服务起不来、页面加载失败时，面板直接写明原因与地址，可重试或在系统浏览器打开。
+- 前端起不来时页面自己报错：脚本没下载到或一执行就失败，会显示失败原因与资源地址，而不是一块白板。
+- 修复中文路径下找不到 pi：Windows `where` 输出改按本地代码页解码，`D:\软件\…` 不再变成 `????` 导致「Cannot run program」。
+- 修复 IPv6 优先的 JVM 上 UI 服务绑到 `[::1]`、页面却访问 `127.0.0.1` 导致连不上。
 
 **Added**
 - **MCP servers can be switched off without deleting them**: turn one off in the Manage panel and back on later; command, args and env stay exactly where they were.
@@ -33,6 +37,10 @@
 - An empty `@` or `/` menu no longer always claims "no match": a failed load now says what went wrong and offers a retry, and a load in progress says so.
 - The file list expires after 30 seconds and is re-read when the menu opens; a refresh button picks up files created or deleted without reopening the tool window.
 - Fork left the UI on the old transcript: pi 1.4.0 no longer returns a session path, so the message list did not follow the new branch.
+- The tool window no longer stays blank: when the embedded browser is unavailable, the local UI service fails to start, or the page fails to load, the panel names the reason and the address, with retry and open-in-browser actions.
+- The web UI reports its own boot failure: a bundle that never arrives or throws on execution now shows the reason and the asset address instead of a white rectangle.
+- pi is found again under Chinese install paths: `where` output on Windows is decoded with the local code page, so `D:\软件\…` no longer becomes `????` and fails with "Cannot run program".
+- The UI server no longer binds `[::1]` while the page requests `127.0.0.1` on JVMs that prefer IPv6.
 
 ## 0.5.0 — 2026-11-03
 

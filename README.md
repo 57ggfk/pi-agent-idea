@@ -69,6 +69,27 @@ Windows 侧**，见下方 WSL 边界）。插件按 `PI_AGENT_EXECUTABLE` 环境
 （Windows 覆盖 `%APPDATA%\npm\pi.cmd`、scoop、chocolatey）的顺序自动定位 pi；
 发现失败时在设置里手动指定路径即可。
 
+## 排障
+
+工具窗打不开、或打开是空白时，先看 `Help → Show Log in Explorer` 里的 `idea.log`：
+
+- `Pi Agent UI: loading http://127.0.0.1:<port>` —— 面板实际加载的地址（token 不写日志）。
+- `UI resource not found: webui/…` —— 打包缺资源，前端脚本 404，页面必然白屏。
+- `Pi Agent UI failed to load: … — ERR_…` —— 内嵌浏览器打不开本地服务（代理、安全软件、端口被拦）。
+- `JCEF console: …` —— 页面里的 JS 报错，前端启动自检的结论也走这一行。
+
+白屏时面板本身会给出原因与地址，可「用系统浏览器打开」验证：浏览器能显示说明前端没问题，
+问题在内嵌浏览器；浏览器也打不开说明本地 UI 服务没起来。
+
+进阶手段：
+
+- 内网/离线环境：插件不访问外网，UI 全部由本机 `127.0.0.1` 提供；若装了 HTTP 代理，
+  把 `127.0.0.1,localhost` 加进 `Settings → HTTP Proxy → Proxy exceptions`。
+- 内嵌浏览器被安全软件拦（多见于 Windows 企业环境）：`Help → Find Action → Registry`，
+  取消勾选 `ide.browser.jcef.sandbox.enable` 后重启 IDE。
+- pi 找不到（`Cannot run program` / `pi process is not running`）：优先在
+  `Settings → Tools → Pi Agent` 指定 pi 的绝对路径，绕过自动发现。
+
 ## 开发
 
 工具链：**JDK 17**（Gradle toolchain 自动解析）、**Node 20+**。
