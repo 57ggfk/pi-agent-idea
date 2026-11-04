@@ -92,7 +92,8 @@
 
 > 版本分支：`release/0.5.2`（已从 main 拉出，`version` 已 +1 patch）
 > 约束基准不变：[`.specify/memory/constitution.md`](../.specify/memory/constitution.md)
-> 执行提示词：[`specs/0.5.2-ZCODE-PROMPT.md`](./0.5.2-ZCODE-PROMPT.md)
+> 执行提示词：`specs/0.5.2-ZCODE-PROMPT.md`（**不入库**，`.gitignore` 按 `*-ZCODE-PROMPT.md` 忽略；
+> 属派发给外部 agent 的临时编排稿，只留本地）
 > 执行记录模板：[`specs/0.5.2-run-report.md`](./0.5.2-run-report.md)
 
 ## 五个 Feature 与优先级

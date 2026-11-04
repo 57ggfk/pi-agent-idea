@@ -33,3 +33,7 @@ web/probe-*.png
 .codebuddy/
 .specify/
 .workbuddy/
+
+# 版本执行提示词：无人值守派发给外部 agent 的临时编排稿，只留本地。
+# 命名约定 <version>-ZCODE-PROMPT.md，任意前缀均忽略，避免每版本改一次规则。
+specs/*-ZCODE-PROMPT.md
