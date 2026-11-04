@@ -133,7 +133,7 @@ object PiLocator {
                 // .cmd/.bat shims resolve node themselves; bare .mjs/.js
                 // (e.g. the e2e mock) must be handed to a node interpreter.
                 listOf(".mjs", ".js", ".cjs").any { f.name.lowercase().endsWith(it) }
-            else -> f.inputStream().bufferedReader().useLines { lines ->
+            else -> f.inputStream().bufferedReader(Charsets.UTF_8).useLines { lines ->
                 lines.firstOrNull()?.contains("node") == true
             }
         }
@@ -197,12 +197,15 @@ object PiLocator {
         return candidates.firstOrNull { File(it).isFile }
     }
 
-    /** First result of `cmd /c where <tool>`, or null when not found. */
+    /** Results of `cmd /c where <tool>`, or null when not found. */
     private fun windowsWhere(tool: String): List<String>? =
         runCapture(listOf("cmd", "/c", "where", tool), 10)
             ?.lineSequence()
             ?.map { it.trim() }
             ?.filter { it.isNotEmpty() }
+            // A result that is not a real file is a decoding casualty, not an
+            // install: accepting it would surface as "Cannot run program".
+            ?.filter { File(it).isFile }
             ?.toList()
             ?.takeIf { it.isNotEmpty() }
 
@@ -248,7 +251,11 @@ object PiLocator {
             proc.destroyForcibly()
             null
         } else {
-            proc.inputStream.bufferedReader().readText()
+            // Native tools (`where`, `dir`) answer in the local code page while
+            // pi/node answer in UTF-8; decode per byte stream instead of with
+            // the JVM default (UTF-8 since JDK 18), which mangles any path
+            // containing non-ASCII characters.
+            OsProcess.decodeOutput(proc.inputStream.use { it.readBytes() })
         }
     } catch (e: Exception) {
         LOG.debug("failed to run ${command.first()}: ${e.message}")
