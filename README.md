@@ -60,10 +60,9 @@ CSRF 驱动你的 agent。
 从 [Releases](../../releases) 下载 `pi-agent-idea-<version>.zip`，然后
 `Settings → Plugins → ⚙ → Install Plugin from Disk…`，重启 IDE。
 
-要求：IntelliJ IDEA 2023.3+（233–263.\*，全系 JetBrains IDE，支持范围对标
-cc gui）、本机安装 pi
+IDE / Node / pi 的版本区间见下方「兼容性」。另外本机要装 pi
 （`npm install -g @earendil-works/pi-coding-agent`；**Windows 上请装在
-Windows 侧**，见下方 WSL 边界）。插件按 `PI_AGENT_EXECUTABLE` 环境变量 →
+Windows 侧**，见「WSL 支持边界」）。插件按 `PI_AGENT_EXECUTABLE` 环境变量 →
 **设置里的自定义路径**（Settings → Tools → Pi Agent）→ 登录 shell PATH
 （macOS/Linux）或 `where pi`（Windows）→ 常见安装位置
 （Windows 覆盖 `%APPDATA%\npm\pi.cmd`、scoop、chocolatey）的顺序自动定位 pi；
@@ -79,6 +78,28 @@ Windows 侧**，见下方 WSL 边界）。插件按 `PI_AGENT_EXECUTABLE` 环境
 
 安装过程不限时（冷装依赖多，镜像慢时十几分钟很正常），按钮上会走秒数；**随时可以点
 「Stop」终止**，npm 及其子进程会被一起结束。
+
+## 兼容性
+
+| 依赖 | 支持范围 | 依据 / 说明 |
+| --- | --- | --- |
+| IDE | IntelliJ IDEA **2023.3 – 2026.3**<br>（`sinceBuild=233` / `untilBuild=263.*`，对标 cc gui） | 描述符只依赖 `com.intellij.modules.platform` 和可选的 `com.intellij.modules.jcef`；编译目标是**最低支持线 2024.3.1**，每次构建都在该线上验证全区间二进制兼容；本地另在 **2026.2.3**（262）实测过 |
+| IDE 运行时 | **JBR 17 及以上** | 插件字节码为 17（Gradle toolchain 17）。2023.3 起最低 JBR 就是 17，2024.2+ 的 JBR 21 向下兼容 |
+| Node.js | **≥ 18**（插件自检强制） | pi 以 ESM 发布，低版本装得上但跑不起来；工具窗首次打开会检查，低于 18 直接提示 |
+| npm | 版本未校验 | 只判断可执行文件在不在（一键安装/更新 pi 时用），最低版本要求**不确定** |
+| pi<br>`@earendil-works/pi-coding-agent` | 无硬性最低版本门槛，开发与测试基线 **1.4.x** | 对 `pi --mode rpc` 做宽容解析；更早的 pi 是否可用**未验证** |
+| 操作系统 · Windows | **Windows 10 1809+ / 11**（64 位；Server 2019+） | 下限来自 IDE 自身（2023.3 的官方要求），插件没有按系统版本分支的逻辑。**本机实测：Windows 11（build 26300，AMD64）** —— 中文路径解码、`%ComSpec%` 启动、`where` 探测都是在这个环境里修的 |
+| 操作系统 · macOS | **12.0 及以上**（Intel / Apple Silicon） | 同样是继承 IDE 的下限；更新的 IDE 自己已把要求提到 macOS 15+。插件侧靠登录 shell 找 nvm 装的 node/pi。**未在 macOS 上实测** |
+| 操作系统 · Linux | **glibc 2.27+ 且带 GNOME/KDE 的发行版**，实际下限约等于 **Ubuntu 18.04 / CentOS 8** | 这一代是 JCEF 的最低要求，更低的发行版内嵌浏览器不可用，而本插件完全跑在 JCEF 里；新版 IDE 自身已收窄到 Ubuntu 24.04 / Debian 13 / Fedora 43 一类。**未在 Linux 上实测**；WSL 的边界见「开发 → WSL 支持边界」 |
+
+架构：x86_64 与 arm64 都可以 —— 插件是纯 Kotlin/JVM 代码，不带任何原生库，各 IDE
+也都有 arm64 版本；但 arm64 上没有实测过。
+
+非 IDEA 的 JetBrains IDE：插件没有 IDEA 专属依赖，原则上 PyCharm / WebStorm /
+GoLand / Rider 等带 JCEF 的 IDE 都能装，但**目前只在 IntelliJ IDEA 上做过实测**。
+
+构建插件本身（不是使用）另需：JDK 17、Gradle 8.14.4（wrapper 自带）、Kotlin 2.4.21、
+IntelliJ Platform Gradle Plugin 2.10.5、Node 20+，见「开发」。
 
 ## 排障
 
@@ -106,7 +127,8 @@ Windows 侧**，见下方 WSL 边界）。插件按 `PI_AGENT_EXECUTABLE` 环境
 
 ## 开发
 
-工具链：**JDK 17**（Gradle toolchain 自动解析）、**Node 20+**。
+工具链：**JDK 17**（Gradle toolchain 自动解析）、**Gradle 8.14.4**（wrapper 自带）、
+**Node 20+**（仅前端构建与测试；插件运行只要求 Node 18+，见「兼容性」）。
 IDE 依赖：编译目标是远程 **IntelliJ IDEA Community 2024.3.1**（支持的最低
 平台线，约 1 GB 首次下载）——每次构建都在验证整个支持区间（233–263.\*）的
 二进制兼容性，与 cc gui 的做法一致。`ideaPath` 属性仅用于把 runIde/e2e 指向
