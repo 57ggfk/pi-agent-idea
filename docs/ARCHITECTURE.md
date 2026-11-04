@@ -170,6 +170,13 @@ Java → JS : GET /bridge/poll?cursor=N   （长轮询，25s 上限）
 
 - 本地操作（move/remove/restore/promote）= 唯一原语 `clear_queue → 重建 → 重入队`，
   在执行器上原子完成；跨段移动视为边界（改不了 pi 的两个数组）。
+- **两个必须守住的契约**（都曾造成「一次操作把队列清空」）：
+  ① `clear_queue` 的响应把数组包在 `data` 里
+  （`{type:"response",command:"clear_queue",success:true,data:{steering:[…],followUp:[…]}}`），
+  读错层级会恒等于「pi 为空」；读不到数组时**中止操作并把镜像原样重入队**，绝不按空队列处理。
+  ② pi 先发空数组的 `queue_update`、后回响应，这条事件会排在自己的操作之后执行，
+  故每次变更都用 `mutationSeq` 括起来，变更窗口内读到的事件一律视为过期丢弃，
+  否则每次重排都会重建镜像（丢 id/图片、误报 drift）。
 - 暂停（abort / pi 重启 / 手动）= `clear_queue` 取出并留在镜像，**不做 reconcile**
   （abort 后 pi 侧行为文档与实测矛盾，镜像即幸存者）；暂停态下的操作只动镜像，
   恢复时按整理后顺序重入队。空闲恢复时首条走 `prompt` 直发——真机实测空闲的

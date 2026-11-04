@@ -23,7 +23,7 @@
 |---|---|---|
 | 队列变化事件 | 不存在（全源码 grep 无 `queue_update`） | **存在**。`queue_update` 带 `steering` / `followUp` 两个**完整文本数组**，每次入队与消费都推送 |
 | 队列内容读取 | 只有 `get_state.queuedMessageCount` | **可读**。`queue_update` 即内容 |
-| 全量取出（Alt+Up） | RPC 下不可达 | **可达**。`clear_queue` 返回 `{steering, followUp}` 文本数组 |
+| 全量取出（Alt+Up） | RPC 下不可达 | **可达**。`clear_queue` 返回 `{steering, followUp}` 文本数组，**位于响应的 `data` 字段内**（`{type:"response",command:"clear_queue",success:true,data:{steering:[…],followUp:[…]}}`，2026-11-04 二次实测） |
 | 单条增删 / 移动 | 无 | **确实无**。只能全量取出后重新入队 |
 | 队列中的图片 | — | **取不回**。两个接口都只给字符串 |
 | abort 与队列 | — | 文档称 “abort continues queued messages”，实测 abort 后 6 秒内**无**新 turn。**两者矛盾，行为不可依赖** |
@@ -186,6 +186,13 @@ abort / pi 重启后队列保留并暂停，横幅说明原因，用户点「继
 ---
 
 ### Edge Cases
+
+- **`clear_queue` 的响应层级**：数组在 `data` 内，不在顶层。读不到数组时 MUST 中止本次操作并把
+  镜像整段重新入队（pi 已被清空，但内容还在镜像里），不得当作「pi 队列为空」——否则一次
+  排序/删除就会清空整个队列（0.5.1 已修）。
+- **事件与自身操作的时序**：pi 先推空数组 `queue_update`、后回 `clear_queue` 响应，该事件会排在
+  自身操作之后执行。变更窗口内读到的事件 MUST 视为过期丢弃，否则每次重排都重建镜像
+  （丢 id 与图片、误报 drift）。
 
 - **settled 时序**：pi 的 `agent_settled` 相对 auto-compaction / auto-retry 的先后需实测标定；
   门闩 MUST 同时检查 compaction/retry 活动事件，不得只依赖单一信号。

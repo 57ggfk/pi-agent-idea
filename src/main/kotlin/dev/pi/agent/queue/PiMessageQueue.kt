@@ -66,6 +66,23 @@ class PiMessageQueue(
     private var drift = false
 
     /**
+     * Bumped by every local mutation that rebuilds pi's queue (start AND end),
+     * so a `queue_update` read in the middle of one can be recognised as stale.
+     *
+     * Real pi emits the empty-array update for `clear_queue` *before* the
+     * response (probe 2026-11-04). That event is delivered on the reader
+     * thread and applied on this single-thread executor — i.e. after the
+     * operation it belongs to — so without this guard every move/remove/
+     * restore/promote compared the freshly re-enqueued mirror against an
+     * empty array and rebuilt (wiping ids and images, raising a false drift).
+     */
+    private val mutationSeq = AtomicLong()
+
+    private val mutatingMethods = setOf(
+        "enqueue", "move", "remove", "restore", "promote", "pause", "resume", "clear",
+    )
+
+    /**
      * Tracked from pi's own events. get_state cannot answer this: real pi
      * 1.4.0 omits `isStreaming` from the response while streaming (probe
      * 2026-11-04), so asking would always read as idle.
@@ -78,17 +95,25 @@ class PiMessageQueue(
     /** Dispatches a `queue.*` bridge method (without the prefix). */
     fun handle(method: String, params: JsonObject): JsonObject {
         val future = executor.submit(Callable {
-            when (method) {
-                "get" -> snapshotJson()
-                "enqueue" -> doEnqueue(params)
-                "move" -> doMove(params)
-                "remove" -> doRemove(params)
-                "restore" -> doRestore(params)
-                "promote" -> doPromote(params)
-                "pause" -> doPause(params)
-                "resume" -> doResume()
-                "clear" -> doClear()
-                else -> errorJson("unknown queue method: $method")
+            // Bracket queue-mutating operations: events read while the bracket
+            // is open are stale by the time they can be applied (see mutationSeq).
+            val mutating = method in mutatingMethods
+            if (mutating) mutationSeq.incrementAndGet()
+            try {
+                when (method) {
+                    "get" -> snapshotJson()
+                    "enqueue" -> doEnqueue(params)
+                    "move" -> doMove(params)
+                    "remove" -> doRemove(params)
+                    "restore" -> doRestore(params)
+                    "promote" -> doPromote(params)
+                    "pause" -> doPause(params)
+                    "resume" -> doResume()
+                    "clear" -> doClear()
+                    else -> errorJson("unknown queue method: $method")
+                }
+            } finally {
+                if (mutating) mutationSeq.incrementAndGet()
             }
         })
         return try {
@@ -105,9 +130,16 @@ class PiMessageQueue(
             "agent_start" -> piStreaming = true
             "agent_settled" -> piStreaming = false
             "queue_update" -> {
+                // pi always sends both arrays; one without either is not its
+                // contract. Aligning against a missing field reads as "empty
+                // queue" and would wipe the mirror — ignore it instead.
+                if (!event.containsKey("steering") && !event.containsKey("followUp")) return
                 val steering = event.stringList("steering")
                 val followUp = event.stringList("followUp")
-                executor.execute { alignAndPush(steering, followUp) }
+                // Read the marker on the reader thread: whether this update
+                // predates a local mutation is decided by when it arrived.
+                val seq = mutationSeq.get()
+                executor.execute { alignAndPush(seq, steering, followUp) }
             }
         }
     }
@@ -149,11 +181,17 @@ class PiMessageQueue(
 
     // -- alignment -------------------------------------------------------------
 
-    private fun alignAndPush(steering: List<String>, followUp: List<String>) {
+    private fun alignAndPush(seq: Long, steering: List<String>, followUp: List<String>) {
         if (paused) {
             // The mirror intentionally diverges while paused (pi's queue is
             // empty by design); a stray queue_update must not wipe it.
             push(snapshotJson())
+            return
+        }
+        if (seq != mutationSeq.get()) {
+            // Stale: a local mutation started or finished after this update was
+            // read, so its arrays describe a queue state we have already moved
+            // past. The mirror is the newer truth; the operation pushes it.
             return
         }
         if (!matchesQueue(items.filter { it.status == "queued" }, steering, followUp)) {
@@ -420,8 +458,17 @@ class PiMessageQueue(
      */
     private fun clearAndReconcile(): Reconciled {
         val resp = rpc(clearQueueCommand())
-        val steering = resp.stringList("steering")
-        val followUp = resp.stringList("followUp")
+        val cleared = queueArrays(resp)
+        if (cleared == null) {
+            // pi cleared its queue but the answer carried no arrays. The
+            // mirror still holds text + images, so put pi back the way it was
+            // and abandon the operation: reading a missing field as "pi is
+            // empty" is exactly what silently wiped every entry.
+            reEnqueueQueued()
+            push(snapshotJson())
+            throw IllegalStateException("clear_queue returned no steering/followUp; queue restored unchanged")
+        }
+        val (steering, followUp) = cleared
         val queued = items.filter { it.status == "queued" }
         val matched = matchesQueue(queued, steering, followUp)
         if (!matched) {
@@ -432,6 +479,24 @@ class PiMessageQueue(
         return Reconciled(steering to followUp, matched)
     }
 
+    /**
+     * Reads pi's steering/followUp arrays out of a `clear_queue` response.
+     *
+     * pi 1.4.0 nests them in `data`:
+     * `{type:"response",command:"clear_queue",success:true,
+     *   data:{steering:[…],followUp:[…]}}` (probe 2026-11-04).
+     * Reading only the top level therefore always looks like "pi is empty",
+     * which is how a single move/remove/restore/promote wiped the whole
+     * queue. A response carrying neither key returns null so the caller
+     * aborts instead of guessing; a top-level answer is still accepted in
+     * case a future pi flattens the envelope.
+     */
+    private fun queueArrays(resp: JsonObject): Pair<List<String>, List<String>>? {
+        val body = (resp["data"] as? JsonObject) ?: resp
+        if (!body.containsKey("steering") && !body.containsKey("followUp")) return null
+        return body.stringList("steering") to body.stringList("followUp")
+    }
+
     /** Puts pi's own order back after an aborted operation. */
     private fun reEnqueue(cleared: Pair<List<String>, List<String>>) {
         for ((text, mode) in cleared.first.map { it to "steer" } + cleared.second.map { it to "followUp" }) {
@@ -440,11 +505,24 @@ class PiMessageQueue(
         push(snapshotJson())
     }
 
-    /** Re-sends the queued mirror items; failed ones stay local-only. */
+    /**
+     * Re-sends the queued mirror items; failed ones stay local-only.
+     *
+     * A re-enqueue that pi refuses leaves the entry out of pi's queue for
+     * good, so it is marked failed with pi's own words instead of sitting
+     * there as "queued" and never running (spec FR-008).
+     */
     private fun reEnqueueQueued() {
+        var failedAny = false
         for (item in items.filter { it.status == "queued" }) {
-            runCatching { rpc(enqueueCommand(item.mode, item.text, item.images)) }
+            val error = runCatching { rpc(enqueueCommand(item.mode, item.text, item.images)) }
+                .exceptionOrNull()
+            if (error != null) {
+                replace(item.id) { it.copy(status = "failed", error = error.message ?: "re-enqueue failed") }
+                failedAny = true
+            }
         }
+        if (failedAny) push(snapshotJson())
     }
 
     private fun clearQueueCommand(): JsonObject = buildJsonObject { put("type", "clear_queue") }

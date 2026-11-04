@@ -31,21 +31,34 @@ class PiMessageQueueTest {
         val piSteering = mutableListOf<String>()
         val piFollowUp = mutableListOf<String>()
 
+        /** Fires for every recorded command; lets a test emit pi events mid-op. */
+        var onCommand: ((String) -> Unit)? = null
+
         override fun invoke(command: JsonObject): JsonObject {
             if (failNext) {
                 failNext = false
                 throw RuntimeException("the model endpoint is unavailable")
             }
             commands += command
-            when (command["type"]?.jsonPrimitive?.content) {
+            val type = command["type"]?.jsonPrimitive?.content ?: ""
+            onCommand?.invoke(type)
+            when (type) {
                 "clear_queue" -> {
                     val steering = piSteering.toList()
                     val followUp = piFollowUp.toList()
                     piSteering.clear()
                     piFollowUp.clear()
+                    // Real pi 1.4.0 nests the arrays under `data`
+                    // (probe 2026-11-04). The old fake returned them flat,
+                    // which hid the bug that wiped the whole mirror.
                     return buildJsonObject {
-                        put("steering", JsonArray(steering.map { JsonPrimitive(it) }))
-                        put("followUp", JsonArray(followUp.map { JsonPrimitive(it) }))
+                        put("type", "response")
+                        put("command", "clear_queue")
+                        put("success", true)
+                        put("data", buildJsonObject {
+                            put("steering", JsonArray(steering.map { JsonPrimitive(it) }))
+                            put("followUp", JsonArray(followUp.map { JsonPrimitive(it) }))
+                        })
                     }
                 }
                 "get_state" -> return buildJsonObject {
@@ -107,12 +120,17 @@ class PiMessageQueueTest {
         return ids
     }
 
-    private fun queueUpdate(steering: List<String>, followUp: List<String>) {
+    /** Delivers a pi queue event only (safe to call from the executor thread). */
+    private fun piSays(steering: List<String>, followUp: List<String>) {
         queue.onPiEvent(buildJsonObject {
             put("type", "queue_update")
             put("steering", JsonArray(steering.map { JsonPrimitive(it) }))
             put("followUp", JsonArray(followUp.map { JsonPrimitive(it) }))
         })
+    }
+
+    private fun queueUpdate(steering: List<String>, followUp: List<String>) {
+        piSays(steering, followUp)
         queue.drain()
     }
 
@@ -182,6 +200,25 @@ class PiMessageQueueTest {
         assertEquals(listOf("clear_queue", "follow_up", "follow_up", "follow_up"), rpc.types())
         assertEquals(listOf("F2", "F1", "F3"), rpc.messages())
         assertEquals(listOf("F2", "F1", "F3"), texts())
+    }
+
+    @Test
+    fun `the empty queue_update pi emits for our own clear cannot wipe the mirror`() {
+        val ids = enqueue("followUp", "F1", "F2")
+        // Real pi pushes the empty-array queue_update *before* clear_queue's
+        // response, and it lands on this single-thread executor afterwards.
+        rpc.onCommand = { type -> if (type == "clear_queue") piSays(emptyList(), emptyList()) }
+
+        queue.handle("move", buildJsonObject { put("id", ids[0]); put("delta", 1) })
+        queue.drain()
+
+        assertEquals(listOf("F2", "F1"), texts())
+        assertEquals(
+            listOf(ids[1], ids[0]),
+            push.lastItems().map { it["id"]!!.jsonPrimitive.content },
+            "the mirror must keep its ids instead of being rebuilt from pi",
+        )
+        assertFalse(push.lastFlags().third, "our own clear is not outside drift")
     }
 
     @Test
@@ -378,5 +415,84 @@ class PiMessageQueueTest {
         assertEquals(emptyList(), texts())
         assertFalse(push.lastFlags().first)
         assertFalse(push.lastFlags().third)
+    }
+
+    // -- protocol-drift safety ---------------------------------------------------
+
+    @Test
+    fun `an unreadable clear_queue answer restores pi and keeps the mirror`() {
+        // Regression: a response whose arrays could not be read used to be
+        // taken as "pi's queue is empty", so any single operation (move /
+        // remove / restore / promote) wiped every entry the user had queued.
+        val commands = mutableListOf<String>()
+        val events = mutableListOf<JsonObject>()
+        val bare = PiMessageQueue(
+            rpc = { cmd ->
+                commands += cmd["type"]!!.jsonPrimitive.content
+                buildJsonObject { put("type", "response"); put("success", true) }
+            },
+            push = { events += it },
+        )
+        bare.handle("enqueue", buildJsonObject { put("mode", "followUp"); put("text", "F1") })
+        bare.handle("enqueue", buildJsonObject { put("mode", "followUp"); put("text", "F2") })
+        commands.clear()
+
+        val res = bare.handle("move", buildJsonObject { put("id", "q-1"); put("delta", 1) })
+
+        assertEquals("false", res["ok"]!!.jsonPrimitive.content)
+        assertTrue(res["error"]!!.jsonPrimitive.content.contains("no steering"))
+        val items = (events.last()["items"] as? JsonArray) ?: JsonArray(emptyList())
+        assertEquals(2, items.size, "the mirror must survive an unreadable answer")
+        assertEquals(
+            listOf("clear_queue", "follow_up", "follow_up"),
+            commands,
+            "pi is put back from the mirror, so the entries still run",
+        )
+    }
+
+    @Test
+    fun `a queue_update carrying no arrays is ignored instead of clearing the mirror`() {
+        enqueue("followUp", "F1")
+
+        queue.onPiEvent(buildJsonObject { put("type", "queue_update") })
+        queue.drain()
+
+        assertEquals(listOf("F1"), texts())
+    }
+
+    @Test
+    fun `an entry pi refuses to re-enqueue is marked failed instead of sitting silent`() {
+        val events = mutableListOf<JsonObject>()
+        var acceptEnqueues = true
+        val entries = PiMessageQueue(
+            rpc = { cmd ->
+                val type = cmd["type"]!!.jsonPrimitive.content
+                if (type == "follow_up" && !acceptEnqueues) throw RuntimeException("pi is gone")
+                if (type == "clear_queue") {
+                    buildJsonObject {
+                        put("type", "response")
+                        put("success", true)
+                        put("data", buildJsonObject {
+                            put("steering", JsonArray(emptyList()))
+                            put("followUp", JsonArray(listOf(JsonPrimitive("F1"), JsonPrimitive("F2"))))
+                        })
+                    }
+                } else {
+                    buildJsonObject { put("ok", true) }
+                }
+            },
+            push = { events += it },
+        )
+        entries.handle("enqueue", buildJsonObject { put("mode", "followUp"); put("text", "F1") })
+        entries.handle("enqueue", buildJsonObject { put("mode", "followUp"); put("text", "F2") })
+
+        // pi stops accepting enqueues between the clear and the rebuild.
+        acceptEnqueues = false
+        entries.handle("move", buildJsonObject { put("id", "q-1"); put("delta", 1) })
+
+        val items = (events.last()["items"] as? JsonArray)!!.map { it.jsonObject }
+        assertEquals(2, items.size)
+        assertTrue(items.all { it["status"]!!.jsonPrimitive.content == "failed" })
+        assertTrue(items.first()["error"]!!.jsonPrimitive.content.contains("pi is gone"))
     }
 }
