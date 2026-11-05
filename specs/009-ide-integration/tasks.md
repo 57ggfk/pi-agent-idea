@@ -50,13 +50,13 @@ description: "Task list for 009-ide-integration"
 
 ## Phase 3: US2 子菜单可用性
 
-- [ ] **T006** [US2] `PiEditorActions.kt`：`SendFileToPi` / `ExplainFileWithPi` 的 `update()` 改走
+- [x] **T006** [US2] `PiEditorActions.kt`：`SendFileToPi` / `ExplainFileWithPi` 的 `update()` 改走
   `availability`，禁用原因写 `presentation.description` — 验证：`./gradlew test` 绿；
   真机矩阵（T010）逐格对照
-- [ ] **T007** [US2] `ExplainFileWithPi` 扩到目录与二进制：目录 → 「总结这个目录的结构与用途」+ 只送路径；
+- [x] **T007** [US2] `ExplainFileWithPi` 扩到目录与二进制：目录 → 「总结这个目录的结构与用途」+ 只送路径；
   二进制 → 只送路径 — 验证：单测覆盖 prompt 生成（抽 `explainPromptFor(kind, path)` 纯函数）；
   真机点一次看输入框文本
-- [ ] **T008** [US2] 多选与项目根：`selectedVirtualFile` 在多选时取首个；项目根按目录处理
+- [x] **T008** [US2] 多选与项目根：`selectedVirtualFile` 在多选时取首个；项目根按目录处理
   — 验证：真机多选 3 个文件右键，两项都可点并发出首个文件的 prompt
 
 ---
