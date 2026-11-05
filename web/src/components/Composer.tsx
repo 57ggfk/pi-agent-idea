@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { usePiStore, type SendMode } from "../store/store";
 import { needsRefresh } from "../store/sources";
+import { autosize, resetComposerHeight } from "../lib/autosize";
 import ModelPicker from "./ModelPicker";
 import SendButton from "./SendButton";
 import ThinkingPicker from "./ThinkingPicker";
@@ -28,12 +29,6 @@ type Density = 0 | 1 | 2;
 // `看@src` works — requiring a space broke the menu for CJK input — while
 // `user@example.com` still reads as an email, not as a file token.
 const AT_QUERY_RE = /(?:^|[^\w@])@([^\s@]*)$/;
-
-/** Grows the textarea to its content, capped so it cannot eat the message list. */
-function autosize(ta: HTMLTextAreaElement) {
-  ta.style.height = "auto";
-  ta.style.height = Math.min(ta.scrollHeight, 160) + "px";
-}
 
 type MenuState = "list" | "loading" | "failed" | "empty";
 
@@ -128,7 +123,33 @@ export default function Composer() {
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const controlsRef = useRef<HTMLDivElement>(null);
+  // IME composition (spec 010 FR-009): while the user is mid-composition the
+  // browser mutates the textarea freely; measuring in between makes the box
+  // bounce under the candidate window. Resizing resumes on compositionend.
+  const composingRef = useRef(false);
   const [density, setDensity] = useState<Density>(0);
+
+  /** The single growth entry point: every path that puts text into the box —
+   *  typing, IDE injection, quote, queue take-back, `@` completion — ends
+   *  here so the height is recomputed after React commits the new value. */
+  const applyText = useCallback((next: string) => {
+    setText(next);
+    requestAnimationFrame(() => {
+      const ta = taRef.current;
+      if (ta && !composingRef.current) autosize(ta, ta.closest(".app") as HTMLElement | null);
+    });
+  }, []);
+
+  /** Shrinks the box back to one line once the draft is gone (FR-008).
+   *  Deliberately deferred: `setText("")` only takes effect after React
+   *  commits, so measuring in the same tick still reads the old scrollHeight
+   *  and leaves the box at its previous height. */
+  const collapseComposer = useCallback(() => {
+    requestAnimationFrame(() => {
+      const ta = taRef.current;
+      if (ta) resetComposerHeight(ta, ta.closest(".app") as HTMLElement | null);
+    });
+  }, []);
 
   /** Picks the densest level that still fits on one line — measured, so a long
    *  model name collapses the pickers instead of pushing the row to wrap. */
@@ -182,6 +203,25 @@ export default function Composer() {
     void loadFiles();
   }, [loadFiles]);
 
+  // Keep the cap and the CSS variable current: the textarea's cap is
+  // `min(320, 45% × app height)` (FR-007), so a tool-window resize re-derives
+  // both. Fonts finishing loading changes metrics, so re-measure once then.
+  useEffect(() => {
+    const ta = taRef.current;
+    if (!ta) return;
+    const app = ta.closest(".app") as HTMLElement | null;
+    const remeasure = () => {
+      if (!composingRef.current) autosize(ta, app);
+    };
+    remeasure();
+    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(remeasure);
+    if (app) ro?.observe(app);
+    void document.fonts?.ready.then(remeasure).catch(() => {});
+    return () => {
+      ro?.disconnect();
+    };
+  }, []);
+
   // Editor actions ("Explain with Pi" etc.) push a pre-filled prompt through
   // the ide event; quote / edit reuse the same channel with a different mode.
   //   replace — overwrite the draft (the original behaviour)
@@ -220,7 +260,7 @@ export default function Composer() {
       ta.focus();
       const end = ta.value.length;
       ta.setSelectionRange(end, end);
-      autosize(ta);
+      autosize(ta, ta.closest(".app") as HTMLElement | null);
     });
   }, [pendingPrompt, clearPendingPrompt]);
 
@@ -281,7 +321,9 @@ export default function Composer() {
     setImages([]);
     setHighlightIndex(0);
     setFileHighlight(0);
-    if (taRef.current) taRef.current.style.height = "auto";
+    // Back to a single line immediately (FR-008) — not a slow collapse, no
+    // leftover blank space. Measured after the empty value lands.
+    collapseComposer();
     if (isEditing) {
       void sendEdited(t);
       return;
@@ -293,11 +335,11 @@ export default function Composer() {
   const cancelEdit = () => {
     cancelEditMessage();
     setText("");
-    if (taRef.current) taRef.current.style.height = "auto";
+    collapseComposer();
   };
 
   const applySlashCommand = (name: string) => {
-    setText(`/${name} `);
+    applyText(`/${name} `);
     taRef.current?.focus();
   };
 
@@ -307,7 +349,7 @@ export default function Composer() {
     if (!m) return;
     const atIdx = m.index + m[0].indexOf("@");
     const next = text.slice(0, atIdx) + `@${path} `;
-    setText(next);
+    applyText(next);
     setFileHighlight(0);
     const caret = next.length;
     requestAnimationFrame(() => {
@@ -485,7 +527,15 @@ export default function Composer() {
             setHighlightIndex(0);
             setSlashDismissed(false);
             setFileDismissed(false);
-            autosize(e.target);
+            if (!composingRef.current) autosize(e.target, e.target.closest(".app") as HTMLElement | null);
+          }}
+          onCompositionStart={() => {
+            composingRef.current = true;
+          }}
+          onCompositionEnd={(e) => {
+            composingRef.current = false;
+            // One final resize now that the composition is committed.
+            autosize(e.currentTarget, e.currentTarget.closest(".app") as HTMLElement | null);
           }}
           onPaste={(e) => {
             const pasted = Array.from(e.clipboardData.files).filter((f) => f.type.startsWith("image/"));

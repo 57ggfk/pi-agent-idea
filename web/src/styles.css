@@ -267,12 +267,11 @@ button {
   max-width: 92%;
 }
 
-.item-user {
-  align-self: flex-end;
-  background: var(--user-bubble);
-  border-radius: 10px 10px 2px 10px;
-  padding: 8px 12px;
-}
+/* The user bubble itself is painted by `.item-user .item-body` further down
+   (the "prototype style" block). An older copy of `.item-user` used to add a
+   second `padding: 8px 12px` here on top of the body's own — the double ring
+   that made a one-line "好的" 72px tall. The duplicate is gone; do not
+   reintroduce padding on the outer `.item-user`. */
 
 .item-assistant {
   align-self: stretch;
@@ -1445,18 +1444,25 @@ button {
   overflow-x: hidden;
   /* Same 16px inline inset as `.composer`: the message column and the input
      box share one visual edge, without depending on how wide the platform's
-     scrollbar gutter happens to be. */
-  padding: 20px 16px 8px;
+     scrollbar gutter happens to be. Vertical padding is symmetric so the
+     empty state's `margin: auto` centers on the *visible* middle, not 6px
+     above it (spec 010 US2). */
+  padding: 16px 16px 16px;
 }
 
 .message-col {
   width: 100%;
+  /* Give the column the full height of the scroll container even when it is
+     empty: `margin: auto` on `.empty-state` needs free space to absorb, or
+     the π logo hugs the top of the panel. With messages this is a no-op —
+     content overflows past 100% and flows from the top as before. */
+  min-height: 100%;
   min-width: 0;
   max-width: 780px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 14px;
 }
 
 .item {
@@ -1471,12 +1477,24 @@ button {
 }
 
 .item-user .item-body {
-  padding: 8px 12px;
+  /* Compact bubble (spec 010 US1): 6px 10px + line-height 1.45 puts a
+     one-line message at ≤32px. Tightened via spacing only — font size and
+     text are untouched (FR-002). */
+  padding: 6px 10px;
+  line-height: 1.45;
   border-radius: var(--r-xl) var(--r-xl) 4px var(--r-xl);
   background: var(--accent-soft);
   color: var(--text);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* `.markdown` carries its own `line-height: 1.55`, so the 1.45 above never
+   reached the paragraph inside the bubble: one line measured 20.15px and the
+   bubble landed at 32.14px, 0.14px over FR-001's ceiling. Scope it onto the
+   wrapper as well. Assistant messages keep 1.55 — long prose needs the air. */
+.item-user .item-body .markdown {
+  line-height: 1.45;
 }
 
 .item-assistant {
@@ -1820,7 +1838,10 @@ button {
   display: block;
   width: 100%;
   min-height: 38px;
-  max-height: 140px;
+  /* The cap is computed from the app height and written to `.app` by
+     `autosize()` (spec 010 US3): JS and CSS read one variable instead of two
+     hard-coded values that used to disagree (JS 160 / CSS 140). */
+  max-height: var(--composer-max-h, 160px);
   padding: 4px 5px 6px;
   border: 0;
   outline: none;
@@ -2780,9 +2801,10 @@ button {
   }
 
   /* Keep the message column and the composer on the same 8px inset — the old
-     0px here guaranteed an 8px mismatch at narrow widths. */
+     0px here guaranteed an 8px mismatch at narrow widths. Vertical padding
+     stays symmetric like the wide rule above (spec 010 US2). */
   .message-list {
-    padding: 12px 8px 8px;
+    padding: 12px 8px 12px;
   }
 
   .sessions-toolbar {

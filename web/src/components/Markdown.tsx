@@ -81,6 +81,20 @@ function linkifyTextNodes(root: ParentNode) {
 const COPY_FLASH_MS = 1200;
 
 /**
+ * marked separates block-level elements with "\n" and ends the document with
+ * one. `.item-body` renders `white-space: pre-wrap`, so those decorative
+ * newlines became real empty line boxes — the visible reason a one-line user
+ * message measured two lines tall (spec 010 T001 baseline). Strip them
+ * everywhere outside `<pre>`, where a newline is content.
+ */
+function stripDecorativeNewlines(html: string): string {
+  const parts = html.split(/(<pre[\s\S]*?<\/pre>)/gi);
+  return parts
+    .map((part, i) => (i % 2 === 1 ? part : part.replace(/>\n+</g, "><").trim()))
+    .join("");
+}
+
+/**
  * Adds a Copy button in the top-right corner of every fenced code block.
  * The ✓ feedback lives in `copiedUntil` (keyed by pre index): React replaces
  * the whole innerHTML on every streaming delta, so the freshly injected button
@@ -122,7 +136,7 @@ function addCopyButtons(root: ParentNode, copiedUntil: Map<number, number>) {
 export default function Markdown({ text }: { text: string }) {
   registerPurifyHooks();
   const html = useMemo(
-    () => DOMPurify.sanitize(marked.parse(text, { async: false }) as string),
+    () => stripDecorativeNewlines(DOMPurify.sanitize(marked.parse(text, { async: false }) as string)),
     [text],
   );
   const ref = useRef<HTMLDivElement>(null);
