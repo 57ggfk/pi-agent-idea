@@ -34,14 +34,14 @@ description: "Task list for 009-ide-integration"
 
 ## Phase 2: 纯逻辑（先断言）
 
-- [ ] **T003** [US2] 新增 `editor/ActionAvailability.kt`：`TargetKind` + `availability(action, kind)`
+- [x] **T003** [US2] 新增 `editor/ActionAvailability.kt`：`TargetKind` + `availability(action, kind)`
   — 验证：**先写** `ActionAvailabilityTest`，覆盖矩阵 5 类目标 × 3 个动作（15 格），
   断言 `enabled` 与 `reason` 非空规则（禁用必有原因），红 → 绿
-- [ ] **T004** [P][US3] 新增 `editor/DirectoryListing.kt`：`listDirectory(root, projectRoot, limits)`
+- [x] **T004** [P][US3] 新增 `editor/DirectoryListing.kt`：`listDirectory(root, projectRoot, limits)`
   — 验证：**先写** `DirectoryListingTest`（`@TempDir`）：① 12 个文件正常列出；② `build/`、`node_modules/`、
   `.git/` 被排除；③ 300 个文件 → 输出 200 条 + `omitted=100`；④ 15 层深目录 → `truncated=true`；
   ⑤ 无权限子目录被跳过而不抛异常
-- [ ] **T005** [P][US4] 新增 `bridge/VfsRefresh.kt` 的纯函数部分：
+- [x] **T005** [P][US4] 新增 `bridge/VfsRefresh.kt` 的纯函数部分：
   `pathsForEvent(toolName, argsJson) → List<String>?`（null = 需要整体刷新）与 `shouldRefresh(toolName)`
   — 验证：**先写** `VfsRefreshTest`：`write{path}` → 该路径；`bash{command}` → null；
   `read{path}` → 空（不刷新）；`edit{file_path}` → 该路径
