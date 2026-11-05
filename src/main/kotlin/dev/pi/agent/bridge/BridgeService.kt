@@ -450,7 +450,9 @@ class BridgeService(private val project: Project) : Disposable {
         ApplicationManager.getApplication().invokeLater {
             try {
                 val descriptor = FileSaverDescriptor(
-                    "Export Session as HTML", "Choose where to save the pi session", "html",
+                    dev.pi.agent.PiAgentBundle.message("export.dialog.title"),
+                    dev.pi.agent.PiAgentBundle.message("export.dialog.description"),
+                    "html",
                 )
                 val wrapper = FileChooserFactory.getInstance()
                     .createSaveFileDialog(descriptor, project)
@@ -472,7 +474,11 @@ class BridgeService(private val project: Project) : Disposable {
 
         NotificationGroupManager.getInstance()
             .getNotificationGroup("Pi Agent")
-            .createNotification("Pi session exported", "Saved to $path", NotificationType.INFORMATION)
+            .createNotification(
+                dev.pi.agent.PiAgentBundle.message("export.done.title"),
+                dev.pi.agent.PiAgentBundle.message("export.done.body", path),
+                NotificationType.INFORMATION,
+            )
             .notify(project)
         return buildJsonObject { put("ok", true); put("path", path) }
     }
@@ -728,8 +734,12 @@ class BridgeService(private val project: Project) : Disposable {
         if (toolWindow?.isVisible == true) return
         val notification = NotificationGroupManager.getInstance()
             .getNotificationGroup("Pi Agent")
-            .createNotification("Pi Agent finished", "The agent run completed in ${project.name}.", NotificationType.INFORMATION)
-        notification.addAction(object : AnAction("Show Pi Agent") {
+            .createNotification(
+                dev.pi.agent.PiAgentBundle.message("notify.finished.title"),
+                dev.pi.agent.PiAgentBundle.message("notify.finished.body", project.name),
+                NotificationType.INFORMATION,
+            )
+        notification.addAction(object : AnAction(dev.pi.agent.PiAgentBundle.message("notify.finished.action")) {
             override fun actionPerformed(e: AnActionEvent) {
                 toolWindow?.activate(null)
                 notification.expire()

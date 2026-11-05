@@ -36,7 +36,7 @@ class PiAgentSettingsConfigurable : Configurable {
             )
             text = settings.customPiPath() ?: ""
         }
-        autoOpenBox = JBCheckBox("Automatically open the Pi Agent tool window on project start", settings.autoOpen())
+        autoOpenBox = JBCheckBox(dev.pi.agent.PiAgentBundle.message("settings.autoOpen"), settings.autoOpen())
 
         val c = GridBagConstraints()
         c.gridx = 0

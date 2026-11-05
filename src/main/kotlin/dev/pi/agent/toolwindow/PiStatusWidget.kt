@@ -8,6 +8,7 @@ import com.intellij.openapi.wm.StatusBarWidgetFactory
 import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.openapi.wm.WindowManager
 import com.intellij.util.Consumer
+import dev.pi.agent.PiAgentBundle
 import dev.pi.agent.process.PiConnectionState
 import dev.pi.agent.process.PiProcessManager
 import java.awt.event.MouseEvent
@@ -65,10 +66,11 @@ class PiStatusWidget(private val project: Project) :
     }
 
     override fun getTooltipText(): String = when (val s = state) {
-        is PiConnectionState.Running -> "pi agent running" + (s.installation.version?.let { " ($it)" } ?: "")
-        is PiConnectionState.Starting -> "pi agent starting…"
-        is PiConnectionState.Exited -> "pi agent exited: ${s.message}"
-        PiConnectionState.NotStarted -> "pi agent not started"
+        is PiConnectionState.Running ->
+            PiAgentBundle.message("status.running") + (s.installation.version?.let { " ($it)" } ?: "")
+        is PiConnectionState.Starting -> PiAgentBundle.message("status.starting")
+        is PiConnectionState.Exited -> PiAgentBundle.message("status.exited", s.message ?: "")
+        PiConnectionState.NotStarted -> PiAgentBundle.message("status.notStarted")
     }
 
     override fun getAlignment(): Float = 0.5f

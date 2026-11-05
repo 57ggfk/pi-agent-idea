@@ -362,12 +362,15 @@ object PiEnvironment {
         put("error", message)
     }
 
-    /** One line the user can act on, on top of the raw npm output. */
+    /**
+     * One line the user can act on, on top of the raw npm output (spec 008
+     * T017: the wrapper line is translated; npm's own output never is).
+     */
     private fun installFailureHint(exitCode: Int, output: String): String {
         val lower = output.lowercase()
         return when {
             lower.contains("eacces") || lower.contains("permission denied") ->
-                "npm could not write to its global prefix (permissions). Fix the npm prefix or set pi's path manually."
+                dev.pi.agent.PiAgentBundle.message("install.hint.eacces")
             // Network-shaped failures: no DNS, refused, reset, a quiet proxy
             // answering 502/504 (what an internal gateway actually returns),
             // or any of that surfacing as a timeout after retries.
@@ -375,13 +378,12 @@ object PiEnvironment {
                 "etimedout", "enotfound", "econnrefused", "econnreset", "eai_again",
                 "eproxy", "e502", "e503", "e504", "network", "socket hang up",
             ).any { lower.contains(it) } ->
-                "The registry was unreachable (proxy, firewall or no internet). " +
-                    "Pick a different source, use npm's own registry, or install pi yourself and set its path."
+                dev.pi.agent.PiAgentBundle.message("install.hint.network")
             lower.contains("eexist") ->
-                "npm refused to overwrite an existing install. Remove it, or set pi's path manually."
+                dev.pi.agent.PiAgentBundle.message("install.hint.eexist")
             exitCode == -1 ->
-                "npm did not finish in time. Check your network or install pi manually and set its path."
-            else -> "npm install failed. See the output below; setting pi's path manually always works."
+                dev.pi.agent.PiAgentBundle.message("install.hint.timeout")
+            else -> dev.pi.agent.PiAgentBundle.message("install.hint.generic")
         }
     }
 

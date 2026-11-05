@@ -3,6 +3,7 @@ import { marked } from "marked";
 import DOMPurify from "dompurify";
 import hljs from "highlight.js/lib/common";
 import { usePiStore } from "../store/store";
+import { i18n } from "../i18n";
 import { copyText } from "../lib/clipboard";
 
 marked.setOptions({ gfm: true, breaks: true });
@@ -102,6 +103,7 @@ function stripDecorativeNewlines(html: string): string {
  */
 function addCopyButtons(root: ParentNode, copiedUntil: Map<number, number>) {
   const now = Date.now();
+  const copyLabel = i18n.t("common.copy");
   for (const [idx, until] of copiedUntil) {
     if (until <= now) copiedUntil.delete(idx);
   }
@@ -111,10 +113,10 @@ function addCopyButtons(root: ParentNode, copiedUntil: Map<number, number>) {
     btn.type = "button";
     btn.className = "code-copy-btn";
     const remaining = (copiedUntil.get(idx) ?? 0) - now;
-    btn.textContent = remaining > 0 ? "✓" : "Copy";
+    btn.textContent = remaining > 0 ? "✓" : copyLabel;
     if (remaining > 0) {
       setTimeout(() => {
-        btn.textContent = "Copy";
+        btn.textContent = copyLabel;
       }, remaining + 20);
     }
     btn.addEventListener("click", (ev) => {
@@ -125,7 +127,7 @@ function addCopyButtons(root: ParentNode, copiedUntil: Map<number, number>) {
       void copyText(code).then((ok) => {
         btn.textContent = ok ? "✓" : "✗";
         setTimeout(() => {
-          btn.textContent = "Copy";
+          btn.textContent = i18n.t("common.copy");
         }, COPY_FLASH_MS);
       });
     });

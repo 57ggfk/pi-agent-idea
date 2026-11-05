@@ -17,6 +17,11 @@
          and keeps the plugin loadable everywhere else. -->
     <depends optional="true" config-file="jcef-features.xml">com.intellij.modules.jcef</depends>
 
+    <!-- IDE-side strings (spec 008 US3): actions and notifications follow the
+         IDE language pack. Brand names stay literal — only descriptions and
+         the translatable action titles go through %key. -->
+    <resource-bundle>messages.PiAgentBundle</resource-bundle>
+
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow id="Pi Agent"
                     anchor="right"
@@ -45,42 +50,43 @@
     <actions>
         <!-- Editor integration (selection-based). The group icon is the same
              16x16 stroke glyph as the tool window (one source of truth); the
-             platform scales it to the menu row height. -->
-        <group id="PiAgent.EditorPopup" popup="true" text="Pi Agent" icon="/icons/piAgent.svg" description="Send code to the pi agent">
+             platform scales it to the menu row height. The group label is the
+             brand name and stays literal (spec 008 FR-012). -->
+        <group id="PiAgent.EditorPopup" popup="true" text="Pi Agent" icon="/icons/piAgent.svg" description="%group.editor.description">
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
             <action id="PiAgent.ExplainSelection"
                     class="dev.pi.agent.editor.ExplainWithPi"
-                    text="Explain with Pi"
-                    description="Ask pi to explain the selected code"/>
+                    text="%action.explainSelection.text"
+                    description="%action.explainSelection.description"/>
             <action id="PiAgent.FixSelection"
                     class="dev.pi.agent.editor.FixWithPi"
-                    text="Fix with Pi"
-                    description="Ask pi to fix the selected code"/>
+                    text="%action.fixSelection.text"
+                    description="%action.fixSelection.description"/>
             <action id="PiAgent.SendSelection"
                     class="dev.pi.agent.editor.SendSelectionToPi"
-                    text="Send Selection to Pi"
-                    description="Send the selected code to pi with file context"/>
+                    text="%action.sendSelection.text"
+                    description="%action.sendSelection.description"/>
         </group>
 
         <!-- File integration (project view / editor tab context menus).
              All group ids are platform-wide, so this works on every
              JetBrains IDE, not just IDEA. Add Directory sits before Send
              File: on a directory it is the one enabled item (FR-003). -->
-        <group id="PiAgent.FilePopup" popup="true" text="Pi Agent" icon="/icons/piAgent.svg" description="Send a file to the pi agent">
+        <group id="PiAgent.FilePopup" popup="true" text="Pi Agent" icon="/icons/piAgent.svg" description="%group.file.description">
             <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
             <add-to-group group-id="EditorTabPopupMenu" anchor="last"/>
             <action id="PiAgent.AddDirectory"
                     class="dev.pi.agent.editor.AddDirectoryToPi"
-                    text="Add Directory to Pi"
-                    description="List the selected directory's structure in the pi composer"/>
+                    text="%action.addDirectory.text"
+                    description="%action.addDirectory.description"/>
             <action id="PiAgent.SendFile"
                     class="dev.pi.agent.editor.SendFileToPi"
-                    text="Send File to Pi Agent"
-                    description="Send the whole file to pi with its path context"/>
+                    text="%action.sendFile.text"
+                    description="%action.sendFile.description"/>
             <action id="PiAgent.ExplainFile"
                     class="dev.pi.agent.editor.ExplainFileWithPi"
-                    text="Explain File with Pi"
-                    description="Ask pi to summarize the whole file and flag anything suspicious"/>
+                    text="%action.explainFile.text"
+                    description="%action.explainFile.description"/>
         </group>
 
         <!-- Commit panel: generate the commit message with a headless one-shot
@@ -91,8 +97,8 @@
         <action id="PiAgent.GenerateCommitMessage"
                 class="dev.pi.agent.vcs.PiGenerateCommitMessageAction"
                 icon="AllIcons.Actions.IntentionBulb"
-                text="Generate Commit Message with Pi"
-                description="Ask pi to write a Conventional Commits message for the included changes">
+                text="%action.generateCommit.text"
+                description="%action.generateCommit.description">
             <add-to-group group-id="Vcs.MessageActionGroup" anchor="first"/>
             <add-to-group group-id="Vcs.Commit.PrimaryCommitActions" anchor="first"/>
             <keyboard-shortcut keymap="$default" first-keystroke="alt shift C"/>
