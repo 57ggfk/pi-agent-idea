@@ -174,4 +174,27 @@ class DirectoryListingTest {
         val deepText = directoryPromptFor(listDirectory(tempDir.resolve("deep"), projectRoot = tempDir))
         assertTrue(deepText.contains("listing stopped early"), deepText)
     }
+
+    /**
+     * Spec 009 T011: the exclusions and truncation must hold on a real
+     * repository, not only on synthetic trees. Runs against this repo's own
+     * checkout (gradle's working directory); skipped when the test runs
+     * somewhere else.
+     */
+    @Test
+    fun `real repository spot check excludes build artifacts and truncates`() {
+        val repoRoot = Path.of(System.getProperty("user.dir")).toAbsolutePath()
+        if (!repoRoot.resolve("build.gradle.kts").toFile().isFile) return
+        val listing = listDirectory(repoRoot, projectRoot = repoRoot)
+        val entries = listing.entries
+        assertTrue(entries.isNotEmpty(), "the repo root must list entries")
+        assertTrue(entries.none { it.startsWith("build/") }, "build/ excluded: ${entries.first()}")
+        assertTrue(entries.none { it.startsWith(".git/") }, ".git/ excluded")
+        assertTrue(entries.none { it.startsWith("web/node_modules/") }, "web/node_modules/ excluded")
+        assertTrue(entries.none { it.startsWith("dist/") }, "dist/ excluded")
+        assertTrue(listing.entries.size <= 200, "output cap respected")
+        assertTrue(listing.omitted > 0, "a real repo has more than 200 entries; omitted=${listing.omitted}")
+        val text = directoryPromptFor(listing)
+        assertTrue(text.contains("more entries omitted"), "the composer prompt must carry the omission note")
+    }
 }
