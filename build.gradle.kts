@@ -181,6 +181,64 @@ tasks {
     }
 }
 
+// ---------------------------------------------------------------------------
+// CHANGELOG -> Marketplace "What's New" HTML
+//
+// Marketplace renders change notes as HTML, and HTML collapses raw newlines:
+// shipping the Markdown verbatim (what 0.5.1 did) turned the whole section
+// into one run-on paragraph. Convert the small Markdown subset used in
+// CHANGELOG.md — "- " bullets, "**bold**" sub-headings, `code`, blank lines —
+// into the tags the panel actually renders. Takes the file (not the project)
+// so it stays callable from a top-level function in this script.
+// ---------------------------------------------------------------------------
+fun escapeHtml(s: String): String =
+    s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+fun inlineHtml(line: String): String =
+    escapeHtml(line)
+        .replace(Regex("\\*\\*(.+?)\\*\\*"), "<b>$1</b>")
+        .replace(Regex("`([^`]+)`"), "<code>$1</code>")
+
+fun changeNotesHtml(changelog: File, version: String): String {
+    val lines = changelog.readText()
+        .substringAfter("## $version", "")
+        .substringBefore("\n## ")
+        .lines()
+        .drop(1) // the rest of the "## <version> — <date>" heading line
+
+    val out = StringBuilder()
+    var inList = false
+    fun closeList() {
+        if (inList) {
+            out.append("</ul>\n")
+            inList = false
+        }
+    }
+    for (line in lines) {
+        val text = line.trim()
+        when {
+            text.isEmpty() -> closeList()
+            text.startsWith("- ") -> {
+                if (!inList) {
+                    out.append("<ul>\n")
+                    inList = true
+                }
+                out.append("  <li>").append(inlineHtml(text.removePrefix("- "))).append("</li>\n")
+            }
+            text.startsWith("**") && text.endsWith("**") -> {
+                closeList()
+                out.append("<p><b>").append(escapeHtml(text.removeSurrounding("**"))).append("</b></p>\n")
+            }
+            else -> {
+                closeList()
+                out.append("<p>").append(inlineHtml(text)).append("</p>\n")
+            }
+        }
+    }
+    closeList()
+    return out.toString().trim().ifEmpty { "Release $version" }
+}
+
 intellijPlatform {
     pluginConfiguration {
         id = "dev.pi.agent"
@@ -198,20 +256,12 @@ intellijPlatform {
             sinceBuild = "233"
             untilBuild = provider { "263.*" }
         }
-        // Marketplace change-notes: the topmost CHANGELOG section for the
-        // current version (## <version> ... up to the next section), with
-        // the heading line itself dropped.
-        changeNotes = provider {
-            val v = project.version.toString()
-            file("CHANGELOG.md").readText()
-                .substringAfter("## $v", "")
-                .substringBefore("\n## ")
-                .lineSequence()
-                .drop(1)
-                .joinToString("\n")
-                .trim()
-                .ifEmpty { "Release $v" }
-        }
+        // Marketplace change-notes ("What's New"): the topmost CHANGELOG
+        // section for the current version (## <version> ... up to the next
+        // section), heading line dropped, converted to HTML — see
+        // changeNotesHtml() above. Shipping the Markdown as-is rendered as a
+        // single run-on paragraph, because HTML collapses newlines.
+        changeNotes = provider { changeNotesHtml(file("CHANGELOG.md"), project.version.toString()) }
     }
 
     pluginVerification {
