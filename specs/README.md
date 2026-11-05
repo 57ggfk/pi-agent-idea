@@ -131,7 +131,8 @@
 # 0.5.3 批次（2026-11-05）
 
 > 版本分支：`release/0.5.3`（从 `main` 的 `v0.5.2` 拉出，`version` 已 +1 patch）
-> 0.5.2 已发布：tag `v0.5.2`（提交 `f44920d`）、商店 version id `1213011`。
+> 0.5.2 已发布：tag `v0.5.2`（提交 `edf7b05`）、商店 version id `1213020`。
+> 首发（id 1213011）因兼容性问题被 Marketplace 清掉，已重发并补上 0.5.1 的四个热修。
 > 执行记录模板：[`specs/0.5.3-run-report.md`](./0.5.3-run-report.md)
 > 执行提示词：`specs/0.5.3-PROMPT.md`（**不入库**，`.gitignore` 按 `specs/*-PROMPT.md` 忽略）
 
