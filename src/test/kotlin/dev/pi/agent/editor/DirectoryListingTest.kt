@@ -146,4 +146,32 @@ class DirectoryListingTest {
         assertTrue(listing.entries.none { it.startsWith("link/") }, "must not descend into symlinks: ${listing.entries}")
         assertTrue(listing.entries.contains("real/Inside.kt"))
     }
+
+    // -- prompt text ----------------------------------------------------------
+
+    @Test
+    fun `prompt text shows the directory, counts and entries`() {
+        file("sub/One.kt")
+        file("sub/Two.kt")
+        val listing = listDirectory(tempDir.resolve("sub"), projectRoot = tempDir)
+        val text = directoryPromptFor(listing)
+        assertTrue(text.startsWith("Here is the directory `sub` (2 files, 0 subdirectories):"), text)
+        assertTrue(text.contains("sub/One.kt"))
+        assertTrue(text.contains("sub/Two.kt"))
+        assertTrue(text.contains("Read whatever you need."))
+        assertFalse(text.contains("omitted"), "no omission note when everything fits: $text")
+    }
+
+    @Test
+    fun `prompt text reports omitted and truncated honestly`() {
+        for (i in 1..300) file("F%03d.txt".format(i))
+        val text = directoryPromptFor(listDirectory(tempDir, projectRoot = tempDir))
+        assertTrue(text.contains("100 more entries omitted"), text.takeLast(200))
+
+        var p = tempDir.resolve("deep")
+        for (i in 1..15) p = p.resolve("L$i")
+        p.createDirectories()
+        val deepText = directoryPromptFor(listDirectory(tempDir.resolve("deep"), projectRoot = tempDir))
+        assertTrue(deepText.contains("listing stopped early"), deepText)
+    }
 }

@@ -43,8 +43,10 @@
          inside <extensions> is silently ignored by the descriptor parser
          (the editor context menus never registered in v0.1.0–v0.4.0). -->
     <actions>
-        <!-- Editor integration (selection-based). -->
-        <group id="PiAgent.EditorPopup" popup="true" text="Pi Agent" description="Send code to the pi agent">
+        <!-- Editor integration (selection-based). The group icon is the same
+             16x16 stroke glyph as the tool window (one source of truth); the
+             platform scales it to the menu row height. -->
+        <group id="PiAgent.EditorPopup" popup="true" text="Pi Agent" icon="/icons/piAgent.svg" description="Send code to the pi agent">
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
             <action id="PiAgent.ExplainSelection"
                     class="dev.pi.agent.editor.ExplainWithPi"
@@ -62,10 +64,15 @@
 
         <!-- File integration (project view / editor tab context menus).
              All group ids are platform-wide, so this works on every
-             JetBrains IDE, not just IDEA. -->
-        <group id="PiAgent.FilePopup" popup="true" text="Pi Agent" description="Send a file to the pi agent">
+             JetBrains IDE, not just IDEA. Add Directory sits before Send
+             File: on a directory it is the one enabled item (FR-003). -->
+        <group id="PiAgent.FilePopup" popup="true" text="Pi Agent" icon="/icons/piAgent.svg" description="Send a file to the pi agent">
             <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
             <add-to-group group-id="EditorTabPopupMenu" anchor="last"/>
+            <action id="PiAgent.AddDirectory"
+                    class="dev.pi.agent.editor.AddDirectoryToPi"
+                    text="Add Directory to Pi"
+                    description="List the selected directory's structure in the pi composer"/>
             <action id="PiAgent.SendFile"
                     class="dev.pi.agent.editor.SendFileToPi"
                     text="Send File to Pi Agent"

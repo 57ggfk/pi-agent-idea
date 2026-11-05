@@ -122,3 +122,24 @@ private fun displayPath(p: Path, projectRoot: Path?): String {
     val rel = projectRoot?.takeIf { p.startsWith(it) }?.let { runCatching { it.relativize(p) }.getOrNull() }
     return (rel ?: p).toString().replace('\\', '/')
 }
+
+/**
+ * Composer prompt for "Add Directory to Pi": the directory, its counts, the
+ * entry list, and honest omission/truncation notes (spec FR-007). Pure and
+ * unit-tested; the entries contain no file contents by design.
+ */
+fun directoryPromptFor(listing: DirectoryListing): String = buildString {
+    append("Here is the directory `").append(listing.root).append("` (")
+    append(listing.fileCount).append(if (listing.fileCount == 1) " file" else " files")
+    append(", ").append(listing.dirCount).append(if (listing.dirCount == 1) " subdirectory" else " subdirectories")
+    append("):\n\n")
+    listing.entries.forEach { append(it).append('\n') }
+    if (listing.omitted > 0) {
+        append("\n… ").append(listing.omitted)
+            .append(" more entries omitted (list a subdirectory to see the rest)\n")
+    }
+    if (listing.truncated) {
+        append("\n… listing stopped early (depth or size limit) — list a subdirectory for more\n")
+    }
+    append("\nRead whatever you need.")
+}
