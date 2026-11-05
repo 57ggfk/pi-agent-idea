@@ -109,6 +109,7 @@ class BridgeService(private val project: Project) : Disposable {
                 "env" -> envInfo()
                 "rpc.request" -> rpcRequest(params)
                 "sessions.list" -> sessionsList()
+                "sessions.search" -> sessionsSearch(params)
                 "sessions.delete" -> sessionsDelete(params)
                 "sessions.exportHtml" -> sessionsExportHtml(params)
                 "files.list" -> filesList(params)
@@ -391,6 +392,41 @@ class BridgeService(private val project: Project) : Disposable {
             ?: throw IllegalArgumentException("sessions.delete requires file")
         dev.pi.agent.session.PiSessionIndex.deleteSessionFile(file)
         return buildJsonObject { put("ok", true) }
+    }
+
+    /**
+     * Full-text search across the project's session files (spec 006 US3).
+     * Runs on the IO dispatcher via the bridge scope; the scan itself is
+     * line-streamed and capped (see [searchSessions]).
+     */
+    private fun sessionsSearch(params: JsonObject): JsonObject {
+        val query = (params["query"] as? JsonPrimitive)?.content
+            ?: throw IllegalArgumentException("sessions.search requires query")
+        val outcome = dev.pi.agent.session.searchSessions(project.basePath ?: "", query)
+        return buildJsonObject {
+            put("results", buildJsonArray {
+                outcome.results.forEach { r ->
+                    add(buildJsonObject {
+                        put("file", r.file)
+                        put("id", r.id ?: "")
+                        put("name", r.name ?: "")
+                        put("modifiedAt", r.modifiedAt)
+                        put("hitCount", r.hitCount)
+                        put("hits", buildJsonArray {
+                            r.hits.forEach { h ->
+                                add(buildJsonObject {
+                                    put("role", h.role)
+                                    put("snippet", h.snippet)
+                                    put("hitIndex", h.hitIndex)
+                                })
+                            }
+                        })
+                    })
+                }
+            })
+            put("scanned", outcome.scanned)
+            put("truncated", outcome.truncated)
+        }
     }
 
     private suspend fun sessionsExportHtml(params: JsonObject): JsonObject {

@@ -140,3 +140,59 @@ test("switching sessions resets the search state (FR-015)", async ({ page }) => 
   );
   expect(highlights).toBe(0);
 });
+
+// -- Full-session search (US3) -----------------------------------------------
+
+test("Sessions search scans bodies, ranks hits and shows snippets (T017)", async ({ page }) => {
+  await sendAndWait(page, "the uniq-token-abc plan");
+  // Move to a fresh session so the hit lives in a *previous* session
+  // (007's in-app confirm guards a session with content).
+  await page.getByTestId("new-session").click();
+  await page.getByTestId("confirm-ok").click();
+  await expect(page.getByTestId("empty-state")).toBeVisible();
+
+  await page.getByTestId("tab-sessions").click();
+  await expect(page.getByTestId("sessions-view")).toBeVisible();
+  await page.getByTestId("sessions-filter").fill("uniq-token");
+  const results = page.getByTestId("session-search-results");
+  await expect(results).toBeVisible();
+  const hit = page.getByTestId("session-search-hit").first();
+  await expect(hit).toContainText("uniq-token-abc");
+  await expect(page.getByTestId("session-hit-count").first()).toContainText(/hits?/);
+  await expect(page.locator(".session-hit-mark").first()).toHaveText("uniq-token");
+});
+
+test("clicking a hit switches the session and lands on that hit (T018)", async ({ page }) => {
+  await sendAndWait(page, "the jump-target-token plan");
+  await page.getByTestId("new-session").click();
+  await page.getByTestId("confirm-ok").click();
+  await expect(page.getByTestId("empty-state")).toBeVisible();
+
+  await page.getByTestId("tab-sessions").click();
+  await page.getByTestId("sessions-filter").fill("jump-target-token");
+  await expect(page.getByTestId("session-search-hit").first()).toBeVisible();
+  await page.getByTestId("session-hit-snippet").first().click();
+
+  // Back on the chat tab with the search bar open at the clicked hit.
+  await expect(page.getByTestId("search-bar")).toBeVisible();
+  await expect(page.getByTestId("search-input")).toHaveValue("jump-target-token");
+  await expect(page.getByTestId("search-count")).toHaveText(/1\/\d/);
+  await expect(page.getByTestId("tab-chat")).toHaveAttribute("aria-selected", "true");
+});
+
+test("a query with no matches says so and mentions the scan (T019)", async ({ page }) => {
+  await sendAndWait(page, "a perfectly ordinary question");
+  await page.getByTestId("tab-sessions").click();
+  await page.getByTestId("sessions-filter").fill("zzz-no-such-token");
+  await expect(page.getByTestId("sessions-search-empty")).toContainText("No matches in");
+  await expect(page.getByTestId("sessions-search-empty")).toContainText("session");
+});
+
+test("a truncated scan says so instead of looking complete (T019)", async ({ page }) => {
+  await page.goto("/?searchtruncate=1");
+  await expect(page.getByTestId("empty-state")).toBeVisible();
+  await sendAndWait(page, "truncation probe message");
+  await page.getByTestId("tab-sessions").click();
+  await page.getByTestId("sessions-filter").fill("truncation");
+  await expect(page.getByTestId("sessions-search-truncated")).toContainText("stopped early");
+});

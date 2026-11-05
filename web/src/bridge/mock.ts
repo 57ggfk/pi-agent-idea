@@ -395,6 +395,10 @@ export class MockBridge implements Bridge {
       const resp = this.handleCommand({ type: "sessions.list" }) as { success: boolean; data: T };
       return resp.success ? Promise.resolve(resp.data) : Promise.reject(new Error("sessions.list failed"));
     }
+    if (method === "sessions.search") {
+      const query = String((params as { query?: string } | undefined)?.query ?? "");
+      return Promise.resolve(this.searchSessions(query) as T);
+    }
     if (method === "config.getLastModel") {
       return Promise.resolve({ provider: "mock", model: "mock-model-pro" } as T);
     }
@@ -1252,6 +1256,80 @@ export class MockBridge implements Bridge {
         ...this.mockSessions,
       ];
     }
+  }
+
+  /**
+   * Full-text scan over every mock session's transcript (spec 006 US3):
+   * the live session reads `history`, the others their saved snapshots.
+   * Same shape as the Kotlin side — results, scanned, truncated.
+   */
+  private searchSessions(raw: string): unknown {
+    const needle = raw.trim().toLowerCase();
+    if (!needle) return { results: [], scanned: 0, truncated: false };
+    const results: Array<Record<string, unknown>> = [];
+    let scanned = 0;
+    // The live session is searchable even before its first snapshot puts it
+    // into mockSessions.
+    const entries = this.mockSessions.map((s) => ({
+      file: s.file,
+      id: s.id,
+      name: s.name,
+      modifiedAt: s.modifiedAt,
+    }));
+    if (this.currentFile && !entries.some((e) => e.file === this.currentFile)) {
+      entries.unshift({ file: this.currentFile, id: "live", name: "Current session", modifiedAt: Date.now() });
+    }
+    for (const entry of entries) {
+      scanned++;
+      const history =
+        entry.file === this.currentFile
+          ? this.history
+          : (this.snapshots.get(entry.file)?.history ?? []);
+      let hitCount = 0;
+      const hits: Array<Record<string, unknown>> = [];
+      for (const { role, content } of history) {
+        const text =
+          typeof content === "string"
+            ? content
+            : Array.isArray(content)
+              ? content
+                  .filter((b) => (b as { type?: string })?.type === "text")
+                  .map((b) => String((b as { text?: string }).text ?? ""))
+                  .join("\n")
+              : "";
+        let from = 0;
+        for (;;) {
+          const at = text.toLowerCase().indexOf(needle, from);
+          if (at < 0) break;
+          if (hits.length < 2) {
+            const start = Math.max(0, at - 60);
+            const end = Math.min(text.length, at + needle.length + 60);
+            hits.push({
+              role,
+              snippet:
+                (start > 0 ? "…" : "") +
+                text.slice(start, end).replace(/\s+/g, " ").trim() +
+                (end < text.length ? "…" : ""),
+              hitIndex: hitCount,
+            });
+          }
+          hitCount++;
+          from = at + needle.length;
+        }
+      }
+      if (hitCount > 0) {
+        results.push({
+          file: entry.file,
+          id: entry.id,
+          name: entry.name,
+          modifiedAt: entry.modifiedAt,
+          hitCount,
+          hits,
+        });
+      }
+    }
+    // The e2e suite asks for the truncation path explicitly (?searchtruncate=1).
+    return { results, scanned, truncated: query()?.get("searchtruncate") === "1" && scanned > 0 };
   }
 
   /** fork / clone land in a new session file; the list has to show it. */

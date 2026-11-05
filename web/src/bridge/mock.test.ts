@@ -152,3 +152,55 @@ describe("MockBridge session branching (pi 1.5.0 semantics)", () => {
     expect(regenerated).toContain("```bash");
   }, 30_000);
 });
+
+describe("MockBridge sessions.search (spec 006 US3)", () => {
+  it("finds a hit in the live session transcript and reports snippets", async () => {
+    const bridge = new MockBridge();
+    const settled = waitForSettle(bridge);
+    await rpc(bridge, { type: "prompt", message: "the uniq-token-abc plan" });
+    await settled;
+
+    const resp = await bridge.request<{
+      results: Array<{ file: string; hitCount: number; hits: Array<{ role: string; snippet: string; hitIndex: number }> }>;
+      scanned: number;
+      truncated: boolean;
+    }>("sessions.search", { query: "uniq-token" });
+
+    expect(resp.scanned).toBeGreaterThan(0);
+    expect(resp.truncated).toBe(false);
+    expect(resp.results).toHaveLength(1);
+    expect(resp.results[0].hitCount).toBeGreaterThanOrEqual(1);
+    expect(resp.results[0].hits[0].hitIndex).toBe(0);
+    expect(resp.results[0].hits[0].snippet).toContain("uniq-token");
+  });
+
+  it("counts every hit but caps the returned snippets at two", async () => {
+    const bridge = new MockBridge();
+    const settled = waitForSettle(bridge);
+    await rpc(bridge, { type: "prompt", message: "needle needle needle" });
+    await settled;
+    const resp = await bridge.request<{
+      results: Array<{ hitCount: number; hits: unknown[] }>;
+    }>("sessions.search", { query: "needle" });
+    expect(resp.results[0].hitCount).toBeGreaterThanOrEqual(6);
+    expect(resp.results[0].hits.length).toBeLessThanOrEqual(2);
+  });
+
+  it("returns an empty result set for a query that matches nothing", async () => {
+    const bridge = new MockBridge();
+    const resp = await bridge.request<{ results: unknown[]; scanned: number }>("sessions.search", {
+      query: "no-such-token-anywhere",
+    });
+    expect(resp.results).toHaveLength(0);
+    expect(resp.scanned).toBeGreaterThan(0);
+  });
+
+  it("answers a blank query with an empty scan instead of searching", async () => {
+    const bridge = new MockBridge();
+    const resp = await bridge.request<{ results: unknown[]; scanned: number }>("sessions.search", {
+      query: "   ",
+    });
+    expect(resp.results).toHaveLength(0);
+    expect(resp.scanned).toBe(0);
+  });
+});

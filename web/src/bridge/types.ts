@@ -19,6 +19,7 @@ export type BridgeMethod =
   | "rpc.request"
   | "rpc.restart"
   | "sessions.list"
+  | "sessions.search"
   | "sessions.delete"
   | "sessions.exportHtml"
   | "files.list"

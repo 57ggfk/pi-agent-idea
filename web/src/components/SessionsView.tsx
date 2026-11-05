@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePiStore } from "../store/store";
+import type { SessionSearchMatch } from "../store/store";
 import Icon from "./Icon";
 
 function formatTime(ms: number): string {
@@ -12,6 +13,34 @@ function formatTime(ms: number): string {
   });
 }
 
+/** Highlights every literal occurrence of `query` inside `text`. */
+function Highlighted({ text, query }: { text: string; query: string }) {
+  const needle = query.trim();
+  if (!needle) return <>{text}</>;
+  const lower = text.toLowerCase();
+  const target = needle.toLowerCase();
+  const parts: Array<{ at: number; end: number }> = [];
+  let from = 0;
+  for (;;) {
+    const at = lower.indexOf(target, from);
+    if (at < 0) break;
+    parts.push({ at, end: at + target.length });
+    from = at + target.length;
+  }
+  if (parts.length === 0) return <>{text}</>;
+  return (
+    <>
+      {parts.map((p, i) => (
+        <span key={i}>
+          {text.slice(i === 0 ? 0 : parts[i - 1].end, p.at)}
+          <mark className="session-hit-mark">{text.slice(p.at, p.end)}</mark>
+          {i === parts.length - 1 ? text.slice(p.end) : null}
+        </span>
+      ))}
+    </>
+  );
+}
+
 export default function SessionsView() {
   const sessions = usePiStore((s) => s.sessions);
   const refreshSessions = usePiStore((s) => s.refreshSessions);
@@ -20,11 +49,31 @@ export default function SessionsView() {
   const deleteSession = usePiStore((s) => s.deleteSession);
   const cloneSession = usePiStore((s) => s.cloneSession);
   const exportSession = usePiStore((s) => s.exportSession);
+  const sessionSearch = usePiStore((s) => s.sessionSearch);
+  const searchAllSessions = usePiStore((s) => s.searchAllSessions);
+  const clearSessionSearch = usePiStore((s) => s.clearSessionSearch);
+  const requestSearchJump = usePiStore((s) => s.requestSearchJump);
   const [filter, setFilter] = useState("");
+  const debounceRef = useRef<number>(0);
 
   useEffect(() => {
     void refreshSessions();
   }, [refreshSessions]);
+
+  // Full-session body search: ≥2 chars, debounced (FR-010). The store owns
+  // the race guard; typing fast can never flash an older result.
+  useEffect(() => {
+    window.clearTimeout(debounceRef.current);
+    const q = filter.trim();
+    if (q.length < 2) {
+      clearSessionSearch();
+      return;
+    }
+    debounceRef.current = window.setTimeout(() => {
+      void searchAllSessions(q);
+    }, 250);
+    return () => window.clearTimeout(debounceRef.current);
+  }, [filter, searchAllSessions, clearSessionSearch]);
 
   const filtered = sessions.filter((s) => {
     if (!filter.trim()) return true;
@@ -35,6 +84,13 @@ export default function SessionsView() {
       s.id.toLowerCase().includes(q)
     );
   });
+
+  /** A hit click: switch session, then land on that exact hit in the chat. */
+  const openHit = (match: SessionSearchMatch, hitIndex: number) => {
+    void switchSession(match.file).then(() => {
+      requestSearchJump(filter.trim(), hitIndex);
+    });
+  };
 
   return (
     <div className="sessions-view" data-testid="sessions-view">
@@ -47,6 +103,50 @@ export default function SessionsView() {
           onChange={(e) => setFilter(e.target.value)}
         />
       </div>
+
+      {sessionSearch && filter.trim().length >= 2 ? (
+        <div className="session-search-results" data-testid="session-search-results">
+          {sessionSearch.results.length === 0 ? (
+            <div className="sessions-empty" data-testid="sessions-search-empty">
+              No matches in {sessionSearch.scanned} session{sessionSearch.scanned === 1 ? "" : "s"}.
+              {sessionSearch.truncated ? " The scan was stopped early." : ""}
+            </div>
+          ) : (
+            <>
+              {sessionSearch.truncated ? (
+                <div className="session-search-note" data-testid="sessions-search-truncated">
+                  Scanned {sessionSearch.scanned} sessions — stopped early, results may be incomplete.
+                </div>
+              ) : null}
+              {sessionSearch.results.map((match) => (
+                <div key={match.file} className="session-search-hit" data-testid="session-search-hit">
+                  <div className="session-hit-head">
+                    <span className="session-name">{match.name || match.id || "Untitled"}</span>
+                    <span className="session-hit-count" data-testid="session-hit-count">
+                      {match.hitCount} {match.hitCount === 1 ? "hit" : "hits"}
+                    </span>
+                  </div>
+                  {match.hits.map((hit) => (
+                    <button
+                      key={hit.hitIndex}
+                      type="button"
+                      className="session-hit-snippet"
+                      data-testid="session-hit-snippet"
+                      onClick={() => openHit(match, hit.hitIndex)}
+                    >
+                      <span className="session-hit-role">{hit.role}</span>
+                      <span className="session-hit-text">
+                        <Highlighted text={hit.snippet} query={filter} />
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      ) : null}
+
       <div className="sessions-list">
         {filtered.length === 0 ? (
           <div className="sessions-empty" data-testid="sessions-empty">

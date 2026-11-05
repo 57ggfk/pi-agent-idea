@@ -147,6 +147,30 @@ export interface SessionInfo {
   messageCount?: number;
 }
 
+// -- Full-session search (spec 006 US3) --------------------------------------
+
+export interface SessionSearchHit {
+  role: string;
+  snippet: string;
+  /** Ordinal of this hit within the session (the jump target, US3). */
+  hitIndex: number;
+}
+
+export interface SessionSearchMatch {
+  file: string;
+  id: string;
+  name: string;
+  modifiedAt: number;
+  hitCount: number;
+  hits: SessionSearchHit[];
+}
+
+export interface SessionSearchResponse {
+  results: SessionSearchMatch[];
+  scanned: number;
+  truncated: boolean;
+}
+
 interface PiStore {
   ready: boolean;
   bridgeKind: "jcef" | "mock" | "connecting";
@@ -225,6 +249,13 @@ interface PiStore {
   /** Sessions result click: switch session, then land on this hit (US3). */
   requestSearchJump(query: string, hitIndex: number): void;
   clearSearchJump(): void;
+  /**
+   * Full-session body search (US3). Race-guarded: only the latest call's
+   * response is stored, so a stale answer can never overwrite a newer one.
+   */
+  sessionSearch: SessionSearchResponse | null;
+  searchAllSessions(query: string): Promise<void>;
+  clearSessionSearch(): void;
 
   model?: ModelInfo;
   models: ModelInfo[];
@@ -323,6 +354,8 @@ export const usePiStore = create<PiStore>((set, get) => {
   let bridge: Bridge | null = null;
   let initStarted = false;
   let promptSeq = 0;
+  /** Sequence guard for sessions.search responses (US3 race rule). */
+  let sessionSearchSeq = 0;
 
   /** Applies a preference and, in system mode, the current IDE theme. */
   const applyThemePreference = (preference: ThemePreference, persist: boolean) => {
@@ -701,6 +734,7 @@ export const usePiStore = create<PiStore>((set, get) => {
     outlineOpen: false,
     search: { open: false, query: "", index: 0 },
     pendingSearchJump: null,
+    sessionSearch: null,
 
     approvals: [],
     // Auto-approve by default; "ask" is opt-in from the options menu.
@@ -764,6 +798,31 @@ export const usePiStore = create<PiStore>((set, get) => {
 
     clearSearchJump() {
       set({ pendingSearchJump: null });
+    },
+
+    async searchAllSessions(query: string) {
+      const trimmed = query.trim();
+      if (!bridge || trimmed.length < 2) {
+        set({ sessionSearch: null });
+        return;
+      }
+      const seq = ++sessionSearchSeq;
+      try {
+        const resp = await bridge.request<SessionSearchResponse>("sessions.search", { query: trimmed });
+        if (seq !== sessionSearchSeq) return; // a newer query superseded this one
+        set({ sessionSearch: resp });
+      } catch {
+        if (seq === sessionSearchSeq) {
+          // A failed scan must not look like "no matches" (spec 003), but the
+          // Sessions page also must not lose the list — report an empty scan.
+          set({ sessionSearch: { results: [], scanned: 0, truncated: false } });
+        }
+      }
+    },
+
+    clearSessionSearch() {
+      sessionSearchSeq++;
+      set({ sessionSearch: null });
     },
 
     setThemePreference(preference: ThemePreference) {

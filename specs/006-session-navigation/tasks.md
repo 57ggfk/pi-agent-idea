@@ -67,18 +67,18 @@ description: "Task list for 006-session-navigation"
 
 ## Phase 4: US3 全会话搜索（后端 + 桥接 + 页面）
 
-- [ ] **T014** [P][US3] `session/SessionSearch.kt`：JSONL 扫描 + 片段 + `hitIndex` + 上限与超时 —
+- [x] **T014** [P][US3] `session/SessionSearch.kt`：JSONL 扫描 + 片段 + `hitIndex` + 上限与超时 —
   验证：**先写** `SessionSearchTest`（`@TempDir` 造 3 个 jsonl）：① 命中 2 个会话；② 同会话 3 处 →
   `hitCount=3`、`hits` ≤2；③ 半行损坏 → 跳过不抛；④ 关键词含正则字符按字面量；⑤ 超时会话数 > 上限 → `truncated=true`
-- [ ] **T015** [US3] `BridgeService.dispatch` 注册 `sessions.search`；`BridgeMethod` 加类型
+- [x] **T015** [US3] `BridgeService.dispatch` 注册 `sessions.search`；`BridgeMethod` 加类型
   — 验证：`./gradlew test` 绿；`web/src/bridge/types.ts` 与 dispatch 白名单一一对应
-- [ ] **T016** [US3] `mock.ts` 实现 `sessions.search`（在 mock 会话正文里搜）— 验证：
+- [x] **T016** [US3] `mock.ts` 实现 `sessions.search`（在 mock 会话正文里搜）— 验证：
   `mock.test.ts` 新增用例，`npm test` 绿
-- [ ] **T017** [US3] `SessionsView` 搜索框：≥2 字符防抖 250ms、结果排序与片段、`N hits`、
+- [x] **T017** [US3] `SessionsView` 搜索框：≥2 字符防抖 250ms、结果排序与片段、`N hits`、
   请求竞态守卫 — 验证：e2e 输入 `uniq-token` → 命中会话排首位并显示片段；快速改词只呈现最后一次结果
-- [ ] **T018** [US3] 点击命中 → 切会话 + 打开搜索并跳到第 `hitIndex` 个 — 验证：e2e 断言切到 Chat、
+- [x] **T018** [US3] 点击命中 → 切会话 + 打开搜索并跳到第 `hitIndex` 个 — 验证：e2e 断言切到 Chat、
   `search-bar` 值为该关键词、计数为 `{hitIndex+1}/N`、目标消息滚入视口
-- [ ] **T019** [US3] 空结果与超限提示 — 验证：e2e 断言 `0/0` 与「已扫描 N 个会话」文案（mock 返回 `truncated:true`）
+- [x] **T019** [US3] 空结果与超限提示 — 验证：e2e 断言 `0/0` 与「已扫描 N 个会话」文案（mock 返回 `truncated:true`）
 - [ ] **T020** [US3] 会话切换重置 — 验证：vitest 断言 `switchSession` 后 `search.open === false` 且 `hits` 清空；
   e2e 断言切会话后无残留高亮
 
