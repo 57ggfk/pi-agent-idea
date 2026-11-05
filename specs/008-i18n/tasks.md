@@ -23,16 +23,16 @@ description: "Task list for 008-i18n"
 
 ## Phase 1: 盘点与地基
 
-- [ ] **T001** [地基] 跑 `plan.md` 技术上下文里的两条盘点命令，把待翻译条目数按 area 写进 `plan.md`
+- [x] **T001** [地基] 跑 `plan.md` 技术上下文里的两条盘点命令，把待翻译条目数按 area 写进 `plan.md`
   — 验证：数字与 `grep` 输出一致，作为后续「归零」的基线
 
-- [ ] **T002** [地基] **装依赖并验证懒加载成立（阻塞后续）**：`npm i i18next react-i18next`（仅此两个，见 D0）；
+- [x] **T002** [地基] **装依赖并验证懒加载成立（阻塞后续）**：`npm i i18next react-i18next`（仅此两个，见 D0）；
   建一个最小 `import.meta.glob('./locales/*.ts')` 的加载器与两个占位字典，跑 `npm run build`
   — 验证：`web/dist/assets/` 下**出现独立的 `zh-*.js` chunk**（基准语言 `en` 在主包内）；
   若未切出 chunk，**停下并报告**——这意味着懒加载方案需改为全量同步打包，属架构级分叉。
   *规划期已用最小用例验证可行（切出 `zh-*.js`，主包 gz +16.3KB），此处只需在真实目录结构下复验*
 
-- [ ] **T003** [地基] 按 D2 建 `web/src/i18n/`：`languages.ts`（`LANGUAGES` 注册表 + `FALLBACK` + `isRegistered`）、
+- [x] **T003** [地基] 按 D2 建 `web/src/i18n/`：`languages.ts`（`LANGUAGES` 注册表 + `FALLBACK` + `isRegistered`）、
   `locales/en.ts`（`as const`，先只含 `common.*` 与 `chat.tabs.*`）、`locales/zh.ts`
   （`satisfies Record<keyof typeof en, string>`）、`index.ts`（初始化：`keySeparator:false`、
   `escapeValue:false`、`parseMissingKeyHandler` 返回 `⟦key⟧`、`react.useSuspense:false`、`ensureLanguage`）、
@@ -40,11 +40,11 @@ description: "Task list for 008-i18n"
   — 验证：**先写** `i18n.test.ts`（键覆盖、占位符、缺 key 返回 `⟦key⟧`、`LANGUAGES` 与 `locales/` 文件一一对应），
   红 → 绿；故意写一个不存在的 key 调 `t()`，`npm run typecheck` 必须报错
 
-- [ ] **T004** [P][地基] `PiUserPrefs` 增加 `languagePreference()` / `setLanguagePreference()`；
+- [x] **T004** [P][地基] `PiUserPrefs` 增加 `languagePreference()` / `setLanguagePreference()`；
   `BridgeService.envInfo()` 加 `locale`（取 `Locale.getDefault().language`）；`getPrefs/setPrefs` 支持 `language`
   — 验证：`./gradlew test` 绿；`env` 响应里 `locale` 非空（真机 `zh`/`en` 各一次）
 
-- [ ] **T005** [P][地基] `web/src/bridge/types.ts` 加 `EnvInfo.locale` / prefs 的 `language`；`mock.ts` 提供
+- [x] **T005** [P][地基] `web/src/bridge/types.ts` 加 `EnvInfo.locale` / prefs 的 `language`；`mock.ts` 提供
   `locale` 与语言持久化 — 验证：`npm test` 绿；mock 下 `config.setPrefs({language:"en"})` 后
   `config.getPrefs` 返回 `en`
 
@@ -54,21 +54,21 @@ description: "Task list for 008-i18n"
 
 ## Phase 2: US1 + US2（链路与入口）
 
-- [ ] **T006** [US1] `index.ts` 的 `resolveLanguage(pref, envLocale)` + `store.init()`：已注册 code 直接用；
+- [x] **T006** [US1] `index.ts` 的 `resolveLanguage(pref, envLocale)` + `store.init()`：已注册 code 直接用；
   `system` 或未知值 → `env.locale` 按 BCP-47 前缀匹配 → 无匹配用 `en`；未知代码回退 `system` 并写回偏好（D1）；
   store 暴露 `language` 与 `languagePref`；初始化时 **先 `await ensureLanguage()` 再渲染**
   — 验证：vitest 覆盖四种输入（`zh` 已注册、`system`+`zh-CN`、`system`+`ja`、`ja` 未注册）；
   切语言过程中界面不空白（e2e 断言文本非空）
 
-- [ ] **T007** [US2] `OptionsPopover` 的 Language 行按 D4 自适应：`1 + LANGUAGES.length <= 3` 用 `.segmented`
+- [x] **T007** [US2] `OptionsPopover` 的 Language 行按 D4 自适应：`1 + LANGUAGES.length <= 3` 用 `.segmented`
   （与 Theme 行同结构），`> 3` 用原生 `<select>`；选项文字用语言自身写法（`English` / `中文`），不经 `t()`；
   下方加说明「IDE 菜单与通知跟随 IDE 语言包」
   — 验证：e2e 断言当前 3 项时该行是 `.segmented` 且与 Theme 行子按钮数一致；点击后 `config.setPrefs` 被调用
 
-- [ ] **T008** [US1] 切换即时生效且不丢状态 — 验证：e2e 先发一条消息，再切语言，断言消息条数不变、
+- [x] **T008** [US1] 切换即时生效且不丢状态 — 验证：e2e 先发一条消息，再切语言，断言消息条数不变、
   `.message-list` 的 `scrollTop` 变化 ≤ 2px、界面文案已切换、`document.body` 无 `⟦` 字符
 
-- [ ] **T009** [US1] tabs / 空态 / composer 首批文案走 `useT()` — 验证：e2e 断言 `zh` 下 tabs 为
+- [x] **T009** [US1] tabs / 空态 / composer 首批文案走 `useT()` — 验证：e2e 断言 `zh` 下 tabs 为
   聊天/会话/管理、占位符为中文、空态副标题为中文；`en` 下为英文
 
 ---

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { usePiStore } from "../store/store";
 import { outlineEntries } from "../lib/outline";
 import { scrollToItem } from "../lib/scrollToItem";
+import { useT } from "../i18n/useT";
 import Icon from "./Icon";
 
 /**
@@ -15,6 +16,7 @@ export default function SessionOutline() {
   const open = usePiStore((s) => s.outlineOpen);
   const items = usePiStore((s) => s.items);
   const toggleOutline = usePiStore((s) => s.toggleOutline);
+  const { t } = useT();
   const entries = useMemo(() => outlineEntries(items), [items]);
   const [currentId, setCurrentId] = useState<number | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -64,18 +66,18 @@ export default function SessionOutline() {
   return (
     <div className="session-outline" data-testid="session-outline" ref={listRef}>
       <div className="outline-head">
-        <span className="outline-title">Messages</span>
+        <span className="outline-title">{t("chat.outline.title")}</span>
         <button
           type="button"
           className="outline-close"
           data-testid="outline-close"
-          aria-label="Close outline"
+          aria-label={t("chat.outline.close")}
           onClick={() => toggleOutline(false)}
         >
           <Icon name="x" className="ic-sm" />
         </button>
       </div>
-      <div className="outline-list" role="listbox" aria-label="User messages">
+      <div className="outline-list" role="listbox" aria-label={t("chat.outline.label")}>
         {entries.map((entry, i) => (
           <button
             key={entry.itemId}

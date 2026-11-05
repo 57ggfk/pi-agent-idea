@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ThemePreference } from "../bridge/types";
 import { usePiStore } from "../store/store";
+import { LANGUAGES } from "../i18n/languages";
+import { useT } from "../i18n/useT";
 import Icon from "./Icon";
 
 const THEME_OPTIONS: Array<{ value: ThemePreference; label: string; hint: string }> = [
@@ -186,8 +188,65 @@ export default function OptionsPopover() {
             }
             onToggle={() => void setApprovalMode(approvalMode === "yolo" ? "ask" : "yolo")}
           />
+          <LanguageRow />
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Language picker (spec 008 US2 / D4): with at most 3 options it renders the
+ * same `.segmented` control as the Theme row; more options degrade to a
+ * native <select>. Both shapes share the LANGUAGES registry — adding a
+ * language never touches this component (FR-016, locked by i18n tests).
+ * Option text is each language's own name, never translated.
+ */
+function LanguageRow() {
+  const { t } = useT();
+  const languagePref = usePiStore((s) => s.languagePref);
+  const setLanguagePreference = usePiStore((s) => s.setLanguagePreference);
+  const options = [
+    { value: "system", label: t("language.followIde") },
+    ...LANGUAGES.map((l) => ({ value: l.code, label: l.nativeLabel })),
+  ];
+  const useSelect = options.length > 3;
+
+  return (
+    <div className="options-row options-row-stack" data-testid="opt-language" title={t("language.hint")}>
+      <span className="options-label">{t("language.label")}</span>
+      {useSelect ? (
+        <select
+          className="segmented language-select"
+          aria-label={t("language.selector")}
+          data-testid="opt-language-select"
+          value={languagePref}
+          onChange={(e) => void setLanguagePreference(e.target.value)}
+        >
+          {options.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <div className="segmented" role="radiogroup" aria-label={t("language.selector")}>
+          {options.map((o) => (
+            <button
+              key={o.value}
+              type="button"
+              role="radio"
+              aria-checked={languagePref === o.value}
+              className={`segment ${languagePref === o.value ? "segment-active" : ""}`}
+              data-testid={`opt-language-${o.value}`}
+              onClick={() => void setLanguagePreference(o.value)}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      )}
+      <span className="options-hint">{t("language.hint")}</span>
     </div>
   );
 }

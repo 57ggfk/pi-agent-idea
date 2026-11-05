@@ -69,6 +69,7 @@ export async function initI18n(
   envLocale: string | undefined | null,
 ): Promise<string> {
   const language = resolveLanguage(pref, envLocale);
+  console.info("[i18n] initI18n", { pref, envLocale, language });
   if (!initPromise) {
     initPromise = i18next
       .use(initReactI18next)

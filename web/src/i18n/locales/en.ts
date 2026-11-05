@@ -26,7 +26,16 @@ export const en = {
   "chat.search.next": "Next match",
   "chat.search.close": "Close search",
   "chat.search.noMatches": "No matches",
+
+  // -- language selector ----------------------------------------------------
+  "language.label": "Language",
+  "language.followIde": "Follow IDE",
+  "language.hint": "IDE menus and notifications follow the IDE language pack.",
+  "language.selector": "UI language",
 } as const;
 
 /** Exact key set, free values — the shape every other locale must satisfy. */
 export type Dict = Record<keyof typeof en, string>;
+
+// Symmetry with the lazy locales: the glob loader reads a default export.
+export default en;

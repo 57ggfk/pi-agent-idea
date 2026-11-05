@@ -141,7 +141,15 @@ export class MockBridge implements Bridge {
   private autoRetryEnabled: boolean | null = null;
   private themePreference: "system" | "light" | "dark" = "system";
   /** Language preference mirror (spec 008 FR-001); persisted via setPrefs. */
-  private languagePreference: string = "system";
+  private languagePreference: string = (() => {
+    try {
+      // Same key the store writes: survives reloads in standalone runs the
+      // way PiUserPrefs does inside the IDE.
+      return localStorage.getItem("pi-agent.language-preference") ?? "system";
+    } catch {
+      return "system";
+    }
+  })();
   // Project trust. Defaults to trusted so the standalone UI looks like a
   // normal working project; `?trusted=0` exercises the untrusted banner and
   // `?trust=broken` the unreadable-store path.

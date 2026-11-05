@@ -3,6 +3,7 @@ import { usePiStore } from "../store/store";
 import { hitsFromItems } from "../lib/search";
 import { paintSearchHighlights, clearSearchHighlights, customHighlightsAvailable } from "../lib/highlight";
 import { scrollToItem } from "../lib/scrollToItem";
+import { useT } from "../i18n/useT";
 import Icon from "./Icon";
 
 /**
@@ -22,6 +23,7 @@ export default function SessionSearch() {
   const pendingJump = usePiStore((s) => s.pendingSearchJump);
   const clearSearchJump = usePiStore((s) => s.clearSearchJump);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { t } = useT();
 
   const hits = useMemo(
     () => (search.open ? hitsFromItems(items, search.query) : []),
@@ -92,7 +94,7 @@ export default function SessionSearch() {
         className="search-input"
         data-testid="search-input"
         type="text"
-        placeholder="Search in session"
+        placeholder={t("chat.search.placeholder")}
         value={search.query}
         autoFocus
         onChange={(e) => setSearchQuery(e.target.value)}
@@ -111,13 +113,13 @@ export default function SessionSearch() {
       </span>
       {search.query.trim() && count === 0 ? (
         <span className="search-empty" data-testid="search-empty">
-          No matches
+          {t("chat.search.noMatches")}
         </span>
       ) : null}
       <button
         type="button"
         className="search-nav"
-        aria-label="Previous match"
+        aria-label={t("chat.search.prev")}
         data-testid="search-prev"
         onClick={() => searchGo(-1)}
       >
@@ -126,7 +128,7 @@ export default function SessionSearch() {
       <button
         type="button"
         className="search-nav"
-        aria-label="Next match"
+        aria-label={t("chat.search.next")}
         data-testid="search-next"
         onClick={() => searchGo(1)}
       >
@@ -135,7 +137,7 @@ export default function SessionSearch() {
       <button
         type="button"
         className="search-nav"
-        aria-label="Close search"
+        aria-label={t("chat.search.close")}
         data-testid="search-close"
         onClick={() => closeSearch()}
       >

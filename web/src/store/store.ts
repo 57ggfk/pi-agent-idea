@@ -128,6 +128,30 @@ function writeLocalThemePreference(preference: ThemePreference) {
   }
 }
 
+// Language preference (spec 008): same two-layer scheme as the theme. Inside
+// the IDE the PiUserPrefs value wins; the localStorage copy only matters in
+// standalone/mock runs where the loopback port changes between sessions.
+const LANGUAGE_STORAGE_KEY = "pi-agent.language-preference";
+
+function readLocalLanguagePreference(): string | null {
+  try {
+    const raw = typeof localStorage === "undefined" ? null : localStorage.getItem(LANGUAGE_STORAGE_KEY);
+    return typeof raw === "string" && (raw === "system" || isRegistered(raw)) ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeLocalLanguagePreference(pref: string) {
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem(LANGUAGE_STORAGE_KEY, pref);
+    }
+  } catch {
+    // Non-fatal: the IDE preference is the authoritative store.
+  }
+}
+
 function applyDocumentTheme(theme: AppTheme) {
   if (typeof document === "undefined") return;
   document.documentElement.dataset.theme = theme;
@@ -850,6 +874,7 @@ export const usePiStore = create<PiStore>((set, get) => {
       // path cannot repeat on every start.
       const safe = pref === "system" || isRegistered(pref) ? pref : "system";
       set({ languagePref: safe });
+      writeLocalLanguagePreference(safe);
       const language = await initI18n(safe, get().envLocale);
       set({ language });
       if (bridge) {
@@ -939,15 +964,16 @@ export const usePiStore = create<PiStore>((set, get) => {
           if (typeof prefs.autoRetry === "boolean") set({ autoRetry: prefs.autoRetry });
           // IDE-side preference wins over the dev localStorage fallback.
           if (isThemePreference(prefs.theme)) applyThemePreference(prefs.theme, false);
-          if (typeof prefs.language === "string") {
+          if (typeof prefs.language === "string" && prefs.language !== "system" && !isRegistered(prefs.language)) {
             // D1: an unregistered leftover code is corrected back to "system".
-            const pref =
-              prefs.language === "system" || isRegistered(prefs.language) ? prefs.language : "system";
-            set({ languagePref: pref });
-            if (pref !== prefs.language) {
-              void b.request("config.setPrefs", { language: pref }).catch(() => undefined);
-            }
+            void b.request("config.setPrefs", { language: "system" }).catch(() => undefined);
           }
+          // IDE pref wins; the localStorage copy covers standalone/mock runs.
+          const stored =
+            typeof prefs.language === "string" && (prefs.language === "system" || isRegistered(prefs.language))
+              ? prefs.language
+              : readLocalLanguagePreference();
+          if (stored) set({ languagePref: stored });
         }),
         get().refreshCommands(),
         get().refreshStats(),
@@ -958,9 +984,10 @@ export const usePiStore = create<PiStore>((set, get) => {
       try {
         const language = await initI18n(get().languagePref, get().envLocale);
         set({ language });
-      } catch {
+      } catch (e) {
         // i18n must never block startup; a broken dictionary surfaces via the
-        // ⟦key⟧ marker instead of a blank tool window.
+        // ⟦key⟧ marker instead of a blank tool window — but never silently.
+        console.warn("[i18n] init failed; staying on the fallback language", e);
       }
 
       // Replay the current session so a reopened tool window shows history.
@@ -1654,3 +1681,9 @@ export const usePiStore = create<PiStore>((set, get) => {
     },
   };
 });
+
+// Test/diagnostic hook: lets e2e and the IDE console inspect state without a
+// bridge round-trip. Harmless in production; not used by application code.
+if (typeof window !== "undefined") {
+  (window as unknown as { __piStore?: typeof usePiStore }).__piStore = usePiStore;
+}

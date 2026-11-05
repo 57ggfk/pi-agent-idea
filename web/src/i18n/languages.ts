@@ -15,13 +15,19 @@ export interface LanguageEntry {
   bcp47: string;
   /** Stable identifier for a11y labels and tests — never rendered as text. */
   labelKey: string;
+  /**
+   * The language's name in ITSELF ("English" / "中文") — deliberately not a
+   * translation key: a user stuck in a language they cannot read must still
+   * find their way back (spec D4).
+   */
+  nativeLabel: string;
   /** The fallback language ships in the main bundle (FR-017). */
   fallback?: boolean;
 }
 
 export const LANGUAGES: LanguageEntry[] = [
-  { code: "en", bcp47: "en", labelKey: "language.en", fallback: true },
-  { code: "zh", bcp47: "zh-CN", labelKey: "language.zh" },
+  { code: "en", bcp47: "en", labelKey: "language.en", nativeLabel: "English", fallback: true },
+  { code: "zh", bcp47: "zh-CN", labelKey: "language.zh", nativeLabel: "中文" },
 ];
 
 export const FALLBACK = "en";

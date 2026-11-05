@@ -1,6 +1,7 @@
 import { Component, useEffect, useMemo, type ReactNode } from "react";
 import { usePiStore } from "./store/store";
 import { outlineEntries } from "./lib/outline";
+import { useT } from "./i18n/useT";
 import MessageList from "./components/MessageList";
 import Composer from "./components/Composer";
 import SetupCard from "./components/SetupCard";
@@ -58,6 +59,7 @@ export default function App() {
   const items = usePiStore((s) => s.items);
   const toggleOutline = usePiStore((s) => s.toggleOutline);
   const openSearch = usePiStore((s) => s.openSearch);
+  const { t } = useT();
 
   // The outline entry is hidden while the session has no user messages
   // (spec 006 FR-003) — a button that cannot do anything is noise.
@@ -75,16 +77,16 @@ export default function App() {
       ) : (
         <div className="app">
           <div className="tabs" role="tablist" aria-label="Pi Agent" data-testid="tabs">
-            {(["chat", "sessions", "manage"] as const).map((t) => (
+            {(["chat", "sessions", "manage"] as const).map((tabId) => (
               <button
-                key={t}
+                key={tabId}
                 role="tab"
-                aria-selected={tab === t}
-                className={`tab ${tab === t ? "tab-active" : ""}`}
-                data-testid={`tab-${t}`}
-                onClick={() => setTab(t)}
+                aria-selected={tab === tabId}
+                className={`tab ${tab === tabId ? "tab-active" : ""}`}
+                data-testid={`tab-${tabId}`}
+                onClick={() => setTab(tabId)}
               >
-                {t === "chat" ? "Chat" : t === "sessions" ? "Sessions" : "Manage"}
+                {tabId === "chat" ? t("chat.tabs.chat") : tabId === "sessions" ? t("chat.tabs.sessions") : t("chat.tabs.manage")}
               </button>
             ))}
             {tab === "chat" ? (
@@ -94,7 +96,7 @@ export default function App() {
                     type="button"
                     className="tab-tool-btn"
                     data-testid="outline-btn"
-                    aria-label="Message outline"
+                    aria-label={t("chat.outline.label")}
                     onClick={() => toggleOutline()}
                   >
                     <Icon name="list" className="ic-sm" />
@@ -104,7 +106,7 @@ export default function App() {
                   type="button"
                   className="tab-tool-btn"
                   data-testid="search-btn"
-                  aria-label="Search in session"
+                  aria-label={t("chat.search.label")}
                   onClick={() => openSearch()}
                 >
                   <Icon name="search" className="ic-sm" />

@@ -27,4 +27,13 @@ export const zh: Dict = {
   "chat.search.next": "下一个匹配",
   "chat.search.close": "关闭搜索",
   "chat.search.noMatches": "无匹配",
+
+  // -- language selector ----------------------------------------------------
+  "language.label": "语言",
+  "language.followIde": "跟随 IDE",
+  "language.hint": "IDE 菜单与通知跟随 IDE 语言包。",
+  "language.selector": "界面语言",
 };
+
+// The lazy loader reads the default export (import.meta.glob<{ default: Dict }>).
+export default zh;
