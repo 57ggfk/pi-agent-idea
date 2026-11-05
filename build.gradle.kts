@@ -1,3 +1,5 @@
+import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
+
 plugins {
     id("java")
     id("org.jetbrains.kotlin.jvm") version "2.4.21"
@@ -16,11 +18,14 @@ repositories {
 }
 
 // ---------------------------------------------------------------------------
-// IDE dependency: compile against the LOWEST supported platform line
-// (2024.3.1, mirroring cc gui's baseline) so every build — CI included —
-// verifies binary compatibility across the whole sinceBuild..untilBuild
-// range. Set ideaPath to a local IDE only to run runIde/e2e against your
-// real environment; it is never needed for building.
+// IDE dependency: compile against 2024.3.1 (243). That is the COMPILE
+// baseline, NOT the lowest supported line — sinceBuild is 233 (2023.3), so
+// the compile classpath is newer than what users on 2023.3–2024.2 run. Any
+// API added between 233 and 243 therefore compiles here and breaks there,
+// which is why pluginVerification below pins the floor and 241 as well; do
+// not rely on the compile classpath to catch it. Set ideaPath to a local IDE
+// only to run runIde/e2e against your real environment; it is never needed
+// for building.
 // ---------------------------------------------------------------------------
 val localIdeaPath = providers.gradleProperty("ideaPath").orNull?.takeIf { it.isNotBlank() }
 
@@ -265,10 +270,16 @@ intellijPlatform {
     }
 
     pluginVerification {
-        // Verify against the lowest supported line — the same one we compile
-        // against — so the check is deterministic and cached locally.
+        // Verify across the RANGE, not just the compile baseline. The baseline
+        // is 2024.3.1 (243) while sinceBuild is 233, so any API added between
+        // 233 and 243 compiles here and only fails on older IDEs — 0.5.1 shipped
+        // exactly that (addBrowseFolderListener(Project, descriptor), 2024.3
+        // only) and was rejected by Marketplace for 2024.1 users. The floor and
+        // the reported-broken line are pinned so this cannot recur silently.
         ides {
-            ide(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.IntellijIdeaCommunity, "2024.3.1")
+            ide(IntelliJPlatformType.IntellijIdeaCommunity, "2023.3.1") // floor (233)
+            ide(IntelliJPlatformType.IntellijIdeaCommunity, "2024.1.7") // 241 — the line that broke
+            ide(IntelliJPlatformType.IntellijIdeaCommunity, "2024.3.1") // compile baseline (243)
         }
         // Marketplace rejection criteria: binary incompatibilities and
         // internal API usage only.

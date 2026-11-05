@@ -231,7 +231,7 @@ e2e 的关键设计：**同一套 Playwright 用例、两种 driver**（`file:we
 | ADR-4 | 前端 React+Vite，独立 npm 工程 | WebPack/纯 HTML | 独立构建是 e2e 与开发效率的基础 |
 | ADR-5 | 编译目标 = 最低支持线 IntelliJ IDEA Community 2024.3.1（远程），支持区间 233–263.\*（对标 cc gui）；`ideaPath` 属性仅用于把 runIde/e2e 指向本地真实 IDE | 依赖本地安装的特定版本 / 追最新版本 | 无 IDEA 的机器（CI/Linux）也能构建；每次构建都在最低线上验证全区间二进制兼容 |
 | ADR-6 | bytecode 17 / Gradle 8.14.4 / IPG 2.10.5 | — | 与 cc gui 工具链对齐；JBR 17 覆盖 233–263 全区间 |
-| ADR-7 | 平台 API 只用公开接口：commit 数据走 `VcsDataKeys.COMMIT_WORKFLOW_UI`；带默认方法的平台接口用 Java 实现 | cast `ChangesViewCommitPanel` / Kotlin 实现 `ToolWindowFactory` | Plugin Verifier 把 internal 用法和 Kotlin 默认方法转发器都计为违规；替换废弃 API 前必须核对 2024.3.1 基线（§13） |
+| ADR-7 | 平台 API 只用公开接口：commit 数据走 `VcsDataKeys.COMMIT_WORKFLOW_UI`；带默认方法的平台接口用 Java 实现 | cast `ChangesViewCommitPanel` / Kotlin 实现 `ToolWindowFactory` | Plugin Verifier 把 internal 用法和 Kotlin 默认方法转发器都计为违规；替换废弃 API 前必须核对**最老支持版本 233**上是否存在该替代（§13） |
 
 ## 12. 风险与缓解
 
@@ -242,7 +242,7 @@ e2e 的关键设计：**同一套 Playwright 用例、两种 driver**（`file:we
 | pi RPC 协议随版本演进 | 协议宽容解析 + 前端归约器单测 + `sinceBuild` 收紧 |
 | JCEF 远程调试端口不可用（IDE 策略） | e2e 降级路径：前端 e2e + runIde 截图 + 人工清单 |
 | 本地 HTTP 服务被其他进程访问 | 仅绑定 127.0.0.1 + 随机端口 + per-project 随机 token + Origin 同源校验（v0.1.2 落地） |
-| 新 IDE 版本报 internal / deprecated API usage | 发版前跑 plugin verifier；替换前先核对 2024.3.1 基线是否存在该 API 的替代（§13） |
+| 新 IDE 版本报 internal / deprecated API usage | 发版前跑 plugin verifier；替换前先核对最老支持版本 233 上是否存在该替代（§13） |
 
 ## 13. 平台 API 与 Marketplace 兼容性检查（避坑）
 
@@ -295,26 +295,37 @@ article"（指向 Internal API Migration 文档）。
 那 2 条，就得把这个 widget 改成 Java（或加 Java 基类），属于 UI 代码改动，
 需权衡运行时风险。
 
-### 13.3 deprecated API 不能盲目替换（编译基线 2024.3.1）
+### 13.3 编译基线 2024.3.1 ≠ 支持下限 233（换 API 前先查最老那版）
 
-编译目标是**最低支持线 2024.3.1**，`sinceBuild=233`。2026.x 才标废弃的 API，
-在老版本里常常**没有**替代构造器 / 方法——直接换成新 API 会让 2023.3–2026.1
-的用户 `NoSuchMethodError`。替换前先确认替代在基线上存在，可用来源：
+编译目标是 **2024.3.1（243）**，而 `sinceBuild=233`（2023.3）。也就是说编译器只保证
+「243 上有这个 API」——**233..242 之间没有的 API 照样编译通过**，到用户机器上才
+`NoSuchMethodError`。Marketplace 的 verifier 按整个支持区间逐版本检查，会直接拒稿：
+
+> Pi Agent 0.5.1 被拒原文：`Invocation of unresolved method
+> TextFieldWithBrowseButton.addBrowseFolderListener(...)`，
+> target `IU-241.19416.15`（2024.1.7）。
+
+原因是把废弃的 4 参重载换成了 **2 参 `addBrowseFolderListener(Project, FileChooserDescriptor)`**
+——这个双参重载 2024.3 才加，2024.1 根本没有。替换时只核了 2024.3.1 基线（当时误以为
+「基线 = 最低支持线」，文件头注释与 `gradle.properties` 都这么写，已一并改正）。
+
+换任何平台 API 前，在**最老支持版本**上确认真身存在：
 
 - Gradle 缓存里已解压的 IDE：
-  `~/.gradle/caches/8.14.4/transforms/*/transformed/ideaIC-2024.3.1-win/lib/`
-- 或缓存的 `ideaIC-2024.3.1-win.zip` → `lib/app.jar`、`lib/app-client.jar`
+  `~/.gradle/caches/8.14.4/transforms/*/transformed/ideaIC-2023.3.1-win/lib/`（`lib/app-client.jar` 里多）
+- `javap -p <class>` 列签名；`javap -v <class> | grep -c Deprecated` 看是否废弃
+- 最省事的办法：把 233 也加进 `pluginVerification.ides`，`./gradlew verifyPlugin` 一次跑完
 
-本次修复的三个实例：
+本次定案（0.5.1 踩坑后）：
 
-| 废弃用法 | 能否换 | 替代 |
-| --- | --- | --- |
-| `addBrowseFolderListener(String,String,Project,FileChooserDescriptor)`（scheduled for removal） | 能 | 2 参数 `addBrowseFolderListener(Project, FileChooserDescriptor)`，2024.3.1 基线就有且未废弃 |
-| `FileChooserDescriptorFactory.createSingleFileDescriptor()` | 能 | `createSingleFileNoJarsDescriptor()`，2024.3.1 基线就有且未废弃 |
-| `FileSaverDescriptor(String,String,String[])` | 不能 | 2024.3.1 只有这一个构造器，新构造器 2026.x 才加；要换只能提高 `sinceBuild`（放弃老 IDE） |
+| 废弃用法 | 结论 |
+| --- | --- |
+| `addBrowseFolderListener(String,String,Project,FileChooserDescriptor)`（scheduled for removal） | **不能**换 2 参（2024.3 才有，2024.1 崩）；改用单参 `addBrowseFolderListener(TextBrowseFolderListener(descriptor))`，早在 2023.3 之前就有、且未废弃 |
+| `FileChooserDescriptorFactory.createSingleFileDescriptor()` | 能换 `createSingleFileNoJarsDescriptor()`，233 就有 |
+| `FileSaverDescriptor(String,String,String[])` | 不能换——新构造器 2026.x 才加；要换只能提高 `sinceBuild`（放弃老 IDE） |
 
-结论：deprecated 警告可以用「换 API」消掉，**前提是基线也有该 API**；否则
-保留并在文档 / 注释里写明原因，不要为了让报告好看牺牲兼容区间。
+结论：deprecated 警告能消就消，**但替代必须在 233 上存在**，只在 243 上存在等于把
+老版本用户直接打死，比留着警告糟得多。
 
 ### 13.4 本地复现 verifier（发版前自检）
 
@@ -336,9 +347,11 @@ java -jar "$JAR" check-plugin \
 - `verification-verdict.txt` —— 一行结论（如 `Compatible. 3 usages of deprecated API`）
 - `deprecated-usages.txt` —— **精确到方法 + 调用点**，排障先看这个
 
-`./gradlew verifyPlugin` 也可以，但项目配的 IDE 是 2024.3.1 且 `failureLevel`
-只报拒绝项，看不到新版 IDE 才新增的 deprecated 标注；用本地新 IDE + CLI 更接近
-Marketplace 的结果（两者废弃标注一致时数字可直接对照）。
+`./gradlew verifyPlugin` 现在会跑 **233（2023.3.1）+ 241（2024.1.7）+ 243（2024.3.1）**
+三个目标，正好覆盖「下限 / 被拒过的那条线 / 编译基线」，所以二进制不兼容不必等
+Marketplace 才发现。但它只报 `failureLevel` 里配的两类（兼容性 + internal）；
+新版 IDE 才新增的 deprecated 标注仍看不到，那种情况再用 CLI 对照。
+
 
 ### 13.5 发布构建不能跳过前端
 
