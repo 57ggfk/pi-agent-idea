@@ -103,8 +103,8 @@
 
 | 序 | Feature | 难度 | 主要内容 | 关键证据/风险 |
 |---|---|---|---|---|
-| 1 | [010 界面细节打磨](./010-ui-polish/spec.md) | 低（纯样式 + 一个 util） | 用户消息气泡紧凑、空态上下居中、输入框自适应高度 | 三条都能用几何断言锁死；不涉及协议 |
-| 2 | [007 消息级 Fork + 确认框](./007-message-fork/spec.md) | 中（一个协议验证 + 一个通用组件） | pi 消息工具条 Fork、底部 Fork 隐藏、统一应用内确认框 | `fork` 边界语义须先实测（V1）；确认框替换 4 处 `window.confirm` |
+| 1 | [010 界面细节打磨](./010-ui-polish/spec.md) | 低（纯样式 + 一个 util） | 用户消息气泡紧凑、空态上下居中、输入框自适应高度 | ✅ **已完成**（15/17 task，真机 2 条待目视）；三条都由 `web/e2e/ui-polish.spec.ts` 几何断言锁死 |
+| 2 | [007 消息级 Fork + 确认框](./007-message-fork/spec.md) | 中（一个协议验证 + 一个通用组件） | pi 消息工具条 Fork、底部 Fork 隐藏、统一应用内确认框 | ✅ **已完成**（20/21 task，真机 T020 待目视）；V1/V2 已对 pi 1.5.0 实测（`007-message-fork/fork-semantics.json`）：fork 截止到目标 entry 之前 → 中间回复取**下一条提问** fork、末条回复走 `clone`；方案 B 不需要 |
 | 3 | [009 IDE 集成](./009-ide-integration/spec.md) | 中（Kotlin 侧 4 件事） | 右键分组图标、子菜单不再整片灰、添加目录到 pi、文件变更刷新 VFS | 「整片灰」根因需真机复核；VFS 刷新要防抖 + 让 `files.list` 缓存失效 |
 | 4 | [006 会话导航与检索](./006-session-navigation/spec.md) | 中高（3 个 US + 一条新桥接） | 用户消息目录、会话内搜索、全会话搜索 | 新增 `sessions.search`；`Ctrl+F` 在 JCEF 里可能被 IDE 抢走 |
 | 5 | [008 多语言](./008-i18n/spec.md) | 高（约 300 条文案 + 双端 + 引框架） | 跟随 IDE 语言、选择器随语言数自适应、Web + IDE 侧全覆盖 | 必须最后做；**引 `i18next`**（为后续加语言，理由见该 plan 的 D0）；复数分类用 `Intl.PluralRules` 校验；加语言不动组件由测试锁定 |

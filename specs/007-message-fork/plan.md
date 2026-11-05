@@ -4,7 +4,8 @@
 
 **Branch**: `release/0.5.2`
 
-**Status**: Ready to implement（含一项必须先跑通的协议验证）
+**Status**: ✅ 已实现（2026-11-05）。V1/V2 已对 pi 1.5.0 实测，见下文「待验证事项」与
+`fork-semantics.json`；20/21 task 完成，仅 T020 真机 JCEF 目视待做。
 
 ## 摘要
 
@@ -20,27 +21,34 @@
   `web/src/components/Composer.tsx`（底部控制栏）。
 - mock：`web/src/bridge/mock.ts` 已有 `get_fork_messages` 与 `fork`（005 建立），需扩展为**任意 entry 可分支**。
 
-## 待验证事项（必须先做，结论写回本文件）
+## 待验证事项（结论已出，2026-11-05 实测 pi 1.5.0）
 
-**V1. `fork(entryId)` 的边界语义：新会话包含该 entry，还是截止到它之前？**
+> 证据：`specs/007-message-fork/fork-semantics.json`（原始 RPC 报文 + 前后消息序列）。
+> 探针：`pi --mode rpc --no-tools --session-dir <temp>`，两步 prompt 后 `get_fork_messages`
+> → `fork` 第二条用户消息 → `get_messages` → `clone` → `get_messages`。
 
-| 若结论是 | 实现取法 |
+**V1. `fork(entryId)` 的边界语义 —— 结论：不包含该 entry（position: before）**
+
+实测：会话 U1/A1/U2/A2，`get_fork_messages` 返回 `[{entryId, "第一条…"}, {entryId, "第二条…"}]`；
+对**第二条**用户消息 fork → 新会话消息序列为 `system + U1/A1`，`U2/A2` 不在其中，
+响应体 `{text: "第二条…", cancelled: false}` 里的 `text` 是**被排除**的那条用户消息。
+即 fork 的分支点在目标 entry **之前**，与 `get_fork_messages` 的「用户消息」粒度天然对齐。
+
+| 结论 | 实现取法 |
 |---|---|
-| 包含 entry（分支后该条用户消息仍在新会话里） | 对 assistant 消息 A<sub>i</sub>，取 A<sub>i</sub> **之前**的那条用户消息 entryId 会丢掉 A<sub>i</sub>，不可用；改取 A<sub>i+1</sub> 的 entryId，新会话恰好是「A<sub>i+1</sub> 之前」——但要求新会话不含 A<sub>i+1</sub>，与结论矛盾 → **改为「fork 到目标处 + 重新提问」不可行**，退化为：对中间回复使用 `clone` + 截断不可行 → 采取 **方案 B**（见下） |
-| 不包含 entry（新会话截止到该 entry 之前） | 取 A<sub>i+1</sub> 的 entryId，正好得到「U1/A1/…/A<sub>i</sub>」；末条回复无 A<sub>i+1</sub>，走 `clone` |
+| 不包含 entry | 对 assistant A<sub>i</sub>，取 A<sub>i</sub> **之后第一条用户消息** U<sub>i+1</sub> 的 entryId → 新会话恰为 `U1/A1/…/A_i`；末条回复无后继用户消息，走 `clone` |
 
-**方案 B（若协议只能「包含 entry」）**：中间消息的 Fork 改为「两端组合」——
-`fork` 到 A<sub>i</sub> 之前的用户消息，然后由插件把 A<sub>i</sub> 的正文作为上下文补发一次？
-**不采用**。更实际的做法是：只支持「在用户消息处分支」的既有能力 + **在末尾 clone**，
-中间回复的 Fork 按钮**不出现**（明确降级，不给出会撒谎的按钮），并在 tooltip 说明「只能在最近一轮或整段复制」。
-这条降级路径必须在 spec 的 US1 场景 1 上做可见性对齐（隐藏而非置灰）。
+**方案 B 不再需要**：协议粒度足够，消息级 Fork 可以准确实现，按钮不必降级隐藏。
 
-> 验证方法：`scripts/e2e-ide-real.sh` 起真机后手工分支一次，或直接对 `pi --mode rpc` 发
-> `get_fork_messages` → `fork` → `get_messages`，把三次响应的 JSON 存到
-> `specs/007-message-fork/fork-semantics.json` 作为证据。
+**V2. `clone` 与 `fork` 在队列 / 统计上的差异 —— 结论：clone 复制整条活动分支，队列不跟随**
 
-**V2. `clone` 与 `fork` 在队列 / 统计上的差异**：决定「末条回复 Fork」用 `clone` 是否安全
-（队列是否被复制、`get_stats` 是否重置）。若 `clone` 会连队列一起复制，则末条回复也走 `fork`（最后一条用户消息）。
+实测：`{"type":"clone"}` **不需要** `sessionPath`；clone 后 `sessionId` / `sessionFile` 换新，
+`get_messages` 与 clone 前逐条一致（本例 fork 后是 3 条，clone 后仍是同样的 3 条），
+`get_session_stats` 按新会话重算（`userMessages` 从 2 → 1，因为 fork 已经截断），
+新会话 `pendingMessageCount` 为 0（队列未跟随）。
+→ 末条回复 Fork 用 `clone` 是安全的；FR-013 的「清队列/草稿」仍按原计划在分支后主动执行，
+不依赖协议行为。
+
 
 ## 设计决策
 
@@ -55,7 +63,9 @@ forkAtItem(itemId: number): Promise<void>
 4. 目标 entry = `entries[k]`（下一条用户消息）或 末条走 clone（见 V1/V2）；
 5. `fork` → `syncAfterBranch()` → 清空草稿/图片/队列（FR-013）。
 
-把「assistant 序号 → 目标 entry 序号」抽成纯函数 `branchTargetFor(items, assistantIndex)`，用 vitest 直接断言。
+把「assistant 序号 → 目标 entry 序号」抽成纯函数 `branchTargetFor(...)`，用 vitest 直接断言。
+实现落地为 `branchTargetFor(userCount, forkableCount)`（+ `userCountUpTo(items, index)`）：
+两条输入都来自 store，纯函数不做 DOM 之外的判断，`store.test.ts` 覆盖中间回复 / 末条 / 无 entry 三种。
 
 ### D2. 底部 Fork：常量隐藏，不删代码
 

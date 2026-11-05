@@ -2,15 +2,25 @@
 
 ## 0.5.2 — 2026-11-05
 
+**新增**
+- 每条 pi 回复的悬停条上新增 Fork：从那句回复岔开新会话，后面的内容不进新会话；对最后一条回复 Fork 等于整段复制。旧会话照旧留在 Sessions。
+- New / Fork / 删除会话都先弹确认框，写清会发生什么、旧会话是否保留；Esc 取消，误触不再直接切走视图。
+
 **变更**
 - 用户消息气泡更紧凑：单行消息高度约少一半，行距和字号不变，同样长的对话一屏能多看几条。
+- 底部控制栏的 Fork 按钮收起来了（能力保留，改一行可恢复），Fork 统一在消息悬停条上。
 
 **修复**
 - 新会话的 π 图标原来贴在顶部，图标、标题和模型名现在整块居中在对话区，拉伸工具窗也不跑偏。
 - 把内容塞进输入框后输入框不跟着长高（右键「Explain with Pi」、引用长回复、`@` 文件都这样），只能看两三行；现在按内容长高，到上限后在框内滚动、消息区仍留够高度，发送后立刻回落到一行。
 
+**Added**
+- Fork on every pi reply: branch a new session right after that answer, leaving what came later behind; forking the last reply copies the whole conversation. The session you branched from stays in Sessions.
+- New, Fork and Delete now ask first, in a dialog that says what will happen and whether the old session is kept; Esc cancels, so a mis-click no longer switches the view.
+
 **Changed**
 - User message bubbles are tighter: a single-line message is about half its previous height with the same font size and line spacing, so more of the conversation fits on one screen.
+- The Fork button is gone from the bottom bar (the capability is kept, one line to restore); Fork lives on the message toolbar now.
 
 **Fixed**
 - The empty-state π mark sat against the top of the pane; the icon, title and model line are now centered as one block, and stay centered while the tool window is resized.
