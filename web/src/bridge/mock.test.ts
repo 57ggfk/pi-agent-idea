@@ -36,16 +36,18 @@ function collectAssistantReplies(bridge: MockBridge): string[] {
  * exercised without a real pi process, so its protocol fidelity is tested
  * directly rather than only through e2e.
  */
-describe("MockBridge session branching (pi 1.4.0 semantics)", () => {
+describe("MockBridge session branching (pi 1.5.0 semantics)", () => {
   it("answers get_fork_messages with entry ids and forks at that entry", async () => {
     const bridge = new MockBridge();
     const settled = waitForSettle(bridge);
     await rpc(bridge, { type: "prompt", message: "hello fork" });
     await settled;
 
-    const entries = await rpc<Array<{ entryId: string; text: string }>>(bridge, {
-      type: "get_fork_messages",
-    });
+    // pi wraps the list: {data:{messages:[…]}} (fork-semantics.json).
+    const { messages: entries } = await rpc<{ messages: Array<{ entryId: string; text: string }> }>(
+      bridge,
+      { type: "get_fork_messages" },
+    );
     expect(entries).toHaveLength(1);
     expect(entries[0].text).toBe("hello fork");
     expect(entries[0].entryId).toBeTruthy();
@@ -60,13 +62,65 @@ describe("MockBridge session branching (pi 1.4.0 semantics)", () => {
     expect(fork as Record<string, unknown>).not.toHaveProperty("sessionPath");
     expect(fork as Record<string, unknown>).not.toHaveProperty("sessionId");
 
-    // The branch point is the parent of that user entry, so the new session
+    // The branch point is *before* that user entry, so the new session
     // history starts out empty.
     const replayed = await rpc<{ messages: unknown[] }>(bridge, { type: "get_messages" });
     expect(replayed.messages).toHaveLength(0);
 
     const sessions = await bridge.request<{ sessions: Array<{ name: string }> }>("sessions.list");
     expect(sessions.sessions.some((s) => s.name === "Forked session")).toBe(true);
+  }, 30_000);
+
+  it("branches at a middle entry and keeps everything before it (US1 scenario 1)", async () => {
+    const bridge = new MockBridge();
+    for (const [prompt] of [["第一问"], ["第二问"]] as const) {
+      const settled = waitForSettle(bridge);
+      await rpc(bridge, { type: "prompt", message: prompt });
+      await settled;
+    }
+
+    const { messages: entries } = await rpc<{ messages: Array<{ entryId: string }> }>(bridge, {
+      type: "get_fork_messages",
+    });
+    expect(entries).toHaveLength(2);
+
+    // Forking at the second question leaves the first round behind.
+    await rpc(bridge, { type: "fork", entryId: entries[1].entryId });
+
+    const replayed = await rpc<{ messages: Array<{ role: string; content: string }> }>(bridge, {
+      type: "get_messages",
+    });
+    // The first round survives; the second question and its answer do not.
+    expect(replayed.messages[0]).toMatchObject({ role: "user", content: "第一问" });
+    expect(replayed.messages.some((m) => m.content === "第二问")).toBe(false);
+    expect(replayed.messages[replayed.messages.length - 1].role).toBe("assistant");
+
+    // And the surviving entry list is the one entry still inside the branch.
+    const after = await rpc<{ messages: Array<{ text: string }> }>(bridge, {
+      type: "get_fork_messages",
+    });
+    expect(after.messages.map((m) => m.text)).toEqual(["第一问"]);
+  }, 30_000);
+
+  it("clones the whole branch into a new session without losing the old one", async () => {
+    const bridge = new MockBridge();
+    for (const [prompt] of [["第一问"], ["第二问"]] as const) {
+      const settled = waitForSettle(bridge);
+      await rpc(bridge, { type: "prompt", message: prompt });
+      await settled;
+    }
+    const before = await rpc<{ messages: unknown[] }>(bridge, { type: "get_messages" });
+
+    const clone = await rpc<{ cancelled?: boolean }>(bridge, { type: "clone" });
+    expect(clone.cancelled).toBe(false);
+
+    // Same transcript after the clone: "fork at the last reply" must not drop
+    // the answer it was asked from.
+    const after = await rpc<{ messages: unknown[] }>(bridge, { type: "get_messages" });
+    expect(after.messages).toHaveLength(before.messages.length);
+
+    const sessions = await bridge.request<{ sessions: Array<{ name: string }> }>("sessions.list");
+    expect(sessions.sessions.some((s) => s.name === "Cloned session")).toBe(true);
   }, 30_000);
 
   it("rejects an unknown entry id instead of silently forking", async () => {

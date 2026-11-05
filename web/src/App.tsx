@@ -8,6 +8,7 @@ import ApprovalCard from "./components/ApprovalCard";
 import StatusBar from "./components/StatusBar";
 import SessionsView from "./components/SessionsView";
 import ManageView from "./components/ManageView";
+import ConfirmDialog from "./components/ConfirmDialog";
 import { IconSprite } from "./components/Icon";
 
 interface ErrorBoundaryProps {
@@ -92,6 +93,7 @@ export default function App() {
             <ManageView />
           )}
           <StatusBar />
+          <ConfirmDialog />
         </div>
       )}
     </ErrorBoundary>

@@ -10,6 +10,7 @@ const FLASH_MS = 1200;
 const ICON: Record<MessageAction, IconName> = {
   copy: "copy",
   quote: "message",
+  fork: "fork",
   regenerate: "refresh",
   edit: "pencil",
 };
@@ -17,6 +18,7 @@ const ICON: Record<MessageAction, IconName> = {
 const LABEL: Record<MessageAction, string> = {
   copy: "Copy message",
   quote: "Quote message",
+  fork: "Fork from this reply",
   regenerate: "Regenerate reply",
   edit: "Edit message",
 };
@@ -24,6 +26,7 @@ const LABEL: Record<MessageAction, string> = {
 const TITLE: Record<MessageAction, string> = {
   copy: "Copy",
   quote: "Quote",
+  fork: "Fork from here",
   regenerate: "Regenerate",
   edit: "Edit",
 };
@@ -42,6 +45,7 @@ export default function MessageActions({ item, actions }: { item: ChatItem; acti
   const quoteToComposer = usePiStore((s) => s.quoteToComposer);
   const regenerate = usePiStore((s) => s.regenerate);
   const beginEditMessage = usePiStore((s) => s.beginEditMessage);
+  const forkAtItem = usePiStore((s) => s.forkAtItem);
 
   useEffect(
     () => () => {
@@ -68,6 +72,7 @@ export default function MessageActions({ item, actions }: { item: ChatItem; acti
   const onClick = (action: MessageAction) => {
     if (action === "copy") return void onCopy();
     if (action === "quote") return quoteToComposer(item);
+    if (action === "fork") return void forkAtItem(item.id);
     if (action === "regenerate") return void regenerate();
     return void beginEditMessage(item);
   };

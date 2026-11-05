@@ -11,6 +11,7 @@ import {
   quoteMarkdownSource,
   type ChatItem,
   type CommandInfo,
+  type ConfirmRequest,
   type ModelInfo,
   type PendingApproval,
   type QueueImage,
@@ -41,7 +42,6 @@ export type Tab = "chat" | "sessions" | "manage";
  *             blockquote: the user is getting their own draft back
  */
 export type PromptMode = "replace" | "quote" | "edit" | "restore";
-
 export interface PendingPrompt {
   text: string;
   id: number;
@@ -55,6 +55,38 @@ export interface EditTarget {
   entryId: string;
   /** Original text, kept so cancelling can restore without another RPC. */
   text: string;
+}
+
+// ---------------------------------------------------------------------------
+// Branch point resolution (spec 007 US1)
+// ---------------------------------------------------------------------------
+//
+// Measured against pi 1.5.0 (specs/007-message-fork/fork-semantics.json):
+// `fork {entryId}` branches *before* that user entry, and `get_fork_messages`
+// lists user entries only. So a reply that is followed by another question
+// branches at the *next* question, and the last reply — which has no successor
+// — is duplicated with `clone`.
+
+export type BranchTarget = { kind: "entry"; index: number } | { kind: "clone" };
+
+/** How many user messages sit at or above `index` in the transcript. */
+export function userCountUpTo(items: ChatItem[], index: number): number {
+  let count = 0;
+  for (let i = 0; i <= index && i < items.length; i++) {
+    if (items[i].role === "user") count++;
+  }
+  return count;
+}
+
+/**
+ * Which forkable entry a Fork on this reply should branch at.
+ *
+ * @param userCount     user messages up to and including the target reply
+ * @param forkableCount user entries pi reports for this session
+ */
+export function branchTargetFor(userCount: number, forkableCount: number): BranchTarget {
+  if (userCount < 0 || forkableCount <= 0) return { kind: "clone" };
+  return userCount < forkableCount ? { kind: "entry", index: userCount } : { kind: "clone" };
 }
 
 // Dev / Vite fallback. Inside the IDE the preference is persisted through
@@ -152,6 +184,21 @@ interface PiStore {
    */
   editing: EditTarget | null;
 
+  /**
+   * The one confirmation dialog the App renders (spec 007 US3). Every entry
+   * point that switches away from or destroys the current view goes through
+   * here instead of `window.confirm`.
+   */
+  confirm: ConfirmRequest | null;
+  askConfirm(request: ConfirmRequest): void;
+  closeConfirm(): void;
+  /**
+   * Bumped whenever a branch invalidates the composer's *local* state (draft
+   * images live in Composer state, not the store). The Composer clears itself
+   * on change (007 FR-013).
+   */
+  composerResetSeq: number;
+
   model?: ModelInfo;
   models: ModelInfo[];
   thinkingLevel: string;
@@ -223,6 +270,8 @@ interface PiStore {
   deleteSession(file: string): Promise<void>;
   cloneSession(file: string): Promise<void>;
   forkSession(): Promise<void>;
+  /** Branches the session at a specific pi reply (spec 007 US1). */
+  forkAtItem(itemId: number): Promise<void>;
   exportSession(file: string): Promise<void>;
   replayMessages(): Promise<void>;
   clearPendingPrompt(): void;
@@ -387,6 +436,143 @@ export const usePiStore = create<PiStore>((set, get) => {
     set({ pendingPrompt: { text, id: ++promptSeq, mode } });
   };
 
+  /**
+   * Drops everything that belonged to the session we just branched away from
+   * (007 FR-013). pi's own queue does not follow a fork — measured in
+   * fork-semantics.json, the new session starts with an empty queue — so the
+   * mirror is reset rather than cleared over RPC.
+   */
+  const resetConversationLocalState = () => {
+    set({
+      pendingPrompt: null,
+      editing: null,
+      queue: { items: [], paused: false, pauseReason: null, drift: false },
+      composerResetSeq: get().composerResetSeq + 1,
+    });
+  };
+
+  /** Creates the empty session. Callers own the confirmation decision. */
+  const runNewSession = async () => {
+    if (!bridge) return;
+    // FR-012 (spec 005): a non-empty queue would be silently dropped.
+    if (get().queue.items.length > 0) {
+      set({ queueDiscardConfirm: { count: get().queue.items.length, kind: "new" } });
+      return;
+    }
+    try {
+      await rpc(bridge, { type: "new_session" });
+      set({
+        items: [],
+        stats: undefined,
+        aborted: false,
+        isStreaming: false,
+        sessionName: undefined,
+        editing: null,
+      });
+      resetConversationLocalState();
+      await get().refreshStats();
+      await get().refreshSessions();
+    } catch (e) {
+      appendError(`new_session failed: ${(e as Error).message}`);
+    }
+  };
+
+  /** Branches at one pi reply; the caller has already confirmed. */
+  const runForkAtItem = async (itemId: number) => {
+    if (!bridge) return;
+    const b = bridge;
+    if (get().isStreaming) {
+      appendError("fork needs an idle session; stop the current run first");
+      return;
+    }
+    if (get().editing) {
+      appendError("fork is unavailable while a message is being edited");
+      return;
+    }
+    const items = get().items;
+    const index = items.findIndex((item) => item.id === itemId);
+    const item = index >= 0 ? items[index] : undefined;
+    if (!item || item.role !== "assistant") {
+      appendError("fork failed: only pi replies can be branched");
+      return;
+    }
+    try {
+      const entries = await forkEntries(b);
+      if (entries.length === 0) {
+        appendError("fork failed: there is no user message to fork from");
+        return;
+      }
+      const target = branchTargetFor(userCountUpTo(items, index), entries.length);
+      let cancelled: boolean;
+      if (target.kind === "entry") {
+        const entry = entries[target.index];
+        if (!entry) {
+          appendError("fork failed: this reply has no branch point");
+          return;
+        }
+        const result = await rpc<{ text?: string; cancelled?: boolean }>(b, {
+          type: "fork",
+          entryId: entry.entryId,
+        });
+        cancelled = Boolean(result?.cancelled);
+      } else {
+        // Last reply: "fork" there would drop the answer itself, so duplicate
+        // the whole branch instead (007 FR-004).
+        const result = await rpc<{ cancelled?: boolean }>(b, { type: "clone" });
+        cancelled = Boolean(result?.cancelled);
+      }
+      // FR-012: the view must stay exactly as it was when pi says no.
+      if (cancelled) {
+        appendError("fork cancelled by a pi extension");
+        return;
+      }
+      await syncAfterBranch();
+      resetConversationLocalState();
+    } catch (e) {
+      appendError(`fork failed: ${(e as Error).message}`);
+    }
+  };
+
+  /** Bottom-bar Fork capability (UI hidden in 0.5.2, kept for later). */
+  const runForkSession = async () => {
+    if (!bridge) return;
+    try {
+      const entries = await forkEntries(bridge);
+      const last = entries[entries.length - 1];
+      if (!last) {
+        appendError("fork failed: there is no user message to fork from");
+        return;
+      }
+      const result = await rpc<{ text?: string; cancelled?: boolean }>(bridge, {
+        type: "fork",
+        entryId: last.entryId,
+      });
+      if (result?.cancelled) {
+        appendError("fork cancelled by a pi extension");
+        return;
+      }
+      await syncAfterBranch();
+      resetConversationLocalState();
+    } catch (e) {
+      appendError(`fork failed: ${(e as Error).message}`);
+    }
+  };
+
+  const runDeleteSession = async (file: string) => {
+    if (!bridge) return;
+    try {
+      // Deleting the current session leaves the pi process without a session —
+      // start a fresh one so the UI never points at a dead file.
+      const target = get().sessions.find((s) => s.file === file);
+      const wasCurrent = Boolean(target?.id && target.id === get().sessionId);
+      await bridge.request("sessions.delete", { file });
+      await get().refreshSessions();
+      if (wasCurrent) await runNewSession();
+    } catch (e) {
+      appendError(`delete failed: ${(e as Error).message}`);
+    }
+  };
+
   /** Full-snapshot update from the Kotlin queue service (spec 005). */
   const applyQueueState = (data: QueueStateEvent | QueueState) => {
     set({
@@ -477,6 +663,8 @@ export const usePiStore = create<PiStore>((set, get) => {
     queueDiscardConfirm: null,
     pendingPrompt: null,
     editing: null,
+    confirm: null,
+    composerResetSeq: 0,
 
     approvals: [],
     // Auto-approve by default; "ask" is opt-in from the options menu.
@@ -793,39 +981,41 @@ export const usePiStore = create<PiStore>((set, get) => {
       // queue, and the pushed snapshot may not have arrived yet.
       set({ queue: { items: [], paused: false, pauseReason: null, drift: false } });
       if (confirm.kind === "new") {
-        await get().newSession();
+        await runNewSession();
       } else if (confirm.file) {
         await get().switchSession(confirm.file);
       }
     },
 
+    askConfirm(request: ConfirmRequest) {
+      set({ confirm: request });
+    },
+
+    closeConfirm() {
+      set({ confirm: null });
+    },
+
     async newSession() {
       if (!bridge) return;
-      // FR-012: a non-empty queue would be silently dropped with the session.
-      if (get().queue.items.length > 0) {
-        set({ queueDiscardConfirm: { count: get().queue.items.length, kind: "new" } });
+      const state = get();
+      // 007 FR-011: an empty, idle session has nothing to lose — asking there
+      // would be pure noise.
+      const hasContent = state.items.length > 0 || state.isStreaming;
+      if (!hasContent) {
+        await runNewSession();
         return;
       }
-      try {
-        await rpc(bridge, { type: "new_session" });
-        set({
-          items: [],
-          stats: undefined,
-          aborted: false,
-          isStreaming: false,
-          sessionName: undefined,
-          editing: null,
-        });
-        await get().refreshStats();
-        await get().refreshSessions();
-      } catch (e) {
-        const item = emptyItem("system", [
-          { kind: "text", text: `new_session failed: ${(e as Error).message}`, done: true },
-        ]);
-        item.done = true;
-        item.isError = true;
-        set({ items: [...get().items, item] });
-      }
+      // i18n: confirm.newSession.title / .streaming / .confirm / .cancel
+      const streaming = state.isStreaming;
+      state.askConfirm({
+        title: streaming ? "Start a new session while pi is answering?" : "Start a new session?",
+        message: streaming
+          ? "The answer being written will be discarded. The current session stays in Sessions, so nothing already sent is lost."
+          : "The current session is kept in Sessions and can be reopened from there. The view switches to a new, empty session.",
+        confirmLabel: "Start new",
+        danger: streaming,
+        onConfirm: runNewSession,
+      });
     },
 
     async compact() {
@@ -926,22 +1116,17 @@ export const usePiStore = create<PiStore>((set, get) => {
 
     async deleteSession(file: string) {
       if (!bridge) return;
-      try {
-        // Deleting the current session leaves the pi process without a
-        // session — start a fresh one so the UI never points at a dead file.
-        const target = get().sessions.find((s) => s.file === file);
-        const wasCurrent = Boolean(target?.id && target.id === get().sessionId);
-        await bridge.request("sessions.delete", { file });
-        await get().refreshSessions();
-        if (wasCurrent) await get().newSession();
-      } catch (e) {
-        const item = emptyItem("system", [
-          { kind: "text", text: `delete failed: ${(e as Error).message}`, done: true },
-        ]);
-        item.done = true;
-        item.isError = true;
-        set({ items: [...get().items, item] });
-      }
+      const name = get().sessions.find((s) => s.file === file)?.name;
+      // i18n: confirm.deleteSession.title / .message / .delete / .cancel
+      get().askConfirm({
+        title: "Delete this session?",
+        message: `${name ? `“${name}”` : "This session"} will be removed from Sessions. This cannot be undone.`,
+        confirmLabel: "Delete",
+        danger: true,
+        // runDeleteSession starts a fresh session when the deleted file was the
+        // one on screen, so the chat never points at a dead file.
+        onConfirm: () => runDeleteSession(file),
+      });
     },
 
     async cloneSession(file: string) {
@@ -965,33 +1150,44 @@ export const usePiStore = create<PiStore>((set, get) => {
 
     async forkSession() {
       if (!bridge) return;
-      try {
-        // pi branches at a specific user entry; the Fork button means "the last
-        // one", so resolve it instead of forking without an id (which pi
-        // rejects with "Invalid entry ID for forking").
-        const entries = await forkEntries(bridge);
-        const last = entries[entries.length - 1];
-        if (!last) {
-          appendError("fork failed: there is no user message to fork from");
-          return;
-        }
-        const result = await rpc<{ text?: string; cancelled?: boolean }>(bridge, {
-          type: "fork",
-          entryId: last.entryId,
-        });
-        if (result?.cancelled) {
-          appendError("fork cancelled by a pi extension");
-          return;
-        }
-        await syncAfterBranch();
-      } catch (e) {
-        const item = emptyItem("system", [
-          { kind: "text", text: `fork failed: ${(e as Error).message}`, done: true },
-        ]);
-        item.done = true;
-        item.isError = true;
-        set({ items: [...get().items, item] });
+      if (get().isStreaming) {
+        appendError("fork needs an idle session; stop the current run first");
+        return;
       }
+      // i18n: confirm.fork.title / .message / .fork / .cancel
+      get().askConfirm({
+        title: "Fork this session?",
+        message:
+          "A new session is created from the last question, including pi's answer. The current session stays as it is.",
+        confirmLabel: "Fork session",
+        onConfirm: runForkSession,
+      });
+    },
+
+    async forkAtItem(itemId: number) {
+      if (!bridge) return;
+      if (get().isStreaming) {
+        appendError("fork needs an idle session; stop the current run first");
+        return;
+      }
+      const item = get().items.find((i) => i.id === itemId);
+      if (!item || item.role !== "assistant") {
+        appendError("fork failed: only pi replies can be branched");
+        return;
+      }
+      // "Last reply" is asked per role, like the action matrix does: a trailing
+      // system notice must not turn the last answer into a middle one.
+      const lastReply = [...get().items].reverse().find((i) => i.role === "assistant");
+      const isLast = lastReply?.id === item.id;
+      // i18n: confirm.forkReply.title / .message / .last / .fork / .cancel
+      get().askConfirm({
+        title: "Fork from this reply?",
+        message: isLast
+          ? "A new session is created with this reply as its last message — the whole conversation so far is copied. The current session stays as it is."
+          : "A new session is created that ends with this reply. Everything after it is left behind, and the current session stays as it is.",
+        confirmLabel: "Fork session",
+        onConfirm: () => runForkAtItem(itemId),
+      });
     },
 
     async exportSession(file: string) {

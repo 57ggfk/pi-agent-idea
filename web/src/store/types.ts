@@ -158,6 +158,27 @@ export function approvalFromEvent(event: AnyRecord): PendingApproval | null {
 }
 
 // ---------------------------------------------------------------------------
+// App-internal confirmation dialog (spec 007 US3)
+// ---------------------------------------------------------------------------
+
+/**
+ * One pending confirmation. The App renders a single instance from the store,
+ * so every destructive entry point (New / Fork / delete) goes through the same
+ * component instead of `window.confirm` — native dialogs are unstyleable and
+ * untranslatable inside JCEF.
+ */
+export interface ConfirmRequest {
+  title: string;
+  message: string;
+  /** Primary action text — always a verb ("Fork session", "Start new"). */
+  confirmLabel: string;
+  cancelLabel?: string;
+  /** Paints the primary button in the danger colour. */
+  danger?: boolean;
+  onConfirm: () => void | Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
 // Event reducer
 // ---------------------------------------------------------------------------
 
@@ -567,7 +588,7 @@ export function itemsFromMessages(messages: unknown[]): ChatItem[] {
 // Message-level actions (copy / quote / regenerate / edit)
 // ---------------------------------------------------------------------------
 
-export type MessageAction = "copy" | "quote" | "regenerate" | "edit";
+export type MessageAction = "copy" | "quote" | "fork" | "regenerate" | "edit";
 
 /** Everything about the *conversation* that decides which actions apply. */
 export interface ActionContext {
@@ -575,6 +596,11 @@ export interface ActionContext {
   isLastUser: boolean;
   /** This item is the last assistant message in the transcript. */
   isLastAssistant: boolean;
+  /**
+   * A user message exists above this item, so there is something to branch at
+   * (spec 007 FR-001 / edge case「没有任何用户消息」).
+   */
+  hasPrecedingUser: boolean;
   /** A run is in flight (or a history-rewriting action already started). */
   sessionBusy: boolean;
   /** An edit-and-resend is in progress; it owns the composer. */
@@ -648,18 +674,26 @@ export function actionsForItem(item: ChatItem, ctx: ActionContext): MessageActio
 
   if (item.role === "assistant" && !item.done) return [];
   if (item.role === "system") return item.isError && hasText ? ["copy"] : [];
+
+  const idle = !ctx.sessionBusy && !ctx.editing;
+  // FR-001/FR-002: only pi replies get Fork, only while idle, and only when
+  // there is a user message above to branch at. Copy/quote stay untouched.
+  const canFork = item.role === "assistant" && idle && ctx.hasPrecedingUser;
+
   if (!hasText) {
     // Nothing to copy or quote, but the last answer can still be regenerated.
-    return item.role === "assistant" && ctx.isLastAssistant && !ctx.sessionBusy && !ctx.editing
-      ? ["regenerate"]
-      : [];
+    const actions: MessageAction[] = [];
+    if (canFork) actions.push("fork");
+    if (item.role === "assistant" && ctx.isLastAssistant && idle) actions.push("regenerate");
+    return actions;
   }
 
   const actions: MessageAction[] = ["copy", "quote"];
-  if (item.role === "assistant" && ctx.isLastAssistant && !ctx.sessionBusy && !ctx.editing) {
+  if (canFork) actions.push("fork");
+  if (item.role === "assistant" && ctx.isLastAssistant && idle) {
     actions.push("regenerate");
   }
-  if (item.role === "user" && ctx.isLastUser && !ctx.sessionBusy && !ctx.editing) {
+  if (item.role === "user" && ctx.isLastUser && idle) {
     actions.push("edit");
   }
   return actions;

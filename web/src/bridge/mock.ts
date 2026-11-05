@@ -158,11 +158,24 @@ export class MockBridge implements Bridge {
   private readonly approvalScenario =
     typeof location !== "undefined" && new URLSearchParams(location.search).has("approval");
   // Transcript of the current branch. Kept so get_messages / fork behave like
-  // pi 1.4.0: a fork branches at the *parent* of the chosen user entry, so that
-  // entry and everything after it belong to the abandoned side of the tree.
+  // pi 1.5.0 (measured, see specs/007-message-fork/fork-semantics.json): a fork
+  // branches *before* the chosen user entry, so that entry and everything after
+  // it belong to the abandoned side of the tree.
   private history: Array<{ role: "user" | "assistant"; content: unknown; entryId?: string }> = [];
   private forkEntries: Array<{ entryId: string; text: string }> = [];
   private entrySeq = 0;
+  /** `?cancelfork=1` — a pi extension cancels the branch (007 US1-7). */
+  private readonly cancelFork = query()?.get("cancelfork") === "1";
+  /** The session file the live transcript belongs to (fork / switch target). */
+  private currentFile: string | null = null;
+  /** Saved transcripts per session file, so switching back restores them. */
+  private snapshots = new Map<
+    string,
+    {
+      history: Array<{ role: "user" | "assistant"; content: unknown; entryId?: string }>;
+      forkEntries: Array<{ entryId: string; text: string }>;
+    }
+  >();
   /** Prompt → times sent. Drives the "regenerated answer differs" scenario. */
   private promptCounts = new Map<string, number>();
   // `?fail=prompt` rejects the first prompt so the error-visibility path (spec
@@ -1089,8 +1102,10 @@ export class MockBridge implements Bridge {
           },
         };
       case "get_fork_messages":
-        // pi returns the forkable user entries in order; no sessionPath/id.
-        return { success: true, data: this.forkEntries.map((e) => ({ ...e })) };
+        // pi 1.5.0 wraps the list — {data:{messages:[{entryId,text}]}} — and
+        // reports user entries only; measured in
+        // specs/007-message-fork/fork-semantics.json.
+        return { success: true, data: { messages: this.forkEntries.map((e) => ({ ...e })) } };
       case "prompt": {
         const message = String(command["message"] ?? "");
         if (this.shouldFail("prompt")) {
@@ -1101,6 +1116,9 @@ export class MockBridge implements Bridge {
         }
         const disposition = this.isStreaming ? "queued" : "started";
         if (!this.isStreaming) {
+          // First prompt of a session: give the transcript a file so a later
+          // fork can keep this branch on "disk" (007 US1-6).
+          if (!this.currentFile) this.currentFile = "/tmp/mock-sessions/live-session.jsonl";
           const take = (this.promptCounts.get(message) ?? 0) + 1;
           this.promptCounts.set(message, take);
           this.entrySeq += 1;
@@ -1121,16 +1139,30 @@ export class MockBridge implements Bridge {
         return { success: true };
       }
       case "new_session":
+        this.saveSnapshot();
         this.messageCount = 0;
+        this.currentFile = null;
         this.resetBranch();
         return { success: true, data: { cancelled: false } };
-      case "switch_session":
+      case "switch_session": {
+        const target = String(command["sessionPath"] ?? "");
+        this.saveSnapshot();
         this.messageCount = 0;
+        this.currentFile = target || null;
+        const snapshot = target ? this.snapshots.get(target) : undefined;
         this.resetBranch();
+        if (snapshot) {
+          this.history = [...snapshot.history];
+          this.forkEntries = [...snapshot.forkEntries];
+          this.messageCount = this.history.length;
+        }
         return { success: true, data: { cancelled: false } };
+      }
       case "fork": {
-        // pi 1.4.0: fork {entryId} switches the pi process to a new branch and
-        // answers { text, cancelled } — no sessionPath, no sessionId.
+        // Verbatim pi 1.5.0 semantics (fork-semantics.json): {entryId} branches
+        // *before* that user entry — the entry itself is not in the new
+        // session — and the response is { text, cancelled } with the text of
+        // the message that was left behind. No sessionPath, no sessionId.
         const entryId = String(command["entryId"] ?? "");
         const entryIndex = this.forkEntries.findIndex((e) => e.entryId === entryId);
         const historyIndex = this.history.findIndex((m) => m.entryId === entryId);
@@ -1138,14 +1170,23 @@ export class MockBridge implements Bridge {
           return { success: false, error: "Invalid entry ID for forking" };
         }
         const text = this.forkEntries[entryIndex].text;
+        if (this.cancelFork) return { success: true, data: { cancelled: true } };
+        // Snapshot + new session row first: pushBranchSession files the tree we
+        // are leaving under its own file, and only then does the transcript get
+        // truncated to the branch point.
+        this.pushBranchSession("fork");
         this.history = this.history.slice(0, historyIndex);
         this.forkEntries = this.forkEntries.slice(0, entryIndex);
-        this.pushBranchSession("fork");
+        // The row was created while the transcript was still complete.
+        this.mockSessions[0].messageCount = this.history.length;
         return { success: true, data: { text, cancelled: false } };
       }
       case "clone": {
-        // Same as fork: the runtime switches sessions in-process, so the
-        // response carries no path for the UI to follow.
+        // pi 1.5.0: clone duplicates the whole active branch into a new session
+        // file (new sessionId, stats recomputed, queue not carried over). The
+        // in-process session keeps its transcript, so only the session list has
+        // to change here; the response carries no path for the UI to follow.
+        if (this.cancelFork) return { success: true, data: { cancelled: true } };
         this.pushBranchSession("clone");
         return { success: true, data: { cancelled: false } };
       }
@@ -1186,13 +1227,44 @@ export class MockBridge implements Bridge {
     this.promptCounts.clear();
   }
 
+  /**
+   * Keeps the live session on disk the way pi does: forking must not destroy
+   * the branch it came from, and switching back has to show that branch again
+   * (spec 007 US1-6).
+   */
+  private saveSnapshot() {
+    if (!this.currentFile) return;
+    this.snapshots.set(this.currentFile, {
+      history: [...this.history],
+      forkEntries: [...this.forkEntries],
+    });
+    if (!this.mockSessions.some((s) => s.file === this.currentFile)) {
+      this.mockSessions = [
+        {
+          file: this.currentFile,
+          id: `session-previous-${this.sessionSeq}`,
+          timestamp: new Date().toISOString(),
+          name: "Previous session",
+          preview: "Branched away from here",
+          modifiedAt: Date.now(),
+          messageCount: this.history.length,
+        },
+        ...this.mockSessions,
+      ];
+    }
+  }
+
   /** fork / clone land in a new session file; the list has to show it. */
   private pushBranchSession(kind: "fork" | "clone") {
+    // The branch we are leaving stays on disk with its own transcript.
+    this.saveSnapshot();
     this.sessionSeq += 1;
     const id = `session-${kind}-${this.sessionSeq}`;
+    const file = `/tmp/mock-sessions/2026-10-29T09-00-00_${id}.jsonl`;
+    this.currentFile = file;
     this.mockSessions = [
       {
-        file: `/tmp/mock-sessions/2026-10-29T09-00-00_${id}.jsonl`,
+        file,
         id,
         timestamp: new Date().toISOString(),
         name: kind === "clone" ? "Cloned session" : "Forked session",

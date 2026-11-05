@@ -26,28 +26,42 @@ test("sessions list shows message counts and supports clone/delete/export", asyn
   // notify; the mock just returns a path).
   await page.getByTestId("session-export").first().click();
 
-  // Delete removes the row (confirm dialog must be accepted).
-  page.once("dialog", (d) => d.accept());
+  // Delete removes the row — through the in-app dialog (007 US3-7), never a
+  // native one.
   await page.getByTestId("session-delete").first().click();
+  await expect(page.getByTestId("confirm-dialog")).toBeVisible();
+  await expect(page.getByTestId("confirm-ok")).toHaveText("Delete");
+  await page.getByTestId("confirm-ok").click();
   await expect(page.getByTestId("session-row")).toHaveCount(before);
 });
 
-test("fork branches the conversation into a new session", async ({ page }) => {
-  await page.getByTestId("composer-input").fill("hello fork");
-  await page.getByTestId("send-btn").click();
-  // Wait for the run to settle so the Fork button is enabled again.
-  await expect(page.getByTestId("fork-btn")).toBeEnabled({ timeout: 30_000 });
-  await expect(page.getByTestId("item-user")).toHaveCount(1);
+test("forking a middle reply branches the conversation into a new session", async ({ page }) => {
+  // Two rounds, so the first answer is *not* the last one — that is the case
+  // that has to branch at the next question rather than clone (007 US1-1).
+  for (const text of ["first question", "second question"]) {
+    await page.getByTestId("composer-input").fill(text);
+    await page.getByTestId("send-btn").click();
+    await expect(page.getByTestId("status-dot")).toHaveClass(/busy/, { timeout: 20_000 });
+    await expect(page.getByTestId("status-dot")).not.toHaveClass(/busy/, { timeout: 30_000 });
+  }
+  await expect(page.getByTestId("item-user")).toHaveCount(2);
 
-  await page.getByTestId("fork-btn").click();
+  // Hovering the *first* pi reply exposes Fork on the message toolbar.
+  const firstReply = page.getByTestId("item-assistant").first();
+  await firstReply.hover();
+  await firstReply.getByTestId("act-fork").click();
 
-  // pi answers a fork without a session path, so the UI rebuilds from the
-  // branch itself. The forked-at message and everything after it now belong to
-  // the abandoned side of the tree: the transcript must not keep showing them.
-  await expect(page.getByTestId("empty-state")).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByTestId("item-user")).toHaveCount(0);
+  await expect(page.getByTestId("confirm-dialog")).toBeVisible();
+  await expect(page.getByTestId("confirm-message")).toContainText(/current session stays/i);
+  await page.getByTestId("confirm-ok").click();
 
-  // Fork switches to the new session; it shows up in the sessions list.
+  // The branch keeps the first round and drops the second: pi forks *before*
+  // the entry it is given, so this is U1/A1 only.
+  await expect(page.getByTestId("item-user")).toHaveCount(1, { timeout: 15_000 });
+  await expect(page.getByTestId("item-user").first()).toContainText("first question");
+  await expect(page.getByTestId("item-user").filter({ hasText: "second question" })).toHaveCount(0);
+
+  // The new session is listed, and the old one is still there to switch back to.
   await page.getByTestId("tab-sessions").click();
   await expect(page.locator(".session-name", { hasText: "Forked session" })).toBeVisible();
 });

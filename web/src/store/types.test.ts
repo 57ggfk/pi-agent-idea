@@ -416,7 +416,15 @@ function assistantItem(blocks: ContentBlock[]): ChatItem {
   return item;
 }
 
-const IDLE: ActionContext = { isLastUser: false, isLastAssistant: false, sessionBusy: false, editing: false };
+// A steady-state conversation: idle, the item is in the middle, and there is a
+// user message above it (so 007's Fork is available unless a case says no).
+const IDLE: ActionContext = {
+  isLastUser: false,
+  isLastAssistant: false,
+  hasPrecedingUser: true,
+  sessionBusy: false,
+  editing: false,
+};
 
 describe("itemToMarkdownSource", () => {
   it("joins multiple text blocks with a paragraph break, keeping Markdown markers", () => {
@@ -503,13 +511,14 @@ describe("actionsForItem", () => {
     expect(actionsForItem(item, { ...IDLE, isLastAssistant: true })).toEqual([
       "copy",
       "quote",
+      "fork",
       "regenerate",
     ]);
   });
 
   it("never offers regenerate on a middle assistant message (FR-008)", () => {
     const item = assistantItem([{ kind: "text", text: "answer", done: true }]);
-    expect(actionsForItem(item, IDLE)).toEqual(["copy", "quote"]);
+    expect(actionsForItem(item, IDLE)).toEqual(["copy", "quote", "fork"]);
   });
 
   it("hides the whole toolbar on a streaming assistant message (FR-001)", () => {
@@ -524,7 +533,7 @@ describe("actionsForItem", () => {
 
   it("hides copy and quote on a pure-image message (FR-007)", () => {
     const item = assistantItem([{ kind: "image", data: "AAAA", mimeType: "image/png" }]);
-    expect(actionsForItem(item, { ...IDLE, isLastAssistant: true })).toEqual(["regenerate"]);
+    expect(actionsForItem(item, { ...IDLE, isLastAssistant: true })).toEqual(["fork", "regenerate"]);
   });
 
   it("offers nothing on a pure-image user message — there is no text to edit", () => {
@@ -568,8 +577,50 @@ describe("actionsForItem", () => {
     expect(actionsForItem(item, { ...IDLE, isLastAssistant: true })).toEqual([
       "copy",
       "quote",
+      "fork",
       "regenerate",
     ]);
+  });
+
+  // -- 007 US1: Fork on pi replies ------------------------------------------
+
+  it("offers Fork on a middle pi reply (007 FR-001)", () => {
+    const item = assistantItem([{ kind: "text", text: "answer", done: true }]);
+    expect(actionsForItem(item, IDLE)).toContain("fork");
+  });
+
+  it("offers Fork on the last pi reply too — the clone case (007 FR-004)", () => {
+    const item = assistantItem([{ kind: "text", text: "answer", done: true }]);
+    expect(actionsForItem(item, { ...IDLE, isLastAssistant: true })).toContain("fork");
+  });
+
+  it("never offers Fork on a user or system message (007 FR-001)", () => {
+    expect(actionsForItem(userItem("prompt"), IDLE)).not.toContain("fork");
+    const notice = emptyItem("system", [{ kind: "text", text: "Context compacted", done: true }]);
+    notice.done = true;
+    expect(actionsForItem(notice, IDLE)).not.toContain("fork");
+  });
+
+  it("hides Fork while a run is in flight (007 FR-002)", () => {
+    const item = assistantItem([{ kind: "text", text: "old answer", done: true }]);
+    expect(actionsForItem(item, { ...IDLE, sessionBusy: true })).not.toContain("fork");
+  });
+
+  it("hides Fork during a streaming reply — no toolbar at all (007 FR-002)", () => {
+    const item = emptyItem("assistant", [{ kind: "text", text: "partial", done: false }]);
+    expect(actionsForItem(item, { ...IDLE, hasPrecedingUser: true })).not.toContain("fork");
+  });
+
+  it("hides Fork when no user message precedes the reply (007 edge case)", () => {
+    const item = assistantItem([{ kind: "text", text: "answer", done: true }]);
+    expect(actionsForItem(item, { ...IDLE, hasPrecedingUser: false })).not.toContain("fork");
+  });
+
+  it("keeps copy and quote next to Fork (007 FR-002)", () => {
+    const item = assistantItem([{ kind: "text", text: "answer", done: true }]);
+    const actions = actionsForItem(item, IDLE);
+    expect(actions).toContain("copy");
+    expect(actions).toContain("quote");
   });
 });
 

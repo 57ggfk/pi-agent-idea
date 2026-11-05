@@ -1,0 +1,122 @@
+{
+  "_note": "pi 1.5.0 实测证据（T001/V1 + T002/V2）。pi --mode rpc --no-tools --session-dir <temp>，两步 prompt 后 fork 第二条用户消息，再 clone。",
+  "piVersion": "1.5.0",
+  "probe": {
+    "cwd": "C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\pi-fork-kDGliG",
+    "sessionDir": "C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\pi-fork-sessions-CavtCT",
+    "startedAt": "2026-11-05T11:26:50.239Z",
+    "finishedAt": "2026-11-05T11:27:12.482Z"
+  },
+  "v1_fork_boundary": {
+    "question": "fork(entryId) 生成的新会话是否包含该 entry？",
+    "answer": "不包含 —— 新会话截止到该 entry 之前（position: before）。",
+    "raw": {
+      "get_fork_messages": {
+        "id": "5",
+        "type": "response",
+        "command": "get_fork_messages",
+        "success": true,
+        "data": {
+          "messages": [
+            {
+              "entryId": "33f8850f",
+              "text": "只回复四个字：第一条回答"
+            },
+            {
+              "entryId": "1ed6f44a",
+              "text": "只回复四个字：第二条回答"
+            }
+          ]
+        }
+      },
+      "fork_response": {
+        "id": "7",
+        "type": "response",
+        "command": "fork",
+        "success": true,
+        "data": {
+          "text": "只回复四个字：第二条回答",
+          "cancelled": false
+        }
+      }
+    },
+    "sequence_before": [
+      {
+        "role": "system",
+        "content": "<system prompt omitted>"
+      },
+      {
+        "role": "user",
+        "text": "只回复四个字：第一条回答"
+      },
+      {
+        "role": "assistant",
+        "text": "首条回答"
+      },
+      {
+        "role": "user",
+        "text": "只回复四个字：第二条回答"
+      },
+      {
+        "role": "assistant",
+        "text": "第二条回答"
+      }
+    ],
+    "sequence_after_fork": [
+      {
+        "role": "system",
+        "content": "<system prompt omitted>"
+      },
+      {
+        "role": "user",
+        "text": "只回复四个字：第一条回答"
+      },
+      {
+        "role": "assistant",
+        "text": "首条回答"
+      }
+    ]
+  },
+  "v2_clone": {
+    "question": "clone 是否复制队列与统计？",
+    "answer": "clone 把当前活动分支整段复制成新会话（新 sessionId / 新 sessionFile），统计随新会话重算；RPC 只需 {type:/clone/}，不需要 sessionPath。队列没有一起复制（新会话 pendingMessageCount=0）。",
+    "raw": {
+      "clone_response": {
+        "id": "9",
+        "type": "response",
+        "command": "clone",
+        "success": true,
+        "data": {
+          "cancelled": false
+        }
+      },
+      "stats_before": {
+        "sessionId": "01a1ab76-2adc-7491-8115-eb090abf5680",
+        "userMessages": 2
+      },
+      "stats_after_clone": {
+        "sessionId": "01a1ab76-7a39-7491-8115-eb0c7762f2ab",
+        "userMessages": 1
+      }
+    },
+    "sequence_after_clone": [
+      {
+        "role": "system",
+        "content": "<system prompt omitted>"
+      },
+      {
+        "role": "user",
+        "text": "只回复四个字：第一条回答"
+      },
+      {
+        "role": "assistant",
+        "text": "首条回答"
+      }
+    ]
+  },
+  "implementation_impact": {
+    "middle_reply_fork": "对 assistant A_i：取「A_i 之后第一条用户消息」的 entryId 作为 fork 目标，新会话恰为 U1/A1/…/A_i。",
+    "last_reply_fork": "末条 assistant 没有后继用户消息，改用 clone 整段复制。",
+    "plan_b_degradation_needed": false
+  }
+}

@@ -91,6 +91,14 @@ export default function MessageList() {
     if (item.role === "user") lastUser = i;
     if (item.role === "assistant") lastAssistant = i;
   });
+  // Fork needs a user message *above* the reply to branch at (007 FR-001);
+  // an assistant item with no question before it gets no Fork button.
+  const userAbove: boolean[] = [];
+  let seenUser = false;
+  items.forEach((item, i) => {
+    userAbove[i] = seenUser;
+    if (item.role === "user") seenUser = true;
+  });
   const ctx = { sessionBusy: isStreaming, editing: editing != null };
 
   useEffect(() => {
@@ -118,6 +126,7 @@ export default function MessageList() {
               ...ctx,
               isLastUser: i === lastUser,
               isLastAssistant: i === lastAssistant,
+              hasPrecedingUser: userAbove[i] ?? false,
             })}
           />
         ))}

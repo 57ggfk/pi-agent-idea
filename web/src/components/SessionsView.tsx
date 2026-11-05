@@ -92,9 +92,9 @@ export default function SessionsView() {
                 data-testid="session-delete"
                 title="Delete this session"
                 onClick={() => {
-                  if (window.confirm("Delete this session? This cannot be undone.")) {
-                    void deleteSession(s.file);
-                  }
+                  // The store asks through the in-app dialog (007 US3), so the
+                  // wording and the danger colour are consistent everywhere.
+                  void deleteSession(s.file);
                 }}
               >
                 <Icon name="trash" className="ic-sm" />

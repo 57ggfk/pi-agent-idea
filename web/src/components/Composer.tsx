@@ -16,6 +16,15 @@ interface PendingImage {
 
 const FILE_MENU_MAX = 20;
 
+/**
+ * Bottom-bar Fork is hidden in 0.5.2 (spec 007 US2): the capability moved to
+ * the per-message toolbar, and two entry points made it unclear which one to
+ * use. The code is kept — flip this to `true` to bring the button back. It must
+ * stay a render-level switch (not CSS `display:none`), because `measureDensity`
+ * walks the rendered children and would still count a hidden button's width.
+ */
+const SHOW_COMPOSER_FORK = false;
+
 // Control-row density. Dropping a label always beats wrapping the row onto a
 // second line, and how much room the row needs depends on the model name, the
 // streaming abort button and the action-button labels — not on width alone.
@@ -116,6 +125,7 @@ export default function Composer() {
   const compact = usePiStore((s) => s.compact);
   const newSession = usePiStore((s) => s.newSession);
   const pendingPrompt = usePiStore((s) => s.pendingPrompt);
+  const composerResetSeq = usePiStore((s) => s.composerResetSeq);
   const clearPendingPrompt = usePiStore((s) => s.clearPendingPrompt);
   const editing = usePiStore((s) => s.editing);
   const cancelEditMessage = usePiStore((s) => s.cancelEditMessage);
@@ -263,6 +273,20 @@ export default function Composer() {
       autosize(ta, ta.closest(".app") as HTMLElement | null);
     });
   }, [pendingPrompt, clearPendingPrompt]);
+
+  // 007 FR-013: a branch (fork / new session) must not carry the old draft or
+  // its images into the new conversation. Those live in local state, so the
+  // store bumps a counter instead of reaching into the component.
+  useEffect(() => {
+    if (composerResetSeq === 0) return;
+    setText("");
+    setImages([]);
+    setSlashDismissed(false);
+    setFileDismissed(false);
+    if (taRef.current) {
+      resetComposerHeight(taRef.current, taRef.current.closest(".app") as HTMLElement | null);
+    }
+  }, [composerResetSeq]);
 
   const slashQuery = /^\//.test(text) && !text.includes(" ") ? text.slice(1).toLowerCase() : null;
   // The menus no longer require matches to show up: a query with no result used
@@ -653,28 +677,25 @@ export default function Composer() {
               <Icon name="compact" className="ic-sm" />
               <span className="btn-lbl">Compact</span>
             </button>
-            <button
-              className="btn btn-tool btn-ghost"
-              data-testid="fork-btn"
-              onClick={() => void forkSession()}
-              disabled={isStreaming}
-              title="Fork the conversation at the last user message into a new session"
-            >
-              <Icon name="fork" className="ic-sm" />
-              <span className="btn-lbl">Fork</span>
-            </button>
+            {SHOW_COMPOSER_FORK ? (
+              <button
+                className="btn btn-tool btn-ghost"
+                data-testid="fork-btn"
+                onClick={() => void forkSession()}
+                disabled={isStreaming}
+                title="Fork the conversation at the last user message into a new session"
+              >
+                <Icon name="fork" className="ic-sm" />
+                <span className="btn-lbl">Fork</span>
+              </button>
+            ) : null}
             <button
               className="btn btn-tool btn-ghost"
               data-testid="new-session"
               onClick={() => {
-                // new_session drops the running conversation silently, so a
-                // mis-click used to throw away an in-flight answer.
-                if (
-                  isStreaming &&
-                  !window.confirm("Pi is still working. Start a new session and discard the current run?")
-                ) {
-                  return;
-                }
+                // The store owns the confirmation now (007 US3): it knows
+                // whether the session is empty, streaming, or has content, and
+                // renders one in-app dialog instead of a native one.
                 void newSession();
               }}
               title={

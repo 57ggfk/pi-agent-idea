@@ -48,7 +48,7 @@ const h = vi.hoisted(() => {
 
 vi.mock("../bridge", () => ({ getBridge: () => Promise.resolve(h.bridge) }));
 
-import { usePiStore } from "./store";
+import { usePiStore, branchTargetFor, userCountUpTo } from "./store";
 
 /** Commands actually sent to pi, in order, flattened to their type. */
 function commandTypes(): string[] {
@@ -191,6 +191,147 @@ describe("message actions: store orchestration", () => {
     expect(commandTypes()).not.toContain("fork");
     // Still editing: the user has not decided anything yet.
     expect(usePiStore.getState().editing).not.toBeNull();
+  });
+});
+
+describe("branch point resolution (spec 007, pi 1.5.0 semantics)", () => {
+  it("counts the user messages at or above an index", () => {
+    const items = [userItem("q1"), assistantItem("a1"), userItem("q2"), assistantItem("a2")];
+    expect(userCountUpTo(items, 0)).toBe(1);
+    expect(userCountUpTo(items, 1)).toBe(1);
+    expect(userCountUpTo(items, 2)).toBe(2);
+    expect(userCountUpTo(items, 3)).toBe(2);
+    expect(userCountUpTo(items, 99)).toBe(2);
+  });
+
+  it("branches a middle reply at the question that follows it", () => {
+    // Two questions in the session, the reply answered the first one → the
+    // branch point is q2, which yields exactly q1/a1.
+    expect(branchTargetFor(1, 2)).toEqual({ kind: "entry", index: 1 });
+  });
+
+  it("clones for the last reply — there is no question after it", () => {
+    expect(branchTargetFor(2, 2)).toEqual({ kind: "clone" });
+  });
+
+  it("falls back to clone when pi reports no forkable entry", () => {
+    expect(branchTargetFor(0, 0)).toEqual({ kind: "clone" });
+  });
+});
+
+describe("fork at a message: store orchestration (spec 007)", () => {
+  beforeEach(async () => {
+    h.state.calls.length = 0;
+    h.state.rpc.clear();
+    h.state.methods.clear();
+    await usePiStore.getState().init();
+    h.state.calls.length = 0;
+    h.state.rpc.set("get_fork_messages", () => ({
+      messages: [
+        { entryId: "entry-1", text: "q1" },
+        { entryId: "entry-2", text: "q2" },
+      ],
+    }));
+    h.state.rpc.set("fork", () => ({ text: "q2", cancelled: false }));
+    h.state.rpc.set("clone", () => ({ cancelled: false }));
+    h.state.rpc.set("get_messages", () => ({ messages: [] }));
+    h.state.rpc.set("get_state", () => ({ sessionId: "branched" }));
+    usePiStore.setState({
+      items: [userItem("q1"), assistantItem("a1"), userItem("q2"), assistantItem("a2")],
+      isStreaming: false,
+      editing: null,
+      pendingPrompt: null,
+      confirm: null,
+    });
+  });
+
+  const items = () => usePiStore.getState().items;
+
+  it("asks first, explaining that the old session is kept (US3-4)", async () => {
+    await usePiStore.getState().forkAtItem(items()[1].id);
+    const ask = usePiStore.getState().confirm;
+    expect(ask?.title).toBe("Fork from this reply?");
+    expect(ask?.confirmLabel).toBe("Fork session");
+    expect(ask?.message).toMatch(/current session stays/i);
+    // Nothing ran yet — the dialog is the gate.
+    expect(commandTypes()).not.toContain("fork");
+  });
+
+  it("forks a middle reply at the next question, then replays (US1-1)", async () => {
+    await usePiStore.getState().forkAtItem(items()[1].id);
+    await usePiStore.getState().confirm!.onConfirm();
+
+    expect(command("fork")).toEqual([{ type: "fork", entryId: "entry-2" }]);
+    expect(branchTypes()).toEqual(["get_fork_messages", "fork", "get_messages"]);
+    expect(h.state.calls.some((c) => c.method === "sessions.list")).toBe(true);
+    expect(command("clone")).toHaveLength(0);
+  });
+
+  it("clones for the last reply instead of dropping it (US1-2)", async () => {
+    await usePiStore.getState().forkAtItem(items()[3].id);
+    expect(usePiStore.getState().confirm?.message).toMatch(/whole conversation last|whole conversation/i);
+    await usePiStore.getState().confirm!.onConfirm();
+
+    expect(command("clone")).toHaveLength(1);
+    expect(command("fork")).toHaveLength(0);
+    expect(commandTypes()).toContain("get_messages");
+  });
+
+  it("cancel leaves the transcript and the session untouched (US1-5)", async () => {
+    await usePiStore.getState().forkAtItem(items()[1].id);
+    usePiStore.getState().closeConfirm();
+
+    expect(usePiStore.getState().confirm).toBeNull();
+    expect(commandTypes()).toEqual([]);
+    expect(items()).toHaveLength(4);
+  });
+
+  it("keeps the view intact when a pi extension cancels the fork (US1-7)", async () => {
+    h.state.rpc.set("fork", () => ({ cancelled: true }));
+    await usePiStore.getState().forkAtItem(items()[1].id);
+    await usePiStore.getState().confirm!.onConfirm();
+
+    // No replay: the transcript is exactly what it was, plus the visible error.
+    expect(commandTypes()).not.toContain("get_messages");
+    expect(items().slice(0, 4).map((i) => i.role)).toEqual(["user", "assistant", "user", "assistant"]);
+    const last = items()[items().length - 1];
+    expect(last.role).toBe("system");
+    expect(last.isError).toBe(true);
+  });
+
+  it("refuses to fork while a run is in flight (FR-002)", async () => {
+    usePiStore.setState({ isStreaming: true });
+    await usePiStore.getState().forkAtItem(items()[1].id);
+    expect(usePiStore.getState().confirm).toBeNull();
+    expect(commandTypes()).toEqual([]);
+  });
+
+  it("refuses to fork a user message (FR-001)", async () => {
+    await usePiStore.getState().forkAtItem(items()[0].id);
+    expect(usePiStore.getState().confirm).toBeNull();
+  });
+
+  it("clears draft, edit target and queue after branching (FR-013)", async () => {
+    usePiStore.setState({
+      pendingPrompt: { text: "draft belonging to the old session", id: 1, mode: "replace" },
+      queue: {
+        items: [{ id: "q-1", mode: "steer", text: "queued", images: [], status: "queued", createdAt: 1 }],
+        paused: false,
+        pauseReason: null,
+        drift: false,
+      },
+    });
+    const before = usePiStore.getState().composerResetSeq;
+
+    await usePiStore.getState().forkAtItem(items()[1].id);
+    await usePiStore.getState().confirm!.onConfirm();
+
+    const state = usePiStore.getState();
+    expect(state.pendingPrompt).toBeNull();
+    expect(state.editing).toBeNull();
+    expect(state.queue.items).toHaveLength(0);
+    // The Composer clears its local images on this bump.
+    expect(state.composerResetSeq).toBe(before + 1);
   });
 });
 

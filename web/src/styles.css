@@ -1395,6 +1395,82 @@ button {
 
 .app {
   container-type: inline-size;
+  /* The confirmation overlay is scoped to the tool window (007 FR-010), so it
+     needs .app as its containing block rather than the JCEF viewport. */
+  position: relative;
+}
+
+/* Confirmation dialog (spec 007 US3) --------------------------------------- */
+/* Inside .app on purpose: a portal to <body> would escape the tool window's
+   theme scope and cover the IDE chrome. */
+.confirm-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: rgba(16, 24, 40, 0.32);
+  overscroll-behavior: contain;
+}
+
+.confirm-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: calc(100% - 24px);
+  padding: 14px 16px 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md, 10px);
+  box-shadow: var(--shadow-pop);
+}
+
+.confirm-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.confirm-message {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+/* 360px: the two buttons must stay on one row (SC-004). */
+.confirm-actions .btn {
+  white-space: nowrap;
+}
+
+.confirm-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.confirm-primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.confirm-danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #ffffff;
+}
+
+.confirm-danger:hover {
+  filter: brightness(0.94);
 }
 
 /* Tabs - prototype style */

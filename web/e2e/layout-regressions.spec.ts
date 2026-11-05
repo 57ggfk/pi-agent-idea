@@ -304,15 +304,16 @@ test("New confirms before discarding a running session", async ({ page }) => {
   // The tooltip tells the truth while streaming.
   await expect(page.getByTestId("new-session")).toHaveAttribute("title", /discarded/);
 
-  let asked = "";
-  page.once("dialog", async (dialog) => {
-    asked = dialog.message();
-    await dialog.dismiss();
-  });
+  // 007 US3-3: the in-app dialog carries the streaming-specific warning.
   await page.getByTestId("new-session").click();
+  const dialog = page.getByTestId("confirm-dialog");
+  await expect(dialog).toBeVisible();
+  await expect(page.getByTestId("confirm-title")).toContainText(/while pi is answering/i);
+  await expect(page.getByTestId("confirm-message")).toContainText(/discarded/i);
 
-  await expect.poll(() => asked).toContain("still working");
-  // Cancelled: the conversation is untouched.
+  // Esc cancels: the conversation is untouched.
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
   await expect(page.getByTestId("item-user").first()).toBeVisible();
   await expect(page.getByTestId("empty-state")).toHaveCount(0);
 });
