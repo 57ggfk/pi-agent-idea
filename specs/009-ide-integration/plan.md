@@ -125,6 +125,13 @@ object VfsRefresh {
 ## 顺序
 
 1. 真机复核「整片灰」是文件还是目录（记录到本文件），必要时调整 D2 矩阵。
+   **✅ 已复核（2026-11-05，runIde 沙箱 IC-2024.3.1 + e2e-project）**：
+   ① 右键**目录**（`.idea`）→ `Send File to Pi Agent` 与 `Explain File with Pi` **两项全灰**——与 D2 假设一致
+   （两个动作都拒绝目录），`idea.log` 无异常；② 真机日志另抓到**第二个根因**：`ExplainFileWithPi.update()`
+   在 EDT 上请求数据（`virtualFileArray` / `virtualFile`），被 `PreCachedDataContext` 拒绝（SEVERE，
+   "Plugin to blame: Pi Agent"）——项目树右键的 `update()` 必须 `ActionUpdateThread.BGT`，否则数据可能取不到，
+   文件目标同样会灰。**结论：D2 矩阵不变；修复 = BGT 线程 + availability 矩阵，两条都做。**
+   文件 / 项目根两格的目视与 T002 图标、T009 AddDirectory 一起在实现后的沙箱轮补拍。
 2. `ActionAvailability` + 单测（先断言）。
 3. `DirectoryListing` + 单测。
 4. `plugin.xml` 图标 + `AddDirectory` 注册；`ExplainFileWithPi` 扩目录；`update()` 收口。
