@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.2 — 2026-11-05
+
+**变更**
+- 用户消息气泡更紧凑：单行消息高度约少一半，行距和字号不变，同样长的对话一屏能多看几条。
+
+**修复**
+- 新会话的 π 图标原来贴在顶部，图标、标题和模型名现在整块居中在对话区，拉伸工具窗也不跑偏。
+- 把内容塞进输入框后输入框不跟着长高（右键「Explain with Pi」、引用长回复、`@` 文件都这样），只能看两三行；现在按内容长高，到上限后在框内滚动、消息区仍留够高度，发送后立刻回落到一行。
+
+**Changed**
+- User message bubbles are tighter: a single-line message is about half its previous height with the same font size and line spacing, so more of the conversation fits on one screen.
+
+**Fixed**
+- The empty-state π mark sat against the top of the pane; the icon, title and model line are now centered as one block, and stay centered while the tool window is resized.
+- The composer ignored text pushed into it (Explain with Pi, quoting a long reply, `@` file completion) and showed only two or three lines. It now grows with its content, scrolls inside at the cap while the message area keeps its height, and collapses back to one line after sending.
+
 ## 0.5.1 — 2026-11-04
 
 **新增**
