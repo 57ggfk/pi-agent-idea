@@ -544,7 +544,7 @@ class BridgeService(private val project: Project) : Disposable {
     private fun maybeCaptureBaseline(event: JsonObject) {
         if (event["type"]?.jsonPrimitive?.contentOrNull != "tool_execution_start") return
         val tool = event["toolName"]?.jsonPrimitive?.contentOrNull?.lowercase() ?: return
-        if (tool !in EDIT_TOOLS) return
+        if (tool !in VfsRefresh.EDIT_TOOLS) return
         val path = ((event["args"] as? JsonObject)?.get("path") as? JsonPrimitive)?.content
             ?.takeIf { it.isNotBlank() } ?: return
         synchronized(fileBaselineLock) {
@@ -639,6 +639,7 @@ class BridgeService(private val project: Project) : Disposable {
                 put("data", event)
             })
             maybeCaptureBaseline(event)
+            maybeScheduleVfsRefresh(event)
             notifyIfSettledInBackground(event)
             // spec 005: pi's queue events drive the mirror; an aborted run
             // parks it (abort's queue behaviour must not be relied upon).
@@ -691,6 +692,89 @@ class BridgeService(private val project: Project) : Disposable {
             }
         })
         notification.notify(project)
+    }
+
+    // -- VFS refresh after pi writes (spec 009 US4) --------------------------
+
+    /**
+     * Debounced VFS refresh for pi's write-class tool calls (FR-011/FR-012):
+     * path-level refresh for named files, whole-project for shell tools and
+     * at every settle. Read-only tools never get here (pure logic in
+     * [VfsRefresh]). The Alarm coalesces bursts into one refresh.
+     */
+    private val vfsRefreshAlarm = com.intellij.util.Alarm(
+        com.intellij.util.Alarm.ThreadToUse.POOLED_THREAD, this,
+    )
+    private val refreshLock = Any()
+    private val pendingRefreshPaths = LinkedHashSet<String>()
+    private var pendingWholeRefresh = false
+
+    @Volatile
+    private var lastWholeRefreshAt = 0L
+
+    private fun maybeScheduleVfsRefresh(event: JsonObject) {
+        val type = event["type"]?.jsonPrimitive?.contentOrNull ?: return
+        if (type == "agent_settled") {
+            // Whole-project refresh settles the round and covers files bash
+            // touched without naming them (rate-limited: FR-011 + plan risk).
+            if (System.currentTimeMillis() - lastWholeRefreshAt >= WHOLE_REFRESH_MIN_INTERVAL_MS) {
+                synchronized(refreshLock) { pendingWholeRefresh = true }
+                scheduleVfsRefresh()
+            }
+            return
+        }
+        if (type != "tool_execution_end") return
+        val tool = event["toolName"]?.jsonPrimitive?.contentOrNull ?: return
+        val paths = VfsRefresh.pathsForEvent(tool, event["args"] as? JsonObject)
+        synchronized(refreshLock) {
+            if (paths == null) pendingWholeRefresh = true else pendingRefreshPaths.addAll(paths)
+        }
+        scheduleVfsRefresh()
+    }
+
+    private fun scheduleVfsRefresh() {
+        vfsRefreshAlarm.cancelAllRequests()
+        vfsRefreshAlarm.addRequest({ flushVfsRefresh() }, VFS_REFRESH_DEBOUNCE_MS)
+    }
+
+    private fun flushVfsRefresh() {
+        val paths: List<String>
+        val whole: Boolean
+        synchronized(refreshLock) {
+            whole = pendingWholeRefresh
+            paths = pendingRefreshPaths.toList()
+            pendingWholeRefresh = false
+            pendingRefreshPaths.clear()
+        }
+        if (!whole && paths.isEmpty()) return
+        val lfs = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
+        val onFinish = Runnable { invalidateFilesCache() }
+        if (whole) {
+            val root = project.basePath?.let { java.io.File(it) } ?: return
+            lastWholeRefreshAt = System.currentTimeMillis()
+            lfs.refreshIoFiles(listOf(root), true, true, onFinish)
+        } else {
+            val ioFiles = paths.mapNotNull { toVfsRefreshPath(it) }
+            if (ioFiles.isEmpty()) return
+            lfs.refreshIoFiles(ioFiles, true, true, onFinish)
+        }
+        // No paths in the log: tool arguments can embed user content.
+        LOG.info("vfs-refresh: whole=$whole paths=${paths.size}")
+    }
+
+    /**
+     * The IO file to refresh for a pi tool path argument. A file pi just
+     * created is not in the VFS yet, so its parent directory is refreshed
+     * instead — that makes the new child appear in the project view.
+     */
+    private fun toVfsRefreshPath(path: String): java.io.File? {
+        val io = resolveIoFile(path) ?: return null
+        return if (io.exists()) io else io.parentFile
+    }
+
+    /** Clears the @-completion file cache so new files show up immediately (FR-013). */
+    internal fun invalidateFilesCache() {
+        filesCache = null
     }
 
     private fun pushStateEvent(state: PiConnectionState) {
@@ -758,8 +842,8 @@ class BridgeService(private val project: Project) : Disposable {
     companion object {
         private const val FILES_TTL_MS = 30_000L
         private const val MAX_FILES = 5000
-        /** Tools that mutate files; used to snapshot pre-edit baselines for diffing. */
-        private val EDIT_TOOLS = setOf("edit", "write", "multiedit", "str_replace", "str_replace_editor", "apply_patch")
+        private const val VFS_REFRESH_DEBOUNCE_MS = 400L
+        private const val WHOLE_REFRESH_MIN_INTERVAL_MS = 2_000L
         private const val MAX_BASELINES = 50
         private const val MAX_BASELINE_BYTES = 2L * 1024 * 1024
         private val EXCLUDED_PATHS = listOf(
