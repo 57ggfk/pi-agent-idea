@@ -2,6 +2,7 @@ import { Component, useEffect, useMemo, type ReactNode } from "react";
 import { usePiStore } from "./store/store";
 import { outlineEntries } from "./lib/outline";
 import { useT } from "./i18n/useT";
+import { i18n } from "./i18n";
 import MessageList from "./components/MessageList";
 import Composer from "./components/Composer";
 import SetupCard from "./components/SetupCard";
@@ -39,10 +40,12 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     if (this.state.error) {
       return (
         <div className="error-boundary" data-testid="error-boundary">
-          <div className="error-title">Something went wrong</div>
+          {/* Class component: no hook — the module-level i18n instance is
+              already initialized by the time a crash can render. */}
+          <div className="error-title">{i18n.t("app.crashed")}</div>
           <pre className="error-detail">{String(this.state.error.message ?? this.state.error)}</pre>
           <button className="btn" onClick={() => location.reload()}>
-            Reload
+            {i18n.t("common.retry")}
           </button>
         </div>
       );
@@ -60,7 +63,6 @@ export default function App() {
   const toggleOutline = usePiStore((s) => s.toggleOutline);
   const openSearch = usePiStore((s) => s.openSearch);
   const { t } = useT();
-
   // The outline entry is hidden while the session has no user messages
   // (spec 006 FR-003) — a button that cannot do anything is noise.
   const userCount = useMemo(() => outlineEntries(items).length, [items]);
@@ -73,7 +75,7 @@ export default function App() {
     <ErrorBoundary>
       <IconSprite />
       {!ready ? (
-        <div className="loading">Connecting to pi…</div>
+        <div className="loading">{t("app.loading")}</div>
       ) : (
         <div className="app">
           <div className="tabs" role="tablist" aria-label="Pi Agent" data-testid="tabs">

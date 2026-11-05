@@ -18,6 +18,13 @@ Options 加语言选择器（≤3 项分段、>3 项下拉）；③ **IDE**—�
 
 ## 技术上下文
 
+- **盘点结果（T001/T020，2026-11-06 实测，grep 粗口径）**：迁移前 JSX 可疑硬编码 37 处、
+  Kotlin 可疑字符串 44 处。迁移后（T020 复盘）：`chat.*` / `sessions.*` / `confirm.*` / `error.*` /
+  `language.*` / `common.*` 与 Manage 外壳（页签/信任/更新）已全部入字典，共 **240 键 × 2 语言**；
+  残留 = D6 白名单（品牌 `Pi`/`Pi Agent`/`MOCK` 徽章、URL 占位符、npm 命令原文）+
+  **Manage 六个面板的长尾文案（McpPanel/PackagesPanel/SkillsPanel/AuthPanel/SettingsPanel/DiagnosticsPanel
+  表单、按钮、错误横幅）**——按批次时间盒规则记入 run report §4，见「加语言的操作清单」一节照常覆盖。
+
 - 偏好：`PiUserPrefs`（`PropertiesComponent`）+ `BridgeService.getPrefs/setPrefs`。
 - 环境：`BridgeService.envInfo()` 已有 `theme` / `editorFontFamily`，加 `locale` 即可。
   `locale` 取自 `Locale.getDefault().language`——在 IDE 里这个值**已经反映语言包选择**，
@@ -41,6 +48,20 @@ grep -rn --include=*.kt -E '"[A-Z][a-z]+ [a-z]' src/main/kotlin | wc -l
 ## 设计决策
 
 ### D0. 为什么引 i18next，而不是继续手写 `t()` / 换 FormatJS / 换 Lingui
+
+#### 加语言的操作清单（T025：加第三种语言时的唯一入口）
+
+1. 新建 `web/src/i18n/locales/<code>.ts`：`const <code>: Dict = { …全部键… };` + `export default <code>;`
+   （缺键 = `tsc` 报错；值缺失/等于键名 = `i18n.test.ts` 报错）。
+2. 在 `web/src/i18n/languages.ts` 的 `LANGUAGES` 里加一行
+   `{ code, bcp47, labelKey, nativeLabel }`（`nativeLabel` 用该语言自己的写法）。
+3. 跑 `cd web && npm run typecheck && npm test`——i18n.test.ts 的「注册表与文件一一对应」
+   「复数分类覆盖（`Intl.PluralRules(bcp47)` 枚举）」会自动把新语言纳入校验。
+4. 补 `src/main/resources/messages/PiAgentBundle_<code>.properties`（IDE 侧，键集合由
+   `PiAgentBundleTest` 锁定与英文 base 相等）。
+5. 全量 `npx playwright test e2e/i18n.spec.ts`——断言界面无 `⟦` 残留。
+   **任何组件、store、选择器都不需要改**（SC-005 已验证：注册假语言 `xx` 时
+   `git diff --stat web/src/components/` 为空且界面可渲染）。
 
 用户在 0.5.2 规划期明确「后续要开放更多语言」后推翻了原方案（原本打算 80 行自建）。
 决定因素按权重排序：**加语言的边际成本 → 复数正确性 → key 稳定性 → API 简洁度 → 体积**。

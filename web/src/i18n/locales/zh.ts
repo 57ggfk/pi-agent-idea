@@ -275,6 +275,8 @@ export const zh: Dict = {
   "manage.trust.confirmRevoke": "确认撤销",
   "manage.trust.granted": "已信任。当前会话的 pi 进程仍按旧状态运行，新会话生效。",
   "manage.trust.revoked": "已撤销。当前会话的 pi 进程仍按已信任状态运行，新会话/重启后才彻底失效。",
+  "app.loading": "正在连接 pi…",
+  "app.crashed": "界面出了点问题",
 };
 
 // The lazy loader reads the default export (import.meta.glob<{ default: Dict }>).

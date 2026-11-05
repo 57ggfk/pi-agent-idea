@@ -282,6 +282,8 @@ export const en = {
   "manage.trust.granted": "Trusted. The running pi process keeps its old state; new sessions pick it up.",
   "manage.trust.revoked":
     "Trust revoked. The running pi process still acts as trusted; it stops applying after a new session or a restart.",
+  "app.loading": "Connecting to pi…",
+  "app.crashed": "Something went wrong",
 } as const;
 
 /** Exact key set, free values — the shape every other locale must satisfy. */
