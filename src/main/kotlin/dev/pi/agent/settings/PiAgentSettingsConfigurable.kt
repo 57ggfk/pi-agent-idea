@@ -25,12 +25,10 @@ class PiAgentSettingsConfigurable : Configurable {
     override fun createComponent(): JComponent {
         val settings = PiAgentSettings.getInstance()
         pathField = TextFieldWithBrowseButton().apply {
-            addBrowseFolderListener(
-                "Select pi executable",
-                "The pi CLI executable (e.g. from npm install -g @earendil-works/pi-coding-agent)",
-                null,
-                FileChooserDescriptorFactory.createSingleFileDescriptor(),
-            )
+            // Both replacements exist unchanged since 2023.3; the old 4-arg
+            // listener and createSingleFileDescriptor() are deprecated (the
+            // former is scheduled for removal) on 2026.x.
+            addBrowseFolderListener(null, FileChooserDescriptorFactory.createSingleFileNoJarsDescriptor())
             text = settings.customPiPath() ?: ""
         }
         autoOpenBox = JBCheckBox("Automatically open the Pi Agent tool window on project start", settings.autoOpen())

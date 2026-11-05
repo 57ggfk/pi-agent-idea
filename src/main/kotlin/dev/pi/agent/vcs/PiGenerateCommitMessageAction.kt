@@ -114,19 +114,16 @@ class PiGenerateCommitMessageAction : AnAction() {
             ?: e.getData(Refreshable.PANEL_KEY) as? CommitMessageI
 
     /**
-     * Included (checked) changes. The non-modal commit panel exposes them on
-     * its concrete class (the platform classes are Kotlin-compiled, so the
-     * getters are called as functions); the modal commit dialog answers the
-     * classic SELECTED_CHANGES/CHANGES data keys.
+     * Included (checked) changes. The commit workflow exposes them through the
+     * public COMMIT_WORKFLOW_UI data key (works for both modal and non-modal
+     * commit UIs); the classic SELECTED_CHANGES/CHANGES data keys are kept as a
+     * fallback for contexts that do not provide a workflow UI.
      */
     private fun includedChanges(e: AnActionEvent): List<Change> {
-        val panel = e.getData(Refreshable.PANEL_KEY)
-        if (panel != null) {
-            val asCommitPanel = panel as? com.intellij.vcs.commit.ChangesViewCommitPanel
-            if (asCommitPanel != null) return asCommitPanel.getIncludedChanges()
-            val asCheckinPanel = panel as? CheckinProjectPanel
-            if (asCheckinPanel != null) return asCheckinPanel.getSelectedChanges().toList()
-        }
+        val workflowUi = e.getData(VcsDataKeys.COMMIT_WORKFLOW_UI)
+        if (workflowUi != null) return workflowUi.getIncludedChanges()
+        val checkinPanel = e.getData(Refreshable.PANEL_KEY) as? CheckinProjectPanel
+        if (checkinPanel != null) return checkinPanel.getSelectedChanges().toList()
         val selected = e.getData(VcsDataKeys.SELECTED_CHANGES) ?: e.getData(VcsDataKeys.CHANGES)
         return selected?.toList() ?: emptyList()
     }

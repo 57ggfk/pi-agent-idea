@@ -31,10 +31,11 @@ dependencies {
             } else {
                 intellijIdeaCommunity("2024.3.1")
             }
-            // VCS commit-panel integration (IdeaTextPatchBuilder,
-            // ChangesViewCommitPanel) lives in this platform module, which is
-            // not on the default compile classpath. Present in every IDE
-            // across 233–263, so no optional loading is needed.
+            // VCS diff integration (IdeaTextPatchBuilder) lives in this
+            // platform module, which is not on the default compile classpath.
+            // Present in every IDE across 233–263, so no optional loading is
+            // needed. The commit panel itself is reached via public API
+            // (VcsDataKeys.COMMIT_WORKFLOW_UI), no internal classes.
             bundledModule("intellij.platform.vcs.impl")
             // JCEF classes (com.intellij.ui.jcef, org.cef) live in the platform on
             // 2024.3 (no bundledPlugin needed); on 2026.2+ they moved to a bundled
