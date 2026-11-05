@@ -278,7 +278,9 @@ intellijPlatform {
         // the reported-broken line are pinned so this cannot recur silently.
         ides {
             ide(IntelliJPlatformType.IntellijIdeaCommunity, "2023.3.1") // floor (233)
-            ide(IntelliJPlatformType.IntellijIdeaCommunity, "2024.1.7") // 241 — the line that broke
+            ide(IntelliJPlatformType.IntellijIdeaCommunity, "2023.3.8") // last 233 patch
+            ide(IntelliJPlatformType.IntellijIdeaCommunity, "2024.1.7") // 241
+            ide(IntelliJPlatformType.IntellijIdeaCommunity, "2024.2.6") // 242 — still no 2-arg overload
             ide(IntelliJPlatformType.IntellijIdeaCommunity, "2024.3.1") // compile baseline (243)
         }
         // Marketplace rejection criteria: binary incompatibilities and
