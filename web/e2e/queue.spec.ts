@@ -46,7 +46,7 @@ test.describe("message queue (MockBridge)", () => {
     await expect(page.getByTestId("composer-input")).toHaveValue("");
     const rows = page.getByTestId("queue-row");
     await expect(rows).toHaveCount(1);
-    await expect(rows.first()).toContainText("追加");
+    await expect(rows.first()).toHaveAttribute("data-mode", "followUp");
     await expect(rows.first()).toContainText("1");
     await expect(rows.first()).toContainText("second question, queued while pi works");
 
@@ -244,7 +244,7 @@ test.describe("message queue (MockBridge)", () => {
     // Streaming defaults the mode to steer; send explicitly anyway.
     await sendQueued(page, "steer", "wait — check the tests first");
     await expect(page.getByTestId("steer-tag")).toBeVisible();
-    await expect(page.getByTestId("queue-row").first()).toContainText("插话");
+    await expect(page.getByTestId("queue-row").first()).toHaveAttribute("data-mode", "steer");
 
     // pi injects it at the turn boundary → the bar empties, and the injected
     // message shows up as a real user message next to the fire trace.
@@ -280,9 +280,9 @@ test.describe("message queue (MockBridge)", () => {
 
     await page.getByTestId("queue-promote-1").click();
     // The promoted entry now sits in the steer section (top), the rest in order.
-    await expect(rows.nth(0)).toContainText("插话");
+    await expect(rows.nth(0)).toHaveAttribute("data-mode", "steer");
     await expect(rows.nth(0)).toContainText("second");
-    await expect(rows.nth(1)).toContainText("追加");
+    await expect(rows.nth(1)).toHaveAttribute("data-mode", "followUp");
     await expect(rows.nth(1)).toContainText("first");
     await expect(rows.nth(2)).toContainText("third");
   });
@@ -301,7 +301,7 @@ test.describe("message queue (MockBridge)", () => {
 
     const banner = page.getByTestId("queue-paused");
     await expect(banner).toBeVisible();
-    await expect(banner).toContainText("运行已中断，队列暂挂");
+    await expect(banner.getByTestId("queue-resume")).toBeVisible();
 
     // Nothing may fire while parked.
     await page.waitForTimeout(1_500);
@@ -340,7 +340,7 @@ test.describe("message queue (MockBridge)", () => {
     await page.locator('[data-testid="session-row"] button').first().click();
     const confirm = page.getByTestId("queue-discard-confirm");
     await expect(confirm).toBeVisible();
-    await expect(confirm).toContainText("丢弃 1 条排队消息");
+    await expect(confirm).toContainText("1");
 
     // Cancel keeps the queue exactly as it was.
     await page.getByTestId("queue-discard-no").click();

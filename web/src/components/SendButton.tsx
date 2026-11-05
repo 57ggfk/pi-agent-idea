@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { SendMode } from "../store/store";
+import { useT } from "../i18n/useT";
 import Icon from "./Icon";
 
 /**
@@ -24,6 +25,7 @@ export default function SendButton({
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const { t } = useT();
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -40,31 +42,31 @@ export default function SendButton({
   }, [isStreaming, mode, setMode]);
 
   const modes: Array<{ id: SendMode; label: string; hint: string; enabled: boolean }> = [
-    { id: "auto", label: "Send now", hint: "Immediate prompt", enabled: !isStreaming },
-    { id: "steer", label: "Steer", hint: "Deliver after the current tool round", enabled: isStreaming },
-    { id: "followUp", label: "Follow-up", hint: "Deliver when the run finishes", enabled: isStreaming },
+    { id: "auto", label: t("send.mode.auto"), hint: t("send.mode.autoHint"), enabled: !isStreaming },
+    { id: "steer", label: t("send.mode.steer"), hint: t("send.mode.steerHint"), enabled: isStreaming },
+    { id: "followUp", label: t("send.mode.followUp"), hint: t("send.mode.followUpHint"), enabled: isStreaming },
   ];
 
-  const activeLabel = modes.find((m) => m.id === mode)?.label ?? "Send now";
+  const activeLabel = modes.find((m) => m.id === mode)?.label ?? t("send.mode.auto");
 
   return (
     <div className="split-btn" ref={rootRef}>
       <button
         className="send-btn split-main"
         data-testid="send-btn"
-        aria-label="Send"
+        aria-label={t("send.label")}
         onClick={onMain}
         disabled={disabled}
-        title={isStreaming ? `Send as ${activeLabel}` : "Send"}
+        title={isStreaming ? `${t("send.label")} · ${activeLabel}` : t("send.label")}
       >
         <Icon name="arrow-up" />
       </button>
       <button
         className={`send-btn split-caret ${isStreaming ? "" : "split-caret-disabled"}`}
         data-testid="send-mode-caret"
-        aria-label="Queue mode"
+        aria-label={t("send.queueMode")}
         disabled={!isStreaming}
-        title={isStreaming ? "Queue mode" : "Queue modes apply while the agent is running"}
+        title={isStreaming ? t("send.queueMode") : t("send.queueModeHint")}
         onClick={() => setMenuOpen((o) => !o)}
       >
         <Icon name="chev-down" className="ic-sm" />

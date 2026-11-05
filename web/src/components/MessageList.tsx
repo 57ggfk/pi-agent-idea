@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { usePiStore } from "../store/store";
 import { actionsForItem, type ChatItem, type ContentBlock, type MessageAction } from "../store/types";
 import { hitsFromItems } from "../lib/search";
+import { useT } from "../i18n/useT";
 import Markdown from "./Markdown";
 import MessageActions from "./MessageActions";
 import ToolCard from "./ToolCard";
@@ -98,6 +99,7 @@ export default function MessageList() {
   const isStreaming = usePiStore((s) => s.isStreaming);
   const editing = usePiStore((s) => s.editing);
   const search = usePiStore((s) => s.search);
+  const { t } = useT();
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
 
@@ -159,8 +161,12 @@ export default function MessageList() {
         ))}
         {retryInfo ? (
           <div className="system-item retry" data-testid="retry-banner">
-            Retrying ({retryInfo.attempt}/{retryInfo.maxAttempts}) in{" "}
-            {Math.round(retryInfo.delayMs / 1000)}s — {retryInfo.errorMessage}
+            {t("chat.retryBanner", {
+              attempt: retryInfo.attempt,
+              max: retryInfo.maxAttempts,
+              seconds: Math.round(retryInfo.delayMs / 1000),
+              error: retryInfo.errorMessage,
+            })}
           </div>
         ) : null}
       </div>
@@ -171,13 +177,14 @@ export default function MessageList() {
 function EmptyState() {
   const bridgeKind = usePiStore((s) => s.bridgeKind);
   const model = usePiStore((s) => s.model);
+  const { t } = useT();
   return (
     <div className="empty-state" data-testid="empty-state">
       <div className="empty-logo">π</div>
       <div className="empty-title">Pi Agent</div>
       <div className="empty-sub">
-        {model ? `${model.name ?? model.id} · ${model.provider}` : "No model selected"}{" "}
-        {bridgeKind === "mock" ? "· mock mode" : ""}
+        {model ? `${model.name ?? model.id} · ${model.provider}` : t("chat.empty.noModel")}{" "}
+        {bridgeKind === "mock" ? `· ${t("chat.empty.mock")}` : ""}
       </div>
     </div>
   );

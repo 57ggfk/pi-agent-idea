@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ContentBlock } from "../store/types";
 import { usePiStore } from "../store/store";
+import { useT } from "../i18n/useT";
 import Icon from "./Icon";
 
 function argSummary(argsJson: string, toolName: string): string {
@@ -74,6 +75,7 @@ function diffLinesFor(toolName: string, argsJson: string): DiffLine[] | null {
 
 function DiffView({ lines }: { lines: DiffLine[] }) {
   const [showAll, setShowAll] = useState(false);
+  const { t } = useT();
   const collapsed = !showAll && lines.length > MAX_DIFF_LINES;
   const visible = collapsed ? lines.slice(0, MAX_DIFF_LINES) : lines;
   return (
@@ -85,7 +87,7 @@ function DiffView({ lines }: { lines: DiffLine[] }) {
       ))}
       {collapsed ? (
         <button className="btn diff-show-all" onClick={() => setShowAll(true)}>
-          Show all ({lines.length} lines)
+          {t("tool.showAll", { count: lines.length })}
         </button>
       ) : null}
     </div>
@@ -102,6 +104,7 @@ export default function ToolCard({
 }) {
   const [open, setOpen] = useState(false);
   const isOpen = open || forceOpen === true;
+  const { t } = useT();
   const running = !block.done && block.result !== undefined;
   const isError = block.result?.isError ?? false;
   const output = block.result?.output ?? "";
@@ -143,13 +146,13 @@ export default function ToolCard({
             <button
               className="btn tool-diff-btn"
               data-testid="tool-diff-btn"
-              title="Show this file's changes in the IDE diff viewer"
+              title={t("tool.diffTitle")}
               onClick={(e) => {
                 e.stopPropagation();
                 void usePiStore.getState().showFileDiff(filePath);
               }}
             >
-              Diff
+              {t("tool.diff")}
             </button>
           ) : null}
           {running ? <span className="spinner" /> : null}
@@ -158,7 +161,7 @@ export default function ToolCard({
         </span>
       </div>
       {diff ? <DiffView lines={diff} /> : null}
-      {isOpen && canExpand ? <pre className="tool-output">{shownOutput || "(no output)"}</pre> : null}
+      {isOpen && canExpand ? <pre className="tool-output">{shownOutput || t("tool.noOutput")}</pre> : null}
     </div>
   );
 }

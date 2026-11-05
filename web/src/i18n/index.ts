@@ -18,7 +18,18 @@ import { FALLBACK, isRegistered } from "./languages";
 
 export type Dict = Record<string, string>;
 
-const loaders = import.meta.glob<{ default: Dict }>("./locales/*.ts");
+/**
+ * Lazy locale chunks. `import.meta.glob` is a Vite compile-time transform —
+ * component tests that import the UI graph in plain Node get `undefined`
+ * there, so the lookup degrades to "no lazy locales" instead of crashing;
+ * the fallback dictionary still ships statically below.
+ */
+let loaders: Record<string, () => Promise<{ default: Dict }>> = {};
+try {
+  loaders = import.meta.glob<{ default: Dict }>("./locales/*.ts") ?? {};
+} catch {
+  // Node context: no lazy loading, base language only.
+}
 
 let initPromise: Promise<void> | null = null;
 

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { copyText } from "../lib/clipboard";
 import { usePiStore } from "../store/store";
 import { itemToMarkdownSource, type ChatItem, type MessageAction } from "../store/types";
+import { useT } from "../i18n/useT";
 import Icon, { type IconName } from "./Icon";
 
 /** How long the copy button keeps its ✓ / ✗ before reverting (FR-004: ≥1s). */
@@ -15,22 +16,6 @@ const ICON: Record<MessageAction, IconName> = {
   edit: "pencil",
 };
 
-const LABEL: Record<MessageAction, string> = {
-  copy: "Copy message",
-  quote: "Quote message",
-  fork: "Fork from this reply",
-  regenerate: "Regenerate reply",
-  edit: "Edit message",
-};
-
-const TITLE: Record<MessageAction, string> = {
-  copy: "Copy",
-  quote: "Quote",
-  fork: "Fork from here",
-  regenerate: "Regenerate",
-  edit: "Edit",
-};
-
 type CopyState = "idle" | "ok" | "fail";
 
 /**
@@ -42,10 +27,27 @@ type CopyState = "idle" | "ok" | "fail";
 export default function MessageActions({ item, actions }: { item: ChatItem; actions: MessageAction[] }) {
   const [copyState, setCopyState] = useState<CopyState>("idle");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { t } = useT();
   const quoteToComposer = usePiStore((s) => s.quoteToComposer);
   const regenerate = usePiStore((s) => s.regenerate);
   const beginEditMessage = usePiStore((s) => s.beginEditMessage);
   const forkAtItem = usePiStore((s) => s.forkAtItem);
+
+  const LABEL: Record<MessageAction, string> = {
+    copy: t("chat.actions.copy"),
+    quote: t("chat.actions.quote"),
+    fork: t("chat.actions.fork"),
+    regenerate: t("chat.actions.regenerate"),
+    edit: t("chat.actions.edit"),
+  };
+
+  const TITLE: Record<MessageAction, string> = {
+    copy: t("chat.actions.copyTitle"),
+    quote: t("chat.actions.quoteTitle"),
+    fork: t("chat.actions.forkTitle"),
+    regenerate: t("chat.actions.regenerateTitle"),
+    edit: t("chat.actions.editTitle"),
+  };
 
   useEffect(
     () => () => {
@@ -78,11 +80,11 @@ export default function MessageActions({ item, actions }: { item: ChatItem; acti
   };
 
   return (
-    <div className="msg-actions" data-testid="msg-actions" role="group" aria-label="Message actions">
+    <div className="msg-actions" data-testid="msg-actions" role="group" aria-label={t("chat.actions.group")}>
       {actions.map((action) => {
         const state = action === "copy" ? copyState : "idle";
         const label =
-          state === "ok" ? "Copied" : state === "fail" ? "Copy failed" : LABEL[action];
+          state === "ok" ? t("chat.actions.copied") : state === "fail" ? t("chat.actions.copyFailed") : LABEL[action];
         return (
           <button
             key={action}
@@ -91,7 +93,13 @@ export default function MessageActions({ item, actions }: { item: ChatItem; acti
             data-testid={`act-${action}`}
             data-state={state}
             aria-label={label}
-            title={state === "ok" ? "Copied" : state === "fail" ? "Copy failed" : TITLE[action]}
+            title={
+              state === "ok"
+                ? t("chat.actions.copied")
+                : state === "fail"
+                  ? t("chat.actions.copyFailed")
+                  : TITLE[action]
+            }
             onClick={() => onClick(action)}
           >
             <Icon

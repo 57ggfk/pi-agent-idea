@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { usePiStore, type SendMode } from "../store/store";
 import { needsRefresh } from "../store/sources";
 import { autosize, resetComposerHeight } from "../lib/autosize";
+import { useT } from "../i18n/useT";
 import ModelPicker from "./ModelPicker";
 import SendButton from "./SendButton";
 import ThinkingPicker from "./ThinkingPicker";
@@ -64,17 +65,19 @@ function MenuNotice({
   busy?: boolean;
   onRetry: () => void;
 }) {
+  const { t } = useT();
+  const what = t(label === "files" ? "composer.menu.files" : "composer.menu.commands");
   if (state === "loading") {
     return (
       <div className="menu-empty menu-loading" data-testid={`${testId}-loading`} data-state="loading">
-        Loading {label}…
+        {t("composer.menu.loading", { what })}
       </div>
     );
   }
   if (state === "failed") {
     return (
       <div className="menu-empty menu-failed" data-testid={`${testId}-failed`} data-state="failed">
-        <div className="menu-failed-title">Failed to load {label}</div>
+        <div className="menu-failed-title">{t("composer.menu.failed", { what })}</div>
         {error ? (
           <div className="menu-failed-detail" data-testid={`${testId}-failed-detail`}>
             {error}
@@ -91,19 +94,20 @@ function MenuNotice({
             onRetry();
           }}
         >
-          {busy ? "Retrying…" : "Retry"}
+          {busy ? t("composer.retrying") : t("composer.retry")}
         </button>
       </div>
     );
   }
   return (
     <div className="menu-empty" data-testid={`${testId}-empty`} data-state="empty">
-      No matching {label}
+      {t("composer.menu.empty", { what })}
     </div>
   );
 }
 
 export default function Composer() {
+  const { t } = useT();
   const [text, setText] = useState("");
   const [mode, setMode] = useState<SendMode>("auto");
   const [images, setImages] = useState<PendingImage[]>([]);
@@ -447,19 +451,19 @@ export default function Composer() {
           {/* FR-006 does not require waiting for the TTL: a file created a
               minute ago should be findable now. */}
           <div className="menu-footer">
-            <span className="menu-footer-hint">Files from the project index</span>
+            <span className="menu-footer-hint">{t("composer.menu.footerHint")}</span>
             <button
               type="button"
               className="menu-action"
               data-testid="file-menu-refresh"
-              aria-label="Refresh file list"
+              aria-label={t("composer.menu.refreshAria")}
               disabled={filesSource.inflight}
               onMouseDown={(e) => {
                 e.preventDefault();
                 void loadFiles();
               }}
             >
-              ↻ Refresh
+              {t("composer.menu.refresh")}
             </button>
           </div>
         </div>
@@ -497,11 +501,11 @@ export default function Composer() {
           {images.map((img, i) => (
             <span key={i} className="image-chip">
               <Icon name="image" className="ic-sm" />
-              {img.name || "image"}
+              {img.name || t("composer.image.fallback")}
               <button
                 type="button"
                 className="chip-remove"
-                aria-label={`Remove ${img.name || "image"}`}
+                aria-label={t("composer.image.remove", { name: img.name || "image" })}
                 onClick={() => setImages((prev) => prev.filter((_, j) => j !== i))}
               >
                 <Icon name="x" className="ic-sm" />
@@ -515,12 +519,12 @@ export default function Composer() {
       {editing ? (
         <div className="edit-mode-note" data-testid="edit-mode-note">
           <Icon name="pencil" className="ic-sm" />
-          <span>Editing message · sending replaces it and the reply below</span>
+          <span>{t("composer.editNote")}</span>
           <button
             type="button"
             className="edit-mode-cancel"
             data-testid="edit-mode-cancel"
-            aria-label="Cancel editing"
+            aria-label={t("composer.editCancel")}
             onClick={cancelEdit}
           >
             Esc
@@ -543,7 +547,7 @@ export default function Composer() {
           ref={taRef}
           data-testid="composer-input"
           className="composer-input"
-          placeholder="Message pi… (/ for commands, @ for files)"
+          placeholder={t("composer.placeholder")}
           rows={1}
           value={text}
           onChange={(e) => {
@@ -642,8 +646,8 @@ export default function Composer() {
             <button
               type="button"
               className="icon-btn"
-              title="Attach images"
-              aria-label="Attach images"
+              title={t("composer.attach")}
+              aria-label={t("composer.attach")}
               onClick={() => fileRef.current?.click()}
             >
               <Icon name="paperclip" />
@@ -660,8 +664,8 @@ export default function Composer() {
                 type="button"
                 className="icon-btn icon-btn-danger"
                 data-testid="abort-btn"
-                aria-label="Stop"
-                title="Stop the current run"
+                aria-label={t("composer.stopAria")}
+                title={t("composer.stop")}
                 onClick={() => void abort()}
               >
                 <Icon name="stop" />
@@ -672,10 +676,10 @@ export default function Composer() {
               data-testid="compact-btn"
               onClick={() => void compact()}
               disabled={isStreaming}
-              title="Compact the conversation context"
+              title={t("composer.compact")}
             >
               <Icon name="compact" className="ic-sm" />
-              <span className="btn-lbl">Compact</span>
+              <span className="btn-lbl">{t("composer.compactLabel")}</span>
             </button>
             {SHOW_COMPOSER_FORK ? (
               <button
@@ -683,10 +687,10 @@ export default function Composer() {
                 data-testid="fork-btn"
                 onClick={() => void forkSession()}
                 disabled={isStreaming}
-                title="Fork the conversation at the last user message into a new session"
+                title={t("composer.forkTitle")}
               >
                 <Icon name="fork" className="ic-sm" />
-                <span className="btn-lbl">Fork</span>
+                <span className="btn-lbl">{t("composer.forkLabel")}</span>
               </button>
             ) : null}
             <button
@@ -698,14 +702,10 @@ export default function Composer() {
                 // renders one in-app dialog instead of a native one.
                 void newSession();
               }}
-              title={
-                isStreaming
-                  ? "New session (the current run will be discarded)"
-                  : "Start a new session"
-              }
+              title={isStreaming ? t("composer.newSessionStreaming") : t("composer.newSession")}
             >
               <Icon name="plus" className="ic-sm" />
-              <span className="btn-lbl">New</span>
+              <span className="btn-lbl">{t("composer.newLabel")}</span>
             </button>
             <SendButton
               mode={mode}

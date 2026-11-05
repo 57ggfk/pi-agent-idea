@@ -136,7 +136,7 @@ test("queue mode lives on the send button dropdown, grayed out when idle", async
   const row = page.getByTestId("queue-row");
   await expect(row).toHaveCount(1, { timeout: 10_000 });
   await expect(row).toContainText("afterwards summarize");
-  await expect(row).toContainText("追加");
+  await expect(row).toHaveAttribute("data-mode", "followUp");
   await page.getByTestId("abort-btn").click();
   await expect(page.getByTestId("send-mode-caret")).toBeDisabled({ timeout: 20_000 });
 });
