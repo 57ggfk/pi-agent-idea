@@ -231,6 +231,7 @@ e2e 的关键设计：**同一套 Playwright 用例、两种 driver**（`file:we
 | ADR-4 | 前端 React+Vite，独立 npm 工程 | WebPack/纯 HTML | 独立构建是 e2e 与开发效率的基础 |
 | ADR-5 | 编译目标 = 最低支持线 IntelliJ IDEA Community 2024.3.1（远程），支持区间 233–263.\*（对标 cc gui）；`ideaPath` 属性仅用于把 runIde/e2e 指向本地真实 IDE | 依赖本地安装的特定版本 / 追最新版本 | 无 IDEA 的机器（CI/Linux）也能构建；每次构建都在最低线上验证全区间二进制兼容 |
 | ADR-6 | bytecode 17 / Gradle 8.14.4 / IPG 2.10.5 | — | 与 cc gui 工具链对齐；JBR 17 覆盖 233–263 全区间 |
+| ADR-7 | 平台 API 只用公开接口：commit 数据走 `VcsDataKeys.COMMIT_WORKFLOW_UI`；带默认方法的平台接口用 Java 实现 | cast `ChangesViewCommitPanel` / Kotlin 实现 `ToolWindowFactory` | Plugin Verifier 把 internal 用法和 Kotlin 默认方法转发器都计为违规；替换废弃 API 前必须核对 2024.3.1 基线（§13） |
 
 ## 12. 风险与缓解
 
@@ -241,3 +242,107 @@ e2e 的关键设计：**同一套 Playwright 用例、两种 driver**（`file:we
 | pi RPC 协议随版本演进 | 协议宽容解析 + 前端归约器单测 + `sinceBuild` 收紧 |
 | JCEF 远程调试端口不可用（IDE 策略） | e2e 降级路径：前端 e2e + runIde 截图 + 人工清单 |
 | 本地 HTTP 服务被其他进程访问 | 仅绑定 127.0.0.1 + 随机端口 + per-project 随机 token + Origin 同源校验（v0.1.2 落地） |
+| 新 IDE 版本报 internal / deprecated API usage | 发版前跑 plugin verifier；替换前先核对 2024.3.1 基线是否存在该 API 的替代（§13） |
+
+## 13. 平台 API 与 Marketplace 兼容性检查（避坑）
+
+JetBrains Marketplace 在上传新版本时跑 **Plugin Verifier**（报告里的 `1.410` 即其版本）。
+结果分两类，别混为一谈：
+
+| 类别 | 处理 |
+| --- | --- |
+| `COMPATIBILITY_PROBLEMS`（二进制不兼容）、`INTERNAL_API_USAGES` | **会拒绝上架**，必须清零 |
+| `DEPRECATED_API_USAGES`、`SCHEDULED_FOR_REMOVAL_API_USAGES` | 只警告，不阻止发布；但 scheduled-for-removal 未来会被删，应优先修 |
+
+`build.gradle.kts` 的 `pluginVerification.failureLevel` 也只配了前两项。报告开头的
+"Compatible." 仅表示二进制兼容通过；真正卡住上传的是被展开列出的
+`Internal class usage` 以及 "Please proceed with the next steps described in this
+article"（指向 Internal API Migration 文档）。
+
+### 13.1 不要用 `com.intellij.vcs.commit.*` 的实现类
+
+`PiGenerateCommitMessageAction` 需要「已勾选（included）的变更」。曾经直接 cast
+`com.intellij.vcs.commit.ChangesViewCommitPanel` 再调 `getIncludedChanges()`——
+该类是 `@ApiStatus.Internal`，被 verifier 判为硬伤（本次修复）。
+
+- **正确做法**：`e.getData(VcsDataKeys.COMMIT_WORKFLOW_UI)`（公开 DataKey）
+  → `CommitWorkflowUi.getIncludedChanges()`。2024.3.1 基线就有，模态 / 非模态
+  提交 UI 都适用，语义与原来完全一致。
+- **当初为什么会绕弯路**：非模态提交面板 `NonModalCommitPanel` **不实现**
+  `CheckinProjectPanel`，所以 `Refreshable.PANEL_KEY as? CheckinProjectPanel`
+  这条 fallback 在非模态下拿不到数据；`VcsDataKeys.SELECTED_CHANGES` / `CHANGES`
+  是「树里选中」而非「勾选」，语义不等价。别再回头用具体实现类补这个洞。
+- 判断平台类 / 方法是否 internal：`javap -v` 看类或方法上的
+  `RuntimeInvisibleAnnotations` 里有没有 `org.jetbrains.annotations.ApiStatus$Internal`；
+  `intellij.platform.vcs.impl` 模块里的类默认按内部实现看待。
+
+### 13.2 Kotlin 实现带默认方法的平台接口 = 凭空多出 usage
+
+平台接口用 Kotlin 编译（`jvm-default=all`）。Kotlin 实现类会为接口的默认方法
+生成源码里看不到的桥接 / 转发方法（有时表现为 override），verifier 把它们
+**按 usage 计数**，即使源码里根本没写：
+
+- `ToolWindowFactory`：Kotlin 实现曾生成 6 个 `getIcon` / `getAnchor` / `manage` …
+  转发器，被计为 6 处 `@Internal API`；改成 Java 实现
+  （`PiAgentToolWindowFactory.java`）后归零。
+- `StatusBarWidget.getPresentation(PlatformType)`（已废弃）：`PiStatusWidget.kt`
+  产生 2 条 deprecated usage（一条 overridden、一条 invocation），而源码里只
+  override 了无参的 `getPresentation()`。
+- verifier 的 ignore 机制只豁免 problem、**不豁免 usage**；Kotlin 的
+  `@Suppress("DEPRECATION")` 也只在编译期生效，不影响字节码。
+
+结论：**实现带默认方法的平台接口时优先用 Java**。要清零 `StatusBarWidget`
+那 2 条，就得把这个 widget 改成 Java（或加 Java 基类），属于 UI 代码改动，
+需权衡运行时风险。
+
+### 13.3 deprecated API 不能盲目替换（编译基线 2024.3.1）
+
+编译目标是**最低支持线 2024.3.1**，`sinceBuild=233`。2026.x 才标废弃的 API，
+在老版本里常常**没有**替代构造器 / 方法——直接换成新 API 会让 2023.3–2026.1
+的用户 `NoSuchMethodError`。替换前先确认替代在基线上存在，可用来源：
+
+- Gradle 缓存里已解压的 IDE：
+  `~/.gradle/caches/8.14.4/transforms/*/transformed/ideaIC-2024.3.1-win/lib/`
+- 或缓存的 `ideaIC-2024.3.1-win.zip` → `lib/app.jar`、`lib/app-client.jar`
+
+本次修复的三个实例：
+
+| 废弃用法 | 能否换 | 替代 |
+| --- | --- | --- |
+| `addBrowseFolderListener(String,String,Project,FileChooserDescriptor)`（scheduled for removal） | 能 | 2 参数 `addBrowseFolderListener(Project, FileChooserDescriptor)`，2024.3.1 基线就有且未废弃 |
+| `FileChooserDescriptorFactory.createSingleFileDescriptor()` | 能 | `createSingleFileNoJarsDescriptor()`，2024.3.1 基线就有且未废弃 |
+| `FileSaverDescriptor(String,String,String[])` | 不能 | 2024.3.1 只有这一个构造器，新构造器 2026.x 才加；要换只能提高 `sinceBuild`（放弃老 IDE） |
+
+结论：deprecated 警告可以用「换 API」消掉，**前提是基线也有该 API**；否则
+保留并在文档 / 注释里写明原因，不要为了让报告好看牺牲兼容区间。
+
+### 13.4 本地复现 verifier（发版前自检）
+
+别等上传到 Marketplace 才发现问题。`pluginVerifier()` 依赖会把 CLI 下到 Gradle 缓存
+（Windows 可在 Git Bash 里跑下面这段，或直接在 Gradle 缓存目录搜
+`verifier-cli-*-all.jar` 拿到绝对路径；`<本机 IDEA 安装目录>` 用正斜杠）：
+
+```bash
+JAR=$(find ~/.gradle/caches/modules-2/files-2.1/org.jetbrains.intellij.plugins/verifier-cli \
+      -name 'verifier-cli-*-all.jar' | head -1)
+./gradlew buildPlugin
+java -jar "$JAR" check-plugin \
+  -verification-reports-dir build/verifier-out \
+  build/distributions/pi-agent-idea-<version>.zip "<本机 IDEA 安装目录>"
+```
+
+报告在 `build/verifier-out/<IDE build>/plugins/dev.pi.agent/<version>/`：
+
+- `verification-verdict.txt` —— 一行结论（如 `Compatible. 3 usages of deprecated API`）
+- `deprecated-usages.txt` —— **精确到方法 + 调用点**，排障先看这个
+
+`./gradlew verifyPlugin` 也可以，但项目配的 IDE 是 2024.3.1 且 `failureLevel`
+只报拒绝项，看不到新版 IDE 才新增的 deprecated 标注；用本地新 IDE + CLI 更接近
+Marketplace 的结果（两者废弃标注一致时数字可直接对照）。
+
+### 13.5 发布构建不能跳过前端
+
+`processResources` 依赖 `syncWebUi` → `buildWebUi`（npm + vite）。仅为本地跑
+verifier 时可以用 `-x ensureWebUiDeps -x buildWebUi -x syncWebUi` 加速，但那样
+产出的 zip **不含 `webui/` 资源，不能发布**。正式发版一律用完整的
+`./gradlew buildPlugin`。

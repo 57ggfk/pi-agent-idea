@@ -134,6 +134,11 @@ IDE 依赖：编译目标是远程 **IntelliJ IDEA Community 2024.3.1**（支持
 二进制兼容性，与 cc gui 的做法一致。`ideaPath` 属性仅用于把 runIde/e2e 指向
 本地真实 IDE，构建不需要。
 
+平台 API 与 Marketplace 上架检查的避坑清单见
+[ARCHITECTURE.md §13](docs/ARCHITECTURE.md)：不要用 internal 类、带默认方法的
+平台接口用 Java 实现、替换 deprecated API 前先核对 2024.3.1 基线。发版前跑
+完整 `./gradlew buildPlugin`（**不要**用 `-x` 跳过前端构建，否则 zip 缺 web UI）。
+
 macOS / Linux：
 
 ```bash
