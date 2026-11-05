@@ -30,6 +30,7 @@ import {
   type Sources,
 } from "./sources";
 import { hitsFromItems, type SearchHit } from "../lib/search";
+import { initI18n, isRegistered } from "../i18n";
 
 export type SendMode = "auto" | "steer" | "followUp";
 export type Tab = "chat" | "sessions" | "manage";
@@ -229,6 +230,17 @@ interface PiStore {
   /** The user-message outline popover (US1). Hidden for empty sessions. */
   outlineOpen: boolean;
   toggleOutline(open?: boolean): void;
+
+  // -- language (spec 008) ----------------------------------------------------
+
+  /** Effective UI language (a registered code), resolved at init (FR-004). */
+  language: string;
+  /** The user's choice: "system" follows the IDE, or a registered code. */
+  languagePref: "system" | string;
+  /** IDE locale as reported by `env` — the "system" input. */
+  envLocale: string;
+  /** Applies the choice, persists it, and swaps the dictionary at runtime. */
+  setLanguagePreference(pref: "system" | string): Promise<void>;
 
   /**
    * In-session search (US2). `hits` are derived from the transcript on demand
@@ -736,6 +748,10 @@ export const usePiStore = create<PiStore>((set, get) => {
     pendingSearchJump: null,
     sessionSearch: null,
 
+    language: "en",
+    languagePref: "system",
+    envLocale: "",
+
     approvals: [],
     // Auto-approve by default; "ask" is opt-in from the options menu.
     approvalMode: "yolo",
@@ -829,6 +845,18 @@ export const usePiStore = create<PiStore>((set, get) => {
       applyThemePreference(preference, true);
     },
 
+    async setLanguagePreference(pref: "system" | string) {
+      // FR-001: an unknown code is corrected back to "system" so the failure
+      // path cannot repeat on every start.
+      const safe = pref === "system" || isRegistered(pref) ? pref : "system";
+      set({ languagePref: safe });
+      const language = await initI18n(safe, get().envLocale);
+      set({ language });
+      if (bridge) {
+        void bridge.request("config.setPrefs", { language: safe }).catch(() => undefined);
+      }
+    },
+
     async init() {
       // React StrictMode (dev) mounts effects twice; event wiring must happen once.
       if (initStarted) return;
@@ -868,8 +896,9 @@ export const usePiStore = create<PiStore>((set, get) => {
       });
 
       try {
-        const env = await bridge.request<{ theme?: unknown }>("env");
+        const env = await bridge.request<{ theme?: unknown; locale?: string }>("env");
         if (isAppTheme(env.theme)) applyIdeTheme(env.theme);
+        set({ envLocale: String(env.locale ?? "") });
       } catch {
         // standalone mock provides env as well; ignore failures
       }
@@ -906,14 +935,33 @@ export const usePiStore = create<PiStore>((set, get) => {
           if (policy.mode === "yolo" || policy.mode === "ask") set({ approvalMode: policy.mode });
         }),
         get().loadSource("prefs", async () => {
-          const prefs = await b.request<{ autoRetry?: boolean; theme?: unknown }>("config.getPrefs");
+          const prefs = await b.request<{ autoRetry?: boolean; theme?: unknown; language?: unknown }>("config.getPrefs");
           if (typeof prefs.autoRetry === "boolean") set({ autoRetry: prefs.autoRetry });
           // IDE-side preference wins over the dev localStorage fallback.
           if (isThemePreference(prefs.theme)) applyThemePreference(prefs.theme, false);
+          if (typeof prefs.language === "string") {
+            // D1: an unregistered leftover code is corrected back to "system".
+            const pref =
+              prefs.language === "system" || isRegistered(prefs.language) ? prefs.language : "system";
+            set({ languagePref: pref });
+            if (pref !== prefs.language) {
+              void b.request("config.setPrefs", { language: pref }).catch(() => undefined);
+            }
+          }
         }),
         get().refreshCommands(),
         get().refreshStats(),
       ]);
+
+      // 008: resolve the language BEFORE the first paint — the base bundle is
+      // synchronous, so worst case this is a no-op (FR-017).
+      try {
+        const language = await initI18n(get().languagePref, get().envLocale);
+        set({ language });
+      } catch {
+        // i18n must never block startup; a broken dictionary surfaces via the
+        // ⟦key⟧ marker instead of a blank tool window.
+      }
 
       // Replay the current session so a reopened tool window shows history.
       try {

@@ -184,6 +184,10 @@ class BridgeService(private val project: Project) : Disposable {
         put("projectPath", project.basePath ?: "")
         put("theme", currentTheme())
         put("editorFontFamily", UIUtil.getLabelFont().family)
+        // Spec 008 US1: the IDE's language. Locale.getDefault() reflects the
+        // IDE language pack (not the OS), which is exactly the "follow the
+        // IDE" source; the web side matches it against its registry.
+        put("locale", java.util.Locale.getDefault().language)
     }
 
     private fun currentTheme(): String = if (JBColor.isBright()) "light" else "dark"
@@ -252,9 +256,11 @@ class BridgeService(private val project: Project) : Disposable {
         val prefs = dev.pi.agent.process.PiUserPrefs.getInstance(project)
         val autoRetry = prefs.autoRetry()
         val themePreference = prefs.themePreference()
+        val languagePreference = prefs.languagePreference()
         return buildJsonObject {
             if (autoRetry != null) put("autoRetry", autoRetry)
             if (themePreference != null) put("theme", themePreference)
+            if (languagePreference != null) put("language", languagePreference)
         }
     }
 
@@ -264,6 +270,8 @@ class BridgeService(private val project: Project) : Disposable {
         if (autoRetry != null) prefs.setAutoRetry(autoRetry)
         val themePreference = (params["theme"] as? JsonPrimitive)?.content
         if (themePreference != null) prefs.setThemePreference(themePreference)
+        val languagePreference = (params["language"] as? JsonPrimitive)?.content
+        if (languagePreference != null) prefs.setLanguagePreference(languagePreference)
         return buildJsonObject { put("ok", true) }
     }
 

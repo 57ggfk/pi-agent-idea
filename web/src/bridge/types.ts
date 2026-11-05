@@ -76,6 +76,8 @@ export interface EnvInfo {
   projectPath: string;
   theme: AppTheme;
   editorFontFamily: string;
+  /** IDE language (Locale.getDefault().language), e.g. "en" / "zh" (008). */
+  locale?: string;
 }
 
 export interface ThemeEventData {

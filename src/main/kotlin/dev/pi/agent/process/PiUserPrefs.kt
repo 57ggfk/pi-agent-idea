@@ -39,9 +39,21 @@ class PiUserPrefs(private val project: Project) {
         }
     }
 
+    /**
+     * UI language preference (spec 008 FR-001): "system" (follow the IDE) or a
+     * registered language code. The value passes through unvalidated on read —
+     * the frontend owns the registry and corrects unknown leftovers itself.
+     */
+    fun languagePreference(): String? = properties.getValue(KEY_LANGUAGE)
+
+    fun setLanguagePreference(value: String) {
+        properties.setValue(KEY_LANGUAGE, value)
+    }
+
     companion object {
         private const val KEY_AUTO_RETRY = "dev.pi.agent.autoRetry"
         private const val KEY_THEME = "dev.pi.agent.themePreference"
+        private const val KEY_LANGUAGE = "dev.pi.agent.languagePreference"
 
         @JvmStatic
         fun getInstance(project: Project): PiUserPrefs =

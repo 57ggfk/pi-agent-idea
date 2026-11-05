@@ -140,6 +140,8 @@ export class MockBridge implements Bridge {
   private autoCompactionEnabled = true;
   private autoRetryEnabled: boolean | null = null;
   private themePreference: "system" | "light" | "dark" = "system";
+  /** Language preference mirror (spec 008 FR-001); persisted via setPrefs. */
+  private languagePreference: string = "system";
   // Project trust. Defaults to trusted so the standalone UI looks like a
   // normal working project; `?trusted=0` exercises the untrusted banner and
   // `?trust=broken` the unreadable-store path.
@@ -389,6 +391,8 @@ export class MockBridge implements Bridge {
         projectPath: "/tmp/mock-project",
         theme: "light",
         editorFontFamily: "monospace",
+        // e2e simulates a Chinese IDE with ?locale=zh (spec 008 US1).
+        locale: query()?.get("locale") ?? "en",
       } as T);
     }
     if (method === "sessions.list") {
@@ -409,14 +413,16 @@ export class MockBridge implements Bridge {
       return Promise.resolve({
         ...(this.autoRetryEnabled == null ? {} : { autoRetry: this.autoRetryEnabled }),
         theme: this.themePreference,
+        language: this.languagePreference,
       } as T);
     }
     if (method === "config.setPrefs") {
-      const prefs = params as { autoRetry?: boolean; theme?: string } | undefined;
+      const prefs = params as { autoRetry?: boolean; theme?: string; language?: string } | undefined;
       if (typeof prefs?.autoRetry === "boolean") this.autoRetryEnabled = prefs.autoRetry;
       if (prefs?.theme === "system" || prefs?.theme === "light" || prefs?.theme === "dark") {
         this.themePreference = prefs.theme;
       }
+      if (typeof prefs?.language === "string") this.languagePreference = prefs.language;
       return Promise.resolve({ ok: true } as T);
     }
     if (method === "approval.getPolicy") {
