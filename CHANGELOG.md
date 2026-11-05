@@ -11,6 +11,7 @@
 - 底部控制栏的 Fork 按钮收起来了（能力保留，改一行可恢复），Fork 统一在消息悬停条上。
 
 **修复**
+- 在 2023.3–2024.2 的 IDE 上打开插件设置页会报 `NoSuchMethodError`（该问题由 0.5.1 引入），现在能正常打开。
 - 新会话的 π 图标原来贴在顶部，图标、标题和模型名现在整块居中在对话区，拉伸工具窗也不跑偏。
 - 把内容塞进输入框后输入框不跟着长高（右键「Explain with Pi」、引用长回复、`@` 文件都这样），只能看两三行；现在按内容长高，到上限后在框内滚动、消息区仍留够高度，发送后立刻回落到一行。
 
@@ -23,6 +24,7 @@
 - The Fork button is gone from the bottom bar (the capability is kept, one line to restore); Fork lives on the message toolbar now.
 
 **Fixed**
+- Opening the plugin settings page on 2023.3–2024.2 IDEs threw a `NoSuchMethodError` (introduced in 0.5.1); it opens normally now.
 - The empty-state π mark sat against the top of the pane; the icon, title and model line are now centered as one block, and stay centered while the tool window is resized.
 - The composer ignored text pushed into it (Explain with Pi, quoting a long reply, `@` file completion) and showed only two or three lines. It now grows with its content, scrolls inside at the cap while the message area keeps its height, and collapses back to one line after sending.
 
