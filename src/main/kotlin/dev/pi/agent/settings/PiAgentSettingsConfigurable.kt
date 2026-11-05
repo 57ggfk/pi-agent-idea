@@ -2,6 +2,7 @@ package dev.pi.agent.settings
 
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
 import com.intellij.openapi.options.Configurable
+import com.intellij.openapi.ui.TextBrowseFolderListener
 import com.intellij.openapi.ui.TextFieldWithBrowseButton
 import com.intellij.ui.components.JBCheckBox
 import java.awt.GridBagConstraints
@@ -25,10 +26,14 @@ class PiAgentSettingsConfigurable : Configurable {
     override fun createComponent(): JComponent {
         val settings = PiAgentSettings.getInstance()
         pathField = TextFieldWithBrowseButton().apply {
-            // Both replacements exist unchanged since 2023.3; the old 4-arg
-            // listener and createSingleFileDescriptor() are deprecated (the
-            // former is scheduled for removal) on 2026.x.
-            addBrowseFolderListener(null, FileChooserDescriptorFactory.createSingleFileNoJarsDescriptor())
+            // Only the overloads that exist on the 2023.3 floor are safe here.
+            // The two-arg addBrowseFolderListener(Project, descriptor) was added
+            // on 2024.3 — compiling against 2024.3.1 accepts it, and 2024.1 then
+            // dies with NoSuchMethodError (that is how 0.5.1 got rejected).
+            // The single-arg listener form predates 2023.3 and is not deprecated.
+            addBrowseFolderListener(
+                TextBrowseFolderListener(FileChooserDescriptorFactory.createSingleFileNoJarsDescriptor()),
+            )
             text = settings.customPiPath() ?: ""
         }
         autoOpenBox = JBCheckBox("Automatically open the Pi Agent tool window on project start", settings.autoOpen())
