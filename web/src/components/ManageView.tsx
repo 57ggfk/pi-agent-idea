@@ -3,6 +3,7 @@ import { usePiStore } from "../store/store";
 import { getBridge } from "../bridge";
 import type { Bridge } from "../bridge/types";
 import { manageApi, type EnvironmentResult, type EnvUpdateResult, type TrustState, type TrustWriteResult } from "../manage";
+import { useT } from "../i18n/useT";
 import McpPanel from "./manage/McpPanel";
 import PackagesPanel from "./manage/PackagesPanel";
 import SkillsPanel from "./manage/SkillsPanel";
@@ -12,21 +13,21 @@ import DiagnosticsPanel from "./manage/DiagnosticsPanel";
 
 export type ManageTab = "mcp" | "packages" | "skills" | "auth" | "settings" | "diagnostics";
 
-const TABS: Array<{ id: ManageTab; label: string }> = [
-  { id: "mcp", label: "MCP Servers" },
-  { id: "packages", label: "Packages" },
-  { id: "skills", label: "Skills" },
-  { id: "auth", label: "Auth" },
-  { id: "settings", label: "Settings" },
-  { id: "diagnostics", label: "Diagnostics" },
+const TABS: Array<{ id: ManageTab; labelKey: "manage.tab.mcp" | "manage.tab.packages" | "manage.tab.skills" | "manage.tab.auth" | "manage.tab.settings" | "manage.tab.diagnostics" }> = [
+  { id: "mcp", labelKey: "manage.tab.mcp" },
+  { id: "packages", labelKey: "manage.tab.packages" },
+  { id: "skills", labelKey: "manage.tab.skills" },
+  { id: "auth", labelKey: "manage.tab.auth" },
+  { id: "settings", labelKey: "manage.tab.settings" },
+  { id: "diagnostics", labelKey: "manage.tab.diagnostics" },
 ];
 
 /** Resource categories shown in the trust confirmation, even before they exist. */
-const TRUST_CATEGORIES: Array<{ type: string; label: string }> = [
-  { type: "skills", label: "Project skills" },
-  { type: "mcp", label: "MCP servers" },
-  { type: "settings", label: "Project settings" },
-  { type: "extensions", label: "Extensions" },
+const TRUST_CATEGORIES: Array<{ type: string; labelKey: "manage.trust.category.skills" | "manage.trust.category.mcp" | "manage.trust.category.settings" | "manage.trust.category.extensions" }> = [
+  { type: "skills", labelKey: "manage.trust.category.skills" },
+  { type: "mcp", labelKey: "manage.trust.category.mcp" },
+  { type: "settings", labelKey: "manage.trust.category.settings" },
+  { type: "extensions", labelKey: "manage.trust.category.extensions" },
 ];
 
 export function useManageApi() {
@@ -132,6 +133,7 @@ function useTrust(api: ReturnType<typeof manageApi> | null) {
 
 export default function ManageView() {
   const [tab, setTab] = useState<ManageTab>("mcp");
+  const { t } = useT();
   const { api, bridge, env, refreshEnv } = useManageApi();
   const trust = useTrust(api);
   const trusted = trust.state?.trusted === true;
@@ -191,33 +193,33 @@ export default function ManageView() {
             </span>
           ) : (
             <span className="manage-env-missing">
-              pi not found — install with{" "}
-              <code>npm install -g @earendil-works/pi-coding-agent</code> then reopen this panel
+              {t("manage.env.missing")}{" "}
+              <code>npm install -g @earendil-works/pi-coding-agent</code> {t("manage.env.missingEnd")}
             </span>
           )
         ) : (
-          <span>detecting pi…</span>
+          <span>{t("manage.env.detecting")}</span>
         )}
         <span className="spacer" />
         {trusted ? (
           <span className="trust-status" data-testid="trust-status" data-state="trusted">
-            项目已信任
+            {t("manage.env.trusted")}
             <button className="link-btn" data-testid="trust-revoke" onClick={() => trust.openPrompt("revoke")}>
-              撤销信任
+              {t("manage.env.revoke")}
             </button>
           </span>
         ) : null}
         {env?.agentDir ? <span className="mono">~/.pi/agent</span> : null}
         {env?.found ? (
           <button className="btn" data-testid="pi-update" disabled={updating} onClick={requestEnvUpdate}>
-            {updating ? "Updating…" : "Update pi"}
+            {updating ? t("manage.env.updating") : t("manage.env.update")}
           </button>
         ) : null}
       </div>
 
       {updateConfirm ? (
         <div className="trust-confirm" data-testid="env-update-confirm">
-          <div className="trust-confirm-title">pi 正在运行。更新会重启 pi 进程，进行中的会话将中断。</div>
+          <div className="trust-confirm-title">{t("manage.env.updateConfirm")}</div>
           <div className="trust-confirm-actions">
             <button
               className="btn btn-send"
@@ -225,10 +227,10 @@ export default function ManageView() {
               onClick={() => void runEnvUpdate()}
               disabled={updating}
             >
-              继续更新
+              {t("manage.env.updateYes")}
             </button>
             <button className="btn" data-testid="env-update-confirm-no" onClick={() => setUpdateConfirm(false)} disabled={updating}>
-              取消
+              {t("common.cancel")}
             </button>
           </div>
         </div>
@@ -253,13 +255,11 @@ export default function ManageView() {
           data-state={unreadable ? "error" : "untrusted"}
         >
           <div className="trust-banner-text">
-            <b>{unreadable ? "无法读取信任配置" : "本项目尚未被 pi 信任，项目级配置不会生效"}</b>
+            <b>{unreadable ? t("manage.trust.unreadable") : t("manage.trust.untrusted")}</b>
             {unreadable ? (
               <span className="trust-banner-detail mono">{trust.error}</span>
             ) : (
-              <span className="trust-banner-detail">
-                下面这些项目级内容存在于仓库中，但 pi 启动时会忽略它们。
-              </span>
+              <span className="trust-banner-detail">{t("manage.trust.untrustedDetail")}</span>
             )}
             {!unreadable && (trust.state?.resources?.length ?? 0) > 0 ? (
               <ul className="trust-resources" data-testid="trust-resources">
@@ -275,11 +275,11 @@ export default function ManageView() {
           <div className="trust-banner-actions">
             {unreadable ? (
               <button className="btn" data-testid="trust-retry" onClick={() => void trust.refresh()}>
-                重试读取
+                {t("manage.trust.retry")}
               </button>
             ) : (
               <button className="btn btn-send" data-testid="trust-grant" onClick={() => trust.openPrompt("grant")}>
-                信任本项目
+                {t("manage.trust.grant")}
               </button>
             )}
           </div>
@@ -289,14 +289,12 @@ export default function ManageView() {
       {trust.prompt ? (
         <div className="trust-confirm" data-testid="trust-confirm" data-action={trust.prompt}>
           <div className="trust-confirm-title">
-            {trust.prompt === "grant"
-              ? "信任本项目后，以下项目级配置将对 pi 生效："
-              : "撤销信任后，以下项目级配置将不再生效："}
+            {trust.prompt === "grant" ? t("manage.trust.grantPrompt") : t("manage.trust.revokePrompt")}
           </div>
           <ul className="trust-resources" data-testid="trust-confirm-list">
             {(trust.state?.resources?.length
               ? trust.state.resources.map((r) => ({ type: r.type, label: r.label ?? r.type }))
-              : TRUST_CATEGORIES
+              : TRUST_CATEGORIES.map((c) => ({ type: c.type, label: t(c.labelKey) }))
             ).map((r) => (
               <li key={r.type} data-resource={r.type}>
                 {r.label}
@@ -310,10 +308,10 @@ export default function ManageView() {
               onClick={() => void trust.confirm()}
               disabled={trust.busy}
             >
-              {trust.prompt === "grant" ? "确认信任" : "确认撤销"}
+              {trust.prompt === "grant" ? t("manage.trust.confirmGrant") : t("manage.trust.confirmRevoke")}
             </button>
             <button className="btn" data-testid="trust-confirm-no" onClick={trust.cancel} disabled={trust.busy}>
-              取消
+              {t("common.cancel")}
             </button>
           </div>
           {trust.outcome && !trust.outcome.ok ? (
@@ -328,20 +326,20 @@ export default function ManageView() {
       {trust.outcome?.ok && trust.outcome.restartRequired ? (
         <div className="trust-notice" data-testid="trust-restart-notice">
           {trust.outcome.trusted
-            ? "已信任。当前会话的 pi 进程仍按旧状态运行，新会话生效。"
-            : "已撤销。当前会话的 pi 进程仍按已信任状态运行，新会话/重启后才彻底失效。"}
+            ? t("manage.trust.granted")
+            : t("manage.trust.revoked")}
         </div>
       ) : null}
 
       <div className="manage-tabs">
-        {TABS.map((t) => (
+        {TABS.map((tabItem) => (
           <button
-            key={t.id}
-            className={`tab ${tab === t.id ? "tab-active" : ""}`}
-            data-testid={`manage-tab-${t.id}`}
-            onClick={() => setTab(t.id)}
+            key={tabItem.id}
+            className={`tab ${tab === tabItem.id ? "tab-active" : ""}`}
+            data-testid={`manage-tab-${tabItem.id}`}
+            onClick={() => setTab(tabItem.id)}
           >
-            {t.label}
+            {t(tabItem.labelKey)}
           </button>
         ))}
       </div>

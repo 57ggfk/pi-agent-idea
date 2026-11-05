@@ -237,7 +237,7 @@ test.describe("project trust (MockBridge)", () => {
 
     const banner = page.getByTestId("trust-banner");
     await expect(banner).toHaveAttribute("data-state", "untrusted");
-    await expect(banner).toContainText("尚未被 pi 信任");
+    await expect(banner.getByTestId("trust-grant")).toBeVisible();
     for (const type of ["skills", "mcp", "settings", "extensions"]) {
       await expect(banner.locator(`[data-resource="${type}"]`)).toBeVisible();
     }
@@ -271,7 +271,7 @@ test.describe("project trust (MockBridge)", () => {
 
     const banner = page.getByTestId("trust-banner");
     await expect(banner).toHaveAttribute("data-state", "error");
-    await expect(banner).toContainText("无法读取信任配置");
+    await expect(banner.getByTestId("trust-retry")).toBeVisible();
     // No grant button: writing over a store we cannot parse would drop other
     // projects' trust entries.
     await expect(page.getByTestId("trust-grant")).toHaveCount(0);
@@ -285,7 +285,7 @@ test.describe("project trust (MockBridge)", () => {
     const projectRow = page.locator('[data-testid="skill-row"][data-scope="project"]');
     await expect(projectRow).toHaveCount(1);
     await expect(projectRow).toHaveAttribute("data-active", "false");
-    await expect(projectRow.getByTestId("skill-scope")).toContainText("未生效");
+    await expect(projectRow.getByTestId("skill-scope")).toHaveAttribute("data-inert", "true");
     await expect(projectRow.getByTestId("skill-inert-reason")).toBeVisible();
 
     const userRow = page.locator('[data-testid="skill-row"][data-scope="user"]');
