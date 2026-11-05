@@ -1,17 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { usePiStore } from "../store/store";
 import type { SessionSearchMatch } from "../store/store";
+import { useT } from "../i18n/useT";
+import { formatDateTime } from "../i18n/format";
 import Icon from "./Icon";
-
-function formatTime(ms: number): string {
-  const d = new Date(ms);
-  return d.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 /** Highlights every literal occurrence of `query` inside `text`. */
 function Highlighted({ text, query }: { text: string; query: string }) {
@@ -53,8 +45,10 @@ export default function SessionsView() {
   const searchAllSessions = usePiStore((s) => s.searchAllSessions);
   const clearSessionSearch = usePiStore((s) => s.clearSessionSearch);
   const requestSearchJump = usePiStore((s) => s.requestSearchJump);
+  const { t, language } = useT();
   const [filter, setFilter] = useState("");
   const debounceRef = useRef<number>(0);
+  const formatTime = (ms: number) => formatDateTime(ms, language);
 
   useEffect(() => {
     void refreshSessions();
@@ -98,7 +92,7 @@ export default function SessionsView() {
         <input
           className="sessions-filter-input"
           data-testid="sessions-filter"
-          placeholder="Filter sessions…"
+          placeholder={t("sessions.filter")}
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
         />
@@ -108,14 +102,14 @@ export default function SessionsView() {
         <div className="session-search-results" data-testid="session-search-results">
           {sessionSearch.results.length === 0 ? (
             <div className="sessions-empty" data-testid="sessions-search-empty">
-              No matches in {sessionSearch.scanned} session{sessionSearch.scanned === 1 ? "" : "s"}.
-              {sessionSearch.truncated ? " The scan was stopped early." : ""}
+              {t("sessions.noMatches_other", { count: sessionSearch.scanned })}
+              {sessionSearch.truncated ? ` ${t("sessions.truncated")}` : ""}
             </div>
           ) : (
             <>
               {sessionSearch.truncated ? (
                 <div className="session-search-note" data-testid="sessions-search-truncated">
-                  Scanned {sessionSearch.scanned} sessions — stopped early, results may be incomplete.
+                  {t("sessions.scannedNote", { count: sessionSearch.scanned })}
                 </div>
               ) : null}
               {sessionSearch.results.map((match) => (
@@ -123,7 +117,7 @@ export default function SessionsView() {
                   <div className="session-hit-head">
                     <span className="session-name">{match.name || match.id || "Untitled"}</span>
                     <span className="session-hit-count" data-testid="session-hit-count">
-                      {match.hitCount} {match.hitCount === 1 ? "hit" : "hits"}
+                      {t("sessions.hits_other", { count: match.hitCount })}
                     </span>
                   </div>
                   {match.hits.map((hit) => (
@@ -150,7 +144,7 @@ export default function SessionsView() {
       <div className="sessions-list">
         {filtered.length === 0 ? (
           <div className="sessions-empty" data-testid="sessions-empty">
-            No sessions found for this project.
+            {t("sessions.empty")}
           </div>
         ) : null}
         {filtered.map((s) => (
@@ -167,14 +161,14 @@ export default function SessionsView() {
               </div>
               <div className="session-preview">
                 {s.name ? s.preview || s.id : s.id}
-                {typeof s.messageCount === "number" ? ` · ${s.messageCount} msgs` : ""}
+                {typeof s.messageCount === "number" ? ` · ${t("sessions.msgCount_other", { count: s.messageCount })}` : ""}
               </div>
             </button>
             <div className="session-actions">
               <button
                 className="btn session-action"
                 data-testid="session-clone"
-                title="Clone this session"
+                title={t("sessions.cloneTitle")}
                 onClick={() => void cloneSession(s.file)}
               >
                 <Icon name="copy" className="ic-sm" />
@@ -182,7 +176,7 @@ export default function SessionsView() {
               <button
                 className="btn session-action"
                 data-testid="session-export"
-                title="Export as HTML"
+                title={t("sessions.exportTitle")}
                 onClick={() => void exportSession(s.file)}
               >
                 <Icon name="download" className="ic-sm" />
@@ -190,7 +184,7 @@ export default function SessionsView() {
               <button
                 className="btn session-action"
                 data-testid="session-delete"
-                title="Delete this session"
+                title={t("sessions.deleteTitle")}
                 onClick={() => {
                   // The store asks through the in-app dialog (007 US3), so the
                   // wording and the danger colour are consistent everywhere.

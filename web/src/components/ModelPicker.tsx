@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePiStore } from "../store/store";
+import { useT } from "../i18n/useT";
 import Icon from "./Icon";
 
 const MAX_RENDERED = 200;
@@ -52,7 +53,8 @@ export default function ModelPicker() {
     setOpen(false);
   };
 
-  const label = model ? model.name ?? model.id : "Select model…";
+  const { t } = useT();
+  const label = model ? model.name ?? model.id : t("model.select");
 
   return (
     <div className="model-picker">
@@ -60,8 +62,8 @@ export default function ModelPicker() {
         className="chip"
         data-testid="model-chip"
         onClick={() => setOpen((o) => !o)}
-        title={model ? `${label} — ${model.provider}/${model.id}` : "Select model"}
-        aria-label={model ? `Model: ${label}` : "Select model"}
+        title={model ? `${label} — ${model.provider}/${model.id}` : t("model.selectTitle")}
+        aria-label={model ? t("model.aria", { name: label }) : t("model.selectTitle")}
       >
         <Icon name="sparkles" className="ic-sm chip-icon" />
         <span className="chip-label">{label}</span>
@@ -74,7 +76,7 @@ export default function ModelPicker() {
             ref={inputRef}
             className="select model-search"
             data-testid="model-search"
-            placeholder="Filter models… (space = AND, e.g. openrouter free)"
+            placeholder={t("model.filterPlaceholder")}
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
@@ -98,7 +100,7 @@ export default function ModelPicker() {
           <div className="model-list" ref={listRef}>
             {matches.length === 0 ? (
               <div className="panel-empty" data-testid="model-empty">
-                No models match “{query}”.
+                {t("model.noMatch", { query })}
               </div>
             ) : null}
             {matches.slice(0, MAX_RENDERED).map((m, i) => {
@@ -125,7 +127,7 @@ export default function ModelPicker() {
               );
             })}
             {matches.length > MAX_RENDERED ? (
-              <div className="panel-empty">…and {matches.length - MAX_RENDERED} more — refine the filter</div>
+              <div className="panel-empty">{t("model.more", { count: matches.length - MAX_RENDERED })}</div>
             ) : null}
           </div>
         </div>

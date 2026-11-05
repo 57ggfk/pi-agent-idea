@@ -30,7 +30,10 @@ import {
   type Sources,
 } from "./sources";
 import { hitsFromItems, type SearchHit } from "../lib/search";
-import { initI18n, isRegistered } from "../i18n";
+import { i18n, initI18n, isRegistered } from "../i18n";
+
+/** Shorthand for store-side (non-React) copy; English falls out of the base bundle. */
+const t = i18n.t.bind(i18n);
 
 export type SendMode = "auto" | "steer" | "followUp";
 export type Tab = "chat" | "sessions" | "manage";
@@ -574,7 +577,7 @@ export const usePiStore = create<PiStore>((set, get) => {
       await get().refreshStats();
       await get().refreshSessions();
     } catch (e) {
-      appendError(`new_session failed: ${(e as Error).message}`);
+      appendError(t("error.newSession.failed", { msg: (e as Error).message }));
     }
   };
 
@@ -583,24 +586,24 @@ export const usePiStore = create<PiStore>((set, get) => {
     if (!bridge) return;
     const b = bridge;
     if (get().isStreaming) {
-      appendError("fork needs an idle session; stop the current run first");
+      appendError(t("error.fork.busy"));
       return;
     }
     if (get().editing) {
-      appendError("fork is unavailable while a message is being edited");
+      appendError(t("error.fork.editing"));
       return;
     }
     const items = get().items;
     const index = items.findIndex((item) => item.id === itemId);
     const item = index >= 0 ? items[index] : undefined;
     if (!item || item.role !== "assistant") {
-      appendError("fork failed: only pi replies can be branched");
+      appendError(t("error.fork.notReply"));
       return;
     }
     try {
       const entries = await forkEntries(b);
       if (entries.length === 0) {
-        appendError("fork failed: there is no user message to fork from");
+        appendError(t("error.fork.noUser"));
         return;
       }
       const target = branchTargetFor(userCountUpTo(items, index), entries.length);
@@ -608,7 +611,7 @@ export const usePiStore = create<PiStore>((set, get) => {
       if (target.kind === "entry") {
         const entry = entries[target.index];
         if (!entry) {
-          appendError("fork failed: this reply has no branch point");
+          appendError(t("error.fork.noBranch"));
           return;
         }
         const result = await rpc<{ text?: string; cancelled?: boolean }>(b, {
@@ -624,13 +627,13 @@ export const usePiStore = create<PiStore>((set, get) => {
       }
       // FR-012: the view must stay exactly as it was when pi says no.
       if (cancelled) {
-        appendError("fork cancelled by a pi extension");
+        appendError(t("error.fork.cancelled"));
         return;
       }
       await syncAfterBranch();
       resetConversationLocalState();
     } catch (e) {
-      appendError(`fork failed: ${(e as Error).message}`);
+      appendError(t("error.fork.failed", { msg: (e as Error).message }));
     }
   };
 
@@ -641,7 +644,7 @@ export const usePiStore = create<PiStore>((set, get) => {
       const entries = await forkEntries(bridge);
       const last = entries[entries.length - 1];
       if (!last) {
-        appendError("fork failed: there is no user message to fork from");
+        appendError(t("error.fork.noUser"));
         return;
       }
       const result = await rpc<{ text?: string; cancelled?: boolean }>(bridge, {
@@ -649,13 +652,13 @@ export const usePiStore = create<PiStore>((set, get) => {
         entryId: last.entryId,
       });
       if (result?.cancelled) {
-        appendError("fork cancelled by a pi extension");
+        appendError(t("error.fork.cancelled"));
         return;
       }
       await syncAfterBranch();
       resetConversationLocalState();
     } catch (e) {
-      appendError(`fork failed: ${(e as Error).message}`);
+      appendError(t("error.fork.failed", { msg: (e as Error).message }));
     }
   };
 
@@ -670,7 +673,7 @@ export const usePiStore = create<PiStore>((set, get) => {
       await get().refreshSessions();
       if (wasCurrent) await runNewSession();
     } catch (e) {
-      appendError(`delete failed: ${(e as Error).message}`);
+      appendError(t("error.delete.failed", { msg: (e as Error).message }));
     }
   };
 
@@ -1035,10 +1038,10 @@ export const usePiStore = create<PiStore>((set, get) => {
             },
           );
           if (!res.ok && !res.retained) {
-            appendError(`Failed to queue: ${res.error ?? "unknown error"}`);
+            appendError(t("error.queueEnqueue.failed", { msg: res.error ?? t("error.queueEnqueue.unknown") }));
           }
         } catch (e) {
-          appendError(`Failed to queue: ${(e as Error).message}`);
+          appendError(t("error.queueEnqueue.failed", { msg: (e as Error).message }));
           return;
         }
         if (queueMode === "steer") {
@@ -1113,7 +1116,7 @@ export const usePiStore = create<PiStore>((set, get) => {
       try {
         await bridge.request("queue.move", { id, delta });
       } catch (e) {
-        appendError(`queue.move failed: ${(e as Error).message}`);
+        appendError(t("error.queueMove.failed", { msg: (e as Error).message }));
       }
       // Success pushes a queue_state snapshot; a rejection (at edge) changes
       // nothing, so no extra refresh is needed.
@@ -1124,7 +1127,7 @@ export const usePiStore = create<PiStore>((set, get) => {
       try {
         await bridge.request("queue.remove", { id });
       } catch (e) {
-        appendError(`queue.remove failed: ${(e as Error).message}`);
+        appendError(t("error.queueRemove.failed", { msg: (e as Error).message }));
       }
     },
 
@@ -1138,7 +1141,7 @@ export const usePiStore = create<PiStore>((set, get) => {
           error?: string;
         }>("queue.restore", { id });
         if (!res.ok) {
-          appendError(res.error ?? "queue.restore failed");
+          appendError(res.error ?? t("error.queueRestore.failed", { msg: "" }));
           return false;
         }
         set({
@@ -1151,7 +1154,7 @@ export const usePiStore = create<PiStore>((set, get) => {
         });
         return true;
       } catch (e) {
-        appendError(`queue.restore failed: ${(e as Error).message}`);
+        appendError(t("error.queueRestore.failed", { msg: (e as Error).message }));
         return false;
       }
     },
@@ -1161,7 +1164,7 @@ export const usePiStore = create<PiStore>((set, get) => {
       try {
         await bridge.request("queue.promote", { id });
       } catch (e) {
-        appendError(`queue.promote failed: ${(e as Error).message}`);
+        appendError(t("error.queuePromote.failed", { msg: (e as Error).message }));
       }
     },
 
@@ -1170,7 +1173,7 @@ export const usePiStore = create<PiStore>((set, get) => {
       try {
         await bridge.request("queue.resume");
       } catch (e) {
-        appendError(`queue.resume failed: ${(e as Error).message}`);
+        appendError(t("error.queueResume.failed", { msg: (e as Error).message }));
       }
     },
 
@@ -1179,7 +1182,7 @@ export const usePiStore = create<PiStore>((set, get) => {
       try {
         await bridge.request("queue.clear");
       } catch (e) {
-        appendError(`queue.clear failed: ${(e as Error).message}`);
+        appendError(t("error.queueClear.failed", { msg: (e as Error).message }));
       }
     },
 
@@ -1223,11 +1226,9 @@ export const usePiStore = create<PiStore>((set, get) => {
       // i18n: confirm.newSession.title / .streaming / .confirm / .cancel
       const streaming = state.isStreaming;
       state.askConfirm({
-        title: streaming ? "Start a new session while pi is answering?" : "Start a new session?",
-        message: streaming
-          ? "The answer being written will be discarded. The current session stays in Sessions, so nothing already sent is lost."
-          : "The current session is kept in Sessions and can be reopened from there. The view switches to a new, empty session.",
-        confirmLabel: "Start new",
+        title: streaming ? t("confirm.newSession.titleStreaming") : t("confirm.newSession.title"),
+        message: streaming ? t("confirm.newSession.messageStreaming") : t("confirm.newSession.message"),
+        confirmLabel: t("confirm.newSession.confirm"),
         danger: streaming,
         onConfirm: runNewSession,
       });
@@ -1266,7 +1267,7 @@ export const usePiStore = create<PiStore>((set, get) => {
         await get().replayMessages();
       } catch (e) {
         const item = emptyItem("system", [
-          { kind: "text", text: `restart failed: ${(e as Error).message}`, done: true },
+          { kind: "text", text: t("error.restart.failed", { msg: (e as Error).message }), done: true },
         ]);
         item.done = true;
         item.isError = true;
@@ -1307,7 +1308,7 @@ export const usePiStore = create<PiStore>((set, get) => {
         set({ sessionName: state.sessionName, sessionId: state.sessionId, model: state.model, thinkingLevel: state.thinkingLevel ?? "medium" });
       } catch (e) {
         const item = emptyItem("system", [
-          { kind: "text", text: `switch_session failed: ${(e as Error).message}`, done: true },
+          { kind: "text", text: t("error.switchSession.failed", { msg: (e as Error).message }), done: true },
         ]);
         item.done = true;
         item.isError = true;
@@ -1334,11 +1335,10 @@ export const usePiStore = create<PiStore>((set, get) => {
     async deleteSession(file: string) {
       if (!bridge) return;
       const name = get().sessions.find((s) => s.file === file)?.name;
-      // i18n: confirm.deleteSession.title / .message / .delete / .cancel
       get().askConfirm({
-        title: "Delete this session?",
-        message: `${name ? `“${name}”` : "This session"} will be removed from Sessions. This cannot be undone.`,
-        confirmLabel: "Delete",
+        title: t("confirm.deleteSession.title"),
+        message: name ? t("confirm.deleteSession.named", { name }) : t("confirm.deleteSession.unnamed"),
+        confirmLabel: t("common.delete"),
         danger: true,
         // runDeleteSession starts a fresh session when the deleted file was the
         // one on screen, so the chat never points at a dead file.
@@ -1351,7 +1351,7 @@ export const usePiStore = create<PiStore>((set, get) => {
       try {
         const result = await rpc<{ cancelled?: boolean }>(bridge, { type: "clone", sessionPath: file });
         if (result?.cancelled) {
-          appendError("clone cancelled by a pi extension");
+          appendError(t("error.clone.cancelled"));
           return;
         }
         await syncAfterBranch();
@@ -1368,15 +1368,14 @@ export const usePiStore = create<PiStore>((set, get) => {
     async forkSession() {
       if (!bridge) return;
       if (get().isStreaming) {
-        appendError("fork needs an idle session; stop the current run first");
+        appendError(t("error.fork.busy"));
         return;
       }
       // i18n: confirm.fork.title / .message / .fork / .cancel
       get().askConfirm({
-        title: "Fork this session?",
-        message:
-          "A new session is created from the last question, including pi's answer. The current session stays as it is.",
-        confirmLabel: "Fork session",
+        title: t("confirm.fork.title"),
+        message: t("confirm.fork.message"),
+        confirmLabel: t("confirm.fork.confirm"),
         onConfirm: runForkSession,
       });
     },
@@ -1384,12 +1383,12 @@ export const usePiStore = create<PiStore>((set, get) => {
     async forkAtItem(itemId: number) {
       if (!bridge) return;
       if (get().isStreaming) {
-        appendError("fork needs an idle session; stop the current run first");
+        appendError(t("error.fork.busy"));
         return;
       }
       const item = get().items.find((i) => i.id === itemId);
       if (!item || item.role !== "assistant") {
-        appendError("fork failed: only pi replies can be branched");
+        appendError(t("error.fork.notReply"));
         return;
       }
       // "Last reply" is asked per role, like the action matrix does: a trailing
@@ -1398,11 +1397,9 @@ export const usePiStore = create<PiStore>((set, get) => {
       const isLast = lastReply?.id === item.id;
       // i18n: confirm.forkReply.title / .message / .last / .fork / .cancel
       get().askConfirm({
-        title: "Fork from this reply?",
-        message: isLast
-          ? "A new session is created with this reply as its last message — the whole conversation so far is copied. The current session stays as it is."
-          : "A new session is created that ends with this reply. Everything after it is left behind, and the current session stays as it is.",
-        confirmLabel: "Fork session",
+        title: t("confirm.forkAt.title"),
+        message: isLast ? t("confirm.forkAt.last") : t("confirm.forkAt.middle"),
+        confirmLabel: t("confirm.fork.confirm"),
         onConfirm: () => runForkAtItem(itemId),
       });
     },
@@ -1529,11 +1526,11 @@ export const usePiStore = create<PiStore>((set, get) => {
       if (!bridge) return;
       const b = bridge;
       if (get().isStreaming) {
-        appendError("regenerate needs an idle session; stop the current run first");
+        appendError(t("error.regenerate.busy"));
         return;
       }
       if (get().editing) {
-        appendError("regenerate is unavailable while a message is being edited");
+        appendError(t("error.regenerate.editing"));
         return;
       }
       try {
@@ -1542,17 +1539,17 @@ export const usePiStore = create<PiStore>((set, get) => {
         const entries = await forkEntries(b);
         const last = entries[entries.length - 1];
         if (!last) {
-          appendError("regenerate failed: there is no user message to re-ask");
+          appendError(t("error.regenerate.noUser"));
           return;
         }
         if (!(await branchTo(b, last.entryId))) {
-          appendError("regenerate cancelled by a pi extension");
+          appendError(t("error.regenerate.cancelled"));
           return;
         }
         // Re-ask verbatim: a rewritten prompt would be a different question.
         await get().sendImages(last.text, [], "auto");
       } catch (e) {
-        appendError(`regenerate failed: ${(e as Error).message}`);
+        appendError(t("error.regenerate.failed", { msg: (e as Error).message }));
       }
     },
 
@@ -1569,7 +1566,7 @@ export const usePiStore = create<PiStore>((set, get) => {
         const entries = await forkEntries(b);
         const last = entries[entries.length - 1];
         if (!last) {
-          appendError("edit failed: there is no user message to edit");
+          appendError(t("error.edit.noUser"));
           return;
         }
         set({ editing: { entryId: last.entryId, text: source } });
@@ -1591,7 +1588,7 @@ export const usePiStore = create<PiStore>((set, get) => {
       set({ editing: null });
       try {
         if (!(await branchTo(bridge, target.entryId))) {
-          appendError("edit cancelled by a pi extension");
+          appendError(t("error.edit.cancelled"));
           return;
         }
         // The branch dropped the old version and everything after it, so the

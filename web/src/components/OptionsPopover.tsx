@@ -5,10 +5,10 @@ import { LANGUAGES } from "../i18n/languages";
 import { useT } from "../i18n/useT";
 import Icon from "./Icon";
 
-const THEME_OPTIONS: Array<{ value: ThemePreference; label: string; hint: string }> = [
-  { value: "system", label: "Follow IDE", hint: "Match the IDE theme and switch automatically" },
-  { value: "light", label: "Light", hint: "Always use the light theme" },
-  { value: "dark", label: "Dark", hint: "Always use the dark theme" },
+const THEME_OPTIONS: Array<{ value: ThemePreference; labelKey: "theme.system" | "theme.light" | "theme.dark"; hintKey: "theme.systemHint" | "theme.lightHint" | "theme.darkHint" }> = [
+  { value: "system", labelKey: "theme.system", hintKey: "theme.systemHint" },
+  { value: "light", labelKey: "theme.light", hintKey: "theme.lightHint" },
+  { value: "dark", labelKey: "theme.dark", hintKey: "theme.darkHint" },
 ];
 
 interface RowProps {
@@ -48,6 +48,7 @@ export default function OptionsPopover() {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const { t } = useT();
   const approvalMode = usePiStore((s) => s.approvalMode);
   const setApprovalMode = usePiStore((s) => s.setApprovalMode);
   const autoCompaction = usePiStore((s) => s.autoCompaction);
@@ -130,22 +131,22 @@ export default function OptionsPopover() {
         type="button"
         className="btn btn-ghost btn-tool"
         data-testid="options-btn"
-        aria-label="Agent options"
+        aria-label={t("composer.options")}
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         onKeyDown={(e) => {
           if (e.key === "Escape") setOpen(false);
         }}
-        title="Agent options"
+        title={t("composer.options")}
       >
         <Icon name="settings" className="ic-sm" />
-        <span className="btn-lbl">Options</span>
+        <span className="btn-lbl">{t("composer.optionsLabel")}</span>
       </button>
       {open ? (
         <div className="options-menu" data-testid="options-menu" ref={menuRef}>
           <div className="options-row options-row-stack">
-            <span className="options-label">Theme</span>
-            <div className="segmented" role="radiogroup" aria-label="Theme">
+            <span className="options-label">{t("theme.label")}</span>
+            <div className="segmented" role="radiogroup" aria-label={t("theme.label")}>
               {THEME_OPTIONS.map((option) => (
                 <button
                   key={option.value}
@@ -154,38 +155,34 @@ export default function OptionsPopover() {
                   aria-checked={themePreference === option.value}
                   className={`segment ${themePreference === option.value ? "segment-active" : ""}`}
                   data-testid={`opt-theme-${option.value}`}
-                  title={option.hint}
+                  title={t(option.hintKey)}
                   onClick={() => setThemePreference(option.value)}
                 >
-                  {option.label}
+                  {t(option.labelKey)}
                 </button>
               ))}
             </div>
-            <span className="options-hint">Follow IDE switches automatically; Light/Dark override it.</span>
+            <span className="options-hint">{t("theme.hint")}</span>
           </div>
           <OptionRow
-            label="Auto-compact context"
+            label={t("options.autoCompact")}
             testId="opt-auto-compaction"
             checked={autoCompaction ?? true}
-            hint="Compact the context automatically when it fills up"
+            hint={t("options.autoCompactHint")}
             onToggle={() => void setAutoCompaction(!(autoCompaction ?? true))}
           />
           <OptionRow
-            label="Auto-retry on errors"
+            label={t("options.autoRetry")}
             testId="opt-auto-retry"
             checked={autoRetry ?? true}
-            hint="Retry transient provider errors (rate limit, 5xx) automatically"
+            hint={t("options.autoRetryHint")}
             onToggle={() => void setAutoRetry(!(autoRetry ?? true))}
           />
           <OptionRow
-            label="Auto-approve tool calls"
+            label={t("options.approve")}
             testId="opt-approval"
             checked={approvalMode === "yolo"}
-            hint={
-              approvalMode === "yolo"
-                ? "Edits and commands run without asking"
-                : "Ask before edits and commands; read-only tools still run freely"
-            }
+            hint={approvalMode === "yolo" ? t("options.approveOn") : t("options.approveOff")}
             onToggle={() => void setApprovalMode(approvalMode === "yolo" ? "ask" : "yolo")}
           />
           <LanguageRow />

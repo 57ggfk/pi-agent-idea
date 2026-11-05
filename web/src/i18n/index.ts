@@ -113,3 +113,9 @@ export async function setLanguage(code: string): Promise<void> {
 
 export { isRegistered, FALLBACK };
 export const i18n = i18next;
+
+// Eager base-language init: components outside React (store error notices,
+// DOM-built buttons) can call `i18n.t()` immediately, and UI-graph imports in
+// plain Node still get English text instead of raw keys. The store's init()
+// re-runs this with the resolved preference/locale right after.
+void initI18n("system", undefined).catch(() => undefined);

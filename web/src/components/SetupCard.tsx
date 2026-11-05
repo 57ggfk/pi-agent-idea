@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { getBridge } from "../bridge";
 import { manageApi, type EnvDetectResult, type ToolStatus } from "../manage";
 import { usePiStore } from "../store/store";
+import { useT } from "../i18n/useT";
 
 /**
  * First-run setup card.
@@ -18,6 +19,7 @@ import { usePiStore } from "../store/store";
  * becomes permanent furniture.
  */
 export default function SetupCard() {
+  const { t } = useT();
   const [env, setEnv] = useState<EnvDetectResult | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [source, setSource] = useState("default");
@@ -68,7 +70,7 @@ export default function SetupCard() {
 
   const install = async () => {
     if (customBlank) {
-      setError("Paste a registry URL first, or pick npm default.");
+      setError(t("setup.errBlank"));
       return;
     }
     setBusy(true);
@@ -86,7 +88,7 @@ export default function SetupCard() {
       setLog(result.output ?? "");
       if (!result.ok) {
         // A stop is the user's own decision: report it, do not shout.
-        if (result.cancelled) setNotice(result.error ?? "Install stopped.");
+        if (result.cancelled) setNotice(result.error ?? t("setup.noticeStopped"));
         else setError(result.error ?? "install failed");
         return;
       }
@@ -136,39 +138,38 @@ export default function SetupCard() {
   return (
     <div className="setup-card" data-testid="setup-card">
       <div className="setup-head">
-        <div className="setup-title">Set up Pi Agent</div>
-        <button className="setup-dismiss" onClick={() => setDismissed(true)} title="Hide until next time">
-          Later
+        <div className="setup-title">{t("setup.title")}</div>
+        <button className="setup-dismiss" onClick={() => setDismissed(true)} title={t("setup.laterHint")}>
+          {t("setup.later")}
         </button>
       </div>
       <div className="setup-sub">
-        The agent runs on the <span className="mono">{env.piPackage}</span> CLI, which needs Node.js.
-        Here is what this machine has:
+        {t("setup.subPrefix")} <span className="mono">{env.piPackage}</span> {t("setup.subSuffix")}
       </div>
 
       <div className="setup-tools">
-        <ToolRow label="Node.js" tool={env.node} hint={`${env.minNodeMajor ?? 18}+ required`} />
-        <ToolRow label="npm" tool={env.npm} hint="install vehicle" />
-        <ToolRow label="pi" tool={env.pi} hint="the agent itself" />
+        <ToolRow label="Node.js" tool={env.node} hint={t("setup.nodeHint", { min: env.minNodeMajor ?? 18 })} />
+        <ToolRow label="npm" tool={env.npm} hint={t("setup.npmHint")} />
+        <ToolRow label="pi" tool={env.pi} hint={t("setup.piHint")} />
       </div>
 
       {!env.nodeOk ? (
         <div className="setup-warn" data-testid="setup-node-warning">
-          Node.js {env.minNodeMajor ?? 18}+ was not found. Install it from{" "}
+          {t("setup.nodeWarn1", { min: env.minNodeMajor ?? 18 })}{" "}
           <a href="https://nodejs.org/en/download" target="_blank" rel="noreferrer">
             nodejs.org
           </a>{" "}
-          or, on a slow link,{" "}
+          {t("setup.nodeWarnMid")}{" "}
           <a href="https://npmmirror.com/mirrors/node/" target="_blank" rel="noreferrer">
-            the China mirror
+            {t("setup.nodeWarnMirror")}
           </a>
-          , then reopen this tool window.
+          , {t("setup.nodeWarnEnd")}
         </div>
       ) : null}
 
       {env.canInstall ? (
         <div className="setup-block">
-          <div className="setup-label">Install through npm</div>
+          <div className="setup-label">{t("setup.installLabel")}</div>
           <div className="setup-sources">
             {(env.sources ?? []).map((s) => (
               <label
@@ -184,7 +185,7 @@ export default function SetupCard() {
                   onChange={() => setSource(s.id)}
                   disabled={busy}
                 />
-                <span>{sourceLabel(s.id)}</span>
+                <span>{sourceLabel(s.id, t)}</span>
                 <span className="mono setup-registry">
                   {s.registry || env.npmRegistry || "from npm config"}
                 </span>
@@ -202,7 +203,7 @@ export default function SetupCard() {
                 onChange={() => setSource(customId)}
                 disabled={busy}
               />
-              <span>Custom…</span>
+              <span>{t("setup.custom")}</span>
             </label>
           </div>
           {isCustom ? (
@@ -216,10 +217,7 @@ export default function SetupCard() {
                 disabled={busy}
                 spellCheck={false}
               />
-              <div className="setup-hint">
-                Paste the registry URL your network uses. A bare host works too (https is assumed);
-                a local mirror can keep <span className="mono">http://</span>.
-              </div>
+              <div className="setup-hint">{t("setup.customHint")}</div>
             </div>
           ) : null}
           <div className="setup-actions">
@@ -230,8 +228,8 @@ export default function SetupCard() {
               disabled={busy || customBlank}
             >
               {busy
-                ? `Installing… ${elapsed}s (first run can take minutes)`
-                : `Install ${env.piPackage}`}
+                ? t("setup.installing", { seconds: elapsed })
+                : t("setup.install", { pkg: env.piPackage ?? "" })}
             </button>
             {busy ? (
               <button
@@ -239,22 +237,21 @@ export default function SetupCard() {
                 data-testid="setup-cancel"
                 onClick={cancel}
                 disabled={stopping}
-                title="Stop npm and keep the current state"
+                title={t("setup.stopHint")}
               >
-                {stopping ? "Stopping…" : "Stop"}
+                {stopping ? t("setup.stopping") : t("setup.stop")}
               </button>
             ) : null}
           </div>
         </div>
       ) : (
         <div className="setup-warn" data-testid="setup-no-npm">
-          npm was not found, so the plugin cannot install pi for you. Install Node.js (it ships npm),
-          or point at an existing pi below.
+          {t("setup.noNpm")}
         </div>
       )}
 
       <div className="setup-block">
-        <div className="setup-label">Or point at an existing pi</div>
+        <div className="setup-label">{t("setup.manualLabel")}</div>
         <div className="setup-manual">
           <input
             className="setup-input"
@@ -265,7 +262,7 @@ export default function SetupCard() {
             disabled={busy}
           />
           <button className="btn" data-testid="setup-path-save" onClick={useManual} disabled={busy || manual.trim() === ""}>
-            Use this path
+            {t("setup.usePath")}
           </button>
         </div>
       </div>
@@ -289,26 +286,30 @@ export default function SetupCard() {
   );
 }
 
-function sourceLabel(id: string): string {
+function sourceLabel(
+  id: string,
+  t: (key: "setup.source.default" | "setup.source.china" | "setup.source.official") => string,
+): string {
   switch (id) {
     case "default":
-      return "npm default";
+      return t("setup.source.default");
     case "china":
-      return "China mirror";
+      return t("setup.source.china");
     case "official":
-      return "International";
+      return t("setup.source.official");
     default:
       return id;
   }
 }
 
 function ToolRow({ label, tool, hint }: { label: string; tool?: ToolStatus; hint: string }) {
+  const { t } = useT();
   const found = Boolean(tool?.found);
   return (
     <div className={`setup-tool ${found ? "setup-tool-ok" : "setup-tool-missing"}`}>
       <span className="setup-tool-mark">{found ? "✓" : "✕"}</span>
       <span className="setup-tool-name">{label}</span>
-      <span className="setup-tool-version mono">{found ? tool?.version || "?" : "not found"}</span>
+      <span className="setup-tool-version mono">{found ? tool?.version || "?" : t("setup.notFound")}</span>
       <span className="setup-tool-path mono" title={tool?.path || hint}>
         {found ? tool?.path : hint}
       </span>
