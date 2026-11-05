@@ -559,3 +559,74 @@ describe("message queue: store orchestration (spec 005)", () => {
     expect(commandTypes()).toContain("new_session");
   });
 });
+
+describe("session navigation state (spec 006)", () => {
+  beforeEach(async () => {
+    h.state.calls.length = 0;
+    h.state.rpc.clear();
+    h.state.methods.clear();
+    await usePiStore.getState().init();
+    h.state.calls.length = 0;
+    h.state.rpc.set("get_messages", () => ({ messages: [] }));
+    h.state.rpc.set("get_state", () => ({ sessionId: "s-2" }));
+    h.state.rpc.set("switch_session", () => ({}));
+  });
+
+  it("switchSession resets the outline and search state (FR-015)", async () => {
+    usePiStore.setState({
+      outlineOpen: true,
+      search: { open: true, query: "timeout", index: 2 },
+      pendingSearchJump: { query: "timeout", hitIndex: 2 },
+    });
+
+    await usePiStore.getState().switchSession("other-session.jsonl");
+
+    const s = usePiStore.getState();
+    expect(s.outlineOpen).toBe(false);
+    expect(s.search).toEqual({ open: false, query: "", index: 0 });
+    expect(s.pendingSearchJump).toBeNull();
+    expect(command("switch_session")[0]["sessionPath"]).toBe("other-session.jsonl");
+  });
+
+  it("searchGo wraps around both ends of the hit list", () => {
+    // Hits derive from the transcript; two messages containing "timeout".
+    usePiStore.setState({
+      items: [userItem("timeout one"), assistantItem("a timeout and another timeout")],
+      search: { open: true, query: "timeout", index: 0 },
+    });
+    const { searchGo, searchHits } = usePiStore.getState();
+    expect(searchHits()).toHaveLength(3);
+
+    searchGo(-1);
+    expect(usePiStore.getState().search.index).toBe(2); // wrap backwards
+    searchGo(1);
+    expect(usePiStore.getState().search.index).toBe(0); // wrap forwards
+    searchGo(2);
+    expect(usePiStore.getState().search.index).toBe(2);
+  });
+
+  it("searchGo is a no-op without hits", () => {
+    usePiStore.setState({ items: [], search: { open: true, query: "nothing", index: 0 } });
+    usePiStore.getState().searchGo(1);
+    expect(usePiStore.getState().search.index).toBe(0);
+  });
+
+  it("setSearchIndex clamps into the hit range", () => {
+    usePiStore.setState({
+      items: [userItem("timeout one"), assistantItem("a timeout")],
+      search: { open: true, query: "timeout", index: 0 },
+    });
+    usePiStore.getState().setSearchIndex(99);
+    expect(usePiStore.getState().search.index).toBe(1);
+  });
+
+  it("toggleOutline flips and pins the outline state", () => {
+    usePiStore.setState({ outlineOpen: false });
+    usePiStore.getState().toggleOutline();
+    expect(usePiStore.getState().outlineOpen).toBe(true);
+    usePiStore.getState().toggleOutline(true);
+    expect(usePiStore.getState().outlineOpen).toBe(true);
+    usePiStore.getState().toggleOutline(false);
+    expect(usePiStore.getState().outlineOpen).toBe(false);
+  });
+});

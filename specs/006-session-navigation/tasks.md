@@ -22,12 +22,12 @@ description: "Task list for 006-session-navigation"
 
 ## Phase 1: 地基
 
-- [ ] **T001** [地基] `web/src/lib/scrollToItem.ts`：按容器 `scrollTop` 计算目标位置、平滑滚动、
+- [x] **T001** [地基] `web/src/lib/scrollToItem.ts`：按容器 `scrollTop` 计算目标位置、平滑滚动、
   `prefers-reduced-motion` 降级、2s 闪高亮类 — 验证：e2e 断言滚动后目标 `.item` 的
   `top - list.top` 在 0–24px 之间（顶部偏移生效），且 2.2s 后 `.flash-target` 类消失
-- [ ] **T002** [地基] `MessageList.tsx` 给 `.item` 加 `data-item-id={item.id}` — 验证：e2e 能按
+- [x] **T002** [地基] `MessageList.tsx` 给 `.item` 加 `data-item-id={item.id}` — 验证：e2e 能按
   `[data-item-id]` 定位到具体消息，既有用例不受影响（全量 e2e 绿）
-- [ ] **T003** [P][地基] `web/src/lib/search.ts`：`hitsFromItems(items, query)` 纯函数 —
+- [x] **T003** [P][地基] `web/src/lib/search.ts`：`hitsFromItems(items, query)` 纯函数 —
   验证：**先写** `search.test.ts`（同块多处命中、跨块、CJK、含 `(`/`*` 等正则字符按字面量、
   空查询返回空、大小写不敏感），红 → 绿
 
@@ -37,30 +37,30 @@ description: "Task list for 006-session-navigation"
 
 ## Phase 2: US1 用户消息目录
 
-- [ ] **T004** [US1] `SessionOutline.tsx`：浮层列出 user 消息（`#n` + 单行摘要），
+- [x] **T004** [US1] `SessionOutline.tsx`：浮层列出 user 消息（`#n` + 单行摘要），
   `role=listbox/option`，点击 → `scrollToItem`；空会话不渲染入口 — 验证：e2e 30 条用户消息 →
   条目数 = 30、首条为最早、点第 3 条后目标在视口内；空会话 `outline-btn` 计数为 0
-- [ ] **T005** [US1] 增量更新与当前项标记 — 验证：e2e 发送一条新消息后目录条数 +1（无需重开）；
+- [x] **T005** [US1] 增量更新与当前项标记 — 验证：e2e 发送一条新消息后目录条数 +1（无需重开）；
   滚动到中部后当前项标记落在对应条目
-- [ ] **T006** [US1] 几何：360/430/900 三档浮层 rect 在 `.app` 内、无横向溢出、不遮住输入框
+- [x] **T006** [US1] 几何：360/430/900 三档浮层 rect 在 `.app` 内、无横向溢出、不遮住输入框
   — 验证：e2e 四边界断言 + `composer` 顶部不被覆盖
-- [ ] **T007** [US1] 图片消息与纯 system 会话的边界 — 验证：e2e 断言图片消息条目显示占位文案且可跳转
+- [x] **T007** [US1] 图片消息与纯 system 会话的边界 — 验证：e2e 断言图片消息条目显示占位文案且可跳转
 
 ---
 
 ## Phase 3: US2 会话内搜索
 
-- [ ] **T008** [US2] `SessionSearch.tsx` + store `search` 切片：🔍 按钮与 `Ctrl/Cmd+F` 打开同一实例，
+- [x] **T008** [US2] `SessionSearch.tsx` + store `search` 切片：🔍 按钮与 `Ctrl/Cmd+F` 打开同一实例，
   `preventDefault` 拦截默认查找 — 验证：e2e 两路打开后 `search-bar` 可见且输入框聚焦；
   断言页面未触发浏览器查找（无 `window.find` 调用痕迹则以输入焦点在搜索框为准）
-- [ ] **T009** [US2] 计数与导航：`1/N` 显示、`Enter` 下一个、`Shift+Enter` 上一个、循环 — 验证：
+- [x] **T009** [US2] 计数与导航：`1/N` 显示、`Enter` 下一个、`Shift+Enter` 上一个、循环 — 验证：
   e2e 造 3 处 `timeout` → 连续 Enter 三次回到 `1/3`；`Esc` 后计数与高亮消失
-- [ ] **T010** [US2] 高亮：`CSS.highlights` 主路径 + `getClientRects` 降级 — 验证：e2e 断言
+- [x] **T010** [US2] 高亮：`CSS.highlights` 主路径 + `getClientRects` 降级 — 验证：e2e 断言
   `CSS.highlights` 存在时 `size>0`；强制降级（mock `CSS.highlights` 为 undefined）后断言高亮层元素数 = 命中数
-- [ ] **T011** [US2] 工具输出命中：命中的命令卡片自动展开 — 验证：e2e 搜索一段只在命令输出里的文本 →
+- [x] **T011** [US2] 工具输出命中：命中的命令卡片自动展开 — 验证：e2e 搜索一段只在命令输出里的文本 →
   断言对应 `tool-card` 的 `aria-expanded=true` 且高亮可见
-- [ ] **T012** [US2] 流式过程中搜索 — 验证：e2e 在流式未结束时搜新到达的词，计数随内容增长
-- [ ] **T013** [US2] 搜索不破坏 markdown — 验证：e2e 断言代码块 `pre` 的 `scrollWidth === clientWidth`、
+- [x] **T012** [US2] 流式过程中搜索 — 验证：e2e 在流式未结束时搜新到达的词，计数随内容增长
+- [x] **T013** [US2] 搜索不破坏 markdown — 验证：e2e 断言代码块 `pre` 的 `scrollWidth === clientWidth`、
   列表项数不变、`doc.scrollWidth === doc.clientWidth`
 
 ---
