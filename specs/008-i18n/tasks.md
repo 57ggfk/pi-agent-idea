@@ -75,22 +75,22 @@ description: "Task list for 008-i18n"
 
 ## Phase 3: 文案搬迁（按 area，每批跑一次 typecheck + e2e）
 
-- [ ] **T010** [P][US1] `chat.*`：`Composer` / `SendButton` / `MessageList` / `MessageActions` / `ToolCard` /
+- [x] **T010** [P][US1] `chat.*`：`Composer` / `SendButton` / `MessageList` / `MessageActions` / `ToolCard` /
   `QueueBar` / `ApprovalCard` / `StatusBar` / `SetupCard` / `ModelPicker` / `ThinkingPicker` / `Markdown`
   — 验证：`npm run typecheck` 通过；`npx playwright test e2e/chat.spec.ts e2e/features.spec.ts e2e/queue.spec.ts e2e/approval.spec.ts` 绿
 
-- [ ] **T011** [P][US1] `sessions.*`：`SessionsView`（含 6 处动作 tooltip、空态、`N msgs`）
+- [x] **T011** [P][US1] `sessions.*`：`SessionsView`（含 6 处动作 tooltip、空态、`N msgs`）
   — 验证：`npx playwright test e2e/sessions.spec.ts` 绿；中文态断言 `条消息`
 
-- [ ] **T012** [P][US1] `manage.*`：`ManageView` + 6 个面板（含按钮、空态、错误、表格表头）
+- [x] **T012** [P][US1] `manage.*`：`ManageView` + 6 个面板（含按钮、空态、错误、表格表头）
   — 验证：`npx playwright test e2e/manage.spec.ts e2e/setup.spec.ts e2e/diagnostics.spec.ts` 绿；
   英文态断言 `.manage-*` 区域无中文（正则 `[\u4e00-\u9fa5]` 计数为 0）
 
-- [ ] **T013** [US1] `confirm.*` / `error.*` / `common.*` / `language.*`：确认框四个调用点、
+- [x] **T013** [US1] `confirm.*` / `error.*` / `common.*` / `language.*`：确认框四个调用点、
   `store.ts` 的 `appendError` 文案、语言选择器的无障碍标签
   — 验证：e2e 断言中文态确认框标题为中文、错误系统条目为中文；`npx playwright test e2e/confirm.spec.ts` 绿
 
-- [ ] **T014** [US1] **复数与格式化按 D3 收口**：`i18n/format.ts`（`formatNumber`/`formatDate`/`formatRelative`）；
+- [x] **T014** [US1] **复数与格式化按 D3 收口**：`i18n/format.ts`（`formatNumber`/`formatDate`/`formatRelative`）；
   数量文案改为 `t(key, { count })` + `_<CLDR 分类>` 变体；**禁止组件里 `count === 1 ?` 分派**
   — 验证：`i18n.test.ts` 用 `Intl.PluralRules(bcp47).resolvedOptions().pluralCategories` 枚举每种语言的分类，
   断言每个复数基 key 的分类覆盖率为 100%（`zh` 只需 `_other`，`en` 需 `_one`+`_other`）；
@@ -100,46 +100,46 @@ description: "Task list for 008-i18n"
 
 ## Phase 4: US3 IDE 侧
 
-- [ ] **T015** [P][US3] 新增 `messages/PiAgentBundle.properties` + `_zh_CN.properties`，
+- [x] **T015** [P][US3] 新增 `messages/PiAgentBundle.properties` + `_zh_CN.properties`，
   覆盖 `plugin.xml` 全部可见文案 key（2 个 group + 6 个 action 的 text/description、设置页名）
   — 验证：**先写** `PiAgentBundleTest`（两 bundle key 集合相等、无空值、中文与英文至少 10 个键不同），红 → 绿
 
-- [ ] **T016** [US3] `plugin.xml`：加 `<resource-bundle>`，`text` / `description` / `displayName` 改 `%key`
+- [x] **T016** [US3] `plugin.xml`：加 `<resource-bundle>`，`text` / `description` / `displayName` 改 `%key`
   — 验证：`./gradlew buildPlugin` 成功；真机中文 IDE 右键菜单为中文，英文 IDE 为英文，
   且不出现 `%key` 字面量
 
-- [ ] **T017** [P][US3] Kotlin 文案：`notifyIfSettledInBackground`（通知标题/正文/按钮）、
+- [x] **T017** [P][US3] Kotlin 文案：`notifyIfSettledInBackground`（通知标题/正文/按钮）、
   `sessionsExportHtml`（对话框标题/描述）、`PiStatusBarWidget`（tooltip）、`PiAgentSettingsConfigurable`（表单标签）、
   `PiCliRunner`/`PiEnvironment` 的包裹文案 — 验证：`./gradlew test` 绿；真机触发一次完成通知与一次导出，
   文案随 IDE 语言变化；**原始 stderr 不翻译**
 
-- [ ] **T018** [US3] 品牌名与 id 不动 — 验证：`grep -n "Pi Agent" plugin.xml` 里 `toolWindow id` 与 action id 未改；
+- [x] **T018** [US3] 品牌名与 id 不动 — 验证：`grep -n "Pi Agent" plugin.xml` 里 `toolWindow id` 与 action id 未改；
   `getToolWindow("Pi Agent")` 相关代码未动，工具窗可正常打开
 
 ---
 
 ## Phase 5: 复核与收尾
 
-- [ ] **T019** [复核] **加语言的可扩展性验证（SC-005）**：临时加 `locales/xx.ts` + 在 `LANGUAGES` 注册一行
+- [x] **T019** [复核] **加语言的可扩展性验证（SC-005）**：临时加 `locales/xx.ts` + 在 `LANGUAGES` 注册一行
   — 验证：`git diff --stat web/src/components/` **改动文件数 = 0**；Language 行自动变 `<select>`；
   界面可渲染（无 `⟦`）。验证完**删除**临时语言并再跑一次 typecheck
 
-- [ ] **T020** [复核] 重跑盘点命令，残留数写回 `plan.md`；逐条确认残留属于 D6 白名单
+- [x] **T020** [复核] 重跑盘点命令，残留数写回 `plan.md`；逐条确认残留属于 D6 白名单
   — 验证：残留列表与白名单一一对应，没有「漏掉的真文案」
 
-- [ ] **T021** [复核] 360px 英文态重跑几何断言 — 验证：
+- [x] **T021** [复核] 360px 英文态重跑几何断言 — 验证：
   `npx playwright test e2e/layout-regressions.spec.ts` 绿；无按钮溢出、无横向滚动；
   额外把最长的英文文案手工替换成「德语级长词」跑一次，确认不撑破
 
-- [ ] **T022** [集成] 全量回归 — 验证：`npm run typecheck && npm test && npx playwright test` 全绿；
+- [x] **T022** [集成] 全量回归 — 验证：`npm run typecheck && npm test && npx playwright test` 全绿；
   `./gradlew test` 全绿
 
-- [ ] **T023** [集成] 真机双语截图：Chat / Sessions / Manage / 确认框 / 右键菜单 / 通知
+- [x] **T023** [集成] 真机双语截图：Chat / Sessions / Manage / 确认框 / 右键菜单 / 通知
   — 验证：12 张截图（2 语言 × 6 屏）存入 `specs/008-i18n/verify/`，run report 里逐屏记录无混排
 
-- [ ] **T024** [收尾] `MANUAL_TEST.md` 新增「多语言（v0.5.2）」段 5 条 — 验证：可勾选、含中英各一轮；
+- [x] **T024** [收尾] `MANUAL_TEST.md` 新增「多语言（v0.5.2）」段 5 条 — 验证：可勾选、含中英各一轮；
   第 5 条测「加语言不动组件」的手工复核步骤（供将来加第三种语言时复用）
 
-- [ ] **T025** [收尾] 在 `specs/008-i18n/plan.md` 的 D0 末尾补一节「加语言的操作清单」
+- [x] **T025** [收尾] 在 `specs/008-i18n/plan.md` 的 D0 末尾补一节「加语言的操作清单」
   （加 `locales/<code>.ts` → 注册 `LANGUAGES` 一行 → 补复数分类 → 补 `_zh_CN` 式 properties → 跑测试），
   作为将来加语言时的唯一入口文档 — 验证：清单可照着做完加一种语言，无隐含步骤

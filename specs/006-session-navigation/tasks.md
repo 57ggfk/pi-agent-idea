@@ -79,14 +79,14 @@ description: "Task list for 006-session-navigation"
 - [x] **T018** [US3] 点击命中 → 切会话 + 打开搜索并跳到第 `hitIndex` 个 — 验证：e2e 断言切到 Chat、
   `search-bar` 值为该关键词、计数为 `{hitIndex+1}/N`、目标消息滚入视口
 - [x] **T019** [US3] 空结果与超限提示 — 验证：e2e 断言 `0/0` 与「已扫描 N 个会话」文案（mock 返回 `truncated:true`）
-- [ ] **T020** [US3] 会话切换重置 — 验证：vitest 断言 `switchSession` 后 `search.open === false` 且 `hits` 清空；
+- [x] **T020** [US3] 会话切换重置 — 验证：vitest 断言 `switchSession` 后 `search.open === false` 且 `hits` 清空；
   e2e 断言切会话后无残留高亮
 
 ---
 
 ## Phase 5: 集成与收尾
 
-- [ ] **T021** [集成] 全量回归 — 验证：`npm run typecheck && npm test && npx playwright test` 全绿；`./gradlew test` 全绿
-- [ ] **T022** [集成] JCEF 真机：`Ctrl+F` 是否被 IDE 抢走、高亮在 JCEF 里可见、目录浮层不越界
+- [x] **T021** [集成] 全量回归 — 验证：`npm run typecheck && npm test && npx playwright test` 全绿；`./gradlew test` 全绿
+- [x] **T022** [集成] JCEF 真机：`Ctrl+F` 是否被 IDE 抢走、高亮在 JCEF 里可见、目录浮层不越界
   — 验证：结论写入 `specs/0.5.2-run-report.md`；若快捷键冲突则按 plan 风险项改用备用键并更新文案
-- [ ] **T023** [收尾] `MANUAL_TEST.md` 新增「会话导航与搜索（v0.5.2）」段 6 条 — 验证：可勾选、判据明确
+- [x] **T023** [收尾] `MANUAL_TEST.md` 新增「会话导航与搜索（v0.5.2）」段 6 条 — 验证：可勾选、判据明确

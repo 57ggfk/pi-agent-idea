@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.5.3 — 2026-11-06
+
+**新增**
+- 右键目录新增「添加目录到 Pi」：把目录的文件清单（自动跳过 build、node_modules、.git 等）填进输入框，一句话就能让 pi 通读整个模块，不用再逐个 `@` 文件。
+- 会话支持「消息目录」与「会话内搜索」：点顶栏目录按钮列出自己问过的每一条、点击即跳转并短暂高亮；`Ctrl+F` 或放大镜按钮搜本会话正文（含命令输出），计数循环导航、命中高亮。
+- Sessions 页的搜索框现在能搜全部历史会话的正文：命中会话排最前、显示片段和命中数，点片段直接切到那条消息。
+- 界面支持中文：默认跟随 IDE 语言，也可在 Options 里固定中/英文；右键菜单、通知、设置页与状态栏提示同步本地化。
+
+**变更**
+- 项目树右键「Pi Agent」子菜单不再整片灰：目录右键有可用项，禁用的动作会写明原因（如「文件夹请用添加目录」「二进制文件请用解释」），「解释文件」对目录和二进制也可用。
+- pi 写过的文件（含命令改动）约一秒内自动出现在项目树和编辑器里，不再需要手动 Reload from Disk；`@` 文件补全同步看到新文件。
+- 右键「Pi Agent」分组有了 π 图标，与相邻系统分组观感一致。
+
+**Added**
+- Right-click a folder → "Add Directory to Pi": drops the folder's file listing (skipping build, node_modules, .git and friends) into the composer, so pi can read a whole module from one prompt instead of `@`-ing files one by one.
+- Session outline and in-session search: the outline button lists every question you asked, one click jumps there with a brief highlight; `Ctrl+F` or the magnifier searches the session body (command output included) with a counter, looping navigation and highlights.
+- The Sessions search box now scans the bodies of all past sessions: matches rank first with snippets and hit counts, and clicking one lands on that exact message.
+- The UI speaks Chinese: it follows the IDE language by default, or pin 中文/English in Options; context menus, notifications, the settings page and the status bar follow along.
+
+**Changed**
+- The project-tree "Pi Agent" submenu is no longer all grey: folders always have an enabled action, and disabled ones explain why ("use Add Directory for folders", "binary files: use Explain"), while Explain File now also accepts folders and binaries.
+- Files pi wrote (including via commands) appear in the project tree and editor within about a second — no more manual Reload from Disk — and `@` completion sees new files right away.
+- The "Pi Agent" popup group now has its π icon, matching the neighbouring system groups.
+
 ## 0.5.2 — 2026-11-05
 
 **新增**
