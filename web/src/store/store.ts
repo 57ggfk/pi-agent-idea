@@ -29,6 +29,7 @@ import {
   type SourceId,
   type Sources,
 } from "./sources";
+import { hitsFromItems, type SearchHit } from "../lib/search";
 
 export type SendMode = "auto" | "steer" | "followUp";
 export type Tab = "chat" | "sessions" | "manage";
@@ -198,6 +199,32 @@ interface PiStore {
    * on change (007 FR-013).
    */
   composerResetSeq: number;
+
+  // -- session outline & search (spec 006) -----------------------------------
+
+  /** The user-message outline popover (US1). Hidden for empty sessions. */
+  outlineOpen: boolean;
+  toggleOutline(open?: boolean): void;
+
+  /**
+   * In-session search (US2). `hits` are derived from the transcript on demand
+   * (pure `hitsFromItems`); the store owns query + current index so Enter /
+   * Shift+Enter navigation survives re-renders and streaming updates.
+   */
+  search: { open: boolean; query: string; index: number };
+  /** Set when a Sessions search result wants the composer search to open. */
+  pendingSearchJump: { query: string; hitIndex: number } | null;
+  openSearch(): void;
+  closeSearch(): void;
+  setSearchQuery(query: string): void;
+  /** Moves the current hit by `delta` with wrap-around; no-op without hits. */
+  searchGo(delta: number): void;
+  /** Directly selects a hit (Sessions-result landing, US3). */
+  setSearchIndex(index: number): void;
+  searchHits(): SearchHit[];
+  /** Sessions result click: switch session, then land on this hit (US3). */
+  requestSearchJump(query: string, hitIndex: number): void;
+  clearSearchJump(): void;
 
   model?: ModelInfo;
   models: ModelInfo[];
@@ -448,6 +475,11 @@ export const usePiStore = create<PiStore>((set, get) => {
       editing: null,
       queue: { items: [], paused: false, pauseReason: null, drift: false },
       composerResetSeq: get().composerResetSeq + 1,
+      // 006 FR-015: a new conversation must not inherit the old outline or
+      // search state (stale hits would highlight the wrong transcript).
+      outlineOpen: false,
+      search: { open: false, query: "", index: 0 },
+      pendingSearchJump: null,
     });
   };
 
@@ -666,6 +698,10 @@ export const usePiStore = create<PiStore>((set, get) => {
     confirm: null,
     composerResetSeq: 0,
 
+    outlineOpen: false,
+    search: { open: false, query: "", index: 0 },
+    pendingSearchJump: null,
+
     approvals: [],
     // Auto-approve by default; "ask" is opt-in from the options menu.
     approvalMode: "yolo",
@@ -683,6 +719,51 @@ export const usePiStore = create<PiStore>((set, get) => {
     setTab(tab: Tab) {
       set({ tab });
       if (tab === "sessions") void get().refreshSessions();
+    },
+
+    // -- session outline & search (spec 006) -----------------------------------
+
+    toggleOutline(open?: boolean) {
+      set({ outlineOpen: open ?? !get().outlineOpen });
+    },
+
+    openSearch() {
+      set({ search: { ...get().search, open: true } });
+    },
+
+    closeSearch() {
+      set({ search: { open: false, query: "", index: 0 }, pendingSearchJump: null });
+    },
+
+    setSearchQuery(query: string) {
+      set({ search: { ...get().search, query, index: 0 } });
+    },
+
+    searchHits() {
+      const { search, items } = get();
+      return hitsFromItems(items, search.query);
+    },
+
+    searchGo(delta: number) {
+      const hits = get().searchHits();
+      if (hits.length === 0) return;
+      const n = hits.length;
+      const index = ((get().search.index + delta) % n + n) % n;
+      set({ search: { ...get().search, index } });
+    },
+
+    setSearchIndex(index: number) {
+      const n = get().searchHits().length;
+      if (n === 0) return;
+      set({ search: { ...get().search, index: Math.max(0, Math.min(index, n - 1)) } });
+    },
+
+    requestSearchJump(query: string, hitIndex: number) {
+      set({ pendingSearchJump: { query, hitIndex }, search: { ...get().search, open: true } });
+    },
+
+    clearSearchJump() {
+      set({ pendingSearchJump: null });
     },
 
     setThemePreference(preference: ThemePreference) {
@@ -1081,6 +1162,8 @@ export const usePiStore = create<PiStore>((set, get) => {
       try {
         await rpc(bridge, { type: "switch_session", sessionPath: file });
         set({ items: [], stats: undefined, aborted: false, isStreaming: false, tab: "chat", editing: null });
+        // 006 FR-015: outline/search reset on session switch (no stale hits).
+        set({ outlineOpen: false, search: { open: false, query: "", index: 0 }, pendingSearchJump: null });
         await get().replayMessages();
         await get().refreshStats();
         const state = await rpc<{ sessionName?: string; sessionId?: string; model?: ModelInfo; thinkingLevel?: string }>(

@@ -3565,3 +3565,208 @@ button {
   margin-bottom: var(--sp-2);
   line-height: 1.5;
 }
+
+/* Session outline & search (spec 006) -------------------------------------- */
+/* Both panels live inside .app (its position:relative is the containing
+   block) and must never widen it: widths are capped by 100cqw. */
+
+.tab-tools {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  align-self: center;
+}
+
+.tab-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  padding: 0;
+}
+.tab-tool-btn:hover {
+  background: var(--bg-subtle);
+  color: var(--text);
+}
+
+/* User-message outline (US1) ------------------------------------------------ */
+
+.session-outline {
+  position: absolute;
+  top: 40px;
+  right: 8px;
+  width: min(320px, calc(100cqw - 24px));
+  max-height: min(60vh, 420px);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md, 8px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  z-index: 55;
+  overflow: hidden;
+}
+
+.outline-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.outline-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.outline-close {
+  display: inline-flex;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: var(--r-sm);
+}
+.outline-close:hover { background: var(--bg-subtle); }
+
+.outline-list {
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px;
+}
+
+.outline-item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 5px 8px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.outline-item:hover { background: var(--bg-subtle); }
+.outline-item.outline-current {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+.outline-n {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.outline-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* In-session search bar (US2) ----------------------------------------------- */
+
+.session-search {
+  position: absolute;
+  top: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(420px, calc(100cqw - 24px));
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md, 8px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  padding: 6px 8px;
+  z-index: 56;
+}
+.search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  color: var(--text);
+  border-radius: var(--r-sm);
+  padding: 4px 8px;
+  font-size: 12.5px;
+}
+.search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.search-count {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.search-empty {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.search-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  padding: 2px;
+}
+.search-nav:hover { background: var(--bg-subtle); }
+.search-flip { transform: rotate(180deg); }
+.search-hint { display: none; }
+
+/* Hit highlights (FR-008): the Custom Highlight path needs ::highlight
+   rules; the fallback layer positions rects over the viewport (pointer-events
+   off so clicks pass through). */
+::highlight(search-hits) {
+  background-color: color-mix(in srgb, #f5c542 45%, transparent);
+}
+::highlight(search-current) {
+  background-color: color-mix(in srgb, #f0883e 65%, transparent);
+}
+.search-hits-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 70;
+}
+.search-hit-rect {
+  position: fixed;
+  background: color-mix(in srgb, #f5c542 45%, transparent);
+  border-radius: 2px;
+}
+.search-hit-current {
+  background: color-mix(in srgb, #f0883e 65%, transparent);
+}
+
+/* Jump flash (scrollToItem): fades without moving layout. */
+.item.flash-target,
+.system-item.flash-target {
+  animation: flash-target-fade 2s ease-out;
+}
+@keyframes flash-target-fade {
+  0% { background-color: color-mix(in srgb, var(--accent) 22%, transparent); }
+  70% { background-color: color-mix(in srgb, var(--accent) 10%, transparent); }
+  100% { background-color: transparent; }
+}

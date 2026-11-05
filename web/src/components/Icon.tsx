@@ -16,6 +16,7 @@ export type IconName =
   | "image"
   | "info"
   | "key"
+  | "list"
   | "message"
   | "paperclip"
   | "pencil"
@@ -126,6 +127,16 @@ const PATHS: Record<IconName, ReactNode> = {
       <path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4" />
       <path d="m21 2-9.6 9.6" />
       <circle cx="7.5" cy="15.5" r="5.5" />
+    </>
+  ),
+  list: (
+    <>
+      <line x1="8" x2="20" y1="6" y2="6" />
+      <line x1="8" x2="20" y1="12" y2="12" />
+      <line x1="8" x2="20" y1="18" y2="18" />
+      <circle cx="4" cy="6" r="0.6" />
+      <circle cx="4" cy="12" r="0.6" />
+      <circle cx="4" cy="18" r="0.6" />
     </>
   ),
   message: <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />,

@@ -1,5 +1,6 @@
-import { Component, useEffect, type ReactNode } from "react";
+import { Component, useEffect, useMemo, type ReactNode } from "react";
 import { usePiStore } from "./store/store";
+import { outlineEntries } from "./lib/outline";
 import MessageList from "./components/MessageList";
 import Composer from "./components/Composer";
 import SetupCard from "./components/SetupCard";
@@ -9,7 +10,9 @@ import StatusBar from "./components/StatusBar";
 import SessionsView from "./components/SessionsView";
 import ManageView from "./components/ManageView";
 import ConfirmDialog from "./components/ConfirmDialog";
-import { IconSprite } from "./components/Icon";
+import SessionOutline from "./components/SessionOutline";
+import SessionSearch from "./components/SessionSearch";
+import Icon, { IconSprite } from "./components/Icon";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -52,6 +55,13 @@ export default function App() {
   const ready = usePiStore((s) => s.ready);
   const tab = usePiStore((s) => s.tab);
   const setTab = usePiStore((s) => s.setTab);
+  const items = usePiStore((s) => s.items);
+  const toggleOutline = usePiStore((s) => s.toggleOutline);
+  const openSearch = usePiStore((s) => s.openSearch);
+
+  // The outline entry is hidden while the session has no user messages
+  // (spec 006 FR-003) — a button that cannot do anything is noise.
+  const userCount = useMemo(() => outlineEntries(items).length, [items]);
 
   useEffect(() => {
     void init();
@@ -77,12 +87,38 @@ export default function App() {
                 {t === "chat" ? "Chat" : t === "sessions" ? "Sessions" : "Manage"}
               </button>
             ))}
+            {tab === "chat" ? (
+              <div className="tab-tools">
+                {userCount > 0 ? (
+                  <button
+                    type="button"
+                    className="tab-tool-btn"
+                    data-testid="outline-btn"
+                    aria-label="Message outline"
+                    onClick={() => toggleOutline()}
+                  >
+                    <Icon name="list" className="ic-sm" />
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="tab-tool-btn"
+                  data-testid="search-btn"
+                  aria-label="Search in session"
+                  onClick={() => openSearch()}
+                >
+                  <Icon name="search" className="ic-sm" />
+                </button>
+              </div>
+            ) : null}
           </div>
           <QueueDiscardBanner />
           {tab === "chat" ? (
             <>
               <SetupCard />
               <MessageList />
+              <SessionOutline />
+              <SessionSearch />
               <ApprovalCard />
               <QueueBar />
               <Composer />

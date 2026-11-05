@@ -1,12 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePiStore } from "../store/store";
 import { actionsForItem, type ChatItem, type ContentBlock, type MessageAction } from "../store/types";
+import { hitsFromItems } from "../lib/search";
 import Markdown from "./Markdown";
 import MessageActions from "./MessageActions";
 import ToolCard from "./ToolCard";
 import Icon from "./Icon";
 
-function BlockView({ block }: { block: ContentBlock }) {
+function BlockView({ block, forceOpenOutput }: { block: ContentBlock; forceOpenOutput?: boolean }) {
   const [open, setOpen] = useState(false);
   if (block.kind === "text") {
     if (!block.text) return null;
@@ -35,14 +36,26 @@ function BlockView({ block }: { block: ContentBlock }) {
       </div>
     );
   }
-  return <ToolCard block={block} />;
+  return <ToolCard block={block} forceOpen={forceOpenOutput} />;
 }
 
-function ItemView({ item, actions }: { item: ChatItem; actions: MessageAction[] }) {
+function ItemView({
+  item,
+  actions,
+  activeHitBlockIndex,
+}: {
+  item: ChatItem;
+  actions: MessageAction[];
+  activeHitBlockIndex: number | null;
+}) {
   const toolbar = <MessageActions item={item} actions={actions} />;
   if (item.role === "system") {
     return (
-      <div className={`system-item ${item.isError ? "item-error" : ""}`} data-testid="system-item">
+      <div
+        className={`system-item ${item.isError ? "item-error" : ""}`}
+        data-testid="system-item"
+        data-item-id={item.id}
+      >
         {item.blocks.map((b, i) => (b.kind === "text" ? <span key={i}>{b.text}</span> : null))}
         {toolbar}
       </div>
@@ -50,7 +63,11 @@ function ItemView({ item, actions }: { item: ChatItem; actions: MessageAction[] 
   }
   const streaming = item.role === "assistant" && !item.done;
   return (
-    <div className={`item item-${item.role} ${item.isError ? "item-error" : ""}`} data-testid={`item-${item.role}`}>
+    <div
+      className={`item item-${item.role} ${item.isError ? "item-error" : ""}`}
+      data-testid={`item-${item.role}`}
+      data-item-id={item.id}
+    >
       {toolbar}
       {/* Steer fire trace (spec 005 US5): rendered at fire time, dropped on
           replay. User items have no header (display:none), so the badge is a
@@ -66,7 +83,7 @@ function ItemView({ item, actions }: { item: ChatItem; actions: MessageAction[] 
       </div>
       <div className="item-body">
         {item.blocks.map((b, i) => (
-          <BlockView key={i} block={b} />
+          <BlockView key={i} block={b} forceOpenOutput={activeHitBlockIndex === i} />
         ))}
         {streaming && <span className="cursor" />}
       </div>
@@ -80,8 +97,17 @@ export default function MessageList() {
   const retryInfo = usePiStore((s) => s.retryInfo);
   const isStreaming = usePiStore((s) => s.isStreaming);
   const editing = usePiStore((s) => s.editing);
+  const search = usePiStore((s) => s.search);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
+
+  // The hit the search bar currently points at (spec 006 US2): its tool card
+  // must auto-expand (T011) and its block gets the paint anchor.
+  const activeHit = useMemo(() => {
+    if (!search.open || !search.query.trim()) return null;
+    const hits = hitsFromItems(items, search.query);
+    return hits[search.index] ?? null;
+  }, [search.open, search.query, search.index, items]);
 
   // "Last message" is asked per role, not "last item": a trailing system
   // notice must not hide the regenerate/edit buttons of the message above it.
@@ -122,6 +148,7 @@ export default function MessageList() {
           <ItemView
             key={item.id}
             item={item}
+            activeHitBlockIndex={activeHit && activeHit.itemId === item.id ? activeHit.blockIndex : null}
             actions={actionsForItem(item, {
               ...ctx,
               isLastUser: i === lastUser,

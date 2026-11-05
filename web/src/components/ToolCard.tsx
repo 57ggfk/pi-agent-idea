@@ -92,8 +92,16 @@ function DiffView({ lines }: { lines: DiffLine[] }) {
   );
 }
 
-export default function ToolCard({ block }: { block: Extract<ContentBlock, { kind: "toolcall" }> }) {
+export default function ToolCard({
+  block,
+  forceOpen,
+}: {
+  block: Extract<ContentBlock, { kind: "toolcall" }>;
+  /** Session search points at this card's output: expand it (spec 006 T011). */
+  forceOpen?: boolean;
+}) {
   const [open, setOpen] = useState(false);
+  const isOpen = open || forceOpen === true;
   const running = !block.done && block.result !== undefined;
   const isError = block.result?.isError ?? false;
   const output = block.result?.output ?? "";
@@ -102,7 +110,7 @@ export default function ToolCard({ block }: { block: Extract<ContentBlock, { kin
   const filePath = filePathOf(block.argsJson);
 
   const longOutput = output.length > 400;
-  const shownOutput = longOutput && !open ? output.slice(0, 400) + "…" : output;
+  const shownOutput = longOutput && !isOpen ? output.slice(0, 400) + "…" : output;
   // A finished call with an empty output still has a detail pane worth opening
   // ("(no output)"): otherwise the whole card looks dead. A call that is still
   // running only expands once it has something to show.
@@ -114,7 +122,7 @@ export default function ToolCard({ block }: { block: Extract<ContentBlock, { kin
       <div
         className="tool-card-head"
         data-expandable={canExpand}
-        aria-expanded={canExpand ? open : undefined}
+        aria-expanded={canExpand ? isOpen : undefined}
         onClick={() => canExpand && setOpen((o) => !o)}
       >
         <span className="tool-icon">{toolIcon(block.toolName)}</span>
@@ -150,7 +158,7 @@ export default function ToolCard({ block }: { block: Extract<ContentBlock, { kin
         </span>
       </div>
       {diff ? <DiffView lines={diff} /> : null}
-      {open && canExpand ? <pre className="tool-output">{shownOutput || "(no output)"}</pre> : null}
+      {isOpen && canExpand ? <pre className="tool-output">{shownOutput || "(no output)"}</pre> : null}
     </div>
   );
 }
