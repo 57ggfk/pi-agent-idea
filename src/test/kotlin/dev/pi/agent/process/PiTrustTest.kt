@@ -39,18 +39,33 @@ class PiTrustTest {
             PiTrust.normalize(forward),
             "D:\\a\\b and D:/a/b must resolve to the same project",
         )
-        if (OsProcess.isWindows) {
-            assertEquals(
-                PiTrust.normalize(native),
-                PiTrust.normalize(native.uppercase()),
-                "NTFS is case-insensitive, so the store key may differ in case",
+        // Case folding follows the filesystem, not the OS name. NTFS is always
+        // insensitive; macOS APFS is insensitive by default too (and
+        // `canonicalPath` resolves the real on-disk casing through it); Linux
+        // almost never is. Probing the volume keeps the assertion honest on
+        // case-sensitive APFS/HFS+ setups as well.
+        val folded = PiTrust.normalize(native) == PiTrust.normalize(native.uppercase())
+        if (caseInsensitiveTempVolume()) {
+            assertTrue(
+                folded,
+                "a case-insensitive filesystem must resolve case variants to one project",
             )
         } else {
-            // On a case-sensitive filesystem, differing case is a different project.
             assertTrue(
-                PiTrust.normalize(native) != PiTrust.normalize(native.uppercase()),
+                !folded,
                 "case-sensitive platforms must not conflate differently-cased paths",
             )
+        }
+    }
+
+    /** Does this machine's temp volume treat `probe` and `PROBE` as one file? */
+    private fun caseInsensitiveTempVolume(): Boolean {
+        val dir = Files.createTempDirectory("pi-case-probe")
+        return try {
+            Files.createFile(dir.resolve("probe"))
+            Files.exists(dir.resolve("PROBE"))
+        } finally {
+            runCatching { dir.toFile().deleteRecursively() }
         }
     }
 

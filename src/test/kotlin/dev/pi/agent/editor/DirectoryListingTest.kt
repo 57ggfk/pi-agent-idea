@@ -130,7 +130,13 @@ class DirectoryListingTest {
         file("Inner.kt")
         val listing = listDirectory(tempDir, projectRoot = null)
         val entry = listing.entries.single()
-        assertTrue(entry.endsWith("Inner.kt") && entry.contains(":"), "absolute path outside a project: $entry")
+        // Ask the path library instead of looking for a drive-letter colon:
+        // Unix roots ("/tmp/…") are absolute without one, so a ":" check only
+        // ever held on Windows.
+        assertTrue(
+            entry.endsWith("Inner.kt") && Path.of(entry).isAbsolute,
+            "absolute path outside a project: $entry",
+        )
     }
 
     @Test
