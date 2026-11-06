@@ -48,45 +48,36 @@
          inside <extensions> is silently ignored by the descriptor parser
          (the editor context menus never registered in v0.1.0–v0.4.0). -->
     <actions>
+        <!-- i18n (spec 008 FR-010): actions and groups are localized by ID, not
+             by %key. The platform resolves `action.<action-id>.text` /
+             `action.<action-id>.description` (and `group.<group-id>.*`) from
+             <resource-bundle> ONLY when the element has no text/description
+             attribute. A literal text="%some.key" is never expanded — the menu
+             then shows "%some.key" (this shipped in 0.5.4). Do not add text=
+             back here; add the key to messages/PiAgentBundle*.properties
+             instead. Verified against every bundled JetBrains plugin: none of
+             them puts %key into <action text>. -->
         <!-- Editor integration (selection-based). The group icon is the same
              16x16 stroke glyph as the tool window (one source of truth); the
              platform scales it to the menu row height. The group label is the
              brand name and stays literal (spec 008 FR-012). -->
-        <group id="PiAgent.EditorPopup" popup="true" text="Pi Agent" icon="/icons/piAgent.svg" description="%group.editor.description">
+        <group id="PiAgent.EditorPopup" popup="true" text="Pi Agent" icon="/icons/piAgent.svg">
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
-            <action id="PiAgent.ExplainSelection"
-                    class="dev.pi.agent.editor.ExplainWithPi"
-                    text="%action.explainSelection.text"
-                    description="%action.explainSelection.description"/>
-            <action id="PiAgent.FixSelection"
-                    class="dev.pi.agent.editor.FixWithPi"
-                    text="%action.fixSelection.text"
-                    description="%action.fixSelection.description"/>
-            <action id="PiAgent.SendSelection"
-                    class="dev.pi.agent.editor.SendSelectionToPi"
-                    text="%action.sendSelection.text"
-                    description="%action.sendSelection.description"/>
+            <action id="PiAgent.ExplainSelection" class="dev.pi.agent.editor.ExplainWithPi"/>
+            <action id="PiAgent.FixSelection" class="dev.pi.agent.editor.FixWithPi"/>
+            <action id="PiAgent.SendSelection" class="dev.pi.agent.editor.SendSelectionToPi"/>
         </group>
 
         <!-- File integration (project view / editor tab context menus).
              All group ids are platform-wide, so this works on every
              JetBrains IDE, not just IDEA. Add Directory sits before Send
              File: on a directory it is the one enabled item (FR-003). -->
-        <group id="PiAgent.FilePopup" popup="true" text="Pi Agent" icon="/icons/piAgent.svg" description="%group.file.description">
+        <group id="PiAgent.FilePopup" popup="true" text="Pi Agent" icon="/icons/piAgent.svg">
             <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
             <add-to-group group-id="EditorTabPopupMenu" anchor="last"/>
-            <action id="PiAgent.AddDirectory"
-                    class="dev.pi.agent.editor.AddDirectoryToPi"
-                    text="%action.addDirectory.text"
-                    description="%action.addDirectory.description"/>
-            <action id="PiAgent.SendFile"
-                    class="dev.pi.agent.editor.SendFileToPi"
-                    text="%action.sendFile.text"
-                    description="%action.sendFile.description"/>
-            <action id="PiAgent.ExplainFile"
-                    class="dev.pi.agent.editor.ExplainFileWithPi"
-                    text="%action.explainFile.text"
-                    description="%action.explainFile.description"/>
+            <action id="PiAgent.AddDirectory" class="dev.pi.agent.editor.AddDirectoryToPi"/>
+            <action id="PiAgent.SendFile" class="dev.pi.agent.editor.SendFileToPi"/>
+            <action id="PiAgent.ExplainFile" class="dev.pi.agent.editor.ExplainFileWithPi"/>
         </group>
 
         <!-- Commit panel: generate the commit message with a headless one-shot
@@ -96,9 +87,7 @@
              button. Both exist across 233–263. -->
         <action id="PiAgent.GenerateCommitMessage"
                 class="dev.pi.agent.vcs.PiGenerateCommitMessageAction"
-                icon="AllIcons.Actions.IntentionBulb"
-                text="%action.generateCommit.text"
-                description="%action.generateCommit.description">
+                icon="AllIcons.Actions.IntentionBulb">
             <add-to-group group-id="Vcs.MessageActionGroup" anchor="first"/>
             <add-to-group group-id="Vcs.Commit.PrimaryCommitActions" anchor="first"/>
             <keyboard-shortcut keymap="$default" first-keystroke="alt shift C"/>

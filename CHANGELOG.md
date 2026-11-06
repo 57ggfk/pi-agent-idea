@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.4 — 2026-11-06
+
+**修复**
+- 中文 IDE 里右键菜单的「Pi Agent」子菜单把 `%action.addDirectory.text` 这样的 key 原样显示出来了。平台的 `<action text="%key">` 不会展开 `%`，菜单文案只有按 action id 命名（`action.PiAgent.AddDirectory.text`、`action.PiAgent.SendFile.text`……）才会从资源包解析。现已改为 id 约定，并加了一致性测试卡住「plugin.xml 的 id / group」与「资源包 key」的对应关系，改名漏改会直接测试失败。
+
+**Fixed**
+- The right-click "Pi Agent" submenu rendered raw `%action.addDirectory.text` keys in a Chinese IDE. The platform never expands `%` inside `<action text>`; menu labels only resolve when the keys are named after the action id (`action.PiAgent.AddDirectory.text`, `action.PiAgent.SendFile.text`, …). Switched to the id convention and added a consistency test pinning plugin.xml ids/groups to their bundle keys, so a rename that misses the bundle now fails the build.
+
 ## 0.5.3 — 2026-11-06
 
 **新增**
