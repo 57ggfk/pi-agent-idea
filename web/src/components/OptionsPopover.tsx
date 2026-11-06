@@ -164,6 +164,7 @@ export default function OptionsPopover() {
             </div>
             <span className="options-hint">{t("theme.hint")}</span>
           </div>
+          <LanguageRow />
           <OptionRow
             label={t("options.autoCompact")}
             testId="opt-auto-compaction"
@@ -185,7 +186,6 @@ export default function OptionsPopover() {
             hint={approvalMode === "yolo" ? t("options.approveOn") : t("options.approveOff")}
             onToggle={() => void setApprovalMode(approvalMode === "yolo" ? "ask" : "yolo")}
           />
-          <LanguageRow />
         </div>
       ) : null}
     </div>
