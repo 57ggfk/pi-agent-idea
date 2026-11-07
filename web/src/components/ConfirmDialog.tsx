@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { usePiStore } from "../store/store";
+import { useT } from "../i18n/useT";
 
 /** Elements the Tab key is allowed to land on inside the dialog. */
 const FOCUSABLE =
@@ -21,6 +22,7 @@ const FOCUSABLE =
 export default function ConfirmDialog() {
   const request = usePiStore((s) => s.confirm);
   const closeConfirm = usePiStore((s) => s.closeConfirm);
+  const { t } = useT();
   const dialogRef = useRef<HTMLDivElement>(null);
   const okRef = useRef<HTMLButtonElement>(null);
   const [busy, setBusy] = useState(false);
@@ -121,7 +123,9 @@ export default function ConfirmDialog() {
             data-testid="confirm-cancel"
             onClick={() => closeConfirm()}
           >
-            {request.cancelLabel ?? "Cancel"}
+            {/* No caller passes cancelLabel today; the i18n default keeps the
+                dialog translated everywhere (zh regression: literal "Cancel"). */}
+            {request.cancelLabel ?? t("common.cancel")}
           </button>
           <button
             type="button"
