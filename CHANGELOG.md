@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+**新增**
+- 认证表单对齐终端 `/login`：Provider 改为下拉选择（内置 pi 1.4.0 全部 42 个 provider，models.json 自定义与已存凭据动态并入，附「账号 / API key」状态徽标），认证方式分「账号登录（OAuth）」与「API key」两档——仅 OAuth provider 可选账号；本版选账号时展示终端 `/login <provider>` 指引卡（一键复制命令），浏览器 OAuth 授权将在下个版本接入；API key 写入路径不变。
+
+**Added**
+- The auth form mirrors the terminal `/login`: the provider is now a dropdown (all 42 pi 1.4.0 builtins, dynamically merged with models.json customs and stored credentials, each badged account/API key), and the method selector offers Account (OAuth) vs API key — the account route is enabled only for OAuth-capable providers and, in this iteration, shows a copyable terminal `/login <provider>` guide (real browser OAuth lands next version); the API-key write path is unchanged.
+
 ## 0.5.4 — 2026-11-07
 
 **新增**

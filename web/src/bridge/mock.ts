@@ -767,6 +767,9 @@ export class MockBridge implements Bridge {
           ok: true,
           providers: [...this.authProviders],
           withCredentials: [...this.authProviders],
+          // Mock rows read as stored API keys (PiManage derives the same
+          // shape from auth.json's per-entry `type`; never secret material).
+          credentialTypes: Object.fromEntries(this.authProviders.map((name) => [name, "api_key"])),
         };
         if (this.modelsKnob === "broken") {
           return {

@@ -285,6 +285,15 @@ export const en = {
   "auth.createdOpened": "Created and opened {{path}}",
   "auth.openFailed": "could not open models.json: {{msg}}",
   "auth.missingModels": "models.json not found at {{path}} — no custom providers configured yet.",
+  "auth.methodLabel": "Authentication method",
+  "auth.methodAccount": "Account (OAuth)",
+  "auth.methodApiKey": "API key",
+  "auth.methodUnsupported": "This provider does not support account login.",
+  "auth.accountGuideTitle": "Sign in with an account",
+  "auth.accountGuideBody": "Run pi in a terminal and use /login to sign in to {{provider}} through the browser. The credential is saved to auth.json; press Refresh here afterwards to see it.",
+  "auth.accountCommandHint": "Interactive terminal only — OAuth cannot run inside the IDE panel yet.",
+  "auth.credTypeOauth": "account",
+  "auth.credTypeApiKey": "API key",
 
   // -- image preview (012 US7) -------------------------------------------------
   "image.aria": "Image {{index}} of {{total}}",
@@ -302,10 +311,14 @@ export const en = {
   "image.copied": "Image copied to the clipboard.",
   "image.copyFailed": "The image could not be copied.",
 
-  // -- provider credentials (012 US5/US6) --------------------------------------
+  // -- provider credentials (012 US5/US6; /login-style form rework) ------------
   "provider.name": "Provider",
+  "provider.pickLabel": "Provider",
+  "provider.pickPlaceholder": "Select a provider…",
+  "provider.pickCustom": "Custom provider (models.json)…",
+  "provider.customName": "Provider name",
+  "provider.pickRequired": "Select a provider first.",
   "provider.key": "API key",
-  "provider.custom": "Custom provider (defined in models.json)",
   "provider.save": "Save",
   "provider.badName": "Provider name: letters, digits, - and _ (up to 64 characters).",
   "provider.missingKey": "Enter the API key first.",

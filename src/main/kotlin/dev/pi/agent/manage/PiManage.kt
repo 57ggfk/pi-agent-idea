@@ -253,14 +253,25 @@ object PiManage {
      * worlds the Auth panel must tell apart (spec 001 FR-013): "ok", "missing"
      * (nothing configured yet — not an error) and "corrupt" (parse failure,
      * reported with the position instead of an empty panel).
+     *
+     * `credentialTypes` maps provider → the stored auth.json entry's `type`
+     * ("oauth" | "api_key"), so the UI can badge rows and default the method
+     * selector like `/login` does. Entries without a recognizable type are
+     * omitted — pi would reject the whole file for those anyway.
      */
     fun authOverview(agentDir: File = PiCliRunner.agentDir()): JsonObject {
         val authFile = File(agentDir, "auth.json")
-        val providersWithCreds = try {
-            (json.parseToJsonElement(authFile.readText()) as? JsonObject)?.keys ?: emptySet()
+        val authJson = try {
+            json.parseToJsonElement(authFile.readText()) as? JsonObject
         } catch (_: Exception) {
-            emptySet()
+            null
         }
+        val providersWithCreds = authJson?.keys ?: emptySet()
+        val credentialTypes = authJson.orEmpty().mapNotNull { (name, entry) ->
+            ((entry as? JsonObject)?.get("type") as? JsonPrimitive)
+                ?.takeIf { it.content == "oauth" || it.content == "api_key" }
+                ?.let { name to it.content }
+        }.toMap()
         val modelsFile = File(agentDir, "models.json")
         var modelsState = "ok"
         var modelsError: String? = null
@@ -281,6 +292,9 @@ object PiManage {
             put("ok", true)
             put("providers", JsonArray(names.map { JsonPrimitive(it) }))
             put("withCredentials", JsonArray(providersWithCreds.sorted().map { JsonPrimitive(it) }))
+            put("credentialTypes", buildJsonObject {
+                credentialTypes.forEach { (name, type) -> put(name, type) }
+            })
             put("modelsState", modelsState)
             put("modelsPath", modelsFile.absolutePath)
             modelsError?.let { put("modelsError", it) }

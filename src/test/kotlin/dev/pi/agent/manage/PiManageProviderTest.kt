@@ -2,6 +2,7 @@ package dev.pi.agent.manage
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.boolean
@@ -214,5 +215,37 @@ class PiManageProviderTest {
         assertEquals("ok", ok["modelsState"]!!.jsonPrimitive.content)
         val providers = ok["providers"].toString()
         assertTrue(providers.contains("anthropic") && providers.contains("acme"))
+    }
+
+    @Test
+    fun `authOverview maps stored credential types and skips unknown ones`() {
+        val dir = tempDir()
+        File(dir, "auth.json").writeText(
+            """{ "anthropic": { "type": "oauth", "access": "a", "refresh": "r", "expires": 1 },
+               |  "deepseek": { "type": "api_key", "key": "k" },
+               |  "weird": { "type": "emoji" },
+               |  "shapeless": "not-an-object" }""".trimMargin(),
+        )
+        val overview = PiManage.authOverview(agentDir = dir).jsonObject
+        val types = overview["credentialTypes"]!!.jsonObject
+        assertEquals("oauth", types["anthropic"]!!.jsonPrimitive.content)
+        assertEquals("api_key", types["deepseek"]!!.jsonPrimitive.content)
+        assertFalse(types.containsKey("weird"))
+        assertFalse(types.containsKey("shapeless"))
+        // withCredentials still lists every entry regardless of type
+        val creds = overview["withCredentials"]!!.jsonArray.map { it.jsonPrimitive.content }
+        assertEquals(listOf("anthropic", "deepseek", "shapeless", "weird"), creds)
+    }
+
+    @Test
+    fun `authOverview tolerates a missing or corrupt auth json`() {
+        val missingDir = tempDir()
+        val missing = PiManage.authOverview(agentDir = missingDir).jsonObject
+        assertTrue(missing["credentialTypes"]!!.jsonObject.isEmpty())
+
+        val corruptDir = tempDir()
+        File(corruptDir, "auth.json").writeText("{ broken")
+        val corrupt = PiManage.authOverview(agentDir = corruptDir).jsonObject
+        assertTrue(corrupt["credentialTypes"]!!.jsonObject.isEmpty())
     }
 }

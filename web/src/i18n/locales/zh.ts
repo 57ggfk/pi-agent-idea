@@ -279,6 +279,15 @@ export const zh: Dict = {
   "auth.createdOpened": "已创建并打开 {{path}}",
   "auth.openFailed": "无法打开 models.json：{{msg}}",
   "auth.missingModels": "未找到 models.json（{{path}}）—— 还没有配置自定义 provider。",
+  "auth.methodLabel": "认证方式",
+  "auth.methodAccount": "账号登录",
+  "auth.methodApiKey": "API key",
+  "auth.methodUnsupported": "该 provider 不支持账号登录。",
+  "auth.accountGuideTitle": "使用账号登录",
+  "auth.accountGuideBody": "在终端运行 pi，通过 /login 以浏览器授权登录 {{provider}}。凭证由 pi 保存到 auth.json，完成后回到本面板点「刷新」即可看到。",
+  "auth.accountCommandHint": "需要交互式终端——OAuth 授权暂无法在 IDE 面板内完成。",
+  "auth.credTypeOauth": "账号",
+  "auth.credTypeApiKey": "API key",
 
   // -- image preview (012 US7) -------------------------------------------------
   "image.aria": "第 {{index}} 张，共 {{total}} 张",
@@ -298,8 +307,12 @@ export const zh: Dict = {
 
   // -- provider credentials（012 US5/US6）--------------------------------------
   "provider.name": "Provider",
+  "provider.pickLabel": "Provider",
+  "provider.pickPlaceholder": "请选择 provider…",
+  "provider.pickCustom": "自定义 provider（models.json）…",
+  "provider.customName": "Provider 名称",
+  "provider.pickRequired": "请先选择 provider。",
   "provider.key": "API key",
-  "provider.custom": "自定义 provider（定义在 models.json）",
   "provider.save": "保存",
   "provider.badName": "Provider 名称：字母、数字、- 和 _（不超过 64 个字符）。",
   "provider.missingKey": "请先输入 API key。",

@@ -123,6 +123,15 @@ export default function AuthPanel({ api }: { api: ReturnType<typeof manageApi> }
 
   const providers = overview?.providers ?? [];
   const withCreds = new Set(overview?.withCredentials ?? []);
+  const credentialTypes = overview?.credentialTypes ?? {};
+
+  /** Row badge: stored credentials name their method, like /login's status. */
+  const credBadge = (provider: string): string => {
+    if (!withCreds.has(provider)) return t("auth.customProvider");
+    const type = credentialTypes[provider];
+    const method = type === "oauth" ? t("auth.credTypeOauth") : type === "api_key" ? t("auth.credTypeApiKey") : null;
+    return method ? `${t("auth.credentialsStored")} · ${method}` : t("auth.credentialsStored");
+  };
 
   return (
     <div data-testid="auth-panel">
@@ -171,7 +180,7 @@ export default function AuthPanel({ api }: { api: ReturnType<typeof manageApi> }
               <div className="panel-row-main">
                 <span className="panel-row-title">{p}</span>
                 <span className="panel-row-sub">
-                  {withCreds.has(p) ? t("auth.credentialsStored") : t("auth.customProvider")}
+                  {credBadge(p)}
                   {statuses[p] ? ` · ${statuses[p]}` : ""}
                 </span>
               </div>

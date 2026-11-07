@@ -137,6 +137,8 @@ export interface SkillInfo {
 export interface AuthOverviewResult extends CliOutcome {
   providers?: string[];
   withCredentials?: string[];
+  /** auth.json entry types per provider ("oauth" | "api_key"); untyped/unknown entries omitted. */
+  credentialTypes?: Record<string, string>;
   /** "ok" | "missing" | "corrupt" — drives the Auth panel's models.json notice. */
   modelsState?: string;
   modelsPath?: string;

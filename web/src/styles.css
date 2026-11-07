@@ -1600,12 +1600,32 @@ button {
   font-size: 12px;
 }
 
-.provider-form-custom {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.provider-form-label {
   font-size: 12px;
   color: var(--text-secondary);
+}
+
+/* /login-style account method: this iteration shows terminal guidance only;
+   the interactive OAuth flow replaces this card in a later version. */
+.provider-account-guide {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: var(--bg-subtle);
+}
+
+.provider-guide-title {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.provider-account-command {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .provider-form-actions {
