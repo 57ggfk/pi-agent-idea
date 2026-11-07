@@ -90,8 +90,9 @@ test.describe("session titles", () => {
 
     const input = page.getByTestId("session-rename-input");
     await expect(input).toBeVisible();
-    // an unnamed session starts blank, and only one editor exists anywhere
-    await expect(input).toHaveValue("");
+    // an unnamed session prefills what the row already shows — the title
+    // auto-titling would have derived from the first message — never blank
+    await expect(input).toHaveValue("Fix the failing tests in CI");
     await expect(page.locator(".session-title-input")).toHaveCount(1);
 
     await input.fill("Renamed offline row");

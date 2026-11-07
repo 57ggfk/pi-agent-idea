@@ -1,10 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 import { usePiStore } from "../store/store";
-import type { SessionSearchMatch } from "../store/store";
+import type { SessionInfo, SessionSearchMatch } from "../store/store";
 import { useT } from "../i18n/useT";
 import { formatDateTime } from "../i18n/format";
+import { deriveSessionTitle } from "../lib/sessionTitle";
 import SessionTitleInput from "./SessionTitleInput";
 import Icon from "./Icon";
+
+/**
+ * Prefill for the row title editor: the stored name, or — for a session pi
+ * never named — what auto-titling would have derived from the first message
+ * (012: the editor opens with the title the row already shows, never blank).
+ */
+function rowTitlePrefill(s: SessionInfo): string {
+  return s.name || deriveSessionTitle(s.preview) || "";
+}
 
 /** Highlights every literal occurrence of `query` inside `text`. */
 function Highlighted({ text, query }: { text: string; query: string }) {
@@ -166,7 +176,7 @@ export default function SessionsView() {
                 <div className="session-row-top">
                   {/* The one inline editor (T107); the status bar hosts the
                       same editor on the other tabs, never both. */}
-                  <SessionTitleInput testId="session-rename-input" initialName={s.name ?? ""} />
+                  <SessionTitleInput testId="session-rename-input" initialName={rowTitlePrefill(s)} />
                 </div>
               </div>
             ) : (
