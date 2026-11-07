@@ -197,6 +197,35 @@ class PiAgentPanel(private val project: Project) : JPanel(), Disposable {
         repaint()
     }
 
+    /**
+     * Forces a full CEF frame repaint. Workaround for the JCEF OSR frame lag
+     * found on the real machine (0.5.4 GUI test): after a large DOM swap (top
+     * tab or manage sub-tab change) the on-screen frame could stay stale for
+     * seconds to minutes — the user literally saw the previous view's remains
+     * under the new one. The frontend now calls `ide.repaint` after view
+     * changes; this invalidates the whole browser frame so CEF resends it.
+     */
+    fun repaintBrowser() {
+        val current = browser ?: return
+        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
+            runCatching {
+                val component = current.component
+                component.revalidate()
+                component.repaint()
+                // CefBrowser_N.wasResized forces the renderer to produce a
+                // fresh full frame even at an unchanged size — the direct fix
+                // for the stale-frame lag. The impl class is package-private,
+                // so reach it reflectively; CefBrowser.invalidate() is
+                // protected and equally unreachable from a plugin.
+                val cef = current.cefBrowser
+                cef.javaClass
+                    .getMethod("wasResized", Integer.TYPE, Integer.TYPE)
+                    .apply { isAccessible = true }
+                    .invoke(cef, component.width.coerceAtLeast(1), component.height.coerceAtLeast(1))
+            }
+        }
+    }
+
     private fun disposeBrowser() {
         val current = browser ?: return
         browser = null

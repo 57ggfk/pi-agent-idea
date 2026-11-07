@@ -406,6 +406,9 @@ export class MockBridge implements Bridge {
           : MOCK_FILES;
       return { files } as T;
     }
+    if (method === "ide.repaint") {
+      return Promise.resolve({ ok: true } as T);
+    }
     if (method === "ide.saveImage") {
       const p = params as { suggestedName?: string } | undefined;
       const knob = query()?.get("saveimg");

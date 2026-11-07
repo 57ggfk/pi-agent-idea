@@ -113,6 +113,7 @@ class BridgeService(private val project: Project) : Disposable {
                 "sessions.delete" -> sessionsDelete(params)
                 "sessions.exportHtml" -> sessionsExportHtml(params)
                 "files.list" -> filesList(params)
+                "ide.repaint" -> repaintBrowser()
                 "ide.openFile" -> openFileInEditor(params)
                 "ide.showFileDiff" -> showFileDiff(params)
                 "config.getLastModel" -> lastModel()
@@ -530,6 +531,24 @@ class BridgeService(private val project: Project) : Disposable {
     }
 
     /** Opens a project-relative (or absolute) file at [line] in the editor. */
+    /**
+     * Full-frame CEF invalidation (0.5.4 real-machine find: JCEF OSR could
+     * keep a stale frame on screen for seconds-to-minutes after the frontend
+     * switched views; the DOM was already correct). Best-effort: when the
+     * tool window was never opened there is no browser to invalidate.
+     */
+    private fun repaintBrowser(): JsonObject {
+        val content = com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
+            .getToolWindow("Pi Agent")?.contentManager?.getContent(0)?.component ?: return ok(true)
+        val panel = generateSequence(content as java.awt.Component) { it.parent }
+            .filterIsInstance<dev.pi.agent.toolwindow.PiAgentPanel>()
+            .firstOrNull()
+        panel?.repaintBrowser()
+        return ok(true)
+    }
+
+    private fun ok(value: Boolean): JsonObject = buildJsonObject { put("ok", value) }
+
     private fun openFileInEditor(params: JsonObject): JsonObject {
         val path = (params["path"] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
             ?: throw IllegalArgumentException("ide.openFile requires path")

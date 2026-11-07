@@ -16,6 +16,7 @@ import SessionOutline from "./components/SessionOutline";
 import SessionSearch from "./components/SessionSearch";
 import Icon, { IconSprite } from "./components/Icon";
 import TooltipHost from "./components/Tooltip";
+import { getBridge } from "./bridge";
 import ProviderSetupCard from "./components/ProviderSetupCard";
 import ImagePreview from "./components/ImagePreview";
 
@@ -119,7 +120,15 @@ export default function App() {
                 aria-selected={tab === tabId}
                 className={`tab ${tab === tabId ? "tab-active" : ""}`}
                 data-testid={`tab-${tabId}`}
-                onClick={() => setTab(tabId)}
+                onClick={() => {
+                  setTab(tabId);
+                  // OSR frame-lag workaround (0.5.4 real-machine find): a
+                  // full view swap can leave the previous tab's paint on
+                  // screen for seconds — force a fresh JCEF frame.
+                  void getBridge()
+                    .then((b) => b.request("ide.repaint"))
+                    .catch(() => undefined);
+                }}
               >
                 {tabId === "chat" ? t("chat.tabs.chat") : tabId === "sessions" ? t("chat.tabs.sessions") : t("chat.tabs.manage")}
               </button>

@@ -23,6 +23,7 @@ export type BridgeMethod =
   | "sessions.delete"
   | "sessions.exportHtml"
   | "files.list"
+  | "ide.repaint"
   | "ide.openFile"
   | "ide.showFileDiff"
   | "config.getLastModel"

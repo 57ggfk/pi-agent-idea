@@ -235,6 +235,9 @@ export function manageApi(bridge: Bridge) {
     envUpdate: () => call<EnvUpdateResult>("manage.envUpdate"),
     modelsReadProvider: (p: { name: string }) => call<ProviderInfoResult>("manage.modelsReadProvider", p),
     modelsOpenFile: (p: { provider: string }) => call<ModelsOpenResult>("manage.modelsOpenFile", p),
+    /** Forces a full JCEF frame repaint (OSR frame-lag workaround, 0.5.4
+     *  real-machine find): call after view-level DOM swaps. */
+    repaint: () => call<{ ok: boolean }>("ide.repaint"),
     agentsList: () => call<AgentsListResult>("manage.agentsList"),
     /** Writes a provider credential. Responses carry the provider name only —
      *  the key material never crosses the bridge (012 T127). */

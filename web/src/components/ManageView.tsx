@@ -36,6 +36,11 @@ export function useManageApi() {
   const [api, setApi] = useState<ReturnType<typeof manageApi> | null>(null);
   const [bridge, setBridge] = useState<Bridge | null>(null);
   const [env, setEnv] = useState<EnvironmentResult | null>(null);
+  // Entering Manage swaps a full panel under the tabs — force the JCEF frame
+  // so the screen never keeps the previous tab's paint (OSR frame lag).
+  useEffect(() => {
+    if (api) void api.repaint().catch(() => undefined);
+  }, [api]);
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -134,7 +139,10 @@ function useTrust(api: ReturnType<typeof manageApi> | null) {
 }
 
 export default function ManageView() {
-  const [tab, setTab] = useState<ManageTab>("mcp");
+  // The sub-tab lives in the store: re-entering Manage must not reset it,
+  // and remount churn is part of why sub-tab switches felt non-smooth.
+  const tab = usePiStore((s) => s.manageTab);
+  const setTab = usePiStore((s) => s.setManageTab);
   const { t } = useT();
   const { api, bridge, env, refreshEnv } = useManageApi();
   const trust = useTrust(api);
@@ -339,7 +347,12 @@ export default function ManageView() {
             key={tabItem.id}
             className={`tab ${tab === tabItem.id ? "tab-active" : ""}`}
             data-testid={`manage-tab-${tabItem.id}`}
-            onClick={() => setTab(tabItem.id)}
+            onClick={() => {
+              setTab(tabItem.id);
+              // OSR frame-lag workaround: force a full JCEF frame after the
+              // panel swap, or the screen keeps the previous sub-tab's paint.
+              void api?.repaint?.().catch(() => undefined);
+            }}
           >
             {t(tabItem.labelKey)}
           </button>

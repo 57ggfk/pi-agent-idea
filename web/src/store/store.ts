@@ -335,6 +335,9 @@ interface PiStore {
   providerStep: "hidden" | "offered";
   /** Open image preview request (012 US7, T139): which block to show. */
   imagePreview: { itemId: number; blockIndex: number } | null;
+  /** Manage sub-tab, persisted across ManageView mounts (0.5.4 real-machine
+   *  UX: leaving Manage and returning no longer resets to MCP). */
+  manageTab: "mcp" | "packages" | "skills" | "agents" | "auth" | "settings" | "diagnostics";
 
   /**
    * Per-data-source status (spec 003). "Empty" and "failed" must be
@@ -401,6 +404,8 @@ interface PiStore {
   offerProviderStep(): void;
   /** Dismisses the provider step; [skip] persists (Q8 default). */
   dismissProviderStep(skip: boolean): Promise<void>;
+  /** Manage sub-tab selection (survives ManageView unmounts). */
+  setManageTab(tab: "mcp" | "packages" | "skills" | "agents" | "auth" | "settings" | "diagnostics"): void;
   /** Image preview (012 US7). */
   openImagePreview(itemId: number, blockIndex: number): void;
   closeImagePreview(): void;
@@ -876,6 +881,7 @@ export const usePiStore = create<PiStore>((set, get) => {
     setupGate: { needsSetup: false, state: "loading" },
     providerStep: "hidden",
     imagePreview: null,
+    manageTab: "mcp",
     sources: emptySources(),
 
     setTab(tab: Tab) {
@@ -1458,6 +1464,10 @@ export const usePiStore = create<PiStore>((set, get) => {
       } catch (e) {
         set({ setupGate: { needsSetup: false, state: "error", error: (e as Error).message } });
       }
+    },
+
+    setManageTab(tab) {
+      set({ manageTab: tab });
     },
 
     openImagePreview(itemId: number, blockIndex: number) {
