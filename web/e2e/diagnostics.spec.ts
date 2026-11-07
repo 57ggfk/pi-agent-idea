@@ -219,3 +219,25 @@ test("#11 the diagnostics table stays inside the tool window at 360px", async ({
   expect(overflow.panelRight).toBeLessThanOrEqual(overflow.appRight + 1);
   expect(overflow.scrollsSideways).toBeLessThanOrEqual(0);
 });
+
+test("#14 the pi environment (version, paths, update) lives in diagnostics, not on the manage root", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByTestId("tab-manage").click();
+  await expect(page.getByTestId("manage-view")).toBeVisible();
+
+  // The old squeezed env bar is gone from the manage root…
+  await expect(page.getByTestId("manage-env")).toHaveCount(0);
+  await expect(page.getByTestId("pi-update")).toHaveCount(0);
+  // …while trust keeps its place there (the default project is trusted).
+  await expect(page.getByTestId("trust-status")).toHaveAttribute("data-state", "trusted");
+
+  await page.getByTestId("manage-tab-diagnostics").click();
+  const env = page.getByTestId("manage-env");
+  await expect(env).toBeVisible();
+  await expect(env).toContainText("1.4.0-mock");
+  await expect(env).toContainText("/usr/local/bin/pi");
+  await expect(env).toContainText("~/.pi/agent");
+  await expect(page.getByTestId("pi-update")).toBeVisible();
+});

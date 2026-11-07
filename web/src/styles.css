@@ -3358,6 +3358,41 @@ button {
   color: var(--danger);
 }
 
+/* The pi environment card (version, binary path, agent dir, self-update).
+   Moved here from the manage root's top bar, which squeezed version + trust +
+   update onto one line; the card wraps instead of squeezing. Long nvm paths
+   break inside their span rather than pushing the card sideways. */
+.diag-env {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.diag-env > * {
+  min-width: 0;
+}
+
+.diag-env-version {
+  flex: 1 1 auto;
+  word-break: break-all;
+}
+
+.diag-env-dir {
+  flex: 0 0 auto;
+}
+
+.diag-env-update {
+  flex: 0 0 auto;
+}
+
 .diag-list {
   list-style: none;
   margin: 0;

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { usePiStore } from "../store/store";
 import { getBridge } from "../bridge";
 import type { Bridge } from "../bridge/types";
-import { manageApi, type EnvironmentResult, type EnvUpdateResult, type TrustState, type TrustWriteResult } from "../manage";
+import { manageApi, type TrustState, type TrustWriteResult } from "../manage";
 import { useT } from "../i18n/useT";
 import McpPanel from "./manage/McpPanel";
 import PackagesPanel from "./manage/PackagesPanel";
@@ -35,7 +35,6 @@ const TRUST_CATEGORIES: Array<{ type: string; labelKey: "manage.trust.category.s
 export function useManageApi() {
   const [api, setApi] = useState<ReturnType<typeof manageApi> | null>(null);
   const [bridge, setBridge] = useState<Bridge | null>(null);
-  const [env, setEnv] = useState<EnvironmentResult | null>(null);
   // Entering Manage swaps a full panel under the tabs — force the JCEF frame
   // so the screen never keeps the previous tab's paint (OSR frame lag).
   useEffect(() => {
@@ -49,17 +48,12 @@ export function useManageApi() {
       if (cancelled) return;
       setApi(a);
       setBridge(b);
-      setEnv(await a.environment().catch(() => null));
     })();
     return () => {
       cancelled = true;
     };
   }, []);
-  const refreshEnv = useCallback(async () => {
-    if (!api) return;
-    setEnv(await api.environment().catch(() => null));
-  }, [api]);
-  return { api, bridge, env, refreshEnv };
+  return { api, bridge };
 }
 
 export function OutcomeBanner({ outcome }: { outcome: { ok: boolean; error?: string; output?: string } | null }) {
@@ -144,117 +138,17 @@ export default function ManageView() {
   const tab = usePiStore((s) => s.manageTab);
   const setTab = usePiStore((s) => s.setManageTab);
   const { t } = useT();
-  const { api, bridge, env, refreshEnv } = useManageApi();
+  const { api, bridge } = useManageApi();
   const trust = useTrust(api);
   const trusted = trust.state?.trusted === true;
   const unreadable = !trusted && trust.error != null;
 
-  // pi self-update (spec 001 US3). There is no check-update subcommand, so the
-  // env area only shows the current version plus an on-demand entry; the
-  // outcome is whatever `pi update --self` prints (T016 — no "new version
-  // available" badge, the plugin must not guess).
-  const piStatus = usePiStatus();
-  const piRunning = piStatus === "running" || piStatus === "starting";
-  const [updating, setUpdating] = useState(false);
-  const [updateConfirm, setUpdateConfirm] = useState(false);
-  const [updateOutcome, setUpdateOutcome] = useState<EnvUpdateResult | null>(null);
-
-  const runEnvUpdate = useCallback(async () => {
-    if (!api) return;
-    setUpdateConfirm(false);
-    setUpdating(true);
-    try {
-      const res = await api.envUpdate();
-      setUpdateOutcome(res);
-      if (res.ok) {
-        // The old binary is gone: replace a running process (T018); the status
-        // bar version follows the pi-state events. Not running → nothing to
-        // replace, the restart call would only fail.
-        if (piRunning && bridge) {
-          await bridge.request("rpc.restart").catch(() => null);
-        }
-        await refreshEnv();
-      }
-    } catch (e) {
-      setUpdateOutcome({ ok: false, error: (e as Error).message });
-    } finally {
-      setUpdating(false);
-    }
-  }, [api, bridge, piRunning, refreshEnv]);
-
-  const requestEnvUpdate = () => {
-    setUpdateOutcome(null);
-    // An update swaps the binary out from under a live session (FR-010):
-    // confirm first, and cancelling must not touch anything.
-    if (piRunning) {
-      setUpdateConfirm(true);
-    } else {
-      void runEnvUpdate();
-    }
-  };
+  // The pi environment (version, binary path, agent dir, self-update) moved to
+  // the diagnostics tab: four items on one bar squeezed the trust status into
+  // vertical character wrap at tool-window width.
 
   return (
     <div className="manage-view-full" data-testid="manage-view">
-      <div className="manage-env" data-testid="manage-env">
-        {env ? (
-          env.found ? (
-            <span>
-              pi <b data-testid="pi-version">{env.version || "?"}</b> · <span className="mono">{env.path}</span>
-            </span>
-          ) : (
-            <span className="manage-env-missing">
-              {t("manage.env.missing")}{" "}
-              <code>npm install -g @earendil-works/pi-coding-agent</code> {t("manage.env.missingEnd")}
-            </span>
-          )
-        ) : (
-          <span>{t("manage.env.detecting")}</span>
-        )}
-        <span className="spacer" />
-        {trusted ? (
-          <span className="trust-status" data-testid="trust-status" data-state="trusted">
-            {t("manage.env.trusted")}
-            <button className="link-btn" data-testid="trust-revoke" onClick={() => trust.openPrompt("revoke")}>
-              {t("manage.env.revoke")}
-            </button>
-          </span>
-        ) : null}
-        {env?.agentDir ? <span className="mono">~/.pi/agent</span> : null}
-        {env?.found ? (
-          <button className="btn" data-testid="pi-update" disabled={updating} onClick={requestEnvUpdate}>
-            {updating ? t("manage.env.updating") : t("manage.env.update")}
-          </button>
-        ) : null}
-      </div>
-
-      {updateConfirm ? (
-        <div className="trust-confirm" data-testid="env-update-confirm">
-          <div className="trust-confirm-title">{t("manage.env.updateConfirm")}</div>
-          <div className="trust-confirm-actions">
-            <button
-              className="btn btn-send"
-              data-testid="env-update-confirm-yes"
-              onClick={() => void runEnvUpdate()}
-              disabled={updating}
-            >
-              {t("manage.env.updateYes")}
-            </button>
-            <button className="btn" data-testid="env-update-confirm-no" onClick={() => setUpdateConfirm(false)} disabled={updating}>
-              {t("common.cancel")}
-            </button>
-          </div>
-        </div>
-      ) : null}
-      {updateOutcome ? (
-        <div
-          className={`outcome-banner ${updateOutcome.ok ? "outcome-ok" : "outcome-fail"}`}
-          data-testid="env-update-result"
-        >
-          {updateOutcome.ok ? "✓ " : "✗ "}
-          {updateOutcome.output || updateOutcome.error}
-        </div>
-      ) : null}
-
       {/* Only the *problem* states get a banner; a trusted project stays quiet.
           Nothing renders until the state has been read: a warning that flashes
           for a fraction of a second reads as a bug, not as a status. */}
@@ -293,6 +187,15 @@ export default function ManageView() {
               </button>
             )}
           </div>
+        </div>
+      ) : trusted ? (
+        <div className="manage-env">
+          <span className="trust-status" data-testid="trust-status" data-state="trusted">
+            {t("manage.env.trusted")}
+            <button className="link-btn" data-testid="trust-revoke" onClick={() => trust.openPrompt("revoke")}>
+              {t("manage.env.revoke")}
+            </button>
+          </span>
         </div>
       ) : null}
 
@@ -360,7 +263,7 @@ export default function ManageView() {
       </div>
 
       <div className="manage-content">
-        {!api ? (
+        {!api || !bridge ? (
           <div className="loading">Loading…</div>
         ) : tab === "mcp" ? (
           <McpPanel api={api} />
@@ -373,15 +276,11 @@ export default function ManageView() {
         ) : tab === "auth" ? (
           <AuthPanel api={api} />
         ) : tab === "diagnostics" ? (
-          <DiagnosticsPanel />
+          <DiagnosticsPanel api={api} bridge={bridge} />
         ) : (
           <SettingsPanel api={api} />
         )}
       </div>
     </div>
   );
-}
-
-export function usePiStatus() {
-  return usePiStore((s) => s.piStatus);
 }

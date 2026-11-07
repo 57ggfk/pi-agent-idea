@@ -7,13 +7,19 @@ async function openManage(page: import("@playwright/test").Page, query: string) 
   await expect(page.getByTestId("manage-view")).toBeVisible();
 }
 
+async function openDiagnostics(page: import("@playwright/test").Page) {
+  // The pi environment (version, paths, update) lives in the diagnostics tab.
+  await page.getByTestId("manage-tab-diagnostics").click();
+  await expect(page.getByTestId("diagnostics-panel")).toBeVisible();
+  await expect(page.getByTestId("manage-env")).toContainText("1.4.0-mock");
+}
+
 test.describe("manage view (MockBridge)", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
     await expect(page.getByTestId("empty-state")).toBeVisible();
     await page.getByTestId("tab-manage").click();
     await expect(page.getByTestId("manage-view")).toBeVisible();
-    await expect(page.getByTestId("manage-env")).toContainText("1.4.0-mock");
   });
 
   test("mcp panel lists servers and supports add/remove flow", async ({ page }) => {
@@ -154,8 +160,9 @@ test.describe("manage view (MockBridge)", () => {
 
   // -- pi self-update (spec 001 US3) -----------------------------------------
 
-  test("pi update from the env area refreshes the version without a confirm", async ({ page }) => {
+  test("pi update from diagnostics refreshes the version without a confirm", async ({ page }) => {
     // Default mock reports no pi-state events: no process running, no gate.
+    await openDiagnostics(page);
     await page.getByTestId("pi-update").click();
     await expect(page.getByTestId("env-update-confirm")).toHaveCount(0);
     await expect(page.getByTestId("env-update-result")).toContainText("updated to 1.5.0-mock", {
@@ -168,6 +175,7 @@ test.describe("manage view (MockBridge)", () => {
     await openManage(page, "pistate=1");
     // pi reports running ~300ms after load (mock pi-state events).
     await expect(page.getByTestId("status-dot")).toHaveClass(/running/, { timeout: 5_000 });
+    await openDiagnostics(page);
 
     await page.getByTestId("pi-update").click();
     const confirm = page.getByTestId("env-update-confirm");
@@ -185,6 +193,7 @@ test.describe("manage view (MockBridge)", () => {
 
   test("a failed pi update shows the raw error", async ({ page }) => {
     await openManage(page, "fail=update");
+    await openDiagnostics(page);
     await page.getByTestId("pi-update").click();
     await expect(page.getByTestId("env-update-result")).toContainText("EACCES", { timeout: 15_000 });
   });

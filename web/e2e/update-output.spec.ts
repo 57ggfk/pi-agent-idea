@@ -13,6 +13,9 @@ async function openManage(page: Page, query: string) {
   await expect(page.getByTestId("empty-state")).toBeVisible();
   await page.getByTestId("tab-manage").click();
   await expect(page.getByTestId("manage-view")).toBeVisible();
+  // The pi environment (version + update entry) lives in the diagnostics tab.
+  await page.getByTestId("manage-tab-diagnostics").click();
+  await expect(page.getByTestId("diagnostics-panel")).toBeVisible();
 }
 
 test("successful update shows the readable Chinese result verbatim", async ({ page }) => {
