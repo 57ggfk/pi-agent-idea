@@ -96,16 +96,22 @@ object TitleGenerator {
      * provider failures to stderr, and a capture without the exit check would
      * happily hand back "API key not found" as a session title.
      *
-     * The file (not a pipe) is the load-bearing part — the real-machine 0.5.4
-     * postmortem: a pipe read after a killed one-shot blocked FOREVER on an
-     * orphaned child that inherited the write end, hanging the bridge
-     * coroutine so the response (and any log line) never happened. A file
-     * cannot hang, and the tree kill below keeps no orphans alive either.
+     * Two real-machine hangs shaped this method, both invisible from the
+     * caller (no response, no log — the bridge coroutine just never returned):
+     * 1. stdin: a GUI-launched IDE has no TTY, and ProcessBuilder children
+     *    inherit the IDE's never-EOF stdin pipe — `pi -p` then waits on stdin
+     *    forever (terminal repro: /dev/null stdin 3s, open-pipe stdin >12s).
+     *    The empty stdin file gives it the EOF it wants.
+     * 2. stdout: a pipe read after a killed one-shot blocked forever on an
+     *    orphaned child holding the write end. A file cannot hang, and the
+     *    tree kill keeps no orphans alive either.
      */
     private fun run(command: List<String>): String? {
         val outFile = File.createTempFile("pi-title-", ".txt")
+        val inFile = File.createTempFile("pi-title-in-", ".empty")
         try {
             val proc = ProcessBuilder(command)
+                .redirectInput(ProcessBuilder.Redirect.from(inFile))
                 .redirectOutput(ProcessBuilder.Redirect.to(outFile))
                 .redirectErrorStream(true)
                 .start()
@@ -127,6 +133,7 @@ object TitleGenerator {
             return null
         } finally {
             outFile.delete()
+            inFile.delete()
         }
     }
 
