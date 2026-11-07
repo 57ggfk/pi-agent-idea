@@ -128,7 +128,6 @@ export default function Composer() {
   const loadFiles = usePiStore((s) => s.loadFiles);
   const retrySource = usePiStore((s) => s.retrySource);
   const compact = usePiStore((s) => s.compact);
-  const newSession = usePiStore((s) => s.newSession);
   const pendingPrompt = usePiStore((s) => s.pendingPrompt);
   const composerResetSeq = usePiStore((s) => s.composerResetSeq);
   const clearPendingPrompt = usePiStore((s) => s.clearPendingPrompt);
@@ -694,20 +693,6 @@ export default function Composer() {
                 <span className="btn-lbl">{t("composer.forkLabel")}</span>
               </button>
             ) : null}
-            <button
-              className="btn btn-tool btn-ghost"
-              data-testid="new-session"
-              onClick={() => {
-                // The store owns the confirmation now (007 US3): it knows
-                // whether the session is empty, streaming, or has content, and
-                // renders one in-app dialog instead of a native one.
-                void newSession();
-              }}
-              {...tip(isStreaming ? t("composer.newSessionStreaming") : t("composer.newSession"))}
-            >
-              <Icon name="plus" className="ic-sm" />
-              <span className="btn-lbl">{t("composer.newLabel")}</span>
-            </button>
             <SendButton
               mode={mode}
               setMode={(m: SendMode) => setMode(m)}

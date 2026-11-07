@@ -15,7 +15,7 @@ import ConfirmDialog from "./components/ConfirmDialog";
 import SessionOutline from "./components/SessionOutline";
 import SessionSearch from "./components/SessionSearch";
 import Icon, { IconSprite } from "./components/Icon";
-import TooltipHost from "./components/Tooltip";
+import TooltipHost, { tip } from "./components/Tooltip";
 import { getBridge } from "./bridge";
 import ProviderSetupCard from "./components/ProviderSetupCard";
 import ImagePreview from "./components/ImagePreview";
@@ -66,6 +66,8 @@ export default function App() {
   const items = usePiStore((s) => s.items);
   const toggleOutline = usePiStore((s) => s.toggleOutline);
   const openSearch = usePiStore((s) => s.openSearch);
+  const newSession = usePiStore((s) => s.newSession);
+  const isStreaming = usePiStore((s) => s.isStreaming);
   const setupGate = usePiStore((s) => s.setupGate);
   const detectSetup = usePiStore((s) => s.detectSetup);
   const providerStep = usePiStore((s) => s.providerStep);
@@ -154,6 +156,21 @@ export default function App() {
                   onClick={() => openSearch()}
                 >
                   <Icon name="search" className="ic-sm" />
+                </button>
+                <button
+                  type="button"
+                  className="tab-tool-btn"
+                  data-testid="new-session"
+                  aria-label={t("composer.newSession")}
+                  {...tip(isStreaming ? t("composer.newSessionStreaming") : t("composer.newSession"))}
+                  onClick={() => {
+                    // The store owns the confirmation (007 US3): it knows
+                    // whether the session is empty, streaming, or has content,
+                    // and renders one in-app dialog instead of a native one.
+                    void newSession();
+                  }}
+                >
+                  <Icon name="plus" className="ic-sm" />
                 </button>
               </div>
             ) : null}
