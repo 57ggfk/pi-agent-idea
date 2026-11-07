@@ -154,3 +154,104 @@
 |---|---|---|
 | 010 T006 / T016 | 输入框自适应在真机 JCEF 下的手感与输入法行为 | `MANUAL_TEST.md`「界面密度」第 3、7、8 条 |
 | 007 T020 | 消息级 Fork 与确认框的真机表现 | `MANUAL_TEST.md`「Fork 与确认框」全段 |
+
+---
+
+# 0.5.4 批次（2026-11-07）
+
+> 版本分支：`release/0.5.4`（从 `main` 拉出，版本号已 +1 patch；已含右键菜单 `%key` 修复 `3bdfb71`）
+> 约束基准同前：`.specify/memory/constitution.md`（machine-local、当前工作机缺失，沿用本文件记载的第 II / III 条与 010 的量化断言约定）
+> 执行记录：`specs/0.5.4-run-report.md`（沿用 0.5.2/0.5.3 模式，本批次不预建空模板）
+
+**缺陷修复同样按 feature 三段式交付**：与 010-ui-polish（三条 UI 缺陷合一）一致，feature 指「一批可独立交付、可独立验证的变更」，不区分新增与修复。目录命名 `defects` 而非业务名，spec 内用「现象 → 根因 → 期望行为 → 回归场景」结构，不硬套业务价值叙事。
+
+| Feature | Tasks | 内容 | 来源 / 风险 |
+|---|---|---|---|
+| [011 0.5.4 缺陷批次](./011-0.5.4-defects/spec.md) | 28（待开工） | 模型选择器（打开定位 / 供应商分组 / 点外部关闭）、skill 引用只显示标记、更新 pi 回显中文乱码 | 用户 0.5.4 真机验收后的 5 条缺陷清单；**T001（skill 报文）为唯一阻塞性前置**；D5 根因已确证（Windows 代码页 + `b2d32b2`） |
+
+## 五条缺陷的映射
+
+| 用户原条目 | 回归主题 | 代码定位 | 用户已定的口径 |
+|---|---|---|---|
+| 弹出自动滚动到选中项？考虑性能影响 | US1 | `ModelPicker.tsx:23-29,44-47` | 打开时定位并同步高亮；已可见不滚；只在打开时读一次布局；**不引虚拟列表**，保留 200 条上限 |
+| 按供应商分组 | US2 | `ModelPicker.tsx:106-127`、`types.ts:98-104` | 组标题 + 计数，当前组置顶，组内保持 pi 原序，跨组键盘索引不错位 |
+| 选模型弹窗点外部不关闭 | US3 | `ModelPicker.tsx:14,64,95-96`；参考 `OptionsPopover.tsx:62-78` | 点外部 / Esc 都关；rootRef 必须包住 chip，避免「先关后开」 |
+| 引用 skill 把内容打印到会话 | US4 | `Composer.tsx:369-372`、`MessageList.tsx:13-15` | 只显示 `/skill:name` 标记 + 用户问题；全文不进气泡，也不进 Copy/Quote |
+| 更新 pi 结果回显乱码 | US5 | `PiCliRunner.kt:140-149`、`PiManage.kt:373,517`、`ManageView.tsx:58-64` | **Windows 特有，根因已确证**：DOS/OEM 本地代码页输出（中文 Windows 为 CP936/GBK）vs JVM 默认 UTF-8。用户补充「检测 pi 时也有类似乱码」对应历史提交 `b2d32b2`（`where` 输出按本地代码页解码），它引入的 `OsProcess.decodeOutput` 已修好 `PiLocator.runCapture`，**`PiCliRunner.drainThread` 是唯一漏网的读入点**；`PiEnvironment.toolVersion` 同走该链路，一并回归。修法：按字节读 + 严格 UTF-8 → 回退 `native.encoding`，附带清 ANSI 与安全截断 |
+
+## 顺序与依赖
+
+```
+Phase 0 真机取证：T001 抓 skill 报文 ──阻塞──► Phase 2 skill（US4）
+                  T002 Windows 验收证据 / T003 模型规模 ── 不阻塞实现
+Phase 1 模型选择器（US1–US3，纯前端、无依赖、可先做）
+Phase 3 CLI 输出解码（D5 根因已确证，可先做；仍建议放最后做全局回归）
+   drainThread 是全局读入层，一次回归全部 manage.* 命令与 setup 检测链路
+Phase 4 收尾：全量测试 / MANUAL_TEST / CHANGELOG / 真机目视
+```
+
+## 待用户关闭的开放问题
+
+`spec.md` 末尾列了 Q1–Q4。**Q1 已关闭（2026-11-07 用户补充）**：乱码是 Windows 下 DOS/OEM 代码页输出与 JVM 默认 UTF-8 不匹配，与 `b2d32b2` 修过的 setup 检测是同一根因，实现方案不再靠样例猜测；T002 降级为 Windows 真机验收证据。剩余待用户补：Q2 pi 展开 skill 的原始报文（**唯一仍阻塞 Phase 2 开工**）、Q3 真实模型数量与 provider 大小写、Q4 点工具窗**外部**是否也要关闭弹窗（JCEF 内 document 收不到工具窗外点击，默认不做）。
+
+## 完成判据
+
+同 001–010：每个 task 自带「— 验证：…」；几何/行为断言必须量化，不得只断言存在；
+真机项留截图或日志；全量基线为 0.5.3 的 `typecheck 0 错误` / `vitest 165` / `playwright 176` / `gradlew test ✅`。
+
+---
+
+## 0.5.4 需求批次（012，2026-11-07 追加）
+
+> 与 011 **并列的第二个 feature**：011 是 5 条缺陷回归，012 是 7 条新增功能，两批可分别交付、分别派工。
+> 目录 [`012-0.5.4-features/`](./012-0.5.4-features/spec.md)，同样三段式（spec / plan / tasks），共 **45 个 task**。
+> **编号从 101 起**（`FR-101…` / `T101…`），避免与同批次 011 的 `FR-001…` / `T001…` 混淆；派工提示词须显式写「012 的 T1xx」。
+> **本批次只产出文档，不改任何源码**（用户 2026-11-07 明确要求），实现阶段另行派工。
+
+| Feature | Tasks | 内容 | 状态 |
+|---|---|---|---|
+| [012 0.5.4 需求批次](./012-0.5.4-features/spec.md) | 45（待开工） | 会话标题、按钮提示、AGENTS.md、安装独占引导、provider 配置引导、auth 管理、图片预览 | Draft，**T101/T102/T103 三项契约取证分别阻塞 Phase 1/3/5** |
+
+### 七条需求的映射
+
+| 用户原条目 | US | 代码定位（已核对） | 用户已定的口径 |
+|---|---|---|---|
+| 会话标题自动重命名与手动重命名 | US1 | `store.ts:1319-1332` `renameSession` 已实现；`:730-732` 事件只更新 `sessionName`；`SessionsView.tsx:150-198` 无 UI 入口；`PiSessionIndex.kt:93-94` 读 jsonl `session_info.name` | **pi 自动生成，插件只接管**：补事件→列表同步 + 列表行内/状态栏双入口手动改名；**不额外调模型生成标题**；pi 无自动命名则降级「首条消息截断」 |
+| 按钮悬浮文字提示 | US2 | 约 65 处原生 `title/aria-label`，**0 个 tooltip 组件**；`styles.css:2795-2805` 窄布局藏文字；`ManageView`(9/0)、`PackagesPanel`(4/0)、`SettingsPanel`(2/0) 等缺提示 | **自定义 Tooltip 组件**：视口翻转/夹取、hover+focus、i18n、不吞点击；顺带把 manage 面板硬编码英文收进字典 |
+| Pi 的 AGENTS.md 管理 | US3 | **全仓库 0 处提及**；可复用 `PiManage.kt:208-224`（写模板）、`BridgeService.kt:660-673`（IDE 编辑器打开）、`PiCliRunner.agentDir()` | **多层级列表 + 全局**：项目根 / 子目录 / 全局三层，逐项查看/编辑/新建 + 优先级说明；扫描有界、内容交给 IDE 编辑器；**层级定义以 T102 实测为准** |
+| 引导用户安装，不显示其他界面、不允许切换关闭、但可停止安装 | US4 | `App.tsx:74-138` 无条件渲染 tab 栏；`SetupCard.tsx:136,142` 可「稍后」关掉且**自己调 `envDetect`**；`PiEnvironment.kt:220` `needsSetup=install==null` | **初次检测到缺 pi 就全程独占**：App 层只渲染引导子树，tabs/chat/sessions/manage/statusbar/composer **全部不挂载**；移除「稍后」与切页入口；保留「停止安装」（停止后仍在引导页，可重试或填已有 pi 路径）；JCEF 拦不住 IDE 侧关工具窗 → Non-goal |
+| 引导用户配置 provider | US5 | `SetupCard.tsx:71-102` 装完直接结束；`PiManage.kt:257-286` `authOverview`；凭据**写入通道目前不存在** | 与 US6 **一条链路**：装完进入配置步骤，**可跳过**；两处共用同一表单 / `manage.*` API / 文案；凭据明文不过桥 |
+| 配置里增加 auth（provider 管理） | US6 | **已有 auth 页签**（`ManageView.tsx:20,356` → `AuthPanel.tsx`）但只读且硬编码英文；`PiManage.kt:410-463` 已有 `sanitize` | 从只读升级为**新增/编辑/删除**，删除走 007 确认框；保留 Refresh/Check/展开/打开文件零回归；⚠️ `specs/README.md`「未纳入本批」曾有「不做表单式编辑 models.json」的历史决策，默认折中不推翻，**是否推翻见 Q3** |
+| 图片预览点击弹出模态框预览 | US7 | `MessageList.tsx:17-20` inline `<img>` 无交互；`types.ts:11-12,226-236` 两种 image 数据形态；`ConfirmDialog.tsx` 可作模态框样板 | **四项全做**：单图放大 + Esc/遮罩关闭、多图 ←/→ 切换、缩放与拖拽、另存为/复制图片。⚠️ `clipboard.ts:1-10` 确认 JCEF 无 async clipboard API，**复制/另存必须新增 Kotlin 桥接**，失败不得假装成功 |
+
+### 关键既有事实（写进 plan 的三处）
+
+1. **自动命名的真实漏点**：`session_info_changed` 只改 `sessionName`，`refreshSessions()` 只在 `setTab("sessions")`（`store.ts:798`）等少数时机调用 → 会话列表标题滞后到下次切页。US1 是补同步，不是重写标题生成。
+2. **`needsSetup` 只是 SetupCard 的局部 state**，App 拿不到 → 独占必须把检测上提为 store 里唯一的 `setupGate`，并处理「检测失败不锁死主界面」的安全兜底。
+3. **新增桥接必须四处同步**：`bridge/types.ts` → `manage.ts`/调用方 → `BridgeService.kt:125-151` → `bridge/mock.ts`；本批预计新增 `manage.agents*` / `manage.auth*` / `ide.saveImage` / `ide.copyImage`。
+
+### 顺序与依赖
+
+```
+Phase 0 取证：T101 ──阻塞──► Phase 1 会话标题
+             T102 ──阻塞──► Phase 3 AGENTS.md
+             T103 ──阻塞──► Phase 5 provider 链路
+             T104 按钮基线 ── 非阻塞
+Phase 2 tooltip（纯前端）── 可先行
+Phase 4 安装独占（改 App 门控，影响 e2e 隐含前提）── 建议早做
+Phase 6 图片：UI 骨架可先行，另存/复制依赖 Kotlin 桥接，可与 Phase 3/5 合并落地
+Phase 7 收尾：i18n / 全基线 / MANUAL_TEST / 真机目视
+```
+
+不可颠倒的只有两条：三项取证各自卡对应 Phase；`App` 门控早于 e2e 基线核对。
+
+### 待用户关闭的开放问题
+
+`012/spec.md` 末尾列了 Q1–Q8。**Q1–Q3 为阻塞项**（pi 是否真有自动标题、AGENTS.md 的实测加载层级与优先级、provider 凭据写入通道 + 是否推翻「不做表单式编辑 models.json」的历史决策）。Q4–Q8 已有默认口径：多图范围=当前会话、停止安装后保持独占、复制/另存的 IDE 权限边界、tooltip 覆盖动态按钮、跳过引导是否持久化；执行时按默认实现并逐条标注结论即可。
+
+### 完成判据（在 0.5.4 通用判据之上）
+
+- 每个 task 自带「— 验证：…」；新增可见文案双份字典；新增桥接四处同步。
+- 独占态一律用 `toHaveCount(0)` 断言「不渲染」，不用 `not.toBeVisible()`。
+- `setup.spec.ts` 7 条按新语义改写后全绿，其余默认 `needsSetup=false` 的 e2e 零回归；基线变化逐条注明「非回归」。
+- 凭据明文在 DOM / 日志 / bridge 响应 / 测试快照中零出现；图片复制与另存失败必须可见。
