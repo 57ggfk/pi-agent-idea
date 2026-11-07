@@ -83,11 +83,27 @@ object PiLocator {
 
     private fun foundAt(path: String): PiInstallation = PiInstallation(path, version(path))
 
-    /** `pi --version` output, or null when the binary is not runnable. */
-    fun version(path: String): String? = runCapture(OsProcess.launchCommand(listOf(path, "--version")), 10)
-        ?.lineSequence()
-        ?.firstOrNull { it.isNotBlank() }
-        ?.trim()
+    /**
+     * `pi --version` output, or null when the binary is not runnable.
+     *
+     * Spawned through [spawnCommand] — the pi shim is a node script with a
+     * `#!/usr/bin/env node` shebang, and a GUI-launched IDE has no node on
+     * PATH, so the bare `[pi, --version]` spawn used to answer with the
+     * stderr line `env: node: No such file or directory`, which then leaked
+     * into the status bar as the "version" (real-machine find, 0.5.4 GUI
+     * test). The output is additionally sanity-checked: anything that does
+     * not look like a version string is discarded.
+     */
+    fun version(path: String): String? {
+        val firstLine = runCapture(spawnCommand(path, listOf("--version")), 10)
+            ?.lineSequence()
+            ?.firstOrNull { it.isNotBlank() }
+            ?.trim()
+            ?: return null
+        // pi prints its own version ("1.4.0"); interpreter failures print
+        // `env: node: …` / `node: command not found` / usage text instead.
+        return firstLine.takeIf { Regex("^\\d+(\\.\\d+)+").containsMatchIn(it) || it.startsWith("pi ", ignoreCase = true) }
+    }
 
     /**
      * Resolves the node interpreter that runs pi, for pi distributions that

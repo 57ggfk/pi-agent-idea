@@ -40,6 +40,31 @@ class PiLocatorTest {
     }
 
     @Test
+    fun `version returns a real version, never an interpreter error`() {
+        val pi = realPi ?: return
+        assumeTrue(PiLocator.isNodeScript(pi), "real pi is not a node script")
+        val v = PiLocator.version(pi)
+        // `env: node: No such file or directory` must never surface as the
+        // version (real-machine find, 0.5.4 GUI test — GUI IDEs have no node
+        // on PATH and the bare `[pi, --version]` spawn answered with stderr).
+        assertTrue(v == null || Regex("^\\d+(\\.\\d+)+|^pi\\b").containsMatchIn(v), "version was: $v")
+    }
+
+    @Test
+    fun `version rejects interpreter-failure output on any machine`() {
+        val dir = tempDir()
+        // a "pi" whose shebang interpreter does not exist: the spawn fails and
+        // the merged output would be `env: node: ...` — version must be null
+        val fake = File(dir, "pi-fake").apply {
+            writeText("#!/usr/bin/env definitely-missing-interpreter\n")
+            setExecutable(true)
+        }
+        val v = PiLocator.version(fake.absolutePath)
+        assertTrue(v == null || Regex("^\\d+(\\.\\d+)+|^pi\\b").containsMatchIn(v), "version was: $v")
+        dir.deleteRecursively()
+    }
+
+    @Test
     fun `node bin dir resolves next to nvm installs`() {
         val pi = realPi ?: return
         assumeTrue(PiLocator.isNodeScript(pi), "real pi is not a node script")
