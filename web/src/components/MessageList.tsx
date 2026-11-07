@@ -2,22 +2,44 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { usePiStore } from "../store/store";
 import { actionsForItem, type ChatItem, type ContentBlock, type MessageAction } from "../store/types";
 import { hitsFromItems } from "../lib/search";
+import { displaySkillText } from "../lib/skillDisplay";
+import { imageSrc } from "../lib/imagePreview";
 import { useT } from "../i18n/useT";
 import Markdown from "./Markdown";
 import MessageActions from "./MessageActions";
 import ToolCard from "./ToolCard";
 import Icon from "./Icon";
 
-function BlockView({ block, forceOpenOutput }: { block: ContentBlock; forceOpenOutput?: boolean }) {
+function BlockView({
+  block,
+  forceOpenOutput,
+  itemId,
+  blockIndex,
+}: {
+  block: ContentBlock;
+  forceOpenOutput?: boolean;
+  itemId: number;
+  blockIndex: number;
+}) {
   const [open, setOpen] = useState(false);
+  const openImagePreview = usePiStore((s) => s.openImagePreview);
   if (block.kind === "text") {
     if (!block.text) return null;
     return <Markdown text={block.text} />;
   }
   if (block.kind === "image") {
     if (!block.data) return null;
-    const src = block.data.startsWith("data:") ? block.data : `data:${block.mimeType};base64,${block.data}`;
-    return <img className="msg-image" src={src} alt="attached image" data-testid="msg-image" />;
+    // T139: the thumbnail IS the preview trigger — no second, larger node is
+    // ever rendered; the modal reuses the same base64 payload.
+    return (
+      <img
+        className="msg-image msg-image-clickable"
+        src={imageSrc(block.data, block.mimeType)}
+        alt="attached image"
+        data-testid="msg-image"
+        onClick={() => openImagePreview(itemId, blockIndex)}
+      />
+    );
   }
   if (block.kind === "thinking") {
     const streaming = !block.done;
@@ -83,14 +105,29 @@ function ItemView({
         <span className="who">Pi</span>
       </div>
       <div className="item-body">
-        {item.blocks.map((b, i) => (
-          <BlockView key={i} block={b} forceOpenOutput={activeHitBlockIndex === i} />
+        {displayBlocks(item).map((b, i) => (
+          <BlockView key={i} block={b} forceOpenOutput={activeHitBlockIndex === i} itemId={item.id} blockIndex={i} />
         ))}
         {streaming && <span className="cursor" />}
       </div>
       {item.usage?.cost?.total ? <div className="item-cost">${item.usage.cost.total.toFixed(4)}</div> : null}
     </div>
   );
+}
+
+/**
+ * Presentation blocks (011 US4, T015): skill-expanded user messages show the
+ * `/skill:<name>` marker + question, never the SKILL.md body. The store keeps
+ * pi's raw text — search (006) and the HTML export operate on the store list,
+ * so folding here cannot leak into them; block indexes stay 1:1.
+ */
+function displayBlocks(item: ChatItem): ContentBlock[] {
+  if (item.role === "user") {
+    return item.blocks.map((b) =>
+      b.kind === "text" ? { ...b, text: displaySkillText(b.text) } : b,
+    );
+  }
+  return item.blocks;
 }
 
 export default function MessageList() {

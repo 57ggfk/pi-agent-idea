@@ -1,5 +1,9 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import type { manageApi, AuthOverviewResult, ProviderInfoResult } from "../../manage";
+import { useT } from "../../i18n/useT";
+import { tip } from "../Tooltip";
+import ProviderForm from "./ProviderForm";
+import { usePiStore } from "../../store/store";
 
 type StatusMap = Record<string, string>;
 
@@ -10,10 +14,11 @@ type StatusMap = Record<string, string>;
  * into their own rows (e.g. `headers.Authorization` gets its own flag row).
  */
 function ConfigValue({ value }: { value: unknown }) {
+  const { t } = useT();
   if (typeof value === "boolean") {
     return (
       <span className={`config-flag ${value ? "config-set" : "config-unset"}`} data-configured={value}>
-        {value ? "configured" : "not configured"}
+        {value ? t("auth.configured") : t("auth.notConfigured")}
       </span>
     );
   }
@@ -35,6 +40,7 @@ function ConfigValue({ value }: { value: unknown }) {
 }
 
 export default function AuthPanel({ api }: { api: ReturnType<typeof manageApi> }) {
+  const { t } = useT();
   const [overview, setOverview] = useState<AuthOverviewResult | null>(null);
   const [statuses, setStatuses] = useState<StatusMap>({});
   const [checking, setChecking] = useState<string | null>(null);
@@ -42,6 +48,8 @@ export default function AuthPanel({ api }: { api: ReturnType<typeof manageApi> }
   const [details, setDetails] = useState<Record<string, ProviderInfoResult | null>>({});
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [openNote, setOpenNote] = useState<string | null>(null);
+  /** null = no editor; "new" = adding; otherwise = the provider being edited. */
+  const [formMode, setFormMode] = useState<"new" | string | null>(null);
 
   const refresh = useCallback(async () => {
     setOverview(await api.authOverview().catch(() => null));
@@ -84,10 +92,33 @@ export default function AuthPanel({ api }: { api: ReturnType<typeof manageApi> }
     setOpenNote(null);
     try {
       const res = await api.modelsOpenFile({ provider });
-      setOpenNote(`${res.created ? "Created and opened" : "Opened"} ${res.path}`);
+      const path = res.path ?? "";
+      setOpenNote(res.created ? t("auth.createdOpened", { path }) : t("auth.opened", { path }));
     } catch (e) {
-      setOpenNote(`could not open models.json: ${(e as Error).message}`);
+      setOpenNote(t("auth.openFailed", { msg: (e as Error).message }));
     }
+  };
+
+  const askConfirm = usePiStore((s) => s.askConfirm);
+
+  const removeCredential = (provider: string) => {
+    askConfirm({
+      title: t("provider.deleteTitle"),
+      message: t("provider.deleteMessage", { provider }),
+      confirmLabel: t("common.delete"),
+      danger: true,
+      onConfirm: () => {
+        void (async () => {
+          try {
+            const res = await api.authDelete({ provider });
+            if (!res.ok) setOpenNote(res.error ?? null);
+            await refresh();
+          } catch (e) {
+            setOpenNote((e as Error).message);
+          }
+        })();
+      },
+    });
   };
 
   const providers = overview?.providers ?? [];
@@ -102,18 +133,29 @@ export default function AuthPanel({ api }: { api: ReturnType<typeof manageApi> }
         <div className="panel-note" data-testid="models-state" data-state={overview.modelsState}>
           {overview.modelsState === "corrupt"
             ? overview.modelsError
-            : `models.json not found at ${overview.modelsPath} — no custom providers configured yet.`}
+            : t("auth.missingModels", { path: overview.modelsPath ?? "" }) }
         </div>
       ) : null}
       <div className="panel-toolbar">
-        <button className="btn" data-testid="auth-refresh" onClick={() => void refresh()}>
-          Refresh
+        <button className="btn" data-testid="auth-add" onClick={() => setFormMode(formMode === "new" ? null : "new")}>
+          {formMode === "new" ? t("provider.addClose") : t("provider.add")}
         </button>
-        <span className="panel-row-sub">Checks run `pi auth check --no-refresh` per provider.</span>
+        <button className="btn" data-testid="auth-refresh" onClick={() => void refresh()}>
+          {t("auth.refresh")}
+        </button>
+        <span className="panel-row-sub">{t("auth.checkHint")}</span>
       </div>
+      {formMode === "new" ? (
+        <ProviderForm
+          api={api}
+          defaultCustom={false}
+          testPrefix="provider-add"
+          onDone={() => void refresh()}
+        />
+      ) : null}
       {providers.length === 0 ? (
         <div className="panel-empty" data-testid="auth-empty">
-          No providers with stored credentials or custom models yet.
+          {t("auth.empty")}
         </div>
       ) : null}
       {openNote ? (
@@ -129,7 +171,7 @@ export default function AuthPanel({ api }: { api: ReturnType<typeof manageApi> }
               <div className="panel-row-main">
                 <span className="panel-row-title">{p}</span>
                 <span className="panel-row-sub">
-                  {withCreds.has(p) ? "credentials stored" : "custom provider (models.json)"}
+                  {withCreds.has(p) ? t("auth.credentialsStored") : t("auth.customProvider")}
                   {statuses[p] ? ` · ${statuses[p]}` : ""}
                 </span>
               </div>
@@ -138,28 +180,54 @@ export default function AuthPanel({ api }: { api: ReturnType<typeof manageApi> }
                   className="btn"
                   data-testid={`provider-toggle-${p}`}
                   aria-expanded={expanded === p}
-                  title="Show configuration from models.json"
+                  aria-label={t("auth.showConfig")}
+                  {...tip(t("auth.showConfig"))}
                   onClick={() => void toggleDetail(p)}
                 >
                   {expanded === p ? "▾" : "▸"}
                 </button>
                 <button
                   className="btn"
+                  data-testid={`provider-setkey-${p}`}
+                  onClick={() => setFormMode(formMode === p ? null : p)}
+                >
+                  {formMode === p ? t("provider.editClose") : t("provider.edit")}
+                </button>
+                {withCreds.has(p) ? (
+                  <button
+                    className="btn btn-abort"
+                    data-testid={`provider-delete-${p}`}
+                    onClick={() => removeCredential(p)}
+                  >
+                    {t("common.delete")}
+                  </button>
+                ) : null}
+                <button
+                  className="btn"
                   data-testid={`auth-check-${p}`}
                   onClick={() => void check(p)}
                   disabled={checking === p}
                 >
-                  {checking === p ? "…" : "Check"}
+                  {checking === p ? "…" : t("auth.check")}
                 </button>
               </div>
             </div>
             {expanded === p ? (
               <div className="provider-detail" data-testid={`provider-detail-${p}`}>
-                {loadingDetail ? <div className="panel-note">Loading…</div> : null}
+                {loadingDetail ? <div className="panel-note">{t("common.loading")}</div> : null}
                 {detail && !detail.ok ? (
                   <div className="panel-note" data-testid={`provider-detail-error-${p}`}>
                     {detail.error}
                   </div>
+                ) : null}
+                {formMode === p ? (
+                  <ProviderForm
+                    api={api}
+                    fixedProvider={p}
+                    defaultCustom={!withCreds.has(p)}
+                    testPrefix={`provider-edit-${p}`}
+                    onDone={() => void refresh()}
+                  />
                 ) : null}
                 {detail?.ok ? (
                   <>
@@ -169,7 +237,7 @@ export default function AuthPanel({ api }: { api: ReturnType<typeof manageApi> }
                         data-testid={`provider-open-file-${p}`}
                         onClick={() => void openInEditor(p)}
                       >
-                        Open models.json in editor
+                        {t("auth.openInEditor")}
                       </button>
                     </div>
                     {Object.entries(detail.config ?? {}).map(([k, v]) => (

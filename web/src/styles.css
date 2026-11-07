@@ -681,6 +681,45 @@ button {
   color: var(--text);
 }
 
+/* Session title editing (012 T107/T108): the inline editor shared by the
+   status bar and the current session row. */
+.status-session-btn {
+  background: none;
+  border: none;
+  padding: 0 4px;
+  font: inherit;
+  cursor: text;
+  border-radius: 4px;
+  max-width: 32ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-session-btn:hover {
+  background: var(--bg-input);
+}
+
+.session-title-editor {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.session-title-input {
+  font-size: 11px;
+  padding: 1px 6px;
+  min-width: 180px;
+  max-width: 320px;
+}
+
+.session-title-error {
+  color: var(--error, #c0392b);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
 .status-mock {
   background: var(--accent);
   color: var(--accent-contrast);
@@ -1074,6 +1113,28 @@ button {
   padding-bottom: 6px;
 }
 
+/* Provider group header (011 US2): label + entry count, visually distinct
+   from options but never wider than the popover (360px windows included). */
+.model-group-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  user-select: none;
+}
+
+.model-group-count {
+  flex-shrink: 0;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
 .model-option {
   display: flex;
   align-items: center;
@@ -1403,6 +1464,206 @@ button {
 /* Confirmation dialog (spec 007 US3) --------------------------------------- */
 /* Inside .app on purpose: a portal to <body> would escape the tool window's
    theme scope and cover the IDE chrome. */
+/* Image preview modal (012 US7): a portal over the transcript — z-index
+   above the menus (60) but same convention as the confirm scrim. */
+.image-preview-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 65;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(8, 12, 20, 0.55);
+}
+
+.image-preview-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  max-width: min(920px, 100%);
+  max-height: 100%;
+  padding: 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-pop);
+  outline: none;
+}
+
+.image-preview-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.image-preview-count {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.image-preview-scale {
+  font-size: 11px;
+  min-width: 42px;
+  text-align: center;
+}
+
+.image-preview-stage {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.image-preview-img {
+  flex: 1;
+  min-width: 0;
+  max-height: 62vh;
+  object-fit: contain;
+  transform-origin: center center;
+  user-select: none;
+  touch-action: none;
+}
+
+.image-preview-nav {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 6px;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.image-preview-nav:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.image-preview-error {
+  color: #e5534b;
+}
+
+.msg-image-clickable {
+  cursor: zoom-in;
+}
+
+/* Provider credential form (012 US5/US6) and the post-install step. */
+.provider-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin: 8px 0;
+}
+
+.provider-form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.provider-form-custom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.provider-form-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.provider-setup {
+  border-bottom: 1px solid var(--border);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--bg-elevated);
+}
+
+.provider-setup-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.provider-setup-title {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+/* AGENTS.md panel (012 US3): scope badge + bounded list rows. */
+.agents-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.agents-scope {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--surface-hover, rgba(127, 127, 127, 0.15));
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* Setup gate (012 US4): the tool window shows ONLY the setup card. */
+.setup-gate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.setup-gate .setup-card {
+  max-width: 560px;
+  width: 100%;
+}
+
+.setup-gate-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, #f0883e 14%, transparent);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text);
+}
+
+/* App-wide tooltip (012 US2): one delegated bubble for every [data-tip].
+   z-index 30 sits under the confirm scrim (40), the model popover (50) and
+   the menus (60) — a tooltip never covers a dialog (T114). */
+.tooltip {
+  position: fixed;
+  z-index: 30;
+  max-width: 320px;
+  padding: 4px 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: var(--shadow-pop);
+  font-size: 11px;
+  color: var(--text);
+  pointer-events: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .confirm-scrim {
   position: absolute;
   inset: 0;

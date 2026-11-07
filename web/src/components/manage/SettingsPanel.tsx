@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
+import { useT } from "../../i18n/useT";
 import { OutcomeBanner } from "../ManageView";
 import type { manageApi } from "../../manage";
 
 export default function SettingsPanel({ api }: { api: ReturnType<typeof manageApi> }) {
+  const { t } = useT();
   const [path, setPath] = useState("");
   const [text, setText] = useState("{}");
   const [outcome, setOutcome] = useState<{ ok: boolean; error?: string; output?: string } | null>(null);
@@ -27,7 +29,7 @@ export default function SettingsPanel({ api }: { api: ReturnType<typeof manageAp
     setOutcome(null);
     try {
       const res = await api.settingsWrite({ text });
-      setOutcome(res.ok ? { ok: true, output: `saved ${res.output ?? ""}` } : { ok: false, error: res.error });
+      setOutcome(res.ok ? { ok: true, output: t("settings.saved", { path: res.output ?? "" }) } : { ok: false, error: res.error });
       if (res.ok) setDirty(false);
     } catch (e) {
       setOutcome({ ok: false, error: (e as Error).message });
@@ -41,7 +43,7 @@ export default function SettingsPanel({ api }: { api: ReturnType<typeof manageAp
         <span className="panel-row-sub mono">{path}</span>
         <span className="spacer" />
         <button className="btn" data-testid="settings-reload" onClick={() => void refresh()}>
-          Reload
+          {t("settings.reload")}
         </button>
         <button
           className="btn btn-send"
@@ -49,7 +51,7 @@ export default function SettingsPanel({ api }: { api: ReturnType<typeof manageAp
           onClick={() => void save()}
           disabled={!dirty}
         >
-          Save
+          {t("settings.save")}
         </button>
       </div>
       <textarea

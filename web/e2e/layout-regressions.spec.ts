@@ -301,8 +301,8 @@ test("New confirms before discarding a running session", async ({ page }) => {
   await page.getByTestId("send-btn").click();
   await expect(page.getByTestId("status-dot")).toHaveClass(/busy/, { timeout: 20_000 });
 
-  // The tooltip tells the truth while streaming.
-  await expect(page.getByTestId("new-session")).toHaveAttribute("title", /discarded/);
+  // The tooltip tells the truth while streaming (012 US2: data-tip layer).
+  await expect(page.getByTestId("new-session")).toHaveAttribute("data-tip", /discarded/);
 
   // 007 US3-3: the in-app dialog carries the streaming-specific warning.
   await page.getByTestId("new-session").click();

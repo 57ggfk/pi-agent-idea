@@ -3,6 +3,7 @@ import type { ThemePreference } from "../bridge/types";
 import { usePiStore } from "../store/store";
 import { LANGUAGES } from "../i18n/languages";
 import { useT } from "../i18n/useT";
+import { tip } from "./Tooltip";
 import Icon from "./Icon";
 
 const THEME_OPTIONS: Array<{ value: ThemePreference; labelKey: "theme.system" | "theme.light" | "theme.dark"; hintKey: "theme.systemHint" | "theme.lightHint" | "theme.darkHint" }> = [
@@ -137,7 +138,7 @@ export default function OptionsPopover() {
         onKeyDown={(e) => {
           if (e.key === "Escape") setOpen(false);
         }}
-        title={t("composer.options")}
+        {...tip(t("composer.optionsTip"))}
       >
         <Icon name="settings" className="ic-sm" />
         <span className="btn-lbl">{t("composer.optionsLabel")}</span>

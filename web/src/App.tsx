@@ -15,6 +15,9 @@ import ConfirmDialog from "./components/ConfirmDialog";
 import SessionOutline from "./components/SessionOutline";
 import SessionSearch from "./components/SessionSearch";
 import Icon, { IconSprite } from "./components/Icon";
+import TooltipHost from "./components/Tooltip";
+import ProviderSetupCard from "./components/ProviderSetupCard";
+import ImagePreview from "./components/ImagePreview";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -62,6 +65,9 @@ export default function App() {
   const items = usePiStore((s) => s.items);
   const toggleOutline = usePiStore((s) => s.toggleOutline);
   const openSearch = usePiStore((s) => s.openSearch);
+  const setupGate = usePiStore((s) => s.setupGate);
+  const detectSetup = usePiStore((s) => s.detectSetup);
+  const providerStep = usePiStore((s) => s.providerStep);
   const { t } = useT();
   // The outline entry is hidden while the session has no user messages
   // (spec 006 FR-003) — a button that cannot do anything is noise.
@@ -71,13 +77,40 @@ export default function App() {
     void init();
   }, [init]);
 
+  // 012 US4 (T122): while detection says pi is missing, the tool window is
+  // the setup guide — tabs, chat, sessions, manage, the status bar, the
+  // composer and the confirm dialog are NOT MOUNTED (asserted with
+  // toHaveCount(0)). A failed detection never locks the UI (fallback below).
+  const setupRequired = ready && setupGate.state === "ready" && setupGate.needsSetup;
+  if (setupRequired) {
+    return (
+      <ErrorBoundary>
+        <IconSprite />
+        <TooltipHost />
+        <div className="app setup-gate">
+          <SetupCard />
+        </div>
+      </ErrorBoundary>
+    );
+  }
+
   return (
     <ErrorBoundary>
       <IconSprite />
+      <TooltipHost />
       {!ready ? (
         <div className="loading">{t("app.loading")}</div>
       ) : (
         <div className="app">
+          {providerStep === "offered" ? <ProviderSetupCard /> : null}
+          {setupGate.state === "error" ? (
+            <div className="setup-gate-error" data-testid="setup-gate-error">
+              <span>{t("setup.detectFailed", { msg: setupGate.error ?? "" })}</span>
+              <button className="btn" data-testid="setup-gate-retry" onClick={() => void detectSetup(true)}>
+                {t("common.retry")}
+              </button>
+            </div>
+          ) : null}
           <div className="tabs" role="tablist" aria-label="Pi Agent" data-testid="tabs">
             {(["chat", "sessions", "manage"] as const).map((tabId) => (
               <button
@@ -134,6 +167,7 @@ export default function App() {
           )}
           <StatusBar />
           <ConfirmDialog />
+          <ImagePreview />
         </div>
       )}
     </ErrorBoundary>

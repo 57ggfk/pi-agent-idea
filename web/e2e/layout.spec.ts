@@ -66,11 +66,12 @@ test("pickers collapse to icons when the window is narrow", async ({ page }) => 
   await expect(modelLabel).toBeHidden();
   await expect(thinkingLabel).toBeHidden();
 
-  // The selection stays discoverable through the tooltip.
-  await expect(page.getByTestId("model-chip")).toHaveAttribute("title", /Mock Model Pro/);
+  // The selection stays discoverable through the in-app tooltip (012 US2:
+  // data-tip replaced the native title — JCEF does not guarantee those).
+  await expect(page.getByTestId("model-chip")).toHaveAttribute("data-tip", /Mock Model Pro/);
   await expect(page.getByTestId("thinking-select")).toHaveAttribute(
-    "title",
-    /Thinking level: medium/,
+    "data-tip",
+    /medium/,
   );
 
   // Wide tool window: labels are back.

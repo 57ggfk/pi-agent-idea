@@ -8,15 +8,17 @@ import McpPanel from "./manage/McpPanel";
 import PackagesPanel from "./manage/PackagesPanel";
 import SkillsPanel from "./manage/SkillsPanel";
 import AuthPanel from "./manage/AuthPanel";
+import AgentsPanel from "./manage/AgentsPanel";
 import SettingsPanel from "./manage/SettingsPanel";
 import DiagnosticsPanel from "./manage/DiagnosticsPanel";
 
-export type ManageTab = "mcp" | "packages" | "skills" | "auth" | "settings" | "diagnostics";
+export type ManageTab = "mcp" | "packages" | "skills" | "agents" | "auth" | "settings" | "diagnostics";
 
-const TABS: Array<{ id: ManageTab; labelKey: "manage.tab.mcp" | "manage.tab.packages" | "manage.tab.skills" | "manage.tab.auth" | "manage.tab.settings" | "manage.tab.diagnostics" }> = [
+const TABS: Array<{ id: ManageTab; labelKey: "manage.tab.mcp" | "manage.tab.packages" | "manage.tab.skills" | "manage.tab.agents" | "manage.tab.auth" | "manage.tab.settings" | "manage.tab.diagnostics" }> = [
   { id: "mcp", labelKey: "manage.tab.mcp" },
   { id: "packages", labelKey: "manage.tab.packages" },
   { id: "skills", labelKey: "manage.tab.skills" },
+  { id: "agents", labelKey: "manage.tab.agents" },
   { id: "auth", labelKey: "manage.tab.auth" },
   { id: "settings", labelKey: "manage.tab.settings" },
   { id: "diagnostics", labelKey: "manage.tab.diagnostics" },
@@ -353,6 +355,8 @@ export default function ManageView() {
           <PackagesPanel api={api} />
         ) : tab === "skills" ? (
           <SkillsPanel api={api} trusted={trusted} />
+        ) : tab === "agents" ? (
+          <AgentsPanel api={api} trusted={trusted} />
         ) : tab === "auth" ? (
           <AuthPanel api={api} />
         ) : tab === "diagnostics" ? (

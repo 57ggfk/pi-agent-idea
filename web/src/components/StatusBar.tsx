@@ -1,7 +1,10 @@
 import { usePiStore } from "../store/store";
+import { useT } from "../i18n/useT";
+import SessionTitleInput from "./SessionTitleInput";
 import Icon from "./Icon";
 
 export default function StatusBar() {
+  const { t } = useT();
   const stats = usePiStore((s) => s.stats);
   const piStatus = usePiStore((s) => s.piStatus);
   const piVersion = usePiStore((s) => s.piVersion);
@@ -11,6 +14,9 @@ export default function StatusBar() {
   const bridgeKind = usePiStore((s) => s.bridgeKind);
   const isStreaming = usePiStore((s) => s.isStreaming);
   const restartPi = usePiStore((s) => s.restartPi);
+  const tab = usePiStore((s) => s.tab);
+  const editingSessionTitle = usePiStore((s) => s.editingSessionTitle);
+  const beginEditSessionTitle = usePiStore((s) => s.beginEditSessionTitle);
 
   const percent = stats?.contextUsage?.percent;
   const cost = stats?.cost;
@@ -36,7 +42,22 @@ export default function StatusBar() {
       <div className="statusbar-row">
         <span className={`status-dot ${piStatus} ${isStreaming ? "busy" : ""}`} data-testid="status-dot" />
         <span data-testid="status-version">pi {piVersion || "—"}</span>
-        {sessionName ? <span className="status-session">{sessionName}</span> : null}
+        {editingSessionTitle && tab !== "sessions" ? (
+          // The one inline editor on chat/manage tabs (T108); the session
+          // list hosts it on the sessions tab — never both at once.
+          <SessionTitleInput testId="status-session-edit" />
+        ) : sessionName ? (
+          <button
+            type="button"
+            className="status-session status-session-btn"
+            data-testid="status-session"
+            title={t("sessions.renameTitle")}
+            aria-label={t("sessions.renameTitle")}
+            onClick={beginEditSessionTitle}
+          >
+            {sessionName}
+          </button>
+        ) : null}
         <span className="spacer" />
         {percent != null ? (
           <span className="status-ctx" data-testid="status-context" title="Context window usage">

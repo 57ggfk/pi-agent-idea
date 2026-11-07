@@ -7,6 +7,7 @@ import ModelPicker from "./ModelPicker";
 import SendButton from "./SendButton";
 import ThinkingPicker from "./ThinkingPicker";
 import OptionsPopover from "./OptionsPopover";
+import { tip } from "./Tooltip";
 import Icon from "./Icon";
 
 interface PendingImage {
@@ -646,7 +647,7 @@ export default function Composer() {
             <button
               type="button"
               className="icon-btn"
-              title={t("composer.attach")}
+              {...tip(t("composer.attach"))}
               aria-label={t("composer.attach")}
               onClick={() => fileRef.current?.click()}
             >
@@ -665,7 +666,7 @@ export default function Composer() {
                 className="icon-btn icon-btn-danger"
                 data-testid="abort-btn"
                 aria-label={t("composer.stopAria")}
-                title={t("composer.stop")}
+                {...tip(t("composer.stop"))}
                 onClick={() => void abort()}
               >
                 <Icon name="stop" />
@@ -676,7 +677,7 @@ export default function Composer() {
               data-testid="compact-btn"
               onClick={() => void compact()}
               disabled={isStreaming}
-              title={t("composer.compact")}
+              {...tip(t("composer.compact"))}
             >
               <Icon name="compact" className="ic-sm" />
               <span className="btn-lbl">{t("composer.compactLabel")}</span>
@@ -687,7 +688,7 @@ export default function Composer() {
                 data-testid="fork-btn"
                 onClick={() => void forkSession()}
                 disabled={isStreaming}
-                title={t("composer.forkTitle")}
+                {...tip(t("composer.forkTitle"))}
               >
                 <Icon name="fork" className="ic-sm" />
                 <span className="btn-lbl">{t("composer.forkLabel")}</span>
@@ -702,7 +703,7 @@ export default function Composer() {
                 // renders one in-app dialog instead of a native one.
                 void newSession();
               }}
-              title={isStreaming ? t("composer.newSessionStreaming") : t("composer.newSession")}
+              {...tip(isStreaming ? t("composer.newSessionStreaming") : t("composer.newSession"))}
             >
               <Icon name="plus" className="ic-sm" />
               <span className="btn-lbl">{t("composer.newLabel")}</span>

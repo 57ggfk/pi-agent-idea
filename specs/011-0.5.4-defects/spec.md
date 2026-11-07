@@ -213,6 +213,6 @@ Manage → Environment 更新 pi、Packages 更新扩展包后，结果条里的
 | # | 待确认 | 谁提供 | 影响 |
 |---|---|---|---|
 | Q1 ✅ **已关闭**（2026-11-07） | D5 乱码的环境与方向 | 用户补充 + `b2d32b2` 代码证据 | **Windows 特有**：DOS/OEM 本地代码页输出 vs JVM 默认 UTF-8；setup 检测 pi 时同一根因已由 `OsProcess.decodeOutput` 修过。实现方案定为「按字节读 + 严格 UTF-8 → 回退 `native.encoding`」，不再需要靠样例猜；T002 只补一张 Windows 结果条截图作验收证据，不阻塞开工 |
-| Q2 | D3 的 pi 原始报文：`/skill:` 展开后是纯 text 块、带 skill 元数据的独立块，还是干脆写进了同一条 text？ | 用户（贴一段会话 jsonl 或 RPC 报文） | 决定 FR-013 的识别规则与是否新增 `ContentBlock` 变体；T001 的判据 |
-| Q3 | 真实 `get_available_models` 的条目数 / provider 数；provider 大小写是否需要归一（`OpenAI` vs `openai`） | 用户（真机看一眼或与 T003 一起取） | 决定「不引虚拟列表」是否成立、FR-007 是否需要大小写归一 |
-| Q4 | 点工具窗**外部**（切到编辑器/别的 IDE 面板）时是否也要求关闭 popover？浏览器内 `mousedown` 收不到 JCEF 外的点击 | 用户 | 决定是否额外加 `focusout` / IDE 焦点监听；不加则写进 Non-goals |
+| Q2 ✅ **已关闭**（2026-11-07 真机取证，T001） | 分支 **b**：单个 `type:"text"` block 内 `<skill name="…" location="…">…</skill>\n\n` + 用户原话；原始 `/skill:` 命令不落盘，回放形态一致；pi 自带官方逆解析正则（插件照抄）。证据与实现见 plan.md D4 | 决定 FR-013 的识别规则：定界解析，不新增 ContentBlock 变体 |
+| Q3 ✅ **已关闭**（2026-11-07 真机取证，T003） | 359 模型 / 2 provider（openrouter 355 + 自定义 xiami 4），provider 全小写无混用 | 「不引虚拟列表」成立；FR-007 无需归一，按精确 provider 字符串分组（测试覆盖大小写混用的确定性） |
+| Q4 ✅ **已关闭**（按默认实现） | 未加工具窗外焦点监听（JCEF 内收不到窗外点击，改造成本高收益低） | 写进 Non-goals：popover 在 IDE 焦点离开工具窗时保持原状，回到窗口后点外部可关 |

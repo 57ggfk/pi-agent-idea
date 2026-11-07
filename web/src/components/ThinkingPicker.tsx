@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { usePiStore } from "../store/store";
+import { useT } from "../i18n/useT";
+import { tip } from "./Tooltip";
 import Icon from "./Icon";
 
 /**
@@ -8,6 +10,7 @@ import Icon from "./Icon";
  * downward and get clipped by the window edge.
  */
 export default function ThinkingPicker() {
+  const { t } = useT();
   const [open, setOpen] = useState(false);
   const thinkingLevel = usePiStore((s) => s.thinkingLevel);
   const thinkingLevels = usePiStore((s) => s.thinkingLevels);
@@ -40,8 +43,8 @@ export default function ThinkingPicker() {
         onKeyDown={(e) => {
           if (e.key === "Escape") setOpen(false);
         }}
-        title={`Thinking level: ${thinkingLevel}`}
-        aria-label={`Thinking level: ${thinkingLevel}`}
+        aria-label={t("thinking.tip", { level: thinkingLevel })}
+        {...tip(t("thinking.tip", { level: thinkingLevel }))}
       >
         <Icon name="gauge" className="ic-sm" />
         <span className="chip-label">{thinkingLevel}</span>

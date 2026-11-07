@@ -6,6 +6,8 @@ export type IconName =
   | "check"
   | "chev"
   | "chev-down"
+  | "chev-left"
+  | "chev-right"
   | "clock"
   | "compact"
   | "copy"
@@ -29,7 +31,9 @@ export type IconName =
   | "stop"
   | "terminal"
   | "trash"
-  | "x";
+  | "x"
+  | "zoom-in"
+  | "zoom-out";
 
 /** Inline, consistent line icons; the sprite is mounted once in App. */
 export default function Icon({ name, className }: { name: IconName; className?: string }) {
@@ -57,6 +61,8 @@ const PATHS: Record<IconName, ReactNode> = {
   check: <path d="M20 6 9 17l-5-5" />,
   chev: <path d="m9 18 6-6-6-6" />,
   "chev-down": <path d="m6 9 6 6 6-6" />,
+  "chev-left": <path d="m15 18-6-6 6-6" />,
+  "chev-right": <path d="m9 18 6-6-6-6" />,
   clock: (
     <>
       <circle cx="12" cy="12" r="10" />
@@ -199,6 +205,21 @@ const PATHS: Record<IconName, ReactNode> = {
     <>
       <path d="M18 6 6 18" />
       <path d="m6 6 12 12" />
+    </>
+  ),
+  "zoom-in": (
+    <>
+      <circle cx="11" cy="11" r="7" />
+      <line x1="21" x2="16.65" y1="21" y2="16.65" />
+      <line x1="11" x2="11" y1="8" y2="14" />
+      <line x1="8" x2="14" y1="11" y2="11" />
+    </>
+  ),
+  "zoom-out": (
+    <>
+      <circle cx="11" cy="11" r="7" />
+      <line x1="21" x2="16.65" y1="21" y2="16.65" />
+      <line x1="8" x2="14" y1="11" y2="11" />
     </>
   ),
 };

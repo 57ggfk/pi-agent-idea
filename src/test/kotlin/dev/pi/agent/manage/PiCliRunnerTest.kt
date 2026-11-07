@@ -87,4 +87,59 @@ class PiCliRunnerTest {
         assertFalse(result.success)
         assertTrue(result.stderr.contains("boom"))
     }
+
+    // -- 011 T019: drainThread decodes bytes, not the JVM default charset ------
+
+    @Test
+    fun `utf-8 chinese output survives the drain`() {
+        val result = PiCliRunner.runProcess(
+            proc(
+                "printf '更新成功\\n全部就绪\\n'",
+                listOf("powershell", "-NoProfile", "-Command", "[Console]::OutputEncoding=[Text.Encoding]::UTF8; Write-Output '更新成功'; Write-Output '全部就绪'"),
+            ),
+            timeoutSeconds = 20,
+        )
+        assertTrue(result.success, "stderr: ${result.stderr}")
+        assertEquals("更新成功\n全部就绪\n", result.stdout)
+    }
+
+    @Test
+    fun `crlf and lone cr normalize to lf`() {
+        val result = PiCliRunner.runProcess(
+            proc(
+                "printf 'a\\r\\nb\\rc\\n'",
+                listOf("powershell", "-NoProfile", "-Command", "[Console]::Out.Write(\"a`r`nb`rc`n\")"),
+            ),
+            timeoutSeconds = 20,
+        )
+        assertTrue(result.success, "stderr: ${result.stderr}")
+        assertEquals("a\nb\nc\n", result.stdout)
+    }
+
+    @Test
+    fun `nul bytes survive the drain`() {
+        val result = PiCliRunner.runProcess(
+            proc(
+                "printf 'a\\000b'",
+                listOf("powershell", "-NoProfile", "-Command", "[Console]::Out.Write(\"a\" + [char]0 + \"b\")"),
+            ),
+            timeoutSeconds = 20,
+        )
+        assertTrue(result.success, "stderr: ${result.stderr}")
+        assertEquals("a\u0000b", result.stdout)
+    }
+
+    @Test
+    fun `one very long line without newlines is not truncated`() {
+        val result = PiCliRunner.runProcess(
+            proc(
+                "yes hello | head -c 150000 | tr '\\n' 'x'",
+                listOf("powershell", "-NoProfile", "-Command", "Write-Output -NoEnumerate ('x' * 150000)"),
+            ),
+            timeoutSeconds = 20,
+        )
+        assertTrue(result.success, "stderr: ${result.stderr}")
+        assertTrue(result.stdout.length >= 149_000, "stdout length: ${result.stdout.length}")
+        assertTrue(!result.stdout.contains("\n"), "single line expected")
+    }
 }

@@ -3,6 +3,7 @@ import { usePiStore } from "../store/store";
 import type { SessionSearchMatch } from "../store/store";
 import { useT } from "../i18n/useT";
 import { formatDateTime } from "../i18n/format";
+import SessionTitleInput from "./SessionTitleInput";
 import Icon from "./Icon";
 
 /** Highlights every literal occurrence of `query` inside `text`. */
@@ -45,6 +46,8 @@ export default function SessionsView() {
   const searchAllSessions = usePiStore((s) => s.searchAllSessions);
   const clearSessionSearch = usePiStore((s) => s.clearSessionSearch);
   const requestSearchJump = usePiStore((s) => s.requestSearchJump);
+  const editingSessionTitle = usePiStore((s) => s.editingSessionTitle);
+  const beginEditSessionTitle = usePiStore((s) => s.beginEditSessionTitle);
   const { t, language } = useT();
   const [filter, setFilter] = useState("");
   const debounceRef = useRef<number>(0);
@@ -154,17 +157,39 @@ export default function SessionsView() {
             data-testid="session-row"
             title={s.file}
           >
-            <button className="session-row-main" onClick={() => void switchSession(s.file)}>
-              <div className="session-row-top">
-                <span className="session-name">{s.name || s.preview?.slice(0, 60) || s.id || "Untitled"}</span>
-                <span className="session-time">{formatTime(s.modifiedAt)}</span>
+            {editingSessionTitle && s.id && s.id === sessionId ? (
+              <div className="session-row-main">
+                <div className="session-row-top">
+                  {/* The one inline editor (T107); the status bar hosts the
+                      same editor on the other tabs, never both. */}
+                  <SessionTitleInput testId="session-rename-input" />
+                </div>
               </div>
-              <div className="session-preview">
-                {s.name ? s.preview || s.id : s.id}
-                {typeof s.messageCount === "number" ? ` · ${t("sessions.msgCount_other", { count: s.messageCount })}` : ""}
-              </div>
-            </button>
+            ) : (
+              <button className="session-row-main" onClick={() => void switchSession(s.file)}>
+                <div className="session-row-top">
+                  <span className="session-name">{s.name || s.preview?.slice(0, 60) || s.id || "Untitled"}</span>
+                  <span className="session-time">{formatTime(s.modifiedAt)}</span>
+                </div>
+                <div className="session-preview">
+                  {s.name ? s.preview || s.id : s.id}
+                  {typeof s.messageCount === "number" ? ` · ${t("sessions.msgCount_other", { count: s.messageCount })}` : ""}
+                </div>
+              </button>
+            )}
             <div className="session-actions">
+              {s.id && s.id === sessionId ? (
+                <button
+                  className="btn session-action"
+                  data-testid="session-rename"
+                  title={t("sessions.renameTitle")}
+                  aria-label={t("sessions.renameTitle")}
+                  disabled={editingSessionTitle}
+                  onClick={() => beginEditSessionTitle()}
+                >
+                  <Icon name="pencil" className="ic-sm" />
+                </button>
+              ) : null}
               <button
                 className="btn session-action"
                 data-testid="session-clone"

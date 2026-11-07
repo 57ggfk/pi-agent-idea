@@ -17,6 +17,8 @@ const h = vi.hoisted(() => {
     calls: [] as Call[],
     rpc: new Map<string, (cmd: Record<string, unknown>) => unknown>(),
     methods: new Map<string, (params: unknown) => unknown>(),
+    /** Registered by init(); tests dispatch pi events through it. */
+    piHandler: null as ((name: string, data: unknown) => void) | null,
   };
   const bridge = {
     kind: "mock" as const,
@@ -39,8 +41,8 @@ const h = vi.hoisted(() => {
       const handler = state.methods.get(method);
       return Promise.resolve((handler ? handler(params) : {}) as T);
     },
-    onEvent() {
-      // No event stream in these tests: every assertion is on the RPC side.
+    onEvent(handler: (name: string, data: unknown) => void) {
+      state.piHandler = handler;
     },
   };
   return { state, bridge };
@@ -628,5 +630,151 @@ describe("session navigation state (spec 006)", () => {
     expect(usePiStore.getState().outlineOpen).toBe(true);
     usePiStore.getState().toggleOutline(false);
     expect(usePiStore.getState().outlineOpen).toBe(false);
+  });
+});
+
+// -- Session titles (012 US1, T105/T106/T109) --------------------------------
+
+describe("session titles (012 US1)", () => {
+  const currentRow = {
+    file: "/tmp/sess-a.jsonl",
+    id: "sess-A",
+    timestamp: "2026-11-07T00:00:00Z",
+    name: "",
+    preview: "",
+    modifiedAt: 0,
+  };
+
+  const dispatchPi = (event: Record<string, unknown>) =>
+    h.state.piHandler?.("pi", event);
+
+  beforeEach(() => {
+    h.state.calls.length = 0;
+    h.state.rpc.set("get_state", () => ({ sessionId: "sess-A" }));
+    h.state.rpc.set("set_session_name", (cmd) => {
+      if (!cmd["name"]) throw new Error("Session name cannot be empty");
+      return { success: true };
+    });
+    h.state.methods.set("sessions.list", () => ({ sessions: [{ ...currentRow }] }));
+    usePiStore.setState({
+      sessionId: "sess-A",
+      sessionName: undefined,
+      manualTitle: false,
+      autoTitled: false,
+      editingSessionTitle: false,
+      sessions: [{ ...currentRow }],
+      items: [],
+    });
+  });
+
+  it("a name event updates the status bar and the matching list row with zero refreshes (T105)", async () => {
+    await usePiStore.getState().init();
+    h.state.calls.length = 0;
+
+    dispatchPi({ type: "session_info_changed", name: "Auto title" });
+
+    expect(usePiStore.getState().sessionName).toBe("Auto title");
+    expect(usePiStore.getState().sessions.find((s) => s.id === "sess-A")?.name).toBe("Auto title");
+    expect(h.state.calls.filter((c) => c.method === "sessions.list")).toHaveLength(0);
+  });
+
+  it("a hand-set title wins over a later pi event (T106)", async () => {
+    await usePiStore.getState().init();
+    usePiStore.setState({ manualTitle: true, sessionName: "手动名", sessions: [{ ...currentRow, name: "手动名" }] });
+
+    dispatchPi({ type: "session_info_changed", name: "auto name" });
+
+    expect(usePiStore.getState().sessionName).toBe("手动名");
+    expect(usePiStore.getState().sessions[0].name).toBe("手动名");
+  });
+
+  it("a late event never writes into a session the user switched away from (T106)", async () => {
+    await usePiStore.getState().init();
+    usePiStore.setState({
+      sessionId: "sess-B",
+      sessions: [{ ...currentRow }, { ...currentRow, id: "sess-B", file: "/tmp/sess-b.jsonl" }],
+    });
+
+    dispatchPi({ type: "session_info_changed", name: "late name" });
+
+    // the status bar follows pi (it tracks the *event*), but only sess-B rows
+    // would be updated — sess-A stays as it was
+    expect(usePiStore.getState().sessions.find((s) => s.id === "sess-A")?.name).toBe("");
+  });
+
+  it("an event after the session was deleted does not throw (T106)", async () => {
+    await usePiStore.getState().init();
+    usePiStore.setState({ sessions: [] });
+    expect(() => dispatchPi({ type: "session_info_changed", name: "ghost" })).not.toThrow();
+  });
+
+  it("the first user message names the session via set_session_name — nothing else (T109)", async () => {
+    await usePiStore.getState().init();
+    h.state.calls.length = 0;
+    usePiStore.setState({ items: [userItem("fix the login bug")] });
+
+    dispatchPi({ type: "message_end", message: { role: "user", content: "fix the login bug" } });
+    await vi.waitFor(() => expect(commandTypes()).toContain("set_session_name"));
+
+    expect(command("set_session_name")[0]["name"]).toBe("fix the login bug");
+    // no model call is ever made for titling
+    expect(commandTypes()).not.toContain("prompt");
+    expect(usePiStore.getState().autoTitled).toBe(true);
+  });
+
+  it("titling fires exactly once even when more messages arrive (T109)", async () => {
+    await usePiStore.getState().init();
+    usePiStore.setState({ items: [userItem("first")] });
+    dispatchPi({ type: "message_end", message: { role: "user", content: "first" } });
+    await vi.waitFor(() => expect(commandTypes()).toContain("set_session_name"));
+
+    h.state.calls.length = 0;
+    usePiStore.setState({ items: [userItem("first"), userItem("second")] });
+    dispatchPi({ type: "message_end", message: { role: "user", content: "second" } });
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(commandTypes()).not.toContain("set_session_name");
+  });
+
+  it("an expanded skill message titles with the user question, not the body (T109 + 011)", async () => {
+    await usePiStore.getState().init();
+    const expanded =
+      '<skill name="demo" location="/tmp/x/SKILL.md">\nLONG BODY MARKER\n</skill>\n\nwhat does it do?';
+    usePiStore.setState({ items: [userItem(expanded)] });
+
+    dispatchPi({ type: "message_end", message: { role: "user", content: expanded } });
+    await vi.waitFor(() => expect(commandTypes()).toContain("set_session_name"));
+
+    expect(command("set_session_name")[0]["name"]).toBe("what does it do?");
+  });
+
+  it("a pure-image first message produces no title attempt", async () => {
+    await usePiStore.getState().init();
+    h.state.calls.length = 0;
+    const image = emptyItem("user", [{ kind: "image", data: "AA", mimeType: "image/png" }]);
+    image.done = true;
+    usePiStore.setState({ items: [image] });
+
+    dispatchPi({ type: "message_end", message: { role: "user", content: [] } });
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(commandTypes()).not.toContain("set_session_name");
+    expect(usePiStore.getState().autoTitled).toBe(true);
+  });
+
+  it("submitSessionTitle validates: empty and overlong are refused, the editor stays open", async () => {
+    await usePiStore.getState().init();
+    usePiStore.setState({ editingSessionTitle: true });
+
+    expect(await usePiStore.getState().submitSessionTitle("   ")).toBe("empty");
+    expect(await usePiStore.getState().submitSessionTitle("中".repeat(33))).toBe("long");
+    expect(usePiStore.getState().editingSessionTitle).toBe(true);
+    expect(commandTypes()).not.toContain("set_session_name");
+
+    expect(await usePiStore.getState().submitSessionTitle("  real name  ")).toBe("ok");
+    expect(command("set_session_name")[0]["name"]).toBe("real name");
+    expect(usePiStore.getState().editingSessionTitle).toBe(false);
+    // a hand rename marks the session so pi events cannot rename it back
+    expect(usePiStore.getState().manualTitle).toBe(true);
   });
 });

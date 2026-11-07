@@ -31,6 +31,13 @@ UI 入口：会话列表行内编辑（复用 `SessionsView.tsx:150-198` 的 row
 
 **T101 分支**：若真机证明 pi 不自动生成标题 → 降级为「首条用户消息截断」（取 `items` 里第一条 user 文本，去换行/连续空白，限长，CJK 按字符计），在 `message_end` 后判定一次并调用既有 `renameSession`；**不新增模型调用**（用户口径）。结论写回本文件 D1。
 
+**✅ T101 取证结论（2026-11-07，pi 1.4.0 真机 RPC + 源码闭环）**：**pi 无自动命名，插件降级「首条消息截断」+ 回写**。证据：
+- 3 个 RPC 会话、4 条用户消息、3 个完整 agent 周期（均到 `agent_end`/`agent_settled`），**零 `session_info_changed` 事件**；`get_state.data` 无 name/title 字段；jsonl 全量类型无 `session_info` 条目。
+- 源码闭环：`session_info_changed` 唯一发射点是 `setSessionName(name)`；`appendSessionInfo` 仅 3 个调用点：`-n` 启动（直接写 jsonl、**不发事件**）、TUI `/name`、RPC `set_session_name`。不存在「从首条消息生成标题」的代码路径。
+- **官方回写通道存在**：`set_session_name` RPC（`{"name": "..."}` → success + `session_info_changed` 事件 + jsonl `session_info` 条目），空名被拒（`Session name cannot be empty`）。
+- 实现口径：首条用户消息截断生成标题后**调 `set_session_name` 回写**（pi 落盘 + 广播，列表/状态栏同步全走既有链路）；名字不变时不调用（幂等）。若首条命中 skill 展开形态，用 `parseSkillBlock().userMessage` 优先、`name` 属性兜底（见 011 plan D4）。
+- 附带坑：`-n` 启动不发事件，插件需自记；0 消息会话文件进程退出时被清理（PiSessionIndex 需容忍文件缺失）；jsonl 的 name 取**最后一条** `session_info` 条目。
+
 ### D2 安装独占：门控状态必须上提，且只做一次检测
 
 现在 `needsSetup` 是 `SetupCard.tsx:23` 的局部 `env` state，App 无从得知。若直接把 `envDetect` 再调一次，会出现两次 RPC、两个状态源、以及「卡片已隐藏但 App 还锁着」的竞态。
@@ -75,11 +82,28 @@ ProviderForm（共用组件：字段 + 校验 + 提交 + 错误）
 
 若用户确认推翻，需要更新 README 的那段说明，并把「全字段表单 + schema 版本兼容」单列风险，不在本版顺手做。
 
+**✅ T103 取证结论（2026-11-07，pi 1.4.0 源码穷举 + 真机对照）**：
+- **无官方凭据写入子命令/RPC**（`pi auth` 仅 `print-api-key`/`print-bearer-token`/`check`，全只读；27+ 个 RPC 命令逐个核对无凭据方法）。
+- **auth.json schema**（源码 TypeBox 校验 + 真实文件对照）：顶层 `{ [providerId]: credential }`；`credential := {type:"api_key", key:string} | {type:"oauth", access, refresh, expires:number}`，其余条目使**整个文件被 pi 拒绝**。
+- **写入协议**（FileAuthStorageBackend）：`proper-lockfile` **目录锁**（`<auth.json>.lock` 目录，重试 10×20ms；异步 30s 死线）→ 读旧内容 merge `{...current, [provider]: next}` → `JSON.stringify(,null,2)` UTF-8 mode 0600 写入（非原子 rename）。**pi 运行中 OAuth 刷新会持锁重写**，插件直写必须复刻锁协议。
+- **models.json**：pi 只读；`ProviderConfig` 全字段可选（功能最小集见现有 xiami 条目：`id/name/baseUrl/api/apiKey/models`），`models[]` 仅 `id` 必填；解析失败 = 整个文件作废。凭据优先级 `auth.json > models.json apiKey`。
+- **落地契约**：`manage.authSet`（内置 provider → auth.json 目录锁 + merge + 回读自校验）/ `manage.providerSetKey`（自定义 provider → models.json 原子写 + 回读校验），均只返回 `{ok, provider}` 或 `{ok:false, error}`。就绪探测用 `pi auth check --json --provider <id>`（不带 `--credentials` 不泄值）。
+- **Q3 处置**：历史决策「不做表单式编辑 models.json」**不推翻**——凭据写入是单键 merge，不是 schema 富字段表单；自定义 provider 的 baseUrl/models 仍走「在 IDE 编辑器打开」。
+
 **跳过是否持久化**（Q8）：默认记进既有 `config.getPrefs/setPrefs`，避免每次新安装都重复引导；若用户要求「仅本次跳过」，则不写 prefs。
 
 ### D4 AGENTS.md：列表 + 打开 + 新建，内容一律交给 IDE 编辑器
 
-用户选了「多层级列表 + 全局」。**层级定义以 T102 实测为准**，本 plan 不预先写死 pi 的加载顺序。实现骨架：
+用户选了「多层级列表 + 全局」。
+
+**✅ T102 取证结论（2026-11-07，真机 system prompt 实测 + 源码闭环）**——pi 的加载算法（`loadProjectContextFiles`）：
+- **全局 + 全部祖先目录同时加载、拼接而非就近覆盖**；顺序 = 全局 `agentDir()`（即 `$PI_CODING_AGENT_DIR` || `~/.pi/agent`，与 `PiCliRunner.agentDir()` 一致）最前，然后从 cwd **逐级向上到根**收集（最终最上层祖先在前、cwd 最后），路径去重；git worktree 阴影：链接 worktree 的主仓根同名文件被跳过。
+- **每目录内部取第一个存在者**，候选顺序 `AGENTS.override.md > AGENTS.md > AGENTS.MD > CLAUDE.md > CLAUDE.MD`；CLAUDE.md 只在同目录无 AGENTS 系文件时兜底。
+- 有任一文件时 system prompt 出现 `sections.project_context`，每个文件包 `<project_instructions path="…">`。
+
+插件 `manage.agentsList` 的层级枚举照此复刻（全局 1 行 + cwd 祖先链逐目录 1 行，标注每行实际命中的文件名与 scope），**不做就近覆盖语义**。
+
+实现骨架：
 
 ```
 manage.agentsList   → Kotlin 按 T102 层级枚举候选路径（项目根 / 子目录 / agentDir()）

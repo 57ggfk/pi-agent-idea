@@ -137,15 +137,39 @@ object PiCliRunner {
         }
     }
 
+    /**
+     * Drains [stream] as **bytes** and decodes once on EOF (011 T019).
+     *
+     * The old `bufferedReader()` decoded with the JVM default charset (UTF-8
+     * since JDK 18): on Chinese Windows the `cmd /c` shims and native tools
+     * behind `pi update` print in the OEM code page (CP936), so the update
+     * banner showed `????` where paths and npm warnings carried Chinese.
+     * [OsProcess.decodeOutput] keeps both directions right — strict UTF-8 when
+     * the bytes are UTF-8 (pi, node), the native code page otherwise.
+     *
+     * Partial output survives a killed/timed-out process: the read loop keeps
+     * every chunk and only the final read throws, so the "timed out" result
+     * still carries whatever the child printed before it died.
+     */
     private fun drainThread(stream: java.io.InputStream, into: StringBuilder): Thread =
         Thread({
+            val buf = java.io.ByteArrayOutputStream()
+            val chunk = ByteArray(8192)
             try {
-                stream.bufferedReader().forEachLine { line ->
-                    synchronized(into) { into.appendLine(line) }
+                while (true) {
+                    val n = stream.read(chunk)
+                    if (n < 0) break
+                    buf.write(chunk, 0, n)
                 }
             } catch (_: java.io.IOException) {
-                // stream closed with the process
+                // stream closed with the process (timeout / cancel path)
             }
+            // CRLF → LF, and a lone CR (in-place progress bars) becomes a line
+            // break too; CliText.sanitizeCliOutput picks the final frame later.
+            val text = OsProcess.decodeOutput(buf.toByteArray())
+                .replace("\r\n", "\n")
+                .replace('\r', '\n')
+            synchronized(into) { into.append(text) }
         }, "pi-cli-drain").apply { isDaemon = true; start() }
 
     /** Writes the whole [text] to [stream], then closes it. */

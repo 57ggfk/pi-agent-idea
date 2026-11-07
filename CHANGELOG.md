@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.5.4 — 2026-11-07
+
+**新增**
+- 模型选择器重构：按 provider 分组（当前组置顶）、打开时自动定位并高亮当前模型、点外部/Esc 关闭；列表保持 200 条上限。
+- 会话标题自动接管：第一条消息自动生成标题（skill 引用折叠为 `/skill:名称` 标记 + 原问题），状态栏与 Sessions 行内均可点击改名，手动标题优先于后续自动命名。
+- 全应用统一悬浮提示：图标按钮、窄窗折叠后的模型/思考级别 chip 都有应用内浮层（hover/focus 触发、视口内翻转夹取、不吞点击）。
+- Manage 新增 AGENTS.md 页签：按 pi 的实际加载顺序列出 全局 / 项目根 / 子目录 的上下文文件，可在 IDE 编辑器打开或一键创建模板。
+- 首次安装全程独占引导：缺 pi 时工具窗只显示安装界面（无可跳过入口），安装成功后进入「配置 provider」步骤（可跳过且记忆跳过）；检测失败不锁界面，显示错误与重试。
+- Auth 页签升级为 provider 管理：新增 / 设置 key / 删除（应用内确认框），凭据明文不过桥、不进日志；自定义 provider 直接写 models.json 的 apiKey，内置 provider 按 pi 的锁协议写 auth.json。
+- 图片点击弹出预览模态框：`当前/总数` 切换、滚轮与按钮缩放（25%–600%）、拖拽平移、另存为（IDE 保存对话框）与复制到系统剪贴板——失败与取消都有可见提示，绝不假装成功。
+
+**修复**
+- 引用 skill 时不再把 SKILL.md 全文打印进会话：气泡、复制、引用一律显示 `/skill:名称` 标记 + 原问题，pi 的原文仅保留在数据层（搜索与导出仍可找到全文）。
+- Windows 上「更新 pi」与其它 CLI 结果的中文不再乱码：进程输出按字节读取、严格 UTF-8 失败回退本地代码页（与 0.5.2 修复的「检测 pi 找不到中文路径」同一根因的最后一块），并剥离 ANSI 转义与进度条残影、按字符安全截断。
+
+**Fixed**
+- The model picker groups by provider with the current group pinned, locates and highlights the current model on open, and closes on outside click / Esc; the 200-entry cap stays.
+- Session titles are now owned by the plugin: the first message names the session (skill references fold to a `/skill:name` marker plus the question), the status bar and the Sessions row share one inline editor, and a hand-set title wins over later pi events.
+- One consistent tooltip layer for icon buttons and density-collapsed chips (hover/focus, viewport flipping, never swallowing clicks).
+- Manage gains an AGENTS.md tab listing global/root/subdirectory context files in pi's real load order, with open-in-editor and template creation.
+- First-run setup is exclusive while pi is missing (no tabs, no chat, no escape hatch), flows into a skippable provider-config step after install, and a failed detection never locks the UI.
+- The Auth tab becomes provider management: add / set key / delete behind the in-app confirm dialog; credentials never cross the bridge as plaintext — built-in providers go to auth.json under pi's own lock protocol, custom providers write models.json directly.
+- Clicking an image opens a preview modal with a counter, arrow navigation, wheel/button zoom (25%–600%), drag panning, save-as via the IDE dialog and copy to the system clipboard — failures and cancellations are always visible.
+- Referencing a skill no longer dumps the whole SKILL.md into the transcript: bubbles, copy and quote all show the `/skill:name` marker plus the question; the raw text stays in the data layer for search and export.
+- Chinese output from `pi update` and other CLI commands no longer turns into `????` on Windows: process output is decoded from bytes (strict UTF-8 with a native-code-page fallback — the last piece of the same root cause fixed for pi detection in 0.5.2), with ANSI escapes and progress frames stripped and code-point-safe truncation.
+
 ## 0.5.4 — 2026-11-06
 
 **修复**

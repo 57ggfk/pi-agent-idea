@@ -5,6 +5,8 @@
  * chat items. It is a pure function so it can be unit-tested without React.
  */
 
+import { displaySkillText } from "../lib/skillDisplay";
+
 export type ContentBlock =
   | { kind: "text"; text: string; done: boolean }
   | { kind: "thinking"; text: string; done: boolean }
@@ -422,9 +424,23 @@ export function applyEvent(items: ChatItem[], event: AnyRecord): ChatItem[] {
         const tail = items[items.length - 1];
         const item = emptyItem("user", [{ kind: "text", text, done: true }]);
         item.done = true;
+        const tailText = tail && tail.role === "user" ? messageTextBlockText(tail) : "";
         // Optimistic copy already in place with the same text: nothing to do.
-        if (tail && tail.role === "user" && messageTextBlockText(tail) === text) {
+        if (tail && tail.role === "user" && tailText === text) {
           return items;
+        }
+        // Display-equal but raw-different (011 US4): the optimistic entry
+        // holds the raw `/skill:` command while pi's authoritative message_end
+        // carries the expanded body — same message, but the data layer keeps
+        // pi's text (search and export read it), so replace.
+        if (
+          tail &&
+          tail.role === "user" &&
+          displaySkillText(tailText) === displaySkillText(text)
+        ) {
+          const next = items.slice();
+          next[next.length - 1] = item;
+          return next;
         }
         // pi finalizes the user message in message_end; an empty placeholder
         // tail (older event shape) is replaced instead of appended after.
@@ -622,12 +638,16 @@ export function itemHasText(item: ChatItem): boolean {
  *
  * Returns null when there is nothing to copy (pure-image message), which is
  * what hides the copy/quote buttons instead of rendering dead ones (FR-007).
+ *
+ * Skill-expanded messages (011 US4) come out folded: the body pi spliced into
+ * the message stays in the data layer, while copy / quote / edit hand the
+ * `/skill:<name> <question>` marker onward instead of the SKILL.md text.
  */
 export function itemToMarkdownSource(item: ChatItem): string | null {
   const parts = item.blocks
     .filter((b): b is Extract<ContentBlock, { kind: "text" }> => b.kind === "text")
     .filter((b) => b.text.trim().length > 0)
-    .map((b) => b.text);
+    .map((b) => displaySkillText(b.text));
   if (parts.length === 0) return null;
   // Join so separate text blocks keep their paragraph break; a single block is
   // returned verbatim (no trim) so a user message copies back character-exact.

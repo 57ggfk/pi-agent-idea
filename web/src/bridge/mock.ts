@@ -228,6 +228,34 @@ export class MockBridge implements Bridge {
   private packages = ["npm:@example/pi-tools@1.0.0"];
   /** `?models=broken|missing` — the models.json world the Auth panel must explain. */
   private readonly modelsKnob = query()?.get("models");
+  /**
+   * `?picker=g12|ep|long` — model-picker group fixtures (011 T005): g12 = 3
+   * providers × 12 models with the current model in the last provider; ep =
+   * one empty-provider entry; long = 205 models with the current at index 180.
+   */
+  private readonly pickerKnob = query()?.get("picker");
+  /** `?skillref=1` — emulate pi's `/skill:` expansion on prompt (011 T017). */
+  private readonly skillrefKnob = query()?.get("skillref") === "1";
+  /**
+   * `?update=garbled|failgarbled` — update-result banners (011 T022). The
+   * fixture text is what the Kotlin pipeline (drainThread decode →
+   * CliText.sanitize → safeTruncate) hands the UI on a Chinese Windows host:
+   * the code-page output came out readable, no `\uFFFD`/`Ã`/ANSI left.
+   */
+  private readonly updateKnob = query()?.get("update");
+  /** `?agents=deep|none` — AGENTS.md panel fixtures (012 T118). */
+  private readonly agentsKnob = query()?.get("agents");
+  /** Set by a successful envInstall / envSetPath: releases the setup gate
+   *  on the next envDetect (012 T124). */
+  private setupInstalled = false;
+  /** `?setup=error1` fails the first envDetect only (retry path, T122). */
+  private setupErrorShown = false;
+  /** Provider names with stored credentials; writes mutate it (012 T128). */
+  private authProviders = ["mock-provider"];
+  /** `?authwrite=fail` makes every credential write fail (012 T133). */
+  private readonly authWriteKnob = query()?.get("authwrite");
+  /** Q8 default: the provider-setup skip persists in prefs. */
+  private providerSetupSkipped = false;
 
   // -- Message queue (spec 005) ----------------------------------------------
   //
@@ -378,6 +406,18 @@ export class MockBridge implements Bridge {
           : MOCK_FILES;
       return { files } as T;
     }
+    if (method === "ide.saveImage") {
+      const p = params as { suggestedName?: string } | undefined;
+      const knob = query()?.get("saveimg");
+      if (knob === "fail") return Promise.resolve({ ok: false, error: "could not write the file (mock)" } as T);
+      if (knob === "cancel") return Promise.resolve({ ok: false, cancelled: true, error: "save cancelled" } as T);
+      return Promise.resolve({ ok: true, path: `/tmp/mock-home/Downloads/${p?.suggestedName ?? "image.png"}` } as T);
+    }
+    if (method === "ide.copyImage") {
+      const knob = query()?.get("saveimg");
+      if (knob === "fail") return Promise.resolve({ ok: false, error: "the clipboard is unavailable (mock)" } as T);
+      return Promise.resolve({ ok: true } as T);
+    }
     if (method === "ide.openFile") {
       return Promise.resolve({ ok: true } as T);
     }
@@ -422,15 +462,22 @@ export class MockBridge implements Bridge {
         ...(this.autoRetryEnabled == null ? {} : { autoRetry: this.autoRetryEnabled }),
         theme: this.themePreference,
         language: this.languagePreference,
+        providerSetupSkipped: this.providerSetupSkipped,
       } as T);
     }
     if (method === "config.setPrefs") {
-      const prefs = params as { autoRetry?: boolean; theme?: string; language?: string } | undefined;
+      const prefs = params as {
+        autoRetry?: boolean;
+        theme?: string;
+        language?: string;
+        providerSetupSkipped?: boolean;
+      } | undefined;
       if (typeof prefs?.autoRetry === "boolean") this.autoRetryEnabled = prefs.autoRetry;
       if (prefs?.theme === "system" || prefs?.theme === "light" || prefs?.theme === "dark") {
         this.themePreference = prefs.theme;
       }
       if (typeof prefs?.language === "string") this.languagePreference = prefs.language;
+      if (typeof prefs?.providerSetupSkipped === "boolean") this.providerSetupSkipped = prefs.providerSetupSkipped;
       return Promise.resolve({ ok: true } as T);
     }
     if (method === "approval.getPolicy") {
@@ -475,7 +522,29 @@ export class MockBridge implements Bridge {
       // otherwise exercised by the dedicated component tests instead.
       case "manage.envDetect": {
         const setup = query()?.get("setup");
-        if (setup) return mockSetup(setup, query()?.get("npmregistry") ?? "");
+        if (setup === "error" || setup === "error1") {
+          // 012 T122: a failed detection must NOT lock the main UI — the gate
+          // falls back to "ready + main UI + visible error". `error` fails
+          // forever; `error1` fails once and then recovers, so the retry
+          // button has an observable effect.
+          if (setup === "error") {
+            return { ok: false, error: "detection failed (mock)", needsSetup: false };
+          }
+          if (!this.setupErrorShown) {
+            this.setupErrorShown = true;
+            return { ok: false, error: "detection failed (mock)", needsSetup: false };
+          }
+          return mockSetup("missing", query()?.get("npmregistry") ?? "");
+        }
+        if (setup) {
+          const detected = mockSetup(setup, query()?.get("npmregistry") ?? "");
+          if (this.setupInstalled) {
+            // A completed install / manual path releases the gate (T124).
+            detected.needsSetup = false;
+            detected.pi = { found: true, path: "/usr/local/bin/pi", version: "1.5.0-mock" };
+          }
+          return detected;
+        }
         return {
           ok: true,
           node: { found: true, path: "/usr/local/bin/node", version: "v22.0.0" },
@@ -504,6 +573,7 @@ export class MockBridge implements Bridge {
         const line = `mock: npm install -g @earendil-works/pi-coding-agent${
           registry ? ` --registry=${registry}` : " (npm default registry)"
         }`;
+        this.setupInstalled = true; // success path only — fail/hang never reach here
         if (query()?.get("install") === "fail") {
           return {
             ok: false,
@@ -541,8 +611,10 @@ export class MockBridge implements Bridge {
         this.pendingInstall.resolve(true);
         return { ok: true, cancelled: true };
       }
-      case "manage.envSetPath":
+      case "manage.envSetPath": {
+        this.setupInstalled = true;
         return { ok: true, found: true, path: "/usr/local/bin/pi", version: this.piVersion };
+      }
       case "manage.mcpList":
         return {
           ok: true,
@@ -604,6 +676,25 @@ export class MockBridge implements Bridge {
         return { ok: true, exitCode: 0, output: `updated ${p.source} -> ${bumped}` };
       }
       case "manage.envUpdate": {
+        if (this.updateKnob === "garbled") {
+          this.piVersion = "1.5.0-mock";
+          return {
+            ok: true,
+            exitCode: 0,
+            output:
+              "安装完成 → pi 1.5.0-mock（安装路径 D:\\软件\\nodejs 显示正常）\nadded 1 package in 12.4s ✅",
+            version: this.piVersion,
+          };
+        }
+        if (this.updateKnob === "failgarbled") {
+          return {
+            ok: false,
+            exitCode: 1,
+            version: this.piVersion,
+            output:
+              "npm error code EACCES\nnpm warn 已跳过可选依赖 fsevents@2.3.3（安装路径含中文）\nnpm error 权限不足：/usr/local/lib/node_modules",
+          };
+        }
         if (this.shouldFail("update")) {
           return {
             ok: false,
@@ -618,6 +709,14 @@ export class MockBridge implements Bridge {
       }
       case "manage.packagesList":
         return { ok: true, lines: [...this.packages, "No packages installed."] };
+      case "manage.agentsList":
+        return agentsListFixture(this.agentsKnob);
+      case "manage.agentsOpen":
+        return { ok: true, path: (params as { path?: string } | undefined)?.path ?? "" };
+      case "manage.agentsCreate": {
+        const path = (params as { path?: string } | undefined)?.path ?? "/tmp/mock-project/AGENTS.md";
+        return { ok: true, path, created: this.agentsKnob !== "exists" };
+      }
       case "manage.skillsList":
         return {
           ok: true,
@@ -641,8 +740,8 @@ export class MockBridge implements Bridge {
       case "manage.authOverview": {
         const base = {
           ok: true,
-          providers: ["mock-provider"],
-          withCredentials: ["mock-provider"],
+          providers: [...this.authProviders],
+          withCredentials: [...this.authProviders],
         };
         if (this.modelsKnob === "broken") {
           return {
@@ -708,6 +807,24 @@ export class MockBridge implements Bridge {
         };
       case "manage.authCheck":
         return { ok: true, status: "ready", detail: { provider: "mock-provider" } };
+      case "manage.authSet":
+      case "manage.providerSetKey": {
+        const p = (params ?? {}) as { provider?: string; key?: string };
+        if (this.authWriteKnob === "fail") {
+          return { ok: false, error: "invalid or rejected key (mock)" };
+        }
+        if (!p.provider || !p.key) return { ok: false, error: "missing provider or key" };
+        // The mock keeps provider names only — it models the contract that the
+        // key material never round-trips (012 T133).
+        if (!this.authProviders.includes(p.provider)) this.authProviders.push(p.provider);
+        return { ok: true, provider: p.provider };
+      }
+      case "manage.authDelete": {
+        const p = (params ?? {}) as { provider?: string };
+        if (p.provider === "mock-provider") return { ok: false, error: "the default credential cannot be removed (mock)" };
+        this.authProviders = this.authProviders.filter((n) => n !== p.provider);
+        return { ok: true, provider: p.provider ?? "" };
+      }
       case "manage.settingsRead":
         return { ok: true, path: "/tmp/mock-home/.pi/agent/settings.json", text: "{\n  \"theme\": \"dark\"\n}" };
       case "manage.settingsWrite":
@@ -1075,7 +1192,7 @@ export class MockBridge implements Bridge {
             model: this.currentModel,
             thinkingLevel: this.thinkingLevel,
             isStreaming: this.isStreaming,
-            sessionId: "mock-session-0001",
+            sessionId: "session-aaa", // matches mockSessions[0]: the live session row (012 title editing)
             sessionFile: "/tmp/mock-project/session.jsonl",
             autoCompactionEnabled: this.autoCompactionEnabled,
             messageCount: this.messageCount,
@@ -1083,14 +1200,14 @@ export class MockBridge implements Bridge {
           },
         };
       case "get_available_models":
-        return { success: true, data: { models: MOCK_MODELS } };
+        return { success: true, data: { models: pickerModels(this.pickerKnob) } };
       case "get_available_thinking_levels":
         return { success: true, data: { levels: ["off", "minimal", "low", "medium", "high"] } };
       case "get_session_stats":
         return {
           success: true,
           data: {
-            sessionId: "mock-session-0001",
+            sessionId: "session-aaa", // matches mockSessions[0]: the live session row (012 title editing)
             userMessages: Math.max(1, Math.floor(this.messageCount / 2)),
             assistantMessages: Math.floor(this.messageCount / 2),
             toolCalls: 2,
@@ -1132,20 +1249,25 @@ export class MockBridge implements Bridge {
         if (this.isStreaming && !command["streamingBehavior"]) {
           return { success: false, error: "agent is streaming; specify streamingBehavior" };
         }
+        // `?skillref=1` (011 T017): pi rewrites a `/skill:<name> …` prompt into
+        // the expanded single-text-block message before it reaches the
+        // transcript — emulate that so the folding path is exercised end to
+        // end. Raw `/skill:` text is never stored, matching the real jsonl.
+        const wireMessage = this.skillrefKnob ? expandSkillCommand(message) : message;
         const disposition = this.isStreaming ? "queued" : "started";
         if (!this.isStreaming) {
           // First prompt of a session: give the transcript a file so a later
           // fork can keep this branch on "disk" (007 US1-6).
           if (!this.currentFile) this.currentFile = "/tmp/mock-sessions/live-session.jsonl";
-          const take = (this.promptCounts.get(message) ?? 0) + 1;
-          this.promptCounts.set(message, take);
+          const take = (this.promptCounts.get(wireMessage) ?? 0) + 1;
+          this.promptCounts.set(wireMessage, take);
           this.entrySeq += 1;
           const entryId = `entry-${this.entrySeq}`;
-          this.history.push({ role: "user", content: message, entryId });
-          this.forkEntries.push({ entryId, text: message });
-          void this.startRun(message, take);
+          this.history.push({ role: "user", content: wireMessage, entryId });
+          this.forkEntries.push({ entryId, text: wireMessage });
+          void this.startRun(wireMessage, take);
         } else {
-          this.emit("pi", { type: "queue_update", steering: [message], followUp: [] });
+          this.emit("pi", { type: "queue_update", steering: [wireMessage], followUp: [] });
         }
         return { success: true, data: { disposition } };
       }
@@ -1208,8 +1330,15 @@ export class MockBridge implements Bridge {
         this.pushBranchSession("clone");
         return { success: true, data: { cancelled: false } };
       }
-      case "set_session_name":
+      case "set_session_name": {
+        // pi rejects empty names (T101 evidence) and echoes the change as an
+        // event; the list row follows on the next sessions.list.
+        const name = String(command["name"] ?? "");
+        if (!name) return { success: false, error: "Session name cannot be empty" };
+        if (this.mockSessions[0]) this.mockSessions[0] = { ...this.mockSessions[0], name };
+        this.emit("pi", { type: "session_info_changed", name });
         return { success: true };
+      }
       case "set_model": {
         const found = MOCK_MODELS.find(
           (m) => m.provider === command["provider"] && m.id === command["modelId"],
@@ -1653,6 +1782,94 @@ const MOCK_MODELS: MockModel[] = [
   },
 ];
 
+/**
+ * Model-picker fixtures (011 T005), selected with `?picker=`. Every variant
+ * keeps `mock/mock-model-pro` (the mock's current model) present so the
+ * picker's "locate current on open" path has a real target. The default list
+ * is untouched so existing chat.spec model assertions stay meaningful.
+ */
+/** Bodies for the `?skillref=1` fixture skills; the expansion below mirrors
+ *  pi's `_expandSkillCommand` output (T001 evidence): frontmatter stripped,
+ *  body trimmed, references line first. */
+const MOCK_SKILL_BODIES: Record<string, string> = {
+  "demo-skill": "# Demo Skill\n\nMOCK-SKILL-DEMO-BODY-MARKER-XYZ\n\nStep-by-step usage instructions.",
+  "second-skill": "# Second Skill\n\nMOCK-SKILL-SECOND-BODY-MARKER-XYZ",
+};
+
+/**
+ * Emulates pi's `/skill:` expansion (011 T017): the raw command never reaches
+ * the transcript — it is replaced by one text block with the SKILL.md body
+ * between `<skill>` tags and the user's question appended after. A message
+ * without the prefix (and an unknown skill name, like the real CLI passes
+ * unmatched commands through) keeps its raw form: no boundary, no folding.
+ */
+function expandSkillCommand(message: string): string {
+  const match = /^\/skill:(\S+)(?:\s+([\s\S]*))?$/.exec(message.trim());
+  if (!match) return message;
+  const name = match[1];
+  const args = (match[2] ?? "").trim();
+  const body = MOCK_SKILL_BODIES[name] ?? `# ${name}\n\nMOCK-SKILL-BODY-MARKER-${name}`;
+  const dir = `/tmp/mock-project/.pi/skills/${name}`;
+  const block = `<skill name="${name}" location="${dir}/SKILL.md">\nReferences are relative to ${dir}.\n\n${body}\n</skill>`;
+  return args ? `${block}\n\n${args}` : block;
+}
+
+function pickerModels(knob: string | null | undefined): MockModel[] {
+  if (!knob || knob === "default") return MOCK_MODELS;
+  const mk = (provider: string, id: string, name: string): MockModel => ({
+    id,
+    name,
+    provider,
+    contextWindow: 128000,
+    reasoning: false,
+  });
+
+  if (knob === "g12") {
+    // 3 providers × 12 models; pi order alpha → beta → mock, current model in
+    // the mock group so "current group pinned first" is observable.
+    return [
+      mk("alpha", "alpha-1", "Alpha One"),
+      mk("alpha", "alpha-2", "Alpha Two"),
+      mk("alpha", "alpha-3", "Alpha Three"),
+      mk("alpha", "alpha-4", "Alpha Four"),
+      mk("beta", "beta-1", "Beta One"),
+      mk("beta", "beta-2", "Beta Two"),
+      mk("beta", "beta-3", "Beta Three"),
+      mk("mock", "mock-1", "Mock One"),
+      mk("mock", "mock-model-pro", "Mock Model Pro"),
+      mk("mock", "mock-3", "Mock Three"),
+      mk("mock", "mock-4", "Mock Four"),
+      mk("mock", "mock-5", "Mock Five"),
+    ];
+  }
+
+  if (knob === "ep") {
+    // One model without a provider → the fallback group, rendered last.
+    return [
+      mk("mock", "mock-model-pro", "Mock Model Pro"),
+      mk("alpha", "alpha-1", "Alpha One"),
+      { ...mk("", "orphan-1", "orphan-1") },
+    ];
+  }
+
+  if (knob === "long") {
+    // 205 entries with the current model buried at index 180: open-locate and
+    // cap behavior ("…and 5 more") both need a list larger than the cap.
+    const models: MockModel[] = [];
+    for (let i = 0; i < 205; i++) {
+      if (i === 180) {
+        models.push(mk("mock", "mock-model-pro", "Mock Model Pro"));
+      } else {
+        const n = String(i).padStart(3, "0");
+        models.push(mk("bulk", `bulk-${n}`, `Bulk Model ${n}`));
+      }
+    }
+    return models;
+  }
+
+  return MOCK_MODELS;
+}
+
 // Sample project-relative paths served for the `files.list` bridge method
 // (drives the Composer's @ file completion).
 const MOCK_FILES: string[] = [
@@ -1669,3 +1886,77 @@ const MOCK_FILES: string[] = [
 function chunkWords(text: string): string[] {
   return text.match(/\S+\s*/g) ?? [text];
 }
+
+/**
+ * AGENTS.md panel fixture (012 T118), driven by `?agents=`. Default mirrors a
+ * realistic machine: global file missing, root file present, two subdirs with
+ * files; `?agents=none` strips everything (root exists=false); `?agents=deep`
+ * adds a nested directory. Order = pi's load order (global → root → subdirs).
+ */
+function agentsListFixture(knob: string | null | undefined): {
+  ok: boolean;
+  agentDir: string;
+  candidates: string[];
+  entries: Array<{
+    scope: string;
+    dir: string;
+    relativePath?: string;
+    fileName: string;
+    path: string;
+    exists: boolean;
+    priority: number;
+  }>;
+} {
+  const candidates = ["AGENTS.override.md", "AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"];
+  const entries: AgentsEntryShape[] = [
+    {
+      scope: "global",
+      dir: "/tmp/mock-home/.pi/agent",
+      fileName: "AGENTS.md",
+      path: "/tmp/mock-home/.pi/agent/AGENTS.md",
+      exists: knob === "deep" || knob === "none" ? false : true,
+      priority: 0,
+    },
+    {
+      scope: "root",
+      dir: "/tmp/mock-project",
+      fileName: "AGENTS.md",
+      path: "/tmp/mock-project/AGENTS.md",
+      exists: knob !== "none",
+      priority: 1,
+    },
+  ];
+  if (knob !== "none") {
+    entries.push(
+      {
+        scope: "subdirectory",
+        dir: "/tmp/mock-project/packages/web",
+        relativePath: "packages/web",
+        fileName: "AGENTS.md",
+        path: "/tmp/mock-project/packages/web/AGENTS.md",
+        exists: true,
+        priority: 2,
+      },
+      {
+        scope: "subdirectory",
+        dir: "/tmp/mock-project/packages/web/src",
+        relativePath: "packages/web/src",
+        fileName: "AGENTS.md",
+        path: "/tmp/mock-project/packages/web/src/AGENTS.md",
+        exists: knob === "deep",
+        priority: 3,
+      },
+    );
+  }
+  return { ok: true, agentDir: "/tmp/mock-home/.pi/agent", candidates, entries };
+}
+
+type AgentsEntryShape = {
+  scope: string;
+  dir: string;
+  relativePath?: string;
+  fileName: string;
+  path: string;
+  exists: boolean;
+  priority: number;
+};

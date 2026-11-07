@@ -2,6 +2,9 @@ import { create } from "zustand";
 import type { AppTheme, Bridge, ThemePreference } from "../bridge/types";
 import { rpc } from "../bridge/types";
 import { getBridge } from "../bridge";
+import { displaySkillText } from "../lib/skillDisplay";
+import { deriveSessionTitle, validateSessionTitle } from "../lib/sessionTitle";
+import { manageApi, type EnvDetectResult } from "../manage";
 import {
   applyEvent,
   approvalFromEvent,
@@ -307,6 +310,31 @@ interface PiStore {
   sessionName?: string;
   sessionId?: string;
   sessions: SessionInfo[];
+  /** The current session's title was set by hand — pi name events never
+   *  overwrite it (012 T106). Cleared on switch/new session. */
+  manualTitle: boolean;
+  /** Auto-titling already ran for this session: exactly one attempt (T109). */
+  autoTitled: boolean;
+  /** Inline title editor — the status bar and the session list share one
+   *  instance so two inputs can never fight (T107/T108). */
+  editingSessionTitle: boolean;
+  /**
+   * First-run setup gate (012 US4, T121): the ONE place that knows whether pi
+   * is missing. `state==="ready" && needsSetup` makes the tool window
+   * exclusive (App renders only the guide); `state==="error"` never locks the
+   * UI — the main view shows with a visible error and a retry instead.
+   */
+  setupGate: {
+    needsSetup: boolean;
+    state: "loading" | "ready" | "error";
+    error?: string;
+    env?: EnvDetectResult;
+  };
+  /** Post-install provider-config step (012 US5, T130): offered once after a
+   *  successful install, skippable; the skip persists in prefs (Q8). */
+  providerStep: "hidden" | "offered";
+  /** Open image preview request (012 US7, T139): which block to show. */
+  imagePreview: { itemId: number; blockIndex: number } | null;
 
   /**
    * Per-data-source status (spec 003). "Empty" and "failed" must be
@@ -363,7 +391,23 @@ interface PiStore {
   refreshCommands(): Promise<void>;
   refreshSessions(): Promise<void>;
   switchSession(file: string): Promise<void>;
-  renameSession(name: string): Promise<void>;
+  /** Renames the current session; [manual] = user-typed (beats pi name
+   *  events). Returns false when the RPC failed (error already surfaced). */
+  renameSession(name: string, manual?: boolean): Promise<boolean>;
+  /** Single setup detection: init() calls it once; SetupCard consumes the
+   *  result instead of detecting on its own. force re-runs after install. */
+  detectSetup(force?: boolean): Promise<void>;
+  /** Called after a successful install: offer the provider config step. */
+  offerProviderStep(): void;
+  /** Dismisses the provider step; [skip] persists (Q8 default). */
+  dismissProviderStep(skip: boolean): Promise<void>;
+  /** Image preview (012 US7). */
+  openImagePreview(itemId: number, blockIndex: number): void;
+  closeImagePreview(): void;
+  /** Inline title editing shared by the status bar and session list (T107/T108). */
+  beginEditSessionTitle(): void;
+  cancelEditSessionTitle(): void;
+  submitSessionTitle(name: string): Promise<"ok" | "empty" | "long" | "failed">;
   deleteSession(file: string): Promise<void>;
   cloneSession(file: string): Promise<void>;
   forkSession(): Promise<void>;
@@ -572,6 +616,9 @@ export const usePiStore = create<PiStore>((set, get) => {
         isStreaming: false,
         sessionName: undefined,
         editing: null,
+        manualTitle: false,
+        autoTitled: false,
+        editingSessionTitle: false,
       });
       resetConversationLocalState();
       await get().refreshStats();
@@ -727,7 +774,21 @@ export const usePiStore = create<PiStore>((set, get) => {
       return;
     }
     if (type === "session_info_changed") {
-      set({ sessionName: (event["name"] as string) ?? undefined });
+      const name = (event["name"] as string) ?? undefined;
+      // A hand-set title wins for this session (012 T106): pi events may not
+      // rename it back. Cleared on switch/new session, so a future event
+      // reaches the list again.
+      if (get().manualTitle) return;
+      const sid = get().sessionId;
+      set({
+        sessionName: name,
+        // Keep the list row in sync optimistically — no refreshSessions
+        // round-trip (012 T105: at most one request per title change).
+        sessions:
+          name && sid
+            ? get().sessions.map((s) => (s.file === sid || s.id === sid ? { ...s, name } : s))
+            : get().sessions,
+      });
       return;
     }
     if (type === "extension_ui_request") {
@@ -743,6 +804,24 @@ export const usePiStore = create<PiStore>((set, get) => {
       return;
     }
     set({ items: applyEvent(state.items, event) });
+    // 012 T109: pi never names sessions on its own (T101 evidence) — the first
+    // real user message becomes the title, written back via set_session_name.
+    if (type === "message_end") {
+      const message = event["message"] as Record<string, unknown> | undefined;
+      if (message && message["role"] === "user") maybeAutoTitle();
+    }
+  };
+
+  /** Names the session once from the first user message; never re-fires and
+   *  never issues any prompt/model call — just the set_session_name RPC. */
+  const maybeAutoTitle = () => {
+    const s = get();
+    if (s.autoTitled || s.manualTitle || s.sessionName) return;
+    set({ autoTitled: true });
+    const first = s.items.find((i) => i.role === "user");
+    const text = first?.blocks.find((b) => b.kind === "text")?.text ?? "";
+    const title = deriveSessionTitle(text);
+    if (title) void get().renameSession(title, false);
   };
 
   return {
@@ -791,9 +870,18 @@ export const usePiStore = create<PiStore>((set, get) => {
     commands: [],
     files: [],
     sessions: [],
+    manualTitle: false,
+    autoTitled: false,
+    editingSessionTitle: false,
+    setupGate: { needsSetup: false, state: "loading" },
+    providerStep: "hidden",
+    imagePreview: null,
     sources: emptySources(),
 
     setTab(tab: Tab) {
+      // 012 T121: while the setup gate holds, the tabs do not exist — a
+      // programmatic switch must not land anywhere either.
+      if (get().setupGate.needsSetup && get().setupGate.state === "ready") return;
       set({ tab });
       if (tab === "sessions") void get().refreshSessions();
     },
@@ -923,6 +1011,8 @@ export const usePiStore = create<PiStore>((set, get) => {
         }
       });
 
+      // 012 T121: exactly ONE envDetect per boot — SetupCard reads the gate.
+      void get().detectSetup();
       try {
         const env = await bridge.request<{ theme?: unknown; locale?: string }>("env");
         if (isAppTheme(env.theme)) applyIdeTheme(env.theme);
@@ -1296,7 +1386,19 @@ export const usePiStore = create<PiStore>((set, get) => {
       if (get().isStreaming) await get().abort();
       try {
         await rpc(bridge, { type: "switch_session", sessionPath: file });
-        set({ items: [], stats: undefined, aborted: false, isStreaming: false, tab: "chat", editing: null });
+        // T106: title flags are per-session — a switch starts clean, so pi
+        // events reach the list again and auto-titling gets one fresh attempt.
+        set({
+          items: [],
+          stats: undefined,
+          aborted: false,
+          isStreaming: false,
+          tab: "chat",
+          editing: null,
+          manualTitle: false,
+          autoTitled: false,
+          editingSessionTitle: false,
+        });
         // 006 FR-015: outline/search reset on session switch (no stale hits).
         set({ outlineOpen: false, search: { open: false, query: "", index: 0 }, pendingSearchJump: null });
         await get().replayMessages();
@@ -1316,12 +1418,13 @@ export const usePiStore = create<PiStore>((set, get) => {
       }
     },
 
-    async renameSession(name: string) {
-      if (!bridge) return;
+    async renameSession(name: string, manual = true) {
+      if (!bridge) return false;
       try {
         await rpc(bridge, { type: "set_session_name", name });
-        set({ sessionName: name });
+        set({ sessionName: name, manualTitle: manual });
         await get().refreshSessions();
+        return true;
       } catch (e) {
         const item = emptyItem("system", [
           { kind: "text", text: `rename failed: ${(e as Error).message}`, done: true },
@@ -1329,7 +1432,72 @@ export const usePiStore = create<PiStore>((set, get) => {
         item.done = true;
         item.isError = true;
         set({ items: [...get().items, item] });
+        return false;
       }
+    },
+
+    async detectSetup(force = false) {
+      const b = bridge;
+      if (!b) return;
+      if (!force && get().setupGate.state !== "loading") return;
+      try {
+        const api = manageApi(b);
+        const result = await api.envDetect();
+        if (!result.ok) {
+          // Never a lock: the main UI stays, the error is visible (T122).
+          set({ setupGate: { needsSetup: false, state: "error", error: result.error } });
+          return;
+        }
+        set({
+          setupGate: {
+            needsSetup: result.needsSetup === true,
+            state: "ready",
+            env: result,
+          },
+        });
+      } catch (e) {
+        set({ setupGate: { needsSetup: false, state: "error", error: (e as Error).message } });
+      }
+    },
+
+    openImagePreview(itemId: number, blockIndex: number) {
+      set({ imagePreview: { itemId, blockIndex } });
+    },
+
+    closeImagePreview() {
+      set({ imagePreview: null });
+    },
+
+    offerProviderStep() {
+      set({ providerStep: "offered" });
+    },
+
+    async dismissProviderStep(skip: boolean) {
+      set({ providerStep: "hidden" });
+      if (skip) {
+        try {
+          const b = bridge;
+          if (b) await b.request("config.setPrefs", { providerSetupSkipped: true });
+        } catch {
+          // a failed skip write must not keep the card up: it is already gone
+        }
+      }
+    },
+
+    beginEditSessionTitle() {
+      set({ editingSessionTitle: true });
+    },
+
+    cancelEditSessionTitle() {
+      set({ editingSessionTitle: false });
+    },
+
+    async submitSessionTitle(name: string) {
+      const verdict = validateSessionTitle(name);
+      if (verdict !== "ok") return verdict;
+      const ok = await get().renameSession(name.trim(), true);
+      if (ok) set({ editingSessionTitle: false });
+      return ok ? "ok" : "failed";
     },
 
     async deleteSession(file: string) {
@@ -1547,7 +1715,9 @@ export const usePiStore = create<PiStore>((set, get) => {
           return;
         }
         // Re-ask verbatim: a rewritten prompt would be a different question.
-        await get().sendImages(last.text, [], "auto");
+        // Skill-expanded entries go out folded (011 US4) — pi re-expands
+        // `/skill:<name>` on send, so the re-asked message stays equivalent.
+        await get().sendImages(displaySkillText(last.text), [], "auto");
       } catch (e) {
         appendError(t("error.regenerate.failed", { msg: (e as Error).message }));
       }

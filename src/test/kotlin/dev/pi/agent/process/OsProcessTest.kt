@@ -38,6 +38,46 @@ class OsProcessTest {
         assertEquals("", OsProcess.decodeOutput(ByteArray(0)))
     }
 
+    // -- 011 T019: both directions, host-independent ---------------------------
+
+    @Test
+    fun `utf-8 emoji from the node side survives`() {
+        val text = "更新完成 ✅ pi 1.5.0"
+        assertEquals(text, OsProcess.decodeOutput(text.toByteArray(Charsets.UTF_8)))
+    }
+
+    @Test
+    fun `gbk bytes with a chinese install path decode via the fallback charset`() {
+        // Windows native tools print CP936; the fallback is injectable so the
+        // branch is exercised on a UTF-8 development host too.
+        val path = "D:\\软件\\nodejs\\pi.cmd"
+        val gbk = path.toByteArray(charset("GBK"))
+        assertEquals(path, OsProcess.decodeOutput(gbk, fallback = charset("GBK")))
+    }
+
+    @Test
+    fun `misdecoded latin-1 input never produces question marks`() {
+        // `Ã©` is what UTF-8 bytes look like when shown as Latin-1; decoding
+        // those bytes strictly as UTF-8 yields the original é, never `?`.
+        val utf8 = "café".toByteArray(Charsets.UTF_8)
+        assertEquals("café", OsProcess.decodeOutput(utf8, fallback = charset("ISO-8859-1")))
+        val output = OsProcess.decodeOutput(utf8, fallback = Charsets.US_ASCII)
+        assertTrue('?' !in output, "no literal ? expected: $output")
+    }
+
+    @Test
+    fun `crlf and nul bytes survive decoding`() {
+        val bytes = "a\r\nb\rc\u0000d".toByteArray(Charsets.UTF_8)
+        // decodeOutput is charset-only: line endings are drainThread's job
+        assertEquals("a\r\nb\rc\u0000d", OsProcess.decodeOutput(bytes))
+    }
+
+    @Test
+    fun `one long line without newlines decodes completely`() {
+        val text = "x".repeat(300_000)
+        assertEquals(text, OsProcess.decodeOutput(text.toByteArray(Charsets.UTF_8)))
+    }
+
     @Test
     fun `windows shell is an absolute path, never the bare name`() {
         if (!OsProcess.isWindows) return

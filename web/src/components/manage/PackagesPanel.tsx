@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
+import { useT } from "../../i18n/useT";
 import { OutcomeBanner } from "../ManageView";
 import type { CliOutcome, manageApi, PackagesListResult } from "../../manage";
 
 export default function PackagesPanel({ api }: { api: ReturnType<typeof manageApi> }) {
+  const { t } = useT();
   const [result, setResult] = useState<PackagesListResult | null>(null);
   const [outcome, setOutcome] = useState<{ ok: boolean; error?: string; output?: string } | null>(null);
   const [updateResult, setUpdateResult] = useState<CliOutcome | null>(null);
@@ -95,10 +97,10 @@ export default function PackagesPanel({ api }: { api: ReturnType<typeof manageAp
             setSource("");
           }}
         >
-          Install
+          {t("package.install")}
         </button>
         <button className="btn" data-testid="packages-refresh" onClick={() => void refresh()} disabled={busy}>
-          Refresh
+          {t("package.refresh")}
         </button>
       </div>
 
@@ -121,10 +123,10 @@ export default function PackagesPanel({ api }: { api: ReturnType<typeof manageAp
                   disabled={busy}
                   onClick={() => void update(pkg)}
                 >
-                  Update
+                  {t("package.update")}
                 </button>
                 <button className="btn btn-abort" onClick={() => void act(api.packageRemove({ source: pkg }))}>
-                  Remove
+                  {t("package.remove")}
                 </button>
               </div>
             </div>

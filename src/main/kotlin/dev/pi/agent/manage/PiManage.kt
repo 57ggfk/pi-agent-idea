@@ -370,7 +370,7 @@ object PiManage {
         return buildJsonObject {
             put("ok", result.success)
             put("exitCode", result.exitCode)
-            put("output", (result.stdout + "\n" + result.stderr).trim().take(2000))
+            put("output", cliOutput(result))
             put("version", currentVersion() ?: "")
         }
     }
@@ -511,10 +511,22 @@ object PiManage {
     private fun defaultRunner(args: List<String>, timeoutSeconds: Long): CliResult =
         PiCliRunner.run(args, timeoutSeconds = timeoutSeconds)
 
+    /**
+     * The single shaping pass for CLI text that goes to the UI (011 T021):
+     * sanitize ANSI/`\r`/`\b` (CliText) and truncate on code points. The two
+     * former `trim().take(2000)` copies — [envUpdate] and [cliToElement] —
+     * both route through here, so a fix to one is a fix to both.
+     */
+    private fun cliOutput(result: CliResult): String =
+        dev.pi.agent.process.CliText.safeTruncate(
+            dev.pi.agent.process.CliText.sanitizeCliOutput(result.stdout + "\n" + result.stderr),
+            2000,
+        ).trim()
+
     private fun cliToElement(result: CliResult): JsonObject = buildJsonObject {
         put("ok", result.success)
         put("exitCode", result.exitCode)
-        put("output", (result.stdout + result.stderr).trim().take(2000))
+        put("output", cliOutput(result))
     }
 
     private fun error(message: String): JsonObject = buildJsonObject {

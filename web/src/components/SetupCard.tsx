@@ -1,27 +1,27 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { getBridge } from "../bridge";
-import { manageApi, type EnvDetectResult, type ToolStatus } from "../manage";
+import { manageApi } from "../manage";
 import { usePiStore } from "../store/store";
 import { useT } from "../i18n/useT";
 
 /**
- * First-run setup card.
+ * First-run setup — the ONLY thing on screen while the gate holds (012 US4).
  *
- * Before this existed, a machine without pi showed "pi process is not running"
- * and nothing else: no hint that a node runtime is required, no way to install
- * pi, no indication of which path the plugin was looking for. The card answers
- * the three questions a first-time user actually has — what do I have, what am
- * I missing, how do I get it — and offers both routes: install through npm
- * (npm's own configured registry by default, the official one, the China
- * mirror, or a URL the user pastes) or point at an existing binary.
+ * The store owns detection (T121): one envDetect per boot, result in
+ * `setupGate`. This card consumes it, offers both routes (install through
+ * npm — npm's own registry by default, the official one, the China mirror, or
+ * a URL the user pastes — or point at an existing binary) and reports live.
  *
- * It hides itself as soon as detection reports a working pi, so it never
- * becomes permanent furniture.
+ * There is no "later": while pi is missing the tool window stays here (T123).
+ * The user can still STOP an install (T124) — stopping keeps the gate on and
+ * brings the install button back; only a working pi (install or manual path)
+ * re-runs detection and releases the gate.
  */
 export default function SetupCard() {
   const { t } = useT();
-  const [env, setEnv] = useState<EnvDetectResult | null>(null);
-  const [dismissed, setDismissed] = useState(false);
+  const env = usePiStore((s) => s.setupGate.env);
+  const detectSetup = usePiStore((s) => s.detectSetup);
+  const offerProviderStep = usePiStore((s) => s.offerProviderStep);
   const [source, setSource] = useState("default");
   const [customRegistry, setCustomRegistry] = useState("");
   const [manual, setManual] = useState("");
@@ -48,21 +48,11 @@ export default function SetupCard() {
     return () => window.clearInterval(id);
   }, [busy]);
 
-  const detect = useCallback(async () => {
-    const api = manageApi(await getBridge());
-    const result = await api.envDetect().catch((e: Error) => ({
-      ok: false,
-      error: e.message,
-      needsSetup: false,
-    }) as EnvDetectResult);
-    setEnv(result);
-    if (result.defaultSource) setSource(result.defaultSource);
-    if (result.customPath) setManual(result.customPath);
-  }, []);
-
+  // Source list arrives with the gate's detection; pick the default once.
   useEffect(() => {
-    void detect();
-  }, [detect]);
+    if (env?.defaultSource) setSource(env.defaultSource);
+    if (env?.customPath) setManual(env.customPath);
+  }, [env?.defaultSource, env?.customPath]);
 
   const customId = env?.customSource ?? "custom";
   const isCustom = source === customId;
@@ -93,7 +83,10 @@ export default function SetupCard() {
         return;
       }
       await restartPi();
-      setEnv((prev) => (prev ? { ...prev, needsSetup: false } : prev));
+      // Re-detect: a working pi releases the gate (T124)…
+      await detectSetup(true);
+      // …and the provider step is offered exactly once (T130).
+      offerProviderStep();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -125,7 +118,8 @@ export default function SetupCard() {
         return;
       }
       await restartPi();
-      setEnv((prev) => (prev ? { ...prev, needsSetup: false } : prev));
+      await detectSetup(true);
+      offerProviderStep();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -133,15 +127,12 @@ export default function SetupCard() {
     }
   };
 
-  if (dismissed || !env?.needsSetup || piStatus === "running") return null;
+  if (!env?.needsSetup || piStatus === "running") return null;
 
   return (
     <div className="setup-card" data-testid="setup-card">
       <div className="setup-head">
         <div className="setup-title">{t("setup.title")}</div>
-        <button className="setup-dismiss" onClick={() => setDismissed(true)} title={t("setup.laterHint")}>
-          {t("setup.later")}
-        </button>
       </div>
       <div className="setup-sub">
         {t("setup.subPrefix")} <span className="mono">{env.piPackage}</span> {t("setup.subSuffix")}
@@ -302,7 +293,7 @@ function sourceLabel(
   }
 }
 
-function ToolRow({ label, tool, hint }: { label: string; tool?: ToolStatus; hint: string }) {
+function ToolRow({ label, tool, hint }: { label: string; tool?: import("../manage").ToolStatus; hint: string }) {
   const { t } = useT();
   const found = Boolean(tool?.found);
   return (

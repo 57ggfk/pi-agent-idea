@@ -115,4 +115,48 @@ class PiManageUpdateTest {
         assertEquals("1.4.0", result["version"]!!.jsonPrimitive.content)
         assertTrue(result["output"]!!.jsonPrimitive.content.contains("EACCES"))
     }
+
+    // -- 011 T021: one shaping pass for the output text ------------------------
+
+    @Test
+    fun `update output is sanitized - ansi and progress frames go, chinese stays`() {
+        val esc = "\u001B"
+        val runner = FakeRunner().apply {
+            response = CliResult(
+                0,
+                "${esc}[32m10%${esc}[0m\r50%\r安装完成 → pi 1.5.0\n${esc}]0;title\u0007done",
+                "",
+            )
+        }
+        val result = PiManage.envUpdate(runner = runner, refresh = {}, currentVersion = { "1.5.0" })
+
+        assertEquals("true", result["ok"]!!.jsonPrimitive.content)
+        // the last \r frame of each line wins, ANSI/OSC vanish, the Chinese
+        // text survives — and on a real run drainThread has already turned
+        // \r into \n, so this shape matches production end to end.
+        assertEquals("安装完成 → pi 1.5.0\ndone", result["output"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `update output truncates on code points with the ellipsis marker`() {
+        val runner = FakeRunner().apply { response = CliResult(0, "中".repeat(2500), "") }
+        val result = PiManage.envUpdate(runner = runner, refresh = {}, currentVersion = { "1.5.0" })
+
+        val output = result["output"]!!.jsonPrimitive.content
+        assertEquals(2001, output.codePointCount(0, output.length))
+        assertTrue(output.endsWith("…"))
+        assertTrue(!output.contains("\uFFFD"))
+    }
+
+    @Test
+    fun `failed update output carries both streams sanitized`() {
+        val esc = "\u001B"
+        val runner = FakeRunner().apply {
+            response = CliResult(1, "${esc}[31mERR!${esc}[0m npm warn 已跳过可选依赖", "")
+        }
+        val result = PiManage.envUpdate(runner = runner, refresh = {}, currentVersion = { "1.4.0" })
+
+        assertEquals("false", result["ok"]!!.jsonPrimitive.content)
+        assertEquals("ERR! npm warn 已跳过可选依赖", result["output"]!!.jsonPrimitive.content)
+    }
 }

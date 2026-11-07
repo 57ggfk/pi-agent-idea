@@ -24,6 +24,7 @@
 - 既有 outside-click 参考实现：`web/src/components/OptionsPopover.tsx:62-78`（`rootRef` + document `mousedown` + Escape，仅 open 时挂载）。
 - 既有解码工具与历史证据：`OsProcess.kt:22-50` 的 `nativeCharset` / `decodeOutput(bytes)`（严格 UTF-8，失败回退 `native.encoding`）由提交 `b2d32b2` 引入，修的是「中文安装路径下 `where pi` 输出按本地代码页解码」——即用户说的「检测 pi 时也有类似乱码」。`PiLocator.runCapture:277-290` 已改用它；`PiCliRunner.drainThread` 是唯一漏网的进程输出读入点。`PiEnvironment.kt:391-409` 的 `toolVersion` / `npmConfiguredRegistry` 也走 `PiCliRunner.runProcess`，因此同批受益、同批回归。
 - 现有测试基线（0.5.3 执行报告）：`typecheck 0 错误` / `vitest 165` / `playwright 176` / `gradlew test ✅`。
+- **T003 取证结论（2026-11-07，pi 1.4.0 真机 + RPC）**：`get_available_models` 返回 **359 条模型 / 2 个 provider**（openrouter 355 + 用户自定义 xiami 4），provider 名全小写、无大小写混用；单条字段含 `provider/id/name`（人读名 "Vendor: Model"）与 `contextWindow` 等，无 `displayName`。条数是采样值不是契约值（`pi update` 刷新目录），UI 不硬编码。分组按精确 provider 字符串（小写一致，无需归一）；「不引虚拟列表、保留 200 条上限」维持。
 
 ## 现状与目标
 
@@ -96,8 +97,18 @@ useEffect(() => {
 - 新增 `web/src/lib/skillDisplay.ts`：`displayText(raw: string, originalPrompt?: string): string` + `isSkillExpanded(...)`，返回结果同时给渲染、Copy、Quote、编辑重发、重新生成使用。
 - **识别规则由 T001 取证后落定**，三条分支按报文形态选一：
   - a) RPC 事件带 skill 元数据/独立块 → 在 `ContentBlock` 增加 `kind: "skillref"`（带 `name` / `rawText`），reducer 归一化；
-  - b) 纯 text 块但 pi 展开文本有稳定边界（如 frontmatter 包裹）→ 定界解析，仅对以 `/skill:` 开头的消息生效；
-  - c) 纯 text 块且无边界 → 用发送前记录的**原始 prompt**（`/skill:name 问题`）与回放消息做映射，UI 用原文本覆盖展示。
+  - **b) ✅ T001 已选定（2026-11-07 真机取证，分支 b）**：纯 text 块内 pi 展开文本有稳定边界——展开格式为单个 `type:"text"` block：
+    ```
+    <skill name="forensics-demo" location="/abs/path/SKILL.md">
+    References are relative to <skill 所在目录>.
+
+    <SKILL.md 正文，frontmatter 已剥、已 trim>
+    </skill>
+
+    <用户原话>
+    ```
+    即 `<skill name="…" location="…">\n…\n</skill>\n\n` + 用户原话；原始 `/skill:` 命令**不落盘**（jsonl 直接是展开后文本，回放形态一致）。pi 源码自带官方逆解析 `parseSkillBlock` 正则（`/^<skill name="([^"]+)" location="([^"]+)">\n([\s\S]*?)\n<\/skill>(?:\n\n([\s\S]+))?$/` → `{name, location, content, userMessage}`），插件照抄该正则做识别与折叠，不自造边界。多次 `/skill:` 引用是多条独立 user 消息，各折叠各的。skill 找不到时 pi 原文透传（无边界）→ 自然不折叠。
+  - c) 纯 text 块且无边界 → 用发送前记录的**原始 prompt**（`/skill:name 问题`）与回放消息做映射，UI 用原文本覆盖展示。（T001 证实不需要：边界稳定存在。）
 - 共同约束：只有「本次会话确实发送过 `/skill:` 引用」的消息才可折叠；用户手写相似文本不折叠（FR-015）。
 - 数据层保留 pi 原文，理由：会话回放、006 搜索、`SessionHtmlExporter` 归档仍要能工作；只改呈现层，回滚半径最小。
 - 消息操作改动点：`MessageList.tsx`（渲染）、`MessageActions.tsx` 的 Copy/Quote/编辑/重生成路径（`store.ts` 里对应的回填也走 `displayText`）。

@@ -38,8 +38,11 @@ object OsProcess {
      * Decodes captured process output: UTF-8 when the bytes are valid UTF-8
      * (pi itself, node, our own tools), otherwise the native code page (native
      * Windows utilities), never the lossy replacement-character path.
+     *
+     * [fallback] is injectable so the Windows code-page branch is testable on
+     * a UTF-8 development host: pass `charset("GBK")` explicitly.
      */
-    fun decodeOutput(bytes: ByteArray): String {
+    fun decodeOutput(bytes: ByteArray, fallback: Charset = nativeCharset): String {
         if (bytes.isEmpty()) return ""
         val strict = Charsets.UTF_8.newDecoder()
             .onMalformedInput(CodingErrorAction.REPORT)
@@ -47,7 +50,7 @@ object OsProcess {
         return try {
             strict.decode(ByteBuffer.wrap(bytes)).toString()
         } catch (_: CharacterCodingException) {
-            String(bytes, nativeCharset)
+            String(bytes, fallback)
         }
     }
 

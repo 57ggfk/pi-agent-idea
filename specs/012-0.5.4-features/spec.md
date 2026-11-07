@@ -282,11 +282,11 @@
 
 | # | 待确认 | 谁提供 | 影响 |
 |---|---|---|---|
-| Q1（阻塞） | pi 是否真的自动生成会话标题？`session_info_changed` 的触发时机、字段与 jsonl `session_info` 写入时点？ | 用户 / 执行代理真机抓一次 `pi --mode rpc` 事件（T101） | 决定 FR-102 是「只接管」还是降级「首条消息截断」；阻塞 Phase 1 |
-| Q2（阻塞） | pi 实际加载 AGENTS.md 的路径集合与优先级（项目根 / 子目录 / 全局 `~/.pi/agent` 各是否生效、同名谁覆盖）？ | 用户 / 执行代理查 pi 文档或实测（T102） | 决定 FR-111 的层级定义与排序；阻塞 Phase 3 |
-| Q3（阻塞） | provider 凭据写入方式（pi 原生 `auth` 命令 vs 直写 `auth.json`）；以及是否**推翻** README「不做表单式编辑 models.json」的历史决策？ | 用户拍板 + T103 取证 | 决定 FR-125 / FR-128 与 US6 的改动量；阻塞 Phase 5 |
-| Q4 | 图片「多图切换」的集合范围：当前会话全部 image 块，还是仅同一条消息？ | 用户 | 决定 FR-131 与 `ImagePreviewState` 的收集规则；默认当前会话 |
-| Q5 | 「停止安装」后是否仍保持独占？ | 用户 | 已按「保持独占、可重试或填路径」写入 FR-119 / SC-004；若需改成解锁，须同步改 FR-116/119 与 US4 场景 4 |
-| Q6 | 复制图片 / 另存为是否允许写用户选定目录、是否需要 IDE 文件保存对话框？ | 用户 | 决定 FR-133 的桥接形态与权限边界 |
-| Q7 | tooltip 是否覆盖动态生成的按钮（Markdown 代码块 Copy、ToolCard 内部按钮等），以及 disabled 按钮是否显示「为何不可用」？ | 用户 | 决定 FR-107 的覆盖清单与 T104 基线 |
-| Q8 | 配置引导「跳过」后是否永久不再提示（记入 prefs），还是每次新安装都提示？ | 用户 | 决定 FR-123 是否需要新增 `config.getPrefs/setPrefs` 持久化 |
+| Q1 ✅ **已关闭**（2026-11-07 真机取证，T101） | **pi 无自动命名**：3 个 RPC 会话 + 源码闭环证明 `session_info_changed` 仅由 `setSessionName` 触发；官方回写通道 `set_session_name` RPC 存在（空名被拒，事件 + jsonl 同步） | FR-102 降级实现：首条消息截断生成标题后 `set_session_name` 回写（skill 形态用 userMessage 优先），不做任何模型调用 |
+| Q2 ✅ **已关闭**（2026-11-07 真机取证，T102） | 全局 + cwd 全部祖先**同时加载、拼接不覆盖**；每目录候选序 `AGENTS.override.md > AGENTS.md > AGENTS.MD > CLAUDE.md > CLAUDE.MD` 取首个；CLAUDE.md 仅同目录无 AGENTS 系时兜底 | FR-111 层级定义照此实现：全局 #0 → 根 #1 → 子目录按深度；`manage.agentsList` 算法与 pi 对齐 |
+| Q3 ✅ **已关闭**（2026-11-07 取证 + 按默认折中，T103） | pi 1.4.0 **无任何官方写入通道**；auth.json schema 与 `proper-lockfile` 目录锁协议已从源码确证；models.json 由 pi 只读、`apiKey` 是字段之一 | **不推翻**历史决策：凭据写入 = 单键 merge（内置→auth.json 复刻锁协议；自定义→models.json 原子写 + 回读校验），富字段编辑仍走「在编辑器打开」 |
+| Q4 ✅ **已关闭**（按默认实现） | 多图集合 = 当前会话全部 image 块，按时间序 | `collectImages(items)` 按会话收集，UI 显示 `当前/总数` |
+| Q5 ✅ **已关闭**（按默认实现） | 停止安装后保持独占、恢复安装按钮；仅安装成功或手动路径成功才解除 | e2e #7 断言 `tabs` 仍 `toHaveCount(0)` |
+| Q6 ✅ **已关闭**（按默认实现） | 另存走 IDE 平台保存对话框（`FileSaverFactory`，用户自选目录）；复制写系统剪贴板（AWT `imageFlavor`）；取消不落盘、失败可见 | `ide.saveImage` / `ide.copyImage` 桥接实现并四处同步 |
+| Q7 ✅ **已关闭**（按默认实现） | 本批覆盖：图标按钮与密度折叠 chip（T104 基线 0 提示组件 + tools-right）；动态生成按钮与 disabled 原因提示留待后续（`data-tip` 机制已可扩展） | TooltipHost 是全局委托层，后续接入只需加属性 |
+| Q8 ✅ **已关闭**（按默认实现） | 跳过持久化：`config.setPrefs { providerSetupSkipped: true }`，重开不再提示 | 引导步只在「本次安装成功后」主动出现一次；跳过写 prefs |

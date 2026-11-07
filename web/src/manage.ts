@@ -105,6 +105,26 @@ export interface ModelsOpenResult extends CliOutcome {
   created?: boolean;
 }
 
+/** One AGENTS.md location pi loads (012 US3); order = pi's load order. */
+export interface AgentsEntry {
+  /** "global" (agent dir) | "root" (project root) | "subdirectory". */
+  scope: string;
+  dir: string;
+  relativePath?: string;
+  /** The candidate that wins in this directory (pi's per-dir order). */
+  fileName: string;
+  path: string;
+  exists: boolean;
+  /** pi's load order rank: global 0, root 1, deeper subdirs 2+. */
+  priority: number;
+}
+
+export interface AgentsListResult extends CliOutcome {
+  agentDir?: string;
+  candidates?: string[];
+  entries?: AgentsEntry[];
+}
+
 export interface SkillInfo {
   name: string;
   description: string;
@@ -215,6 +235,15 @@ export function manageApi(bridge: Bridge) {
     envUpdate: () => call<EnvUpdateResult>("manage.envUpdate"),
     modelsReadProvider: (p: { name: string }) => call<ProviderInfoResult>("manage.modelsReadProvider", p),
     modelsOpenFile: (p: { provider: string }) => call<ModelsOpenResult>("manage.modelsOpenFile", p),
+    agentsList: () => call<AgentsListResult>("manage.agentsList"),
+    /** Writes a provider credential. Responses carry the provider name only —
+     *  the key material never crosses the bridge (012 T127). */
+    authSet: (p: { provider: string; key: string }) => call<CliOutcome & { provider?: string }>("manage.authSet", p),
+    authDelete: (p: { provider: string }) => call<CliOutcome & { provider?: string }>("manage.authDelete", p),
+    providerSetKey: (p: { provider: string; key: string }) =>
+      call<CliOutcome & { provider?: string }>("manage.providerSetKey", p),
+    agentsOpen: (p: { path: string }) => call<CliOutcome>("manage.agentsOpen", p),
+    agentsCreate: (p: { path: string }) => call<ModelsOpenResult>("manage.agentsCreate", p),
     skillsList: () => call<{ ok: boolean; skills: SkillInfo[] }>("manage.skillsList"),
     skillCreate: (p: { name: string; description: string; body?: string }) => call<CliOutcome>("manage.skillCreate", p),
     authOverview: () => call<AuthOverviewResult>("manage.authOverview"),

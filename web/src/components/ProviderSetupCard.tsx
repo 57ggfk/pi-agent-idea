@@ -1,0 +1,54 @@
+import { useEffect, useState } from "react";
+import { getBridge } from "../bridge";
+import { manageApi, type AuthOverviewResult } from "../manage";
+import { usePiStore } from "../store/store";
+import { useT } from "../i18n/useT";
+import ProviderForm from "./manage/ProviderForm";
+
+/**
+ * Post-install provider step (012 US5, T130): right after the setup gate
+ * releases, offer to configure a provider — skippable, once (the skip is
+ * persisted in prefs, Q8). When credentials already exist the card says so
+ * and stays out of the way; it never blocks the main UI.
+ */
+export default function ProviderSetupCard() {
+  const { t } = useT();
+  const dismiss = usePiStore((s) => s.dismissProviderStep);
+  const [overview, setOverview] = useState<AuthOverviewResult | null>(null);
+  const [api, setApi] = useState<ReturnType<typeof manageApi> | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      const a = manageApi(await getBridge());
+      setApi(a);
+      setOverview(await a.authOverview().catch(() => null));
+    })();
+  }, []);
+
+  const hasCreds = (overview?.withCredentials?.length ?? 0) > 0;
+
+  return (
+    <div className="provider-setup" data-testid="provider-setup">
+      <div className="provider-setup-head">
+        <div className="provider-setup-title">{t("provider.setupTitle")}</div>
+        <button
+          className="btn"
+          data-testid="provider-setup-skip"
+          onClick={() => void dismiss(true)}
+        >
+          {t("provider.setupSkip")}
+        </button>
+      </div>
+      {hasCreds ? (
+        <div className="panel-note" data-testid="provider-setup-hint">
+          {t("provider.setupAlready")}
+        </div>
+      ) : (
+        <div className="panel-row-sub">{t("provider.setupHint")}</div>
+      )}
+      {api ? (
+        <ProviderForm api={api} testPrefix="provider-setup" onDone={() => void dismiss(false)} />
+      ) : null}
+    </div>
+  );
+}
