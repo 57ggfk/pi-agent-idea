@@ -661,6 +661,7 @@ describe("session titles (012 US1)", () => {
       sessionName: undefined,
       manualTitle: false,
       autoTitled: false,
+      llmTitled: false,
       editingSessionTitle: null,
       sessions: [{ ...currentRow }],
       items: [],
@@ -811,6 +812,120 @@ describe("session titles (012 US1)", () => {
     expect(await usePiStore.getState().submitSessionTitle("live one")).toBe("ok");
 
     expect(command("set_session_name")[0]["name"]).toBe("live one");
+    expect(h.state.calls.some((c) => c.method === "sessions.rename")).toBe(false);
+  });
+
+  // -- stage B: the LLM refinement fired after the first assistant reply ----
+
+  it("B: the first assistant reply refines the title through title.generate", async () => {
+    await usePiStore.getState().init();
+    h.state.calls.length = 0;
+    usePiStore.setState({
+      items: [userItem("帮我修复登录 bug")],
+      model: { id: "openrouter/free", provider: "openrouter" },
+    });
+    h.state.methods.set("title.generate", () => ({ title: "修复登录 bug" }));
+
+    // applyEvent replaces the assistant item from the event's content — the
+    // event must carry the text itself, exactly like the real pi event.
+    dispatchPi({ type: "message_end", message: { role: "assistant", content: "我来看下 auth.ts" } });
+
+    await vi.waitFor(() => expect(h.state.calls.some((c) => c.method === "title.generate")).toBe(true));
+    const gen = h.state.calls.find((c) => c.method === "title.generate")!;
+    expect(gen.params["provider"]).toBe("openrouter");
+    expect(gen.params["modelId"]).toBe("openrouter/free");
+    expect(String(gen.params["user"])).toContain("登录");
+    expect(String(gen.params["assistant"])).toContain("auth.ts");
+    // the refinement lands through the same write-back as A
+    await vi.waitFor(() =>
+      expect(command("set_session_name").some((c) => c["name"] === "修复登录 bug")).toBe(true),
+    );
+    expect(usePiStore.getState().llmTitled).toBe(true);
+  });
+
+  it("B: fires only with text on both sides — an empty reply retries on the next one", async () => {
+    await usePiStore.getState().init();
+    h.state.calls.length = 0;
+    usePiStore.setState({ items: [userItem("question")] });
+
+    dispatchPi({ type: "message_end", message: { role: "assistant", content: [] } });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(h.state.calls.some((c) => c.method === "title.generate")).toBe(false);
+    expect(usePiStore.getState().llmTitled).toBe(false);
+
+    usePiStore.setState({ items: [userItem("question")] });
+    dispatchPi({ type: "message_end", message: { role: "assistant", content: "answer" } });
+    await vi.waitFor(() => expect(h.state.calls.some((c) => c.method === "title.generate")).toBe(true));
+  });
+
+  it("B: failure keeps A's title and never surfaces", async () => {
+    await usePiStore.getState().init();
+    h.state.calls.length = 0;
+    usePiStore.setState({ items: [userItem("q")] });
+    h.state.methods.set("title.generate", () => Promise.reject(new Error("pi one-shot failed")));
+
+    dispatchPi({ type: "message_end", message: { role: "assistant", content: "a" } });
+
+    await vi.waitFor(() => expect(h.state.calls.some((c) => c.method === "title.generate")).toBe(true));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(commandTypes()).not.toContain("set_session_name");
+  });
+
+  it("B: never fires when the title was set by hand", async () => {
+    await usePiStore.getState().init();
+    h.state.calls.length = 0;
+    usePiStore.setState({ manualTitle: true, items: [userItem("q")] });
+
+    dispatchPi({ type: "message_end", message: { role: "assistant", content: "a" } });
+
+    await new Promise((r) => setTimeout(r, 20));
+    expect(h.state.calls.some((c) => c.method === "title.generate")).toBe(false);
+    expect(usePiStore.getState().llmTitled).toBe(false);
+  });
+
+  it("B: a session the user switched away from is renamed through the file append", async () => {
+    await usePiStore.getState().init();
+    h.state.calls.length = 0;
+    usePiStore.setState({
+      items: [userItem("fix the login bug")],
+      sessions: [{ ...currentRow, name: "fix the login bug" }, { ...currentRow, id: "sess-B", file: "/tmp/sess-b.jsonl" }],
+    });
+    let resolveGen: (v: unknown) => void = () => undefined;
+    h.state.methods.set("title.generate", () => new Promise((r) => (resolveGen = r)));
+
+    dispatchPi({ type: "message_end", message: { role: "assistant", content: "on it" } });
+    await vi.waitFor(() => expect(h.state.calls.some((c) => c.method === "title.generate")).toBe(true));
+
+    // the user moves on before the one-shot answers
+    usePiStore.setState({ sessionId: "sess-B" });
+    resolveGen({ title: "Login bug hunt" });
+
+    await vi.waitFor(() => expect(h.state.calls.some((c) => c.method === "sessions.rename")).toBe(true));
+    const rename = h.state.calls.find((c) => c.method === "sessions.rename")!;
+    expect(rename.params).toEqual({ file: "/tmp/sess-a.jsonl", name: "Login bug hunt" });
+    // the live session (sess-B) is never touched
+    expect(commandTypes()).not.toContain("set_session_name");
+  });
+
+  it("B: a row renamed while generating is left alone", async () => {
+    await usePiStore.getState().init();
+    h.state.calls.length = 0;
+    usePiStore.setState({
+      items: [userItem("fix the login bug")],
+      sessions: [{ ...currentRow, name: "fix the login bug" }, { ...currentRow, id: "sess-B", file: "/tmp/sess-b.jsonl" }],
+    });
+    let resolveGen: (v: unknown) => void = () => undefined;
+    h.state.methods.set("title.generate", () => new Promise((r) => (resolveGen = r)));
+    dispatchPi({ type: "message_end", message: { role: "assistant", content: "on it" } });
+    await vi.waitFor(() => expect(h.state.calls.some((c) => c.method === "title.generate")).toBe(true));
+
+    usePiStore.setState({
+      sessionId: "sess-B",
+      sessions: [{ ...currentRow, name: "手动新名" }, { ...currentRow, id: "sess-B", file: "/tmp/sess-b.jsonl" }],
+    });
+    resolveGen({ title: "Login bug hunt" });
+    await new Promise((r) => setTimeout(r, 20));
+
     expect(h.state.calls.some((c) => c.method === "sessions.rename")).toBe(false);
   });
 });

@@ -113,6 +113,7 @@ class BridgeService(private val project: Project) : Disposable {
                 "sessions.delete" -> sessionsDelete(params)
                 "sessions.rename" -> sessionsRename(params)
                 "sessions.exportHtml" -> sessionsExportHtml(params)
+                "title.generate" -> titleGenerate(params)
                 "files.list" -> filesList(params)
                 "ide.repaint" -> repaintBrowser()
                 "ide.openFile" -> openFileInEditor(params)
@@ -424,6 +425,27 @@ class BridgeService(private val project: Project) : Disposable {
             ?: throw IllegalArgumentException("sessions.rename requires name")
         dev.pi.agent.session.PiSessionIndex.renameSessionFile(file, name)
         return buildJsonObject { put("ok", true) }
+    }
+
+    /**
+     * B-stage title generation (the web store drives it after the first
+     * assistant reply): a one-shot pi process summarizes the first exchange.
+     * Best-effort — errors come back as data and the caller keeps the
+     * heuristic title, so nothing here needs to throw.
+     */
+    private fun titleGenerate(params: JsonObject): JsonObject {
+        val user = params["user"]?.let { it as? JsonPrimitive }?.content
+            ?: throw IllegalArgumentException("title.generate requires user")
+        val assistant = params["assistant"]?.let { it as? JsonPrimitive }?.content ?: ""
+        val provider = params["provider"]?.let { it as? JsonPrimitive }?.content
+        val modelId = params["modelId"]?.let { it as? JsonPrimitive }?.content
+        val state = PiProcessManager.getInstance(project).state
+        val path = when (state) {
+            is PiConnectionState.Starting -> state.installation.path
+            is PiConnectionState.Running -> state.installation.path
+            else -> throw IllegalStateException("pi is not available")
+        }
+        return dev.pi.agent.title.TitleGenerator.generate(path, user, assistant, provider, modelId)
     }
 
     /**

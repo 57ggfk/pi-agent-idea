@@ -1,13 +1,15 @@
 import { test, expect, type Page } from "@playwright/test";
 
 /**
- * Session titles (012 US1, tasks T105–T109).
+ * Session titles (012 US1, tasks T105–T109 + the B-stage LLM refinement).
  * pi never names sessions (T101 evidence), so the first user message becomes
- * the title (written back via set_session_name), the status bar title is
- * click-editable, and every session row carries the same editor — the live
- * session through pi, other rows through the bridge's sessions.rename. The
- * store keeps list rows in sync without extra refreshes, and a hand-set title
- * beats later pi name events.
+ * the title (written back via set_session_name); once the first assistant
+ * reply is in, a one-shot pi process (bridge title.generate) refines it, and
+ * A's truncation stays on any failure. The status bar title is click-editable
+ * and every session row carries the same editor — the live session through
+ * pi, other rows through the bridge's sessions.rename. The store keeps list
+ * rows in sync without extra refreshes, and a hand-set title beats both pi
+ * name events and the refinement.
  */
 
 async function ask(page: Page, text: string) {
@@ -20,26 +22,30 @@ async function ask(page: Page, text: string) {
 }
 
 test.describe("session titles", () => {
-  test("the first message auto-titles the session; status bar and list agree (T105/T109)", async ({ page }) => {
+  test("the first message titles the session, then the LLM refinement lands (T105/T109 + B)", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByTestId("empty-state")).toBeVisible();
 
     await ask(page, "help me refactor the login flow");
 
+    // Stage B rewrites A's truncation through the mock title.generate — the
+    // final title is the mock's answer, and the list row follows it.
     const status = page.getByTestId("status-session");
-    await expect(status).toHaveText("help me refactor the login flow", { timeout: 15_000 });
+    await expect(status).toHaveText("Mock: help me refactor the", { timeout: 15_000 });
 
     await page.getByTestId("tab-sessions").click();
     const currentRow = page.locator('[data-testid="session-row"].session-current');
-    await expect(currentRow.locator(".session-name")).toHaveText("help me refactor the login flow");
+    await expect(currentRow.locator(".session-name")).toHaveText("Mock: help me refactor the");
   });
 
-  test("a skill-expanded first message titles with the question (T109 + 011 US4)", async ({ page }) => {
+  test("a skill-expanded first message titles with the question — A folds, B refines (T109 + 011 US4)", async ({ page }) => {
     await page.goto("/?skillref=1");
     await expect(page.getByTestId("empty-state")).toBeVisible();
 
     await ask(page, "/skill:demo-skill how do I use it");
-    await expect(page.getByTestId("status-session")).toHaveText("how do I use it", { timeout: 15_000 });
+    // the excerpt sent to title.generate carries the folded question, so the
+    // mock's answer is built from it — the SKILL.md body never reaches B
+    await expect(page.getByTestId("status-session")).toHaveText("Mock: how do I use it", { timeout: 15_000 });
   });
 
   test("row rename: Enter commits, Esc cancels, empty is refused with a visible error (T107)", async ({ page }) => {

@@ -2,8 +2,13 @@ import { create } from "zustand";
 import type { AppTheme, Bridge, ThemePreference } from "../bridge/types";
 import { rpc } from "../bridge/types";
 import { getBridge } from "../bridge";
-import { displaySkillText } from "../lib/skillDisplay";
-import { deriveSessionTitle, validateSessionTitle } from "../lib/sessionTitle";
+import { displaySkillText, parseSkillBlock } from "../lib/skillDisplay";
+import {
+  clipTitleInput,
+  deriveSessionTitle,
+  sanitizeLlmTitle,
+  validateSessionTitle,
+} from "../lib/sessionTitle";
 import { manageApi, type EnvDetectResult } from "../manage";
 import {
   applyEvent,
@@ -315,6 +320,9 @@ interface PiStore {
   manualTitle: boolean;
   /** Auto-titling already ran for this session: exactly one attempt (T109). */
   autoTitled: boolean;
+  /** B stage (LLM refinement) already attempted for this session: one call,
+   *  fired after the first assistant reply; A's title stays on any failure. */
+  llmTitled: boolean;
   /** Inline title editor (T107/T108) — one instance at a time. The value is
    *  the session FILE under edit; "current" is the live session when its
    *  file is not (yet) in the list; null means no editor is open. */
@@ -627,6 +635,7 @@ export const usePiStore = create<PiStore>((set, get) => {
         editing: null,
         manualTitle: false,
         autoTitled: false,
+        llmTitled: false,
         editingSessionTitle: null,
       });
       resetConversationLocalState();
@@ -815,9 +824,11 @@ export const usePiStore = create<PiStore>((set, get) => {
     set({ items: applyEvent(state.items, event) });
     // 012 T109: pi never names sessions on its own (T101 evidence) — the first
     // real user message becomes the title, written back via set_session_name.
+    // Stage B then refines it once the first assistant reply is in.
     if (type === "message_end") {
       const message = event["message"] as Record<string, unknown> | undefined;
       if (message && message["role"] === "user") maybeAutoTitle();
+      else if (message && message["role"] === "assistant") maybeLlmTitle();
     }
   };
 
@@ -831,6 +842,75 @@ export const usePiStore = create<PiStore>((set, get) => {
     const text = first?.blocks.find((b) => b.kind === "text")?.text ?? "";
     const title = deriveSessionTitle(text);
     if (title) void get().renameSession(title, false);
+  };
+
+  /**
+   * B on top of A: once the first assistant reply lands, a one-shot pi
+   * process (bridge title.generate) turns the exchange into a proper title
+   * that overwrites A's truncation. A's result is the durable fallback — the
+   * call is best-effort and any failure simply keeps it. Fires only with real
+   * text on both sides (an aborted or errored first exchange retries on the
+   * next reply instead of burning the one attempt on nothing).
+   */
+  const maybeLlmTitle = () => {
+    const s = get();
+    if (s.llmTitled || s.manualTitle) return;
+    const userText = s.items.find((i) => i.role === "user")?.blocks.find((b) => b.kind === "text")?.text ?? "";
+    const assistantText =
+      [...s.items].reverse().find((i) => i.role === "assistant")?.blocks.find((b) => b.kind === "text")?.text ?? "";
+    if (!userText.trim() || !assistantText.trim()) return;
+    set({ llmTitled: true });
+    void generateLlmTitle(
+      s.sessionId,
+      userText,
+      assistantText,
+      s.sessions.find((x) => x.id === s.sessionId)?.name,
+    );
+  };
+
+  /**
+   * B write-back, routed by the session the attempt was made for: the still-
+   * live session renames through pi (its process owns file and in-memory
+   * name); a session the user already left goes through the file append. A
+   * hand rename landing mid-flight wins in both routes.
+   */
+  const generateLlmTitle = async (
+    sid: string | undefined,
+    userText: string,
+    assistantText: string,
+    nameAtDispatch: string | undefined,
+  ) => {
+    const b = bridge;
+    if (!b || !sid) return;
+    const model = get().model;
+    try {
+      // A skill-expanded message would burn the excerpt's budget on SKILL.md
+      // boilerplate — the question after the block is what titles the session.
+      const skill = parseSkillBlock(userText);
+      const r = (await b.request("title.generate", {
+        user: clipTitleInput(skill?.userMessage || userText, 800),
+        assistant: clipTitleInput(assistantText, 400),
+        provider: model?.provider,
+        modelId: model?.id,
+      })) as Record<string, unknown>;
+      const title = sanitizeLlmTitle(String(r["title"] ?? ""));
+      const isCurrent = get().sessionId === sid;
+      if (!title || (isCurrent && get().manualTitle)) return;
+      const row = get().sessions.find((x) => x.id === sid);
+      if (row && !isCurrent) {
+        // Renamed while we were generating (a row rename never switches
+        // sessions); A's own title landing in between is expected, not a
+        // user rename.
+        const aTitle = deriveSessionTitle(userText);
+        if (row.name && row.name !== nameAtDispatch && row.name !== aTitle) return;
+        await get().renameSessionFile(row.file, title);
+      } else if (isCurrent) {
+        await get().renameSession(title, false);
+      }
+      // Switched away and unlisted: no safe target — A's title stays on disk.
+    } catch {
+      // B is best-effort by design; A's heuristic title is already durable.
+    }
   };
 
   return {
@@ -881,6 +961,7 @@ export const usePiStore = create<PiStore>((set, get) => {
     sessions: [],
     manualTitle: false,
     autoTitled: false,
+    llmTitled: false,
     editingSessionTitle: null,
     setupGate: { needsSetup: false, state: "loading" },
     providerStep: "hidden",
@@ -1407,6 +1488,7 @@ export const usePiStore = create<PiStore>((set, get) => {
           editing: null,
           manualTitle: false,
           autoTitled: false,
+          llmTitled: false,
           editingSessionTitle: null,
         });
         // 006 FR-015: outline/search reset on session switch (no stale hits).

@@ -443,6 +443,17 @@ export class MockBridge implements Bridge {
       this.mockSessions = this.mockSessions.map((s) => (s.file === p.file ? { ...s, name } : s));
       return Promise.resolve({ ok: true } as T);
     }
+    if (method === "title.generate") {
+      // B-stage title refinement: the real bridge spawns a one-shot pi
+      // process; the mock answers from the excerpt so the full A→B→
+      // set_session_name loop is exercised in e2e.
+      const p = params as { user?: string; assistant?: string };
+      const user = (p.user ?? "").trim();
+      if (!user || !(p.assistant ?? "").trim()) {
+        return Promise.reject(new Error("first exchange has no text to summarize"));
+      }
+      return Promise.resolve({ title: `Mock: ${user.slice(0, 20)}` } as T);
+    }
     if (method === "sessions.exportHtml") {
       const file = (params as { file?: string })?.file ?? "";
       return Promise.resolve({ ok: true, path: file.replace(/\.jsonl$/, ".html") } as T);

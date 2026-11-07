@@ -1,13 +1,15 @@
 import { parseSkillBlock } from "./skillDisplay";
 
 /**
- * Session title derivation (012 US1, T109).
+ * Session title derivation (012 US1, T109) plus the B-stage LLM refinement.
  *
  * T101 evidence: pi 1.4.0 never names sessions on its own — the only writers
  * are `-n`, the TUI `/name` and the `set_session_name` RPC. The plugin takes
- * over with the agreed fallback: the first user message becomes the title,
- * which is then written back through `set_session_name` so pi persists it and
- * broadcasts `session_info_changed`. No extra model call is ever made.
+ * over in two stages: A derives the title from the first user message (no
+ * model call — the durable fallback), then B, after the first assistant
+ * reply, asks a one-shot `pi -p` process for a proper title. B's result
+ * overwrites A's through the same `set_session_name` write-back; B failing,
+ * timing out or being killed leaves A's title untouched.
  */
 
 export const SESSION_TITLE_MAX = 32;
@@ -73,4 +75,30 @@ function scaffoldTitle(raw: string): string | null {
   const look = LOOK_AT_HEAD.exec(raw);
   if (look) return `Explain: ${look[1]}`;
   return null;
+}
+
+// -- B stage: the LLM-generated refinement -----------------------------------
+
+/** Code-point clip for the excerpt sent to the title call (CJK-safe). */
+export const clipTitleInput = (s: string, max: number): string => {
+  const chars = [...s];
+  return chars.length <= max ? s : chars.slice(0, max).join("");
+};
+
+/**
+ * Cleans a model-generated title: the first non-blank line only, one pair of
+ * wrapping quotes stripped (models add them despite instructions), whitespace
+ * collapsed, capped like any other title. Empty output → null → A's title
+ * stays.
+ */
+export function sanitizeLlmTitle(raw: string): string | null {
+  const line = raw.split("\n").find((l) => l.trim()) ?? "";
+  let t = line.trim();
+  if (t.length >= 2) {
+    const quotes = "\"'`“”‘’「『";
+    if (quotes.includes(t[0]) && quotes.includes(t[t.length - 1])) {
+      t = t.slice(1, -1).trim();
+    }
+  }
+  return capTitle(flatten(t));
 }

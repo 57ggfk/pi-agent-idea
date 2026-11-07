@@ -1,5 +1,11 @@
 import { describe, expect, test } from "vitest";
-import { deriveSessionTitle, SESSION_TITLE_MAX, validateSessionTitle } from "./sessionTitle";
+import {
+  clipTitleInput,
+  deriveSessionTitle,
+  sanitizeLlmTitle,
+  SESSION_TITLE_MAX,
+  validateSessionTitle,
+} from "./sessionTitle";
 
 /** T109 (012 US1): the fallback title generator. pi does not auto-name
  *  sessions (T101 evidence), so the plugin derives the title from the first
@@ -98,5 +104,34 @@ describe("validateSessionTitle", () => {
 
   test("trimmed names are accepted", () => {
     expect(validateSessionTitle("  my session  ")).toBe("ok");
+  });
+});
+
+describe("sanitizeLlmTitle (B stage)", () => {
+  test("strips one pair of wrapping quotes, ASCII and CJK alike", () => {
+    expect(sanitizeLlmTitle('"Fix the login bug"')).toBe("Fix the login bug");
+    expect(sanitizeLlmTitle("“修复登录 bug”")).toBe("修复登录 bug");
+    expect(sanitizeLlmTitle("`Title here`")).toBe("Title here");
+  });
+
+  test("takes the first non-blank line and collapses whitespace", () => {
+    expect(sanitizeLlmTitle("\n\n  Fix the bug  \n\nexplanation that must go")).toBe("Fix the bug");
+    // the title is the first line only — anything after a newline is chatter
+    expect(sanitizeLlmTitle("title with\ninternal newline")).toBe("title with");
+  });
+
+  test("caps at the shared limit with the ellipsis, per code point", () => {
+    expect(sanitizeLlmTitle("x".repeat(40))).toBe("x".repeat(SESSION_TITLE_MAX) + "…");
+    expect(sanitizeLlmTitle("中".repeat(40))).toBe("中".repeat(SESSION_TITLE_MAX) + "…");
+  });
+
+  test("empty or blank output is rejected so A's title survives", () => {
+    expect(sanitizeLlmTitle("")).toBeNull();
+    expect(sanitizeLlmTitle("  \n \n ")).toBeNull();
+  });
+
+  test("clipTitleInput clips per code point", () => {
+    expect(clipTitleInput("中".repeat(5), 3)).toBe("中".repeat(3));
+    expect(clipTitleInput("abc", 10)).toBe("abc");
   });
 });

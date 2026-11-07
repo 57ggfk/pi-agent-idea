@@ -5,6 +5,7 @@
 **新增**
 - 模型选择器重构：按 provider 分组（当前组置顶）、打开时自动定位并高亮当前模型、点外部/Esc 关闭；列表保持 200 条上限。
 - 会话标题自动接管：第一条消息自动生成标题（skill 引用折叠为 `/skill:名称` 标记 + 原问题），状态栏与 Sessions 行内均可点击改名，手动标题优先于后续自动命名。
+- 会话标题 LLM 精炼（B 阶段）：首轮回答结束后异步调一次性 pi 进程（同当前 provider/model，`--no-session --no-tools`）生成更贴切的标题，成功则覆盖首条消息截断；失败、超时、被杀或期间手动改名都保留 A 阶段结果——每个新会话至多一次轻量调用，skill 展开消息先折叠出原问题再进摘录。
 - 全应用统一悬浮提示：图标按钮、窄窗折叠后的模型/思考级别 chip 都有应用内浮层（hover/focus 触发、视口内翻转夹取、不吞点击）。
 - Manage 新增 AGENTS.md 页签：按 pi 的实际加载顺序列出 全局 / 项目根 / 子目录 的上下文文件，可在 IDE 编辑器打开或一键创建模板。
 - 首次安装全程独占引导：缺 pi 时工具窗只显示安装界面（无可跳过入口），安装成功后进入「配置 provider」步骤（可跳过且记忆跳过）；检测失败不锁界面，显示错误与重试。
@@ -18,6 +19,7 @@
 **Fixed**
 - The model picker groups by provider with the current group pinned, locates and highlights the current model on open, and closes on outside click / Esc; the 200-entry cap stays.
 - Session titles are now owned by the plugin: the first message names the session (skill references fold to a `/skill:name` marker plus the question), the status bar and the Sessions row share one inline editor, and a hand-set title wins over later pi events.
+- Stage-B title refinement: once the first assistant reply is in, a one-shot pi process (same provider/model, `--no-session --no-tools`) proposes a better title; it overwrites the first-message truncation only on success — failures, timeouts, kills and a hand rename in flight all keep the heuristic result (at most one lightweight model call per new session; skill-expanded messages fold to the question before the excerpt).
 - One consistent tooltip layer for icon buttons and density-collapsed chips (hover/focus, viewport flipping, never swallowing clicks).
 - Manage gains an AGENTS.md tab listing global/root/subdirectory context files in pi's real load order, with open-in-editor and template creation.
 - First-run setup is exclusive while pi is missing (no tabs, no chat, no escape hatch), flows into a skippable provider-config step after install, and a failed detection never locks the UI.
