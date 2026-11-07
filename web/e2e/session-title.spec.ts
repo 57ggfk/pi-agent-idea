@@ -4,7 +4,8 @@ import { test, expect, type Page } from "@playwright/test";
  * Session titles (012 US1, tasks T105–T109).
  * pi never names sessions (T101 evidence), so the first user message becomes
  * the title (written back via set_session_name), the status bar title is
- * click-editable, and the current session row carries the same editor. The
+ * click-editable, and every session row carries the same editor — the live
+ * session through pi, other rows through the bridge's sessions.rename. The
  * store keeps list rows in sync without extra refreshes, and a hand-set title
  * beats later pi name events.
  */
@@ -72,6 +73,35 @@ test.describe("session titles", () => {
     await expect(currentRow.locator(".session-name")).toHaveText("Renamed by row", { timeout: 15_000 });
     await page.getByTestId("tab-chat").click();
     await expect(page.getByTestId("status-session")).toHaveText("Renamed by row");
+  });
+
+  test("every row carries the pencil: a non-current row renames without switching (012 T107)", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByTestId("empty-state")).toBeVisible();
+    await page.getByTestId("tab-sessions").click();
+    await expect(page.getByTestId("sessions-view")).toBeVisible();
+
+    // both rows show the pencil; the current row is not the one under edit
+    await expect(page.getByTestId("session-rename")).toHaveCount(2);
+    const otherRow = page
+      .locator('[data-testid="session-row"]')
+      .filter({ hasText: "Fix the failing tests in CI" });
+    await otherRow.getByTestId("session-rename").click();
+
+    const input = page.getByTestId("session-rename-input");
+    await expect(input).toBeVisible();
+    // an unnamed session starts blank, and only one editor exists anywhere
+    await expect(input).toHaveValue("");
+    await expect(page.locator(".session-title-input")).toHaveCount(1);
+
+    await input.fill("Renamed offline row");
+    await input.press("Enter");
+    await expect(otherRow.locator(".session-name")).toHaveText("Renamed offline row", { timeout: 15_000 });
+    await expect(page.getByTestId("session-rename-input")).toHaveCount(0);
+
+    // the live session was neither switched to nor renamed
+    const currentRow = page.locator('[data-testid="session-row"].session-current');
+    await expect(currentRow.locator(".session-name")).toHaveText("Refactor auth module");
   });
 
   test("status-bar rename syncs the session list; never two editors (T108)", async ({ page }) => {

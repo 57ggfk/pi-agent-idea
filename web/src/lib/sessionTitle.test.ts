@@ -52,6 +52,37 @@ describe("deriveSessionTitle", () => {
     expect(deriveSessionTitle("")).toBeNull();
     expect(deriveSessionTitle("   \n\t ")).toBeNull();
   });
+
+  // IDE scaffold prompts (PiEditorActions.kt / DirectoryListing.kt): the
+  // composer prefills them verbatim, so a first message can be pure
+  // boilerplate — the title comes from the subject, not the plumbing sentence.
+  test("the add-directory prompt titles with the path, not the boilerplate", () => {
+    const prompt =
+      "Here is the directory `src` (1 file, 0 subdirectories):\n\nsrc/Main.java\n\nRead whatever you need.";
+    expect(deriveSessionTitle(prompt)).toBe("Directory: src");
+  });
+
+  test("a question typed after the directory trailer beats the subject", () => {
+    const prompt =
+      "Here is the directory `src` (1 file, 0 subdirectories):\n\nsrc/Main.java\n\nRead whatever you need.\n哪个文件是入口？";
+    expect(deriveSessionTitle(prompt)).toBe("哪个文件是入口？");
+  });
+
+  test("explain/fix/send-selection scaffolds title with verb and target", () => {
+    expect(deriveSessionTitle("Look at `src/Main.java`. Summarize what this file does.")).toBe(
+      "Explain: src/Main.java",
+    );
+    expect(deriveSessionTitle("Look at the directory `sub`. Summarize its structure.")).toBe("Explain: sub");
+    expect(
+      deriveSessionTitle("Explain the following code from `src/Main.java:12` (concise):\n```java\nx\n```"),
+    ).toBe("Explain: src/Main.java:12");
+    expect(deriveSessionTitle("Fix the following code from `src/App.kt:3`.\n```kotlin\nx\n```")).toBe(
+      "Fix: src/App.kt:3",
+    );
+    expect(deriveSessionTitle("Regarding `src/Main.java:42`:\n```java\nx\n```")).toBe(
+      "Selection: src/Main.java:42",
+    );
+  });
 });
 
 describe("validateSessionTitle", () => {

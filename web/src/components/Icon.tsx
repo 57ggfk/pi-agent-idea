@@ -29,6 +29,7 @@ export type IconName =
   | "shield"
   | "sparkles"
   | "stop"
+  | "tag"
   | "terminal"
   | "trash"
   | "x"
@@ -188,6 +189,12 @@ const PATHS: Record<IconName, ReactNode> = {
     <path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z" />
   ),
   stop: <rect width="12" height="12" x="6" y="6" rx="2" />,
+  tag: (
+    <>
+      <path d="M12.58 2.58 21.4 11.4a2 2 0 0 1 0 2.83l-7.17 7.17a2 2 0 0 1-2.83 0L2.58 12.58A2 2 0 0 1 2 11.17V4a2 2 0 0 1 2-2h7.17a2 2 0 0 1 1.41.58Z" />
+      <circle cx="7.5" cy="7.5" r="1" fill="currentColor" />
+    </>
+  ),
   terminal: (
     <>
       <polyline points="4 17 10 11 4 5" />

@@ -432,6 +432,17 @@ export class MockBridge implements Bridge {
       this.mockSessions = this.mockSessions.filter((s) => s.file !== file);
       return Promise.resolve({ ok: true } as T);
     }
+    if (method === "sessions.rename") {
+      // Offline-row rename: mirrors the real bridge appending a session_info
+      // entry — the list refresh picks the new name up (spec 012 T107).
+      const p = params as { file?: string; name?: string };
+      const name = (p.name ?? "").trim();
+      if (!name) return Promise.reject(new Error("session name must not be blank"));
+      const row = this.mockSessions.find((s) => s.file === p.file);
+      if (!row) return Promise.reject(new Error("not a session file: " + p.file));
+      this.mockSessions = this.mockSessions.map((s) => (s.file === p.file ? { ...s, name } : s));
+      return Promise.resolve({ ok: true } as T);
+    }
     if (method === "sessions.exportHtml") {
       const file = (params as { file?: string })?.file ?? "";
       return Promise.resolve({ ok: true, path: file.replace(/\.jsonl$/, ".html") } as T);

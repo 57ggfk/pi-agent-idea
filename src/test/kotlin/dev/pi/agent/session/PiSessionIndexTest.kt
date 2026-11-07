@@ -89,4 +89,86 @@ class PiSessionIndexTest {
             PiSessionIndex.deleteSessionFile(sneaky.absolutePath, rootOverride = tempDir)
         }
     }
+
+    private fun sessionWith(cwd: String, id: String, name: String?): List<String> {
+        val header = """{"type":"session","version":3,"id":"$id","timestamp":"2026-10-27T10:00:00.000Z","cwd":"$cwd"}"""
+        val userMsg = """{"type":"message","id":"m1","message":{"role":"user","content":"hello"}}"""
+        return if (name == null) listOf(header, userMsg)
+        else listOf(header, userMsg, """{"type":"session_info","id":"m2","name":"$name"}""")
+    }
+
+    @Test
+    fun `rename appends a pi-shaped session_info entry and the list takes the new name`() {
+        writeSession("renamed", "r.jsonl", sessionWith("/proj/r", "sess-r", "First name"))
+        val f = File(tempDir, "renamed/r.jsonl")
+
+        PiSessionIndex.renameSessionFile(f.absolutePath, "Second name", rootOverride = tempDir)
+
+        // The appended record is a real pi entry: one compact JSON line with
+        // id, parentId (the file's leaf), timestamp and the sanitised name.
+        val appended = f.readLines().last { it.isNotBlank() }
+        assertTrue(appended.startsWith("""{"type":"session_info","""), appended)
+        assertTrue(""""name":"Second name"""" in appended, appended)
+        assertTrue(""""parentId":"m2"""" in appended, appended)
+
+        val sessions = PiSessionIndex.list("/proj/r", rootOverride = tempDir)
+        assertEquals(1, sessions.size)
+        assertEquals("Second name", sessions[0].name)
+    }
+
+    @Test
+    fun `rename twice keeps the newest name even though the header completed earlier`() {
+        writeSession("twice", "t.jsonl", sessionWith("/proj/t", "sess-t", "First name"))
+        val f = File(tempDir, "twice/t.jsonl")
+        PiSessionIndex.renameSessionFile(f.absolutePath, "Second name", rootOverride = tempDir)
+        PiSessionIndex.renameSessionFile(f.absolutePath, "Third name", rootOverride = tempDir)
+
+        // pi's own list takes the LAST session_info; the index must not stop
+        // scanning once id+name+preview are all found.
+        val sessions = PiSessionIndex.list("/proj/t", rootOverride = tempDir)
+        assertEquals(1, sessions.size)
+        assertEquals("Third name", sessions[0].name)
+    }
+
+    @Test
+    fun `rename sanitises line breaks like pi and refuses a blank name`() {
+        writeSession("sanitised", "s.jsonl", sessionWith("/proj/s", "sess-s", null))
+        val f = File(tempDir, "sanitised/s.jsonl")
+
+        PiSessionIndex.renameSessionFile(f.absolutePath, "two\r\nlines", rootOverride = tempDir)
+        val appended = f.readLines().last { it.isNotBlank() }
+        assertTrue(""""name":"two lines"""" in appended, appended)
+
+        assertFailsWith<IllegalStateException> {
+            PiSessionIndex.renameSessionFile(f.absolutePath, "   \r\n  ", rootOverride = tempDir)
+        }
+    }
+
+    @Test
+    fun `rename heals a missing trailing newline instead of concatenating onto the last entry`() {
+        val dir = File(tempDir, "noeol").apply { mkdirs() }
+        val f = File(dir, "n.jsonl")
+        // Deliberately no trailing newline: pi may have died mid-write.
+        f.writeText(sessionWith("/proj/n", "sess-n", null).joinToString("\n"))
+
+        PiSessionIndex.renameSessionFile(f.absolutePath, "clean line", rootOverride = tempDir)
+
+        val lines = f.readLines().filter { it.isNotBlank() }
+        assertEquals(3, lines.size, "the rename must land on its own line")
+        assertTrue(lines.last().startsWith("""{"type":"session_info","""), lines.last())
+        assertEquals("clean line", PiSessionIndex.list("/proj/n", rootOverride = tempDir)[0].name)
+    }
+
+    @Test
+    fun `rename refuses paths outside the sessions root`() {
+        val outside = File(tempDir.parentFile, "outside-${System.nanoTime()}.jsonl").apply { writeText("x") }
+        try {
+            assertFailsWith<IllegalStateException> {
+                PiSessionIndex.renameSessionFile(outside.absolutePath, "nope", rootOverride = tempDir)
+            }
+            assertTrue(outside.exists(), "file outside the root must survive")
+        } finally {
+            outside.delete()
+        }
+    }
 }

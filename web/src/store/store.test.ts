@@ -661,7 +661,7 @@ describe("session titles (012 US1)", () => {
       sessionName: undefined,
       manualTitle: false,
       autoTitled: false,
-      editingSessionTitle: false,
+      editingSessionTitle: null,
       sessions: [{ ...currentRow }],
       items: [],
     });
@@ -764,17 +764,53 @@ describe("session titles (012 US1)", () => {
 
   it("submitSessionTitle validates: empty and overlong are refused, the editor stays open", async () => {
     await usePiStore.getState().init();
-    usePiStore.setState({ editingSessionTitle: true });
+    usePiStore.setState({ editingSessionTitle: "current" });
 
     expect(await usePiStore.getState().submitSessionTitle("   ")).toBe("empty");
     expect(await usePiStore.getState().submitSessionTitle("中".repeat(33))).toBe("long");
-    expect(usePiStore.getState().editingSessionTitle).toBe(true);
+    expect(usePiStore.getState().editingSessionTitle).toBe("current");
     expect(commandTypes()).not.toContain("set_session_name");
 
     expect(await usePiStore.getState().submitSessionTitle("  real name  ")).toBe("ok");
     expect(command("set_session_name")[0]["name"]).toBe("real name");
-    expect(usePiStore.getState().editingSessionTitle).toBe(false);
+    expect(usePiStore.getState().editingSessionTitle).toBe(null);
     // a hand rename marks the session so pi events cannot rename it back
     expect(usePiStore.getState().manualTitle).toBe(true);
+  });
+
+  it("renaming another session's row goes through sessions.rename, not pi (012 T107)", async () => {
+    const otherRow = { ...currentRow, file: "/tmp/sess-b.jsonl", id: "sess-B", name: "" };
+    h.state.methods.set("sessions.list", () => ({ sessions: [{ ...currentRow }, { ...otherRow }] }));
+    h.state.methods.set("sessions.rename", (params) => {
+      // The real bridge appends a session_info entry; the row follows on refresh.
+      const p = params as { file?: string; name?: string };
+      otherRow.name = p.name ?? "";
+      return { ok: true };
+    });
+    await usePiStore.getState().init();
+    usePiStore.setState({ sessions: [{ ...currentRow }, { ...otherRow }], editingSessionTitle: "/tmp/sess-b.jsonl" });
+    h.state.calls.length = 0;
+
+    expect(await usePiStore.getState().submitSessionTitle("old friend")).toBe("ok");
+
+    // The offline row never touches the live session's RPC.
+    expect(commandTypes()).not.toContain("set_session_name");
+    const rename = h.state.calls.find((c) => c.method === "sessions.rename");
+    expect(rename?.params).toEqual({ file: "/tmp/sess-b.jsonl", name: "old friend" });
+    // The list refresh picks the new name up; the live session is not flagged.
+    expect(usePiStore.getState().sessions.find((s) => s.id === "sess-B")?.name).toBe("old friend");
+    expect(usePiStore.getState().editingSessionTitle).toBe(null);
+    expect(usePiStore.getState().manualTitle).toBe(false);
+  });
+
+  it("renaming the current row (its file) still goes through pi's set_session_name", async () => {
+    await usePiStore.getState().init();
+    usePiStore.setState({ editingSessionTitle: "/tmp/sess-a.jsonl" });
+    h.state.calls.length = 0;
+
+    expect(await usePiStore.getState().submitSessionTitle("live one")).toBe("ok");
+
+    expect(command("set_session_name")[0]["name"]).toBe("live one");
+    expect(h.state.calls.some((c) => c.method === "sessions.rename")).toBe(false);
   });
 });

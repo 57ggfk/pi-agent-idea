@@ -157,12 +157,16 @@ export default function SessionsView() {
             data-testid="session-row"
             title={s.file}
           >
-            {editingSessionTitle && s.id && s.id === sessionId ? (
+            {editingSessionTitle != null &&
+            (editingSessionTitle === s.file ||
+              // The current row also yields to the editor the status bar
+              // opened on another tab (T107/T108: one editor at a time).
+              (editingSessionTitle === "current" && s.id && s.id === sessionId)) ? (
               <div className="session-row-main">
                 <div className="session-row-top">
                   {/* The one inline editor (T107); the status bar hosts the
                       same editor on the other tabs, never both. */}
-                  <SessionTitleInput testId="session-rename-input" />
+                  <SessionTitleInput testId="session-rename-input" initialName={s.name ?? ""} />
                 </div>
               </div>
             ) : (
@@ -178,18 +182,16 @@ export default function SessionsView() {
               </button>
             )}
             <div className="session-actions">
-              {s.id && s.id === sessionId ? (
-                <button
-                  className="btn session-action"
-                  data-testid="session-rename"
-                  title={t("sessions.renameTitle")}
-                  aria-label={t("sessions.renameTitle")}
-                  disabled={editingSessionTitle}
-                  onClick={() => beginEditSessionTitle()}
-                >
-                  <Icon name="pencil" className="ic-sm" />
-                </button>
-              ) : null}
+              <button
+                className="btn session-action"
+                data-testid="session-rename"
+                title={t("sessions.renameTitle")}
+                aria-label={t("sessions.renameTitle")}
+                disabled={editingSessionTitle != null}
+                onClick={() => beginEditSessionTitle(s.file)}
+              >
+                <Icon name="pencil" className="ic-sm" />
+              </button>
               <button
                 className="btn session-action"
                 data-testid="session-clone"

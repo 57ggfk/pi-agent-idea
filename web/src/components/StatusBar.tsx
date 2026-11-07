@@ -17,6 +17,14 @@ export default function StatusBar() {
   const tab = usePiStore((s) => s.tab);
   const editingSessionTitle = usePiStore((s) => s.editingSessionTitle);
   const beginEditSessionTitle = usePiStore((s) => s.beginEditSessionTitle);
+  const sessions = usePiStore((s) => s.sessions);
+  const sessionId = usePiStore((s) => s.sessionId);
+  // The bar editor is for the live session only; a row editor on the
+  // sessions tab targets another session's file and must not land here.
+  const editingCurrent =
+    editingSessionTitle === "current" ||
+    (editingSessionTitle != null &&
+      editingSessionTitle === sessions.find((s) => s.id === sessionId)?.file);
 
   const percent = stats?.contextUsage?.percent;
   const cost = stats?.cost;
@@ -42,20 +50,23 @@ export default function StatusBar() {
       <div className="statusbar-row">
         <span className={`status-dot ${piStatus} ${isStreaming ? "busy" : ""}`} data-testid="status-dot" />
         <span data-testid="status-version">pi {piVersion || "—"}</span>
-        {editingSessionTitle && tab !== "sessions" ? (
+        {editingCurrent && tab !== "sessions" ? (
           // The one inline editor on chat/manage tabs (T108); the session
           // list hosts it on the sessions tab — never both at once.
-          <SessionTitleInput testId="status-session-edit" />
+          <SessionTitleInput testId="status-session-edit" variant="bar" />
         ) : sessionName ? (
+          // Chip, not bare text: a bare auto-derived title reads like a stray
+          // message in the bar; icon + border make it a clickable name.
           <button
             type="button"
             className="status-session status-session-btn"
             data-testid="status-session"
-            title={t("sessions.renameTitle")}
+            title={`${sessionName} — ${t("sessions.renameTitle")}`}
             aria-label={t("sessions.renameTitle")}
-            onClick={beginEditSessionTitle}
+            onClick={() => beginEditSessionTitle()}
           >
-            {sessionName}
+            <Icon name="tag" className="ic-sm" />
+            <span className="status-session-name">{sessionName}</span>
           </button>
         ) : null}
         <span className="spacer" />

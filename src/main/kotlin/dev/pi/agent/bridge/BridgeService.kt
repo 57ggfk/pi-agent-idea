@@ -111,6 +111,7 @@ class BridgeService(private val project: Project) : Disposable {
                 "sessions.list" -> sessionsList()
                 "sessions.search" -> sessionsSearch(params)
                 "sessions.delete" -> sessionsDelete(params)
+                "sessions.rename" -> sessionsRename(params)
                 "sessions.exportHtml" -> sessionsExportHtml(params)
                 "files.list" -> filesList(params)
                 "ide.repaint" -> repaintBrowser()
@@ -408,6 +409,20 @@ class BridgeService(private val project: Project) : Disposable {
         val file = params["file"]?.let { it as? JsonPrimitive }?.content
             ?: throw IllegalArgumentException("sessions.delete requires file")
         dev.pi.agent.session.PiSessionIndex.deleteSessionFile(file)
+        return buildJsonObject { put("ok", true) }
+    }
+
+    /**
+     * Renames a session that is NOT the live one (the live session goes
+     * through pi's `set_session_name` RPC): appends a `session_info` entry
+     * to the file, exactly the record pi itself writes on rename.
+     */
+    private fun sessionsRename(params: JsonObject): JsonObject {
+        val file = params["file"]?.let { it as? JsonPrimitive }?.content
+            ?: throw IllegalArgumentException("sessions.rename requires file")
+        val name = params["name"]?.let { it as? JsonPrimitive }?.content
+            ?: throw IllegalArgumentException("sessions.rename requires name")
+        dev.pi.agent.session.PiSessionIndex.renameSessionFile(file, name)
         return buildJsonObject { put("ok", true) }
     }
 

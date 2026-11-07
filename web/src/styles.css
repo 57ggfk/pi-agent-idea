@@ -682,22 +682,54 @@ button {
 }
 
 /* Session title editing (012 T107/T108): the inline editor shared by the
-   status bar and the current session row. */
+   status bar and the current session row. The bar host renders the name as a
+   chip (icon + border) so an auto-derived title reads as a clickable name,
+   not a stray message stuck in the bar. */
 .status-session-btn {
-  background: none;
-  border: none;
-  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  flex: 0 1 auto;
+  padding: 1px 8px;
   font: inherit;
   cursor: text;
-  border-radius: 4px;
+  color: var(--text);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 999px;
   max-width: 32ch;
+}
+
+.status-session-btn .ic-sm {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+}
+
+.status-session-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .status-session-btn:hover {
-  background: var(--bg-input);
+  border-color: var(--accent);
+}
+
+/* The editor inside the status bar: strictly one line. Invalid names mark
+   the input and explain via tooltip — never a second row. */
+.session-title-input-bar {
+  width: 220px;
+  max-width: 30vw;
+  height: 20px;
+  padding: 1px 8px;
+  border-radius: 999px;
+}
+
+.session-title-input-bar[aria-invalid="true"] {
+  border-color: var(--error);
+  color: var(--error);
 }
 
 .session-title-editor {
@@ -2505,18 +2537,32 @@ button {
   animation: pulse 1.4s ease-in-out infinite;
 }
 
+/* The chip is the only shrinking element in the bar — version and metrics
+   must never wrap (a wrapped footer reads broken, see 0.5.4 feedback). */
 .status-session {
+  flex: 0 1 auto;
+  min-width: 0;
   max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
   color: var(--text);
-  white-space: nowrap;
 }
 
 .status-opt,
 .status-version,
-.status-bridge {
+.status-bridge,
+.status-ctx {
   white-space: nowrap;
+}
+
+.statusbar-row {
+  flex-wrap: nowrap;
+}
+
+.status-dot,
+.status-version,
+.status-ctx,
+.status-opt,
+.btn-restart {
+  flex-shrink: 0;
 }
 
 .btn-restart {

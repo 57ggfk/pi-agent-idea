@@ -315,9 +315,10 @@ interface PiStore {
   manualTitle: boolean;
   /** Auto-titling already ran for this session: exactly one attempt (T109). */
   autoTitled: boolean;
-  /** Inline title editor — the status bar and the session list share one
-   *  instance so two inputs can never fight (T107/T108). */
-  editingSessionTitle: boolean;
+  /** Inline title editor (T107/T108) — one instance at a time. The value is
+   *  the session FILE under edit; "current" is the live session when its
+   *  file is not (yet) in the list; null means no editor is open. */
+  editingSessionTitle: string | null;
   /**
    * First-run setup gate (012 US4, T121): the ONE place that knows whether pi
    * is missing. `state==="ready" && needsSetup` makes the tool window
@@ -409,10 +410,13 @@ interface PiStore {
   /** Image preview (012 US7). */
   openImagePreview(itemId: number, blockIndex: number): void;
   closeImagePreview(): void;
-  /** Inline title editing shared by the status bar and session list (T107/T108). */
-  beginEditSessionTitle(): void;
+  /** Inline title editing shared by the status bar and session list (T107/T108).
+   *  Without a file the editor targets the current session; with one, that row. */
+  beginEditSessionTitle(file?: string): void;
   cancelEditSessionTitle(): void;
   submitSessionTitle(name: string): Promise<"ok" | "empty" | "long" | "failed">;
+  /** Renames a session that is not the live one (bridge sessions.rename). */
+  renameSessionFile(file: string, name: string): Promise<boolean>;
   deleteSession(file: string): Promise<void>;
   cloneSession(file: string): Promise<void>;
   forkSession(): Promise<void>;
@@ -623,7 +627,7 @@ export const usePiStore = create<PiStore>((set, get) => {
         editing: null,
         manualTitle: false,
         autoTitled: false,
-        editingSessionTitle: false,
+        editingSessionTitle: null,
       });
       resetConversationLocalState();
       await get().refreshStats();
@@ -877,7 +881,7 @@ export const usePiStore = create<PiStore>((set, get) => {
     sessions: [],
     manualTitle: false,
     autoTitled: false,
-    editingSessionTitle: false,
+    editingSessionTitle: null,
     setupGate: { needsSetup: false, state: "loading" },
     providerStep: "hidden",
     imagePreview: null,
@@ -1403,7 +1407,7 @@ export const usePiStore = create<PiStore>((set, get) => {
           editing: null,
           manualTitle: false,
           autoTitled: false,
-          editingSessionTitle: false,
+          editingSessionTitle: null,
         });
         // 006 FR-015: outline/search reset on session switch (no stale hits).
         set({ outlineOpen: false, search: { open: false, query: "", index: 0 }, pendingSearchJump: null });
@@ -1494,20 +1498,46 @@ export const usePiStore = create<PiStore>((set, get) => {
       }
     },
 
-    beginEditSessionTitle() {
-      set({ editingSessionTitle: true });
+    beginEditSessionTitle(file?: string) {
+      const target =
+        file ??
+        get().sessions.find((s) => s.id && s.id === get().sessionId)?.file ??
+        // The live session may not be listed yet (no file on disk): the
+        // status bar can still rename it through pi's set_session_name.
+        "current";
+      set({ editingSessionTitle: target });
     },
 
     cancelEditSessionTitle() {
-      set({ editingSessionTitle: false });
+      set({ editingSessionTitle: null });
     },
 
     async submitSessionTitle(name: string) {
       const verdict = validateSessionTitle(name);
       if (verdict !== "ok") return verdict;
-      const ok = await get().renameSession(name.trim(), true);
-      if (ok) set({ editingSessionTitle: false });
+      const target = get().editingSessionTitle;
+      const currentFile = get().sessions.find((s) => s.id && s.id === get().sessionId)?.file;
+      // The live session goes through pi (its process owns the file and the
+      // status-bar name); any other row renames the file directly.
+      const ok =
+        target && target !== "current" && target !== currentFile
+          ? await get().renameSessionFile(target, name.trim())
+          : await get().renameSession(name.trim(), true);
+      if (ok) set({ editingSessionTitle: null });
       return ok ? "ok" : "failed";
+    },
+
+    async renameSessionFile(file: string, name: string) {
+      if (!bridge) return false;
+      try {
+        await bridge.request("sessions.rename", { file, name });
+        await get().refreshSessions();
+        return true;
+      } catch {
+        // The editor stays open (submitSessionTitle keeps it); the old name
+        // is untouched on disk, so a retry is always safe.
+        return false;
+      }
     },
 
     async deleteSession(file: string) {

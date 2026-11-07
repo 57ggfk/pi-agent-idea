@@ -199,6 +199,7 @@ export const en = {
   "sessions.renameTitle": "Rename session",
   "sessions.renameEmpty": "Name cannot be empty",
   "sessions.renameLong": "Too long — at most {{max}} characters",
+  "sessions.renameFailed": "Rename failed — try again",
   "sessions.noMatches_one": "No matches in {{count}} session.",
   "sessions.noMatches_other": "No matches in {{count}} sessions.",
   "sessions.truncated": "The scan was stopped early.",
