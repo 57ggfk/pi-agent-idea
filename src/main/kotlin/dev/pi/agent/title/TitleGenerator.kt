@@ -6,6 +6,7 @@ import dev.pi.agent.process.PiLocator
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
@@ -16,13 +17,13 @@ import java.util.concurrent.TimeUnit
  * killed run simply leaves the better-than-nothing title in place.
  *
  * Ephemeral by design: `--no-session` keeps the call out of the session list,
- * `--no-tools` keeps the model from touching the project, and the system
- * prompt replaces pi's coding one entirely.
+ * `--no-tools` and `--no-extensions`/`--no-mcp` keep pi from starting anything
+ * a title call never needs, and the system prompt replaces pi's coding one.
  */
 object TitleGenerator {
     private val LOG = Logger.getInstance(TitleGenerator::class.java)
 
-    private const val TIMEOUT_SECONDS = 20L
+    private const val TIMEOUT_SECONDS = 30L
     private const val USER_CLIP = 800
     private const val ASSISTANT_CLIP = 400
 
@@ -59,7 +60,7 @@ object TitleGenerator {
         provider: String?,
         modelId: String?,
     ): List<String> {
-        val args = mutableListOf("--no-session", "--no-tools", "-p", "--system-prompt", SYSTEM_PROMPT)
+        val args = mutableListOf("--no-session", "--no-tools", "--no-extensions", "--no-mcp", "-p", "--system-prompt", SYSTEM_PROMPT)
         // Same model as the live conversation; omitted only when the UI has
         // none yet, letting pi fall back to its own defaults.
         if (!provider.isNullOrBlank() && !modelId.isNullOrBlank()) {
@@ -91,28 +92,42 @@ object TitleGenerator {
         if (s.codePointCount(0, s.length) <= max) s else s.substring(0, s.offsetByCodePoints(0, max))
 
     /**
-     * Output captured with the process exit code: pi routes provider failures
-     * to stderr, and a merged-stream capture without the exit check would
+     * Output captured to a temp FILE with the process exit code: pi routes
+     * provider failures to stderr, and a capture without the exit check would
      * happily hand back "API key not found" as a session title.
+     *
+     * The file (not a pipe) is the load-bearing part — the real-machine 0.5.4
+     * postmortem: a pipe read after a killed one-shot blocked FOREVER on an
+     * orphaned child that inherited the write end, hanging the bridge
+     * coroutine so the response (and any log line) never happened. A file
+     * cannot hang, and the tree kill below keeps no orphans alive either.
      */
-    private fun run(command: List<String>): String? = try {
-        val pb = ProcessBuilder(command).redirectErrorStream(true)
-        val proc = pb.start()
-        val finished = proc.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS)
-        val out = OsProcess.decodeOutput(proc.inputStream.use { it.readBytes() })
-        if (!finished) {
-            proc.destroyForcibly()
-            LOG.warn("title.generate: pi one-shot timed out after ${TIMEOUT_SECONDS}s")
-            null
-        } else if (proc.exitValue() != 0) {
-            LOG.warn("title.generate: pi exited ${proc.exitValue()}: ${out.take(200)}")
-            null
-        } else {
-            out
+    private fun run(command: List<String>): String? {
+        val outFile = File.createTempFile("pi-title-", ".txt")
+        try {
+            val proc = ProcessBuilder(command)
+                .redirectOutput(ProcessBuilder.Redirect.to(outFile))
+                .redirectErrorStream(true)
+                .start()
+            val finished = proc.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            if (!finished) {
+                proc.descendants().forEach { it.destroyForcibly() }
+                proc.destroyForcibly()
+                LOG.warn("title.generate: pi one-shot timed out after ${TIMEOUT_SECONDS}s")
+                return null
+            }
+            val out = OsProcess.decodeOutput(outFile.readBytes())
+            if (proc.exitValue() != 0) {
+                LOG.warn("title.generate: pi exited ${proc.exitValue()}: ${out.take(200)}")
+                return null
+            }
+            return out
+        } catch (e: Exception) {
+            LOG.warn("title.generate: spawn failed: ${e.message}")
+            return null
+        } finally {
+            outFile.delete()
         }
-    } catch (e: Exception) {
-        LOG.warn("title.generate: spawn failed: ${e.message}")
-        null
     }
 
     private fun failure(message: String): JsonObject = buildJsonObject { put("error", message) }

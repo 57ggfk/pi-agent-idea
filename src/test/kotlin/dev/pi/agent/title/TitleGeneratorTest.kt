@@ -15,6 +15,10 @@ class TitleGeneratorTest {
         val cmd = TitleGenerator.buildCommand("/pi", "u", "a", null, null)
         assertTrue(cmd.contains("--no-session"), cmd.toString())
         assertTrue(cmd.contains("--no-tools"), cmd.toString())
+        // the real-machine postmortem: extensions/MCP made the one-shot slow
+        // and left orphan children holding the output pipe — never load them
+        assertTrue(cmd.contains("--no-extensions"), cmd.toString())
+        assertTrue(cmd.contains("--no-mcp"), cmd.toString())
         assertTrue(cmd.contains("-p"), cmd.toString())
         val promptAt = cmd.indexOf("--system-prompt")
         assertTrue(promptAt >= 0 && cmd[promptAt + 1].contains("title"), cmd.toString())

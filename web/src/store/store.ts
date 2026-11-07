@@ -887,12 +887,14 @@ export const usePiStore = create<PiStore>((set, get) => {
       // A skill-expanded message would burn the excerpt's budget on SKILL.md
       // boilerplate — the question after the block is what titles the session.
       const skill = parseSkillBlock(userText);
+      // 45s: the one-shot itself caps at 30s; without this the web request
+      // would ride the 6-minute default deadline before the fallback fires.
       const r = (await b.request("title.generate", {
         user: clipTitleInput(skill?.userMessage || userText, 800),
         assistant: clipTitleInput(assistantText, 400),
         provider: model?.provider,
         modelId: model?.id,
-      })) as Record<string, unknown>;
+      }, 45_000)) as Record<string, unknown>;
       const title = sanitizeLlmTitle(String(r["title"] ?? ""));
       const isCurrent = get().sessionId === sid;
       if (!title || (isCurrent && get().manualTitle)) return;
