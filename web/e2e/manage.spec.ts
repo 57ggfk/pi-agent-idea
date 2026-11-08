@@ -202,7 +202,8 @@ test.describe("manage view (MockBridge)", () => {
 
   test("provider details expand with configured flags and no secret values", async ({ page }) => {
     await page.getByTestId("manage-tab-auth").click();
-    await page.getByTestId("provider-toggle-mock-provider").click();
+    const toggle = page.getByTestId("provider-toggle-mock-provider");
+    await toggle.click();
 
     const detail = page.getByTestId("provider-detail-mock-provider");
     await expect(detail).toBeVisible();
@@ -212,6 +213,20 @@ test.describe("manage view (MockBridge)", () => {
     await expect(detail.getByTestId("provider-config-apiKey")).toContainText("configured");
     await expect(detail.getByTestId("provider-config-Authorization")).toContainText("not configured");
     await expect(detail).not.toContainText(/sk-|Bearer /);
+
+    // 013 US4: arrays (models) render as formatted multi-line JSON in a
+    // scrollable block, not a compact one-liner; the wrap toggle flips it.
+    const models = detail.getByTestId("provider-config-json-models");
+    await expect(models).toBeVisible();
+    expect((await models.innerText()).split("\n").length).toBeGreaterThan(3);
+    const wrap = page.getByTestId("provider-wrap-toggle");
+    await expect(wrap).toHaveAttribute("aria-pressed", "false");
+    await wrap.click();
+    await expect(models).toHaveClass(/provider-config-json-wrap/);
+    await expect(wrap).toHaveAttribute("aria-pressed", "true");
+
+    // 013 US3: the toggle row is a real aria-expanded chevron button.
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
 
     await page.getByTestId("provider-open-file-mock-provider").click();
     await expect(page.getByTestId("models-open-note")).toContainText("models.json");

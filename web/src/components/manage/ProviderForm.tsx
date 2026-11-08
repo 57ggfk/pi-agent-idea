@@ -5,9 +5,9 @@ import { isValidProviderName } from "../../lib/provider";
 import { copyText } from "../../lib/clipboard";
 import { KNOWN_PROVIDERS, mergeProviderOptions } from "../../lib/knownProviders";
 import type { ProviderOption } from "../../lib/knownProviders";
+import ProviderPicker, { PROVIDER_CUSTOM } from "./ProviderPicker";
 
-/** Dropdown sentinel for the "custom provider (models.json)" option. */
-const CUSTOM = "__custom__";
+const CUSTOM = PROVIDER_CUSTOM;
 
 type Method = "account" | "key";
 
@@ -57,6 +57,8 @@ export default function ProviderForm({
   const [error, setError] = useState<string | null>(null);
   const [okNote, setOkNote] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  /** Result note for the "open IDE terminal" action (US2). */
+  const [termNote, setTermNote] = useState<string | null>(null);
 
   // Edit mode: the custom flag decides the write path (models.json vs
   // auth.json) exactly like before; the dropdown just isn't rendered.
@@ -119,6 +121,25 @@ export default function ProviderForm({
     if (ok) window.setTimeout(() => setCopied(false), 1500);
   };
 
+  /**
+   * US2: OAuth cannot run inside the panel yet — hand the flow to an IDE
+   * terminal that launches pi. The backend reports which path it took:
+   * typed (command executed in a new terminal session) vs copied (terminal
+   * opened, command on the clipboard). Both are shown verbatim; a total
+   * failure is a visible error, never silence.
+   */
+  const openTerminal = async () => {
+    setTermNote(null);
+    try {
+      const res = await api.openTerminal({ command: "pi" });
+      if (res.typed) setTermNote(t("auth.terminalOpened"));
+      else if (res.ok) setTermNote(t("auth.terminalCopied"));
+      else setTermNote(t("auth.terminalFailed", { msg: res.error ?? "" }));
+    } catch (e) {
+      setTermNote(t("auth.terminalFailed", { msg: (e as Error).message }));
+    }
+  };
+
   const submit = async () => {
     setError(null);
     setOkNote(null);
@@ -171,6 +192,11 @@ export default function ProviderForm({
             onClick={() => setMethod("account")}
           >
             {t("auth.methodAccount")}
+            {/* 013 US2: OAuth is not wired in the panel yet — say so before
+                the user commits to the route, not only in the guide card. */}
+            <span className="segment-badge" data-testid={`${testPrefix}-account-badge`}>
+              {t("auth.methodBadgeSoon")}
+            </span>
           </button>
         )}
         <button
@@ -209,29 +235,14 @@ export default function ProviderForm({
         <>
           <div className="provider-form-row">
             <label htmlFor={`${testPrefix}-pick`}>{t("provider.pickLabel")}</label>
-            <select
-              id={`${testPrefix}-pick`}
-              className="setup-input"
-              data-testid={`${testPrefix}-pick`}
+            <ProviderPicker
+              options={options ?? []}
               value={selected}
-              onChange={(e) => pickProvider(e.target.value)}
+              onChange={pickProvider}
               disabled={busy}
-            >
-              <option value="" disabled>
-                {options === null ? t("common.loading") : t("provider.pickPlaceholder")}
-              </option>
-              {(options ?? []).map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name}
-                  {o.credType
-                    ? ` · ${o.credType === "oauth" ? t("auth.credTypeOauth") : t("auth.credTypeApiKey")}`
-                    : ""}
-                </option>
-              ))}
-              <option value={CUSTOM} data-testid={`${testPrefix}-custom`}>
-                {t("provider.pickCustom")}
-              </option>
-            </select>
+              loading={options === null}
+              testPrefix={testPrefix}
+            />
           </div>
           {customMode ? (
             <div className="provider-form-row">
@@ -270,8 +281,20 @@ export default function ProviderForm({
             >
               {copied ? "✓" : t("common.copy")}
             </button>
+            <button
+              className="btn btn-send"
+              data-testid={`${testPrefix}-account-terminal`}
+              onClick={() => void openTerminal()}
+            >
+              {t("auth.openTerminal")}
+            </button>
           </div>
           <div className="panel-row-sub">{t("auth.accountCommandHint")}</div>
+          {termNote ? (
+            <div className="panel-note" data-testid={`${testPrefix}-term-note`}>
+              {termNote}
+            </div>
+          ) : null}
         </div>
       ) : (
         <>

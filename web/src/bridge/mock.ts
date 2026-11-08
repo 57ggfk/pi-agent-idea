@@ -427,6 +427,14 @@ export class MockBridge implements Bridge {
     if (method === "ide.showFileDiff") {
       return Promise.resolve({ ok: true } as T);
     }
+    // 013 US2: ?term=fail exercises the copy-fallback path, ?term=none the
+    // total-failure path; default pretends the command was typed.
+    if (method === "ide.openTerminal") {
+      const knob = query()?.get("term");
+      if (knob === "fail") return Promise.resolve({ ok: true, typed: false } as T);
+      if (knob === "none") return Promise.resolve({ ok: false, error: "terminal unavailable (mock)" } as T);
+      return Promise.resolve({ ok: true, typed: true } as T);
+    }
     if (method === "sessions.delete") {
       const file = (params as { file?: string })?.file;
       this.mockSessions = this.mockSessions.filter((s) => s.file !== file);

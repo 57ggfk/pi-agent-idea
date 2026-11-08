@@ -42,6 +42,13 @@ dependencies {
             // needed. The commit panel itself is reached via public API
             // (VcsDataKeys.COMMIT_WORKFLOW_UI), no internal classes.
             bundledModule("intellij.platform.vcs.impl")
+            // ide.openTerminal (013 US2): TerminalView/ShellTerminalWidget live
+            // in the bundled Terminal plugin, not on the default classpath. In
+            // 2024.3.1 it is a plain bundled plugin (no platform module split
+            // yet — that lands 2025.x), so depend on the plugin id. Runtime is
+            // an optional <depends> in plugin.xml; createLocalShellWidget +
+            // executeCommand verified on both 2024.3.1 and 2026.2.
+            bundledPlugin("org.jetbrains.plugins.terminal")
             // JCEF classes (com.intellij.ui.jcef, org.cef) live in the platform on
             // 2024.3 (no bundledPlugin needed); on 2026.2+ they moved to a bundled
             // module, linked at runtime via the optional depends in plugin.xml.

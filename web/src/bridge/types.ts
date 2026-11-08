@@ -26,6 +26,7 @@ export type BridgeMethod =
   | "ide.repaint"
   | "ide.openFile"
   | "ide.showFileDiff"
+  | "ide.openTerminal"
   | "config.getLastModel"
   | "config.setLastModel"
   | "config.getPrefs"

@@ -1633,6 +1633,75 @@ button {
   gap: 8px;
 }
 
+/* --- 013: searchable provider picker (US1) -------------------------------- */
+
+.provider-picker {
+  position: relative;
+  width: 100%;
+}
+
+.provider-picker-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+
+.provider-picker-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.provider-picker-placeholder {
+  color: var(--text-tertiary);
+}
+
+.provider-picker-caret {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+}
+
+/* The model popover family opens upward (bottom toolbar); the provider picker
+   sits in a mid-page form, so it opens downward and spans the field. */
+.provider-popover {
+  bottom: auto;
+  top: calc(100% + 6px);
+  width: 100%;
+  max-width: none;
+}
+
+/* --- 013: "not wired yet" badge on the account segment (US2) --------------- */
+
+.segment-badge {
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-subtle);
+  color: var(--text-tertiary);
+  font-size: 10px;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
+/* --- 013: chevron toggle (US3) --------------------------------------------- */
+
+.provider-toggle {
+  padding: 2px 8px;
+}
+
+.provider-toggle-caret {
+  transition: transform 0.15s ease;
+}
+
+.provider-toggle-caret-open {
+  transform: rotate(90deg);
+}
+
 .provider-setup {
   border-bottom: 1px solid var(--border);
   padding: 10px 12px;
@@ -3555,12 +3624,49 @@ button {
 }
 
 .provider-config-row {
-  display: flex;
-  gap: 12px;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(72px, max-content) 1fr;
+  gap: 4px 12px;
   padding: 2px 0;
   font-size: var(--fs-xs);
+}
+
+/* 013 US4: the key column must never squeeze into per-character wrapping
+   ("mo de ls") — the value column absorbs the wrapping instead. */
+.provider-config-key {
+  overflow-wrap: normal;
+  word-break: keep-all;
+}
+
+.provider-config-value {
   overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.provider-config-block {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0;
+  font-size: var(--fs-xs);
+  min-width: 0;
+}
+
+.provider-config-json {
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre;
+}
+
+.provider-config-json-wrap {
+  white-space: pre-wrap;
 }
 
 .config-flag.config-set {

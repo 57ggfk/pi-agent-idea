@@ -16,6 +16,10 @@
          this module. Optional depends links the module's classes when present
          and keeps the plugin loadable everywhere else. -->
     <depends optional="true" config-file="jcef-features.xml">com.intellij.modules.jcef</depends>
+    <!-- ide.openTerminal (013 US2) reaches TerminalView/ShellTerminalWidget in
+         the bundled Terminal plugin. Optional: the plugin stays loadable if a
+         user disabled Terminal; PiIdeTerminal then uses the copy fallback. -->
+    <depends optional="true" config-file="terminal-features.xml">org.jetbrains.plugins.terminal</depends>
 
     <!-- IDE-side strings (spec 008 US3): actions and notifications follow the
          IDE language pack. Brand names stay literal — only descriptions and

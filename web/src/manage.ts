@@ -252,6 +252,14 @@ export function manageApi(bridge: Bridge) {
     skillsList: () => call<{ ok: boolean; skills: SkillInfo[] }>("manage.skillsList"),
     skillCreate: (p: { name: string; description: string; body?: string }) => call<CliOutcome>("manage.skillCreate", p),
     authOverview: () => call<AuthOverviewResult>("manage.authOverview"),
+    /**
+     * Opens an IDE terminal and runs [command] there (013 US2). The backend
+     * reports which path it took: `typed` = executed in a fresh terminal
+     * session, `ok` without `typed` = terminal activated and the command
+     * copied to the clipboard (user pastes it), `ok:false` = both failed.
+     */
+    openTerminal: (p: { command: string }) =>
+      call<{ ok: boolean; typed?: boolean; error?: string }>("ide.openTerminal", p),
     authCheck: (p: { provider: string }) => call<{ ok: boolean; status: string; detail?: unknown }>("manage.authCheck", p),
     settingsRead: () => call<SettingsReadResult>("manage.settingsRead"),
     settingsWrite: (p: { text: string }) => call<CliOutcome>("manage.settingsWrite", p),

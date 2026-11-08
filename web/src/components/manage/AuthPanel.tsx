@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 import type { manageApi, AuthOverviewResult, ProviderInfoResult } from "../../manage";
 import { useT } from "../../i18n/useT";
 import { tip } from "../Tooltip";
+import Icon from "../Icon";
 import ProviderForm from "./ProviderForm";
 import { usePiStore } from "../../store/store";
 
@@ -50,6 +51,8 @@ export default function AuthPanel({ api }: { api: ReturnType<typeof manageApi> }
   const [openNote, setOpenNote] = useState<string | null>(null);
   /** null = no editor; "new" = adding; otherwise = the provider being edited. */
   const [formMode, setFormMode] = useState<"new" | string | null>(null);
+  /** 013 US4: pretty JSON blocks wrap (pre-wrap) instead of scrolling sideways. */
+  const [wrapDetail, setWrapDetail] = useState(false);
 
   const refresh = useCallback(async () => {
     setOverview(await api.authOverview().catch(() => null));
@@ -186,14 +189,19 @@ export default function AuthPanel({ api }: { api: ReturnType<typeof manageApi> }
               </div>
               <div className="panel-row-actions">
                 <button
-                  className="btn"
+                  className="btn provider-toggle"
                   data-testid={`provider-toggle-${p}`}
                   aria-expanded={expanded === p}
                   aria-label={t("auth.showConfig")}
                   {...tip(t("auth.showConfig"))}
                   onClick={() => void toggleDetail(p)}
                 >
-                  {expanded === p ? "▾" : "▸"}
+                  {/* 013 US3: a real chevron with a rotation transition — the
+                      bare ▸/▸ text glyphs were illegible in the dark theme. */}
+                  <Icon
+                    name="chev-right"
+                    className={`ic-sm provider-toggle-caret ${expanded === p ? "provider-toggle-caret-open" : ""}`}
+                  />
                 </button>
                 <button
                   className="btn"
@@ -221,6 +229,18 @@ export default function AuthPanel({ api }: { api: ReturnType<typeof manageApi> }
                 </button>
               </div>
             </div>
+            {/* 013 US5: the edit form renders directly under its row — it used
+                to live inside the expanded detail block, so pressing "Set key"
+                without opening the triangle first silently did nothing. */}
+            {formMode === p ? (
+              <ProviderForm
+                api={api}
+                fixedProvider={p}
+                defaultCustom={!withCreds.has(p)}
+                testPrefix={`provider-edit-${p}`}
+                onDone={() => void refresh()}
+              />
+            ) : null}
             {expanded === p ? (
               <div className="provider-detail" data-testid={`provider-detail-${p}`}>
                 {loadingDetail ? <div className="panel-note">{t("common.loading")}</div> : null}
@@ -228,15 +248,6 @@ export default function AuthPanel({ api }: { api: ReturnType<typeof manageApi> }
                   <div className="panel-note" data-testid={`provider-detail-error-${p}`}>
                     {detail.error}
                   </div>
-                ) : null}
-                {formMode === p ? (
-                  <ProviderForm
-                    api={api}
-                    fixedProvider={p}
-                    defaultCustom={!withCreds.has(p)}
-                    testPrefix={`provider-edit-${p}`}
-                    onDone={() => void refresh()}
-                  />
                 ) : null}
                 {detail?.ok ? (
                   <>
@@ -248,15 +259,38 @@ export default function AuthPanel({ api }: { api: ReturnType<typeof manageApi> }
                       >
                         {t("auth.openInEditor")}
                       </button>
+                      <button
+                        className="btn"
+                        data-testid="provider-wrap-toggle"
+                        aria-pressed={wrapDetail}
+                        onClick={() => setWrapDetail((w) => !w)}
+                      >
+                        {t("auth.wrapLines")}
+                      </button>
                     </div>
-                    {Object.entries(detail.config ?? {}).map(([k, v]) => (
-                      <div className="provider-config-row" key={k} data-testid={`provider-config-${k}`}>
-                        <span className="mono">{k}</span>
-                        <span className="mono">
-                          <ConfigValue value={v} />
-                        </span>
-                      </div>
-                    ))}
+                    {Object.entries(detail.config ?? {}).map(([k, v]) =>
+                      Array.isArray(v) ? (
+                        // 013 US4: arrays (models!) as formatted JSON blocks —
+                        // the compact one-liner squeezed into a narrow flex
+                        // cell was unreadable.
+                        <div className="provider-config-block" key={k} data-testid={`provider-config-${k}`}>
+                          <span className="mono provider-config-key">{k}</span>
+                          <pre
+                            className={`mono provider-config-json ${wrapDetail ? "provider-config-json-wrap" : ""}`}
+                            data-testid={`provider-config-json-${k}`}
+                          >
+                            {JSON.stringify(v, null, 2)}
+                          </pre>
+                        </div>
+                      ) : (
+                        <div className="provider-config-row" key={k} data-testid={`provider-config-${k}`}>
+                          <span className="mono provider-config-key">{k}</span>
+                          <span className="mono provider-config-value">
+                            <ConfigValue value={v} />
+                          </span>
+                        </div>
+                      ),
+                    )}
                   </>
                 ) : null}
               </div>

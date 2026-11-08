@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { KNOWN_PROVIDERS, mergeProviderOptions } from "./knownProviders";
+import { KNOWN_PROVIDERS, filterProviderOptions, mergeProviderOptions } from "./knownProviders";
 
 /** Bundled builtin table ∪ live authOverview merge. The table mirrors the
  *  pi 1.4.0 registry; the merge is what the ProviderForm dropdown renders. */
@@ -16,6 +16,24 @@ describe("KNOWN_PROVIDERS", () => {
     const codex = KNOWN_PROVIDERS.find((k) => k.id === "openai-codex");
     expect(codex?.oauth).toBe(true);
     expect(codex?.apiKey).toBe(false);
+  });
+});
+
+describe("filterProviderOptions", () => {
+  const options = mergeProviderOptions(KNOWN_PROVIDERS, { providers: ["my-relay"], withCredentials: [] });
+
+  test("empty query returns everything in order", () => {
+    expect(filterProviderOptions(options, "  ")).toHaveLength(options.length);
+  });
+
+  test("space-separated keywords are ANDed across name and id, case-insensitive", () => {
+    expect(filterProviderOptions(options, "deep").map((o) => o.id)).toEqual(["deepseek"]);
+    expect(filterProviderOptions(options, "DEEPSEEK").map((o) => o.id)).toEqual(["deepseek"]);
+    expect(filterProviderOptions(options, "ai cn").map((o) => o.id)).toEqual([
+      "moonshotai-cn",
+      "zai-coding-cn",
+    ]);
+    expect(filterProviderOptions(options, "deepseek nope")).toEqual([]);
   });
 });
 

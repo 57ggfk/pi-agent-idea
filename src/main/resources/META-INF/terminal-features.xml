@@ -1,0 +1,8 @@
+<idea-plugin>
+    <!-- Loaded only when the Terminal bundled plugin is present (it always is
+         in IntelliJ IDEA; power users can disable it). Links the Terminal
+         module's classes for ide.openTerminal (013 US2). When absent, the
+         dispatch degrades: tool window activation + clipboard copy is best
+         effort, and PiIdeTerminal catches Throwable around the direct
+         TerminalView references. -->
+</idea-plugin>

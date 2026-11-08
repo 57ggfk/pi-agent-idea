@@ -99,6 +99,24 @@ function credTypeOf(types: Record<string, string> | undefined, id: string): "oau
 }
 
 /**
+ * Space-separated keywords ANDed against name and id, case-insensitive —
+ * the same filter contract as the model picker (011 US2). An empty query
+ * returns everything in order. The "custom provider" option is pinned by the
+ * picker component, not filtered here.
+ */
+export function filterProviderOptions(
+  options: readonly ProviderOption[],
+  query: string,
+): ProviderOption[] {
+  const keywords = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (keywords.length === 0) return [...options];
+  return options.filter((o) => {
+    const hay = `${o.name} ${o.id}`.toLowerCase();
+    return keywords.every((k) => hay.includes(k));
+  });
+}
+
+/**
  * Bundled table ∪ live overview: models.json providers missing from the table
  * join as customs; stored credentials attach configured/credType so rows show
  * a badge and the form can default to the account method for OAuth logins.

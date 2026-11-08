@@ -118,6 +118,10 @@ class BridgeService(private val project: Project) : Disposable {
                 "ide.repaint" -> repaintBrowser()
                 "ide.openFile" -> openFileInEditor(params)
                 "ide.showFileDiff" -> showFileDiff(params)
+                "ide.openTerminal" -> dev.pi.agent.bridge.PiIdeTerminal.open(
+                    project,
+                    (params["command"] as? JsonPrimitive)?.content ?: "",
+                )
                 "config.getLastModel" -> lastModel()
                 "config.setLastModel" -> setLastModel(params)
                 "config.getPrefs" -> getPrefs()

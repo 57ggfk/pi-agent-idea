@@ -4,9 +4,11 @@
 
 **新增**
 - 认证表单对齐终端 `/login`：Provider 改为下拉选择（内置 pi 1.4.0 全部 42 个 provider，models.json 自定义与已存凭据动态并入，附「账号 / API key」状态徽标），认证方式分「账号登录（OAuth）」与「API key」两档——仅 OAuth provider 可选账号；本版选账号时展示终端 `/login <provider>` 指引卡（一键复制命令），浏览器 OAuth 授权将在下个版本接入；API key 写入路径不变。
+- 真机验收缺陷批（spec 013）：Provider 下拉可搜索（空格=AND 关键词、键盘导航、自定义项钉底）；「账号登录」分段常驻「暂未接入」角标，指引卡新增「在 IDE 终端打开」——IDEA 终端自动输入并执行 pi（终端不可用时自动降级为激活终端+复制命令+气泡提示）；认证行展开三角换成旋转 chevron 图标；models.json 详情中数组改为格式化 JSON 块（限高滚动 + 自动换行切换），key 列不再被挤压；修复点「设置 key」无反应（编辑表单误嵌在详情展开块内，现直接渲染在行下）。
 
 **Added**
 - The auth form mirrors the terminal `/login`: the provider is now a dropdown (all 42 pi 1.4.0 builtins, dynamically merged with models.json customs and stored credentials, each badged account/API key), and the method selector offers Account (OAuth) vs API key — the account route is enabled only for OAuth-capable providers and, in this iteration, shows a copyable terminal `/login <provider>` guide (real browser OAuth lands next version); the API-key write path is unchanged.
+- Real-machine acceptance defect batch (spec 013): the provider dropdown is searchable (space=AND keywords, keyboard navigation, pinned custom entry); the Account segment carries a standing "not wired yet" badge and its guide card gains "Open IDE terminal" — the IDE terminal auto-types and runs pi (graceful fallback to activating the terminal with the command copied + a balloon); the expand triangle is now a rotating chevron icon; arrays in the models.json detail render as formatted JSON blocks (height-capped scroll + wrap toggle) instead of squeezing the key column; and "Set key" actually opens the edit form, which used to render inside the collapsed detail block.
 
 ## 0.5.4 — 2026-11-07
 
