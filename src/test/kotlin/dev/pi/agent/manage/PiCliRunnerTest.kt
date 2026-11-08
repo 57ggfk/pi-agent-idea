@@ -108,7 +108,12 @@ class PiCliRunnerTest {
         val result = PiCliRunner.runProcess(
             proc(
                 "printf 'a\\r\\nb\\rc\\n'",
-                listOf("powershell", "-NoProfile", "-Command", "[Console]::Out.Write(\"a`r`nb`rc`n\")"),
+                // No spaces → ProcessBuilder passes the argument unquoted and
+                // Windows argv parsing strips inner double quotes as argument
+                // delimiters, so the -Command payload must avoid them: single
+                // quotes + [char] concatenation survive (CI-verified failure
+                // was PowerShell receiving Out.Write(a`r`nb`rc`n) quoteless).
+                listOf("powershell", "-NoProfile", "-Command", "[Console]::Out.Write('a'+[char]13+[char]10+'b'+[char]13+'c'+[char]10)"),
             ),
             timeoutSeconds = 20,
         )
@@ -121,7 +126,7 @@ class PiCliRunnerTest {
         val result = PiCliRunner.runProcess(
             proc(
                 "printf 'a\\000b'",
-                listOf("powershell", "-NoProfile", "-Command", "[Console]::Out.Write(\"a\" + [char]0 + \"b\")"),
+                listOf("powershell", "-NoProfile", "-Command", "[Console]::Out.Write('a'+[char]0+'b')"),
             ),
             timeoutSeconds = 20,
         )
@@ -134,7 +139,9 @@ class PiCliRunnerTest {
         val result = PiCliRunner.runProcess(
             proc(
                 "yes hello | head -c 150000 | tr '\\n' 'x'",
-                listOf("powershell", "-NoProfile", "-Command", "Write-Output -NoEnumerate ('x' * 150000)"),
+                // Out.Write, not Write-Output: the latter appends a line
+                // ending, which fails the single-line assertion on Windows.
+                listOf("powershell", "-NoProfile", "-Command", "[Console]::Out.Write('x' * 150000)"),
             ),
             timeoutSeconds = 20,
         )

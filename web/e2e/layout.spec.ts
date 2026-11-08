@@ -63,6 +63,20 @@ test("pickers collapse to icons when the window is narrow", async ({ page }) => 
 
   const modelLabel = page.getByTestId("model-chip").locator(".chip-label");
   const thinkingLabel = page.getByTestId("thinking-select").locator(".chip-label");
+
+  // Density is measured from real text widths, so the exact collapse width
+  // moves with platform fonts (CI Linux still fits at 420px where macOS
+  // collapses). Shrink until the app's own state reaches tier 2 instead of
+  // assuming one width works everywhere.
+  let collapsed = -1;
+  for (let w = 420; w >= 300 && collapsed < 0; w -= 20) {
+    await page.setViewportSize({ width: w, height: 760 });
+    try {
+      await expect(page.locator(".composer-controls")).toHaveAttribute("data-density", "2", { timeout: 1_000 });
+      collapsed = w;
+    } catch { /* not yet — keep shrinking */ }
+  }
+  expect(collapsed).toBeGreaterThanOrEqual(0);
   await expect(modelLabel).toBeHidden();
   await expect(thinkingLabel).toBeHidden();
 

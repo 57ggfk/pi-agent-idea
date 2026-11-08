@@ -61,7 +61,19 @@ test("density-collapsed pickers surface the current value (T112)", async ({ page
   await page.goto("/");
   await expect(page.getByTestId("empty-state")).toBeVisible();
 
-  // labels are hidden at this width (density tier 2)
+  // Density is measured from real text widths, so the exact collapse width
+  // moves with platform fonts (CI Linux still fits at 420px where macOS
+  // collapses). Shrink until the app's own state reaches tier 2, then the
+  // labels are hidden by definition.
+  let collapsed = -1;
+  for (let w = 420; w >= 300 && collapsed < 0; w -= 20) {
+    await page.setViewportSize({ width: w, height: 760 });
+    try {
+      await expect(page.locator(".composer-controls")).toHaveAttribute("data-density", "2", { timeout: 1_000 });
+      collapsed = w;
+    } catch { /* not yet — keep shrinking */ }
+  }
+  expect(collapsed).toBeGreaterThanOrEqual(0);
   await expect(page.getByTestId("model-chip").locator(".chip-label")).toBeHidden();
 
   await page.getByTestId("model-chip").hover();
