@@ -292,6 +292,7 @@ export const en = {
   "auth.methodAccount": "Account (OAuth)",
   "auth.methodApiKey": "API key",
   "auth.methodUnsupported": "This provider does not support account login.",
+  "auth.methodBadgeNoOauth": "No OAuth",
   "auth.loginStart": "Sign in via browser",
   "auth.loginRunning": "Waiting for browser authorization…",
   "auth.loginRunningProvider": "Waiting for {{provider}} authorization in your browser…",

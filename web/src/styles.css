@@ -2999,6 +2999,18 @@ button {
   color: var(--text);
 }
 
+/* spec 014 real-machine feedback: a borderless transparent button gives no
+   native disabled affordance — without this, "no account login for this
+   provider" is indistinguishable from "click me". */
+.segment:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.segment:disabled:hover {
+  color: var(--text-secondary);
+}
+
 .segment-active {
   background: var(--bg-elevated);
   color: var(--text);

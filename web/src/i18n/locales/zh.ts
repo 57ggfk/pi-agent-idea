@@ -296,6 +296,7 @@ export const zh: Dict = {
   "auth.loginDone": "{{provider}} 账号登录成功",
   "auth.loginCancelled": "已取消登录",
   "auth.methodUnsupported": "该 provider 不支持账号登录。",
+  "auth.methodBadgeNoOauth": "不支持",
   "auth.accountGuideTitle": "使用账号登录",
   "auth.accountGuideBody": "在浏览器中完成 {{provider}} 授权，pi 把凭证写入 auth.json（带锁），面板即刻可见。",
   "auth.accountCommandHint": "也可以在终端跑 /login——下方指引可把流程交给 IDE 终端。",

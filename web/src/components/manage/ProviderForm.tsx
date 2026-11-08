@@ -6,6 +6,7 @@ import { copyText } from "../../lib/clipboard";
 import { KNOWN_PROVIDERS, mergeProviderOptions } from "../../lib/knownProviders";
 import type { ProviderOption } from "../../lib/knownProviders";
 import ProviderPicker, { PROVIDER_CUSTOM } from "./ProviderPicker";
+import { tip } from "../Tooltip";
 import { usePiStore } from "../../store/store";
 
 const CUSTOM = PROVIDER_CUSTOM;
@@ -263,13 +264,18 @@ export default function ProviderForm({
             className={`segment ${method === "account" ? "segment-active" : ""}`}
             data-testid={`${testPrefix}-method-account`}
             disabled={!accountAvailable || loginBusy}
-            title={accountAvailable ? undefined : t("auth.methodUnsupported")}
+            {...tip(accountAvailable ? undefined : t("auth.methodUnsupported"))}
             onClick={() => setMethod("account")}
           >
             {t("auth.methodAccount")}
-            {/* spec 014: OAuth runs in-panel now — the 013 "not wired yet"
-                badge is gone; unsupported providers keep the disabled segment
-                with its title. */}
+            {/* spec 014 real-machine feedback: dimming alone read as "still a
+                choice". Providers without an OAuth route carry a badge saying
+                so, before the user commits to the route. */}
+            {!accountAvailable ? (
+              <span className="segment-badge" data-testid={`${testPrefix}-account-badge`}>
+                {t("auth.methodBadgeNoOauth")}
+              </span>
+            ) : null}
           </button>
         )}
         <button
