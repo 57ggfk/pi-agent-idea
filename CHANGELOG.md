@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.6 — 2026-11-08
+
+**新增**
+- 账号登录接入真浏览器 OAuth（spec 014）：认证表单选 OAuth provider 后点「通过浏览器登录」即可在面板内完成授权——授权页自动在系统浏览器打开（链接与说明同步展示、可复制），设备码类流程展示验证码与验证地址；pi 的交互式 prompt（文本 / 密钥 / 选项 / 粘贴回调 URL）直接在表单内应答；凭证由 pi 按带锁协议写入 auth.json，行徽标即时更新。pi SDK 不打包，运行时从用户已装的 pi（≥1.4.0）导入，与终端 /login 共享同一凭证存储与设备 ID；pi 未装或过旧时自动降级回终端指引卡。同一时刻仅允许一个登录会话，可随时取消。
+
+**变更**
+- 顶栏图标按钮（目录 / 搜索 / 新建）悬停显示气泡提示，工具窗拉宽（≥560px）后展开为「图标+文字」（大纲 / 搜索 / 新建），窄面板保持纯图标；中英文案齐备。
+
+**Added**
+- Real browser OAuth lands in the auth panel (spec 014): pick an OAuth-capable provider and press "Sign in via browser" — the authorization page opens in the system browser automatically (with the URL, instructions and copy fallback mirrored in the panel), device-code flows show the verification code and URI, and pi's interactive prompts (text / secret / select / paste-the-callback-URL) are answered right in the form; credentials are written by pi into auth.json under its own lock and row badges update immediately. The pi SDK is not bundled — it is imported at runtime from the user's installed pi (≥1.4.0), sharing the same credential store and device id as terminal `/login`; when pi is missing or too old the panel degrades to the existing terminal guide. One login at a time, cancellable at any point.
+
+**Changed**
+- Top-bar icon buttons (outline / search / new session) show hover tooltips and expand to icon+text once the tool window is wide enough (≥560px); narrow panels keep bare icons. Both languages covered.
+
 ## 0.5.5 — 2026-11-08
 
 **新增**

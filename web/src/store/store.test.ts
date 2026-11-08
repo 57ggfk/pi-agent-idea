@@ -929,3 +929,61 @@ describe("session titles (012 US1)", () => {
     expect(h.state.calls.some((c) => c.method === "sessions.rename")).toBe(false);
   });
 });
+
+describe("auth login reduction (spec 014)", () => {
+  /** Dispatch one `auth` bridge event through the wired handler. */
+  const auth = (data: Record<string, unknown>) => h.state.piHandler?.("auth", data);
+
+  beforeEach(async () => {
+    h.state.calls.length = 0;
+    h.state.rpc.clear();
+    h.state.methods.clear();
+    await usePiStore.getState().init();
+    usePiStore.getState().resetAuthLogin();
+  });
+
+  it("started resets a previous run's tail (US4: no mixed attempts)", () => {
+    auth({ kind: "started", provider: "a" });
+    auth({ kind: "event", ev: { type: "progress", message: "old" } });
+    auth({ kind: "prompt", id: 1, p: { type: "text", message: "old" } });
+    auth({ kind: "started", provider: "b" });
+    const s = usePiStore.getState().authLogin;
+    expect(s.phase).toBe("running");
+    expect(s.provider).toBe("b");
+    expect(s.events).toHaveLength(0);
+    expect(s.prompt).toBeNull();
+    expect(s.done).toBeNull();
+  });
+
+  it("event/prompt/done flow carries the fields the panel renders", () => {
+    auth({ kind: "started", provider: "openrouter" });
+    auth({
+      kind: "event",
+      browserOpened: true,
+      ev: { type: "auth_url", url: "https://x/auth", instructions: "Sign in" },
+    });
+    auth({ kind: "prompt", id: 3, p: { type: "manual_code", message: "Paste the URL" } });
+    auth({ kind: "done", ok: true });
+    const s = usePiStore.getState().authLogin;
+    expect(s.phase).toBe("done");
+    expect(s.browserOpened).toBe(true);
+    expect(s.events[0]).toMatchObject({ type: "auth_url", url: "https://x/auth" });
+    expect(s.prompt).toBeNull();
+    expect(s.done).toEqual({ ok: true, cancelled: undefined, error: undefined });
+  });
+
+  it("failure keeps pi's error text and cancellation is visible", () => {
+    auth({ kind: "started", provider: "openrouter" });
+    auth({ kind: "done", ok: false, cancelled: true, error: "login cancelled" });
+    const s = usePiStore.getState().authLogin;
+    expect(s.phase).toBe("done");
+    expect(s.done).toEqual({ ok: false, cancelled: true, error: "login cancelled" });
+  });
+
+  it("event stream is capped (chatty provider cannot grow unbounded)", () => {
+    auth({ kind: "started", provider: "p" });
+    for (let i = 0; i < 15; i++) auth({ kind: "event", ev: { type: "progress", message: `step ${i}` } });
+    expect(usePiStore.getState().authLogin.events).toHaveLength(10);
+    expect(usePiStore.getState().authLogin.events.at(-1)).toMatchObject({ message: "step 14" });
+  });
+});

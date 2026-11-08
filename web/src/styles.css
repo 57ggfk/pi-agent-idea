@@ -1605,8 +1605,8 @@ button {
   color: var(--text-secondary);
 }
 
-/* /login-style account method: this iteration shows terminal guidance only;
-   the interactive OAuth flow replaces this card in a later version. */
+/* /login-style account method (spec 014): the in-panel browser OAuth flow is
+   primary; the /login command row below it stays as the fallback path. */
 .provider-account-guide {
   display: flex;
   flex-direction: column;
@@ -1620,6 +1620,31 @@ button {
 .provider-guide-title {
   font-size: 12px;
   font-weight: 600;
+}
+
+.provider-oauth-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.provider-oauth-url,
+.provider-oauth-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.provider-oauth-url a,
+.provider-oauth-prompt a {
+  word-break: break-all;
+}
+
+.provider-oauth-select {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .provider-account-command {

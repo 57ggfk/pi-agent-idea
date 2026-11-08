@@ -9,7 +9,22 @@ import {
   sanitizeLlmTitle,
   validateSessionTitle,
 } from "../lib/sessionTitle";
-import { manageApi, type EnvDetectResult } from "../manage";
+import { manageApi, type AuthLoginEventData, type AuthLoginEvent, type AuthLoginPrompt, type EnvDetectResult } from "../manage";
+
+/**
+ * Panel-side mirror of one pi OAuth login. `events` is capped: providers emit
+ * a handful (auth_url → progress), but a chatty one must not grow unbounded.
+ */
+export interface AuthLoginState {
+  phase: "idle" | "running" | "done";
+  provider: string | null;
+  events: AuthLoginEvent[];
+  browserOpened: boolean;
+  prompt: { id: number; p: AuthLoginPrompt } | null;
+  done: { ok: boolean; cancelled?: boolean; error?: string } | null;
+}
+
+const AUTH_LOGIN_EVENT_CAP = 10;
 import {
   applyEvent,
   approvalFromEvent,
@@ -237,6 +252,13 @@ interface PiStore {
   driftAck: boolean;
   /** Set when a session change would discard queued entries (FR-012). */
   queueDiscardConfirm: { count: number; kind: "new" | "switch"; file?: string } | null;
+  /**
+   * Live state of the browser-OAuth login (spec 014), fed by `auth` bridge
+   * events. Survives tab switches (US4) until the next start or a reset.
+   */
+  authLogin: AuthLoginState;
+  applyAuthEvent(data: AuthLoginEventData): void;
+  resetAuthLogin(): void;
   /** Editor-initiated prompt ("ide" event) waiting for the Composer to pick up. */
   pendingPrompt: PendingPrompt | null;
   /**
@@ -756,6 +778,55 @@ export const usePiStore = create<PiStore>((set, get) => {
     });
   };
 
+  /**
+   * Reduces one `auth` bridge event (spec 014). Events arrive strictly
+   * ordered from the single login session; `started` resets any previous
+   * run's tail so the panel never mixes two attempts.
+   */
+  const applyAuthEvent = (data: AuthLoginEventData) => {
+    const current = get().authLogin;
+    switch (data.kind) {
+      case "started":
+        set({
+          authLogin: {
+            phase: "running",
+            provider: data.provider ?? null,
+            events: [],
+            browserOpened: false,
+            prompt: null,
+            done: null,
+          },
+        });
+        return;
+      case "event": {
+        if (!data.ev) return;
+        const events = [...current.events, data.ev].slice(-AUTH_LOGIN_EVENT_CAP);
+        set({
+          authLogin: {
+            ...current,
+            events,
+            browserOpened: current.browserOpened || Boolean(data.browserOpened),
+          },
+        });
+        return;
+      }
+      case "prompt":
+        if (data.id === undefined || !data.p) return;
+        set({ authLogin: { ...current, prompt: { id: data.id, p: data.p } } });
+        return;
+      case "done":
+        set({
+          authLogin: {
+            ...current,
+            phase: "done",
+            prompt: null,
+            done: { ok: Boolean(data.ok), cancelled: data.cancelled, error: data.error },
+          },
+        });
+        return;
+    }
+  };
+
   const handlePiEvent = (event: Record<string, unknown>) => {
     const type = event["type"];
     const state = get();
@@ -935,6 +1006,7 @@ export const usePiStore = create<PiStore>((set, get) => {
     queue: { items: [], paused: false, pauseReason: null, drift: false },
     driftAck: false,
     queueDiscardConfirm: null,
+    authLogin: { phase: "idle", provider: null, events: [], browserOpened: false, prompt: null, done: null },
     pendingPrompt: null,
     editing: null,
     confirm: null,
@@ -1077,6 +1149,9 @@ export const usePiStore = create<PiStore>((set, get) => {
           handlePiEvent(data as Record<string, unknown>);
         } else if (name === "queue") {
           applyQueueState(data as QueueStateEvent);
+        } else if (name === "auth") {
+          // spec 014: browser-OAuth login progress (single login at a time).
+          applyAuthEvent(data as AuthLoginEventData);
         } else if (name === "ide") {
           // Editor action (e.g. "Explain with Pi"): pre-fill the composer and
           // switch to chat. The Composer consumes pendingPrompt and focuses.
@@ -1394,6 +1469,16 @@ export const usePiStore = create<PiStore>((set, get) => {
 
     closeConfirm() {
       set({ confirm: null });
+    },
+
+    applyAuthEvent(data: AuthLoginEventData) {
+      applyAuthEvent(data);
+    },
+
+    resetAuthLogin() {
+      set({
+        authLogin: { phase: "idle", provider: null, events: [], browserOpened: false, prompt: null, done: null },
+      });
     },
 
     async newSession() {

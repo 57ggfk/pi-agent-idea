@@ -162,6 +162,10 @@ class BridgeService(private val project: Project) : Disposable {
                 "manage.authSet" -> dev.pi.agent.manage.PiCredentials.authSet(params)
                 "manage.authDelete" -> dev.pi.agent.manage.PiCredentials.authDelete(params)
                 "manage.providerSetKey" -> dev.pi.agent.manage.PiCredentials.providerSetKey(params)
+                // spec 014: browser OAuth via the pi-login helper (one at a time).
+                "manage.authLoginStart" -> dev.pi.agent.manage.PiLoginSupport.start(project, params)
+                "manage.authLoginAnswer" -> dev.pi.agent.manage.PiLoginSupport.answer(params)
+                "manage.authLoginCancel" -> dev.pi.agent.manage.PiLoginSupport.cancel()
                 "manage.settingsRead" -> dev.pi.agent.manage.PiManage.settingsRead()
                 "manage.settingsWrite" -> dev.pi.agent.manage.PiManage.settingsWrite(params)
                 "trust.get" -> trustGet()

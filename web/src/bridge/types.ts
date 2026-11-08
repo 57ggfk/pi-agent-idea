@@ -6,7 +6,7 @@
  * Java → JS event   : { t: "event", name: eventName, data }
  */
 
-export type BridgeEventName = "pi" | "pi-state" | "ide" | "theme" | "queue";
+export type BridgeEventName = "pi" | "pi-state" | "ide" | "theme" | "queue" | "auth";
 
 /**
  * Every method the Java side dispatches (keep in sync with
@@ -58,6 +58,9 @@ export type BridgeMethod =
   | "manage.skillCreate"
   | "manage.authOverview"
   | "manage.authCheck"
+  | "manage.authLoginStart"
+  | "manage.authLoginAnswer"
+  | "manage.authLoginCancel"
   | "manage.authSet"
   | "manage.authDelete"
   | "manage.providerSetKey"

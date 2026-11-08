@@ -252,6 +252,8 @@ export class MockBridge implements Bridge {
   private setupErrorShown = false;
   /** Provider names with stored credentials; writes mutate it (012 T128). */
   private authProviders = ["mock-provider"];
+  /** spec 014: one simulated OAuth login at a time, like the real helper. */
+  private authLoginActive = false;
   /** `?authwrite=fail` makes every credential write fail (012 T133). */
   private readonly authWriteKnob = query()?.get("authwrite");
   /** Q8 default: the provider-setup skip persists in prefs. */
@@ -860,6 +862,50 @@ export class MockBridge implements Bridge {
         if (p.provider === "mock-provider") return { ok: false, error: "the default credential cannot be removed (mock)" };
         this.authProviders = this.authProviders.filter((n) => n !== p.provider);
         return { ok: true, provider: p.provider ?? "" };
+      }
+      case "manage.authLoginStart": {
+        // spec 014 mock: a compact replay of the real helper's wire traffic —
+        // auth_url (browser opened), a manual_code prompt, then success once
+        // answered. Cancel aborts. Enough to exercise the full panel flow.
+        const p = (params ?? {}) as { provider?: string };
+        if (!p.provider) return { ok: false, error: "missing provider" };
+        if (this.authLoginActive) return { ok: false, error: "a login is already in progress — cancel it first" };
+        this.authLoginActive = true;
+        const provider = p.provider;
+        setTimeout(() => {
+          this.emit("auth", { kind: "started", provider });
+          this.emit("auth", {
+            kind: "event",
+            browserOpened: true,
+            ev: { type: "auth_url", url: "https://mock.pi.dev/oauth/authorize", instructions: "Complete sign-in in your browser." },
+          });
+          this.emit("auth", {
+            kind: "prompt",
+            id: 1,
+            p: { type: "manual_code", message: "Complete login in your browser, or paste the final redirect URL here:", placeholder: "http://127.0.0.1:1455/auth/callback" },
+          });
+        }, 30);
+        return { ok: true, provider };
+      }
+      case "manage.authLoginAnswer": {
+        const p = (params ?? {}) as { id?: number; value?: string };
+        if (!this.authLoginActive) return { ok: false, error: "no login in progress" };
+        if (!p.value || !p.value.startsWith("http")) {
+          return { ok: false, error: "The pasted callback URL must start with http://127.0.0.1:1455/auth/callback" };
+        }
+        this.authLoginActive = false;
+        setTimeout(() => {
+          this.emit("auth", { kind: "event", ev: { type: "progress", message: "Exchanging authorization code for tokens..." } });
+          this.emit("auth", { kind: "done", ok: true });
+          if (!this.authProviders.includes("mock-oauth")) this.authProviders.push("mock-oauth");
+        }, 30);
+        return { ok: true };
+      }
+      case "manage.authLoginCancel": {
+        const wasActive = this.authLoginActive;
+        this.authLoginActive = false;
+        if (wasActive) setTimeout(() => this.emit("auth", { kind: "done", ok: false, cancelled: true, error: "login cancelled" }), 20);
+        return { ok: true, wasActive };
       }
       case "manage.settingsRead":
         return { ok: true, path: "/tmp/mock-home/.pi/agent/settings.json", text: "{\n  \"theme\": \"dark\"\n}" };
