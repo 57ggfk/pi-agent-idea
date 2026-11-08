@@ -4064,6 +4064,27 @@ button {
   color: var(--text);
 }
 
+/* Top-bar tool buttons: bare icons on a narrow tool window, icon + short
+   label once there is room (same .btn-lbl idiom as the composer). The scoped
+   hide + scoped show keeps this threshold independent of the global 480px
+   .btn-lbl breakpoint, which is tuned for the composer row. */
+.tab-tools .btn-lbl {
+  display: none;
+  white-space: nowrap;
+}
+
+@container (min-width: 560px) {
+  .tab-tools .btn-lbl {
+    display: inline;
+  }
+
+  .tab-tools .tab-tool-btn {
+    width: auto;
+    padding: 0 8px;
+    gap: 6px;
+  }
+}
+
 /* User-message outline (US1) ------------------------------------------------ */
 
 .session-outline {

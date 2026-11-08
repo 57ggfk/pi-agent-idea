@@ -143,9 +143,11 @@ export default function App() {
                     className="tab-tool-btn"
                     data-testid="outline-btn"
                     aria-label={t("chat.outline.label")}
+                    {...tip(t("chat.outline.label"))}
                     onClick={() => toggleOutline()}
                   >
                     <Icon name="list" className="ic-sm" />
+                    <span className="btn-lbl">{t("chat.outline.shortLabel")}</span>
                   </button>
                 ) : null}
                 <button
@@ -153,9 +155,11 @@ export default function App() {
                   className="tab-tool-btn"
                   data-testid="search-btn"
                   aria-label={t("chat.search.label")}
+                  {...tip(t("chat.search.label"))}
                   onClick={() => openSearch()}
                 >
                   <Icon name="search" className="ic-sm" />
+                  <span className="btn-lbl">{t("chat.search.shortLabel")}</span>
                 </button>
                 <button
                   type="button"
@@ -171,6 +175,7 @@ export default function App() {
                   }}
                 >
                   <Icon name="plus" className="ic-sm" />
+                  <span className="btn-lbl">{t("composer.newSessionLabel")}</span>
                 </button>
               </div>
             ) : null}
