@@ -38,6 +38,19 @@ class PiCliProcessCancelTest {
         while (captured.get() == null && System.currentTimeMillis() < deadline) Thread.sleep(20)
         val proc = assertNotNull(captured.get(), "process never started")
 
+        // Windows only: `cmd /d /c ping` spawns ping a beat after cmd starts,
+        // and a kill that lands before that leaves ping alive holding the
+        // inherited pipe — the stdout drain stays blocked past its join and
+        // ThreadLeakTracker (rightly) reports the leak. Wait until the tree
+        // actually has a descendant; unix `sleep 60` has none by design.
+        if (OsProcess.isWindows) {
+            val treeDeadline = System.currentTimeMillis() + 10_000
+            while (System.currentTimeMillis() < treeDeadline) {
+                if (proc.toHandle().descendants().findFirst().isPresent) break
+                Thread.sleep(20)
+            }
+        }
+
         // Same sequence as PiEnvironment.cancelInstall.
         runCatching { proc.toHandle().descendants().forEach { it.destroyForcibly() } }
         proc.destroyForcibly()
