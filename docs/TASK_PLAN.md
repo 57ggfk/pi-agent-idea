@@ -126,11 +126,18 @@
 - ☑ Marketplace 发布准备：publishPlugin 配置（PI_MARKETPLACE_TOKEN env /
   publishToken 属性 + channels）、图标、verifyPlugin、支持区间声明全部就绪；
   待用户创建 JetBrains Account 令牌后 `publishPlugin` 或门户拖传
-- ☐ Marketplace 上架审核（需要用户的 JetBrains 账号操作，见 README 或对话指引）
+- ☑ Marketplace 上架（2026-11-08：0.5.1–0.5.3 已在架 #35758，0.5.4/0.5.5 带插件 logo 重传、审核中）
 
 ## Phase 5 —— 发布
 - ☑ CHANGELOG + v0.1.0 tag + GitHub Release（附插件 zip）
 - ☑ 全量推送 GitHub（提交人：57ggfk <25079153+57ggfk@users.noreply.github.com>）
+
+## Backlog（未排期）
+- ☐ **`PiEnvironment.cancelInstall` 的 `descendants()` 快照竞态**（2026-11-08 CI 修复
+  `PiCliProcessCancelTest` 时发现，同根因）：先取 `descendants()` 快照再逐个
+  `destroyForcibly()`，kill 若落在父进程启动与子进程（npm→node）拉起之间，快照
+  不含新子进程 → 漏杀；幸存子进程持有继承管道（drain 阻塞）并继续写 npm prefix。
+  修法方向：kill 后短窗口内重扫 `descendants()` 至稳定再返回；需 Windows 真机验证。
 
 ## 验收清单（与产品需求映射）
 | 需求 | 证据 |
