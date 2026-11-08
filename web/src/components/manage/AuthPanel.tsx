@@ -51,6 +51,20 @@ export default function AuthPanel({ api }: { api: ReturnType<typeof manageApi> }
   const [openNote, setOpenNote] = useState<string | null>(null);
   /** null = no editor; "new" = adding; otherwise = the provider being edited. */
   const [formMode, setFormMode] = useState<"new" | string | null>(null);
+
+  /**
+   * spec 014 real-machine finding: a running browser login pins the form
+   * (single-login policy disables the picker/start), so users read "collapse"
+   * as the way out — and re-expanding felt stuck. Every explicit close or
+   * switch of the form therefore cancels the running login; tab switches keep
+   * it alive (US4), only form dismissal cancels.
+   */
+  const switchForm = (next: "new" | string | null) => {
+    if (next !== formMode && usePiStore.getState().authLogin.phase === "running") {
+      void api.authLoginCancel().catch(() => undefined);
+    }
+    setFormMode(next);
+  };
   /** 013 US4: pretty JSON blocks wrap (pre-wrap) instead of scrolling sideways. */
   const [wrapDetail, setWrapDetail] = useState(false);
 
@@ -149,7 +163,7 @@ export default function AuthPanel({ api }: { api: ReturnType<typeof manageApi> }
         </div>
       ) : null}
       <div className="panel-toolbar">
-        <button className="btn" data-testid="auth-add" onClick={() => setFormMode(formMode === "new" ? null : "new")}>
+        <button className="btn" data-testid="auth-add" onClick={() => switchForm(formMode === "new" ? null : "new")}>
           {formMode === "new" ? t("provider.addClose") : t("provider.add")}
         </button>
         <button className="btn" data-testid="auth-refresh" onClick={() => void refresh()}>
@@ -206,7 +220,7 @@ export default function AuthPanel({ api }: { api: ReturnType<typeof manageApi> }
                 <button
                   className="btn"
                   data-testid={`provider-setkey-${p}`}
-                  onClick={() => setFormMode(formMode === p ? null : p)}
+                  onClick={() => switchForm(formMode === p ? null : p)}
                 >
                   {formMode === p ? t("provider.editClose") : t("provider.edit")}
                 </button>

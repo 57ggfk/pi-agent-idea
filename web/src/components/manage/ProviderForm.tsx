@@ -262,7 +262,7 @@ export default function ProviderForm({
             aria-checked={method === "account"}
             className={`segment ${method === "account" ? "segment-active" : ""}`}
             data-testid={`${testPrefix}-method-account`}
-            disabled={!accountAvailable}
+            disabled={!accountAvailable || loginBusy}
             title={accountAvailable ? undefined : t("auth.methodUnsupported")}
             onClick={() => setMethod("account")}
           >
@@ -278,6 +278,7 @@ export default function ProviderForm({
           aria-checked={method === "key"}
           className={`segment ${method === "key" ? "segment-active" : ""}`}
           data-testid={`${testPrefix}-method-key`}
+          disabled={loginBusy}
           onClick={() => setMethod("key")}
         >
           {t("auth.methodApiKey")}
@@ -355,7 +356,9 @@ export default function ProviderForm({
             {loginBusy ? (
               <>
                 <span className="panel-row-sub" data-testid={`${testPrefix}-oauth-running`}>
-                  {t("auth.loginRunning")}
+                  {/* The login outlives form re-entries (US4): name its provider
+                      so a re-expanded form never looks stuck on a stale pick. */}
+                  {t("auth.loginRunningProvider", { provider: authLogin.provider ?? providerId })}
                 </span>
                 <button
                   className="btn"

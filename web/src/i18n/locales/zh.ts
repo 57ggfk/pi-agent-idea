@@ -287,6 +287,7 @@ export const zh: Dict = {
   "auth.methodApiKey": "API key",
   "auth.loginStart": "通过浏览器登录",
   "auth.loginRunning": "等待浏览器授权…",
+  "auth.loginRunningProvider": "正在等待 {{provider}} 的浏览器授权…",
   "auth.loginCancel": "取消登录",
   "auth.loginBrowserAuto": "已在系统浏览器打开授权页；未弹出时用下方链接。",
   "auth.loginBrowserManual": "浏览器未自动打开，点此链接：",

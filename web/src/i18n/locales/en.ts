@@ -294,6 +294,7 @@ export const en = {
   "auth.methodUnsupported": "This provider does not support account login.",
   "auth.loginStart": "Sign in via browser",
   "auth.loginRunning": "Waiting for browser authorization…",
+  "auth.loginRunningProvider": "Waiting for {{provider}} authorization in your browser…",
   "auth.loginCancel": "Cancel sign-in",
   "auth.loginBrowserAuto": "The authorization page opened in your system browser; use the link below if it did not.",
   "auth.loginBrowserManual": "The browser did not open automatically — use this link:",
