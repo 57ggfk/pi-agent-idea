@@ -1,14 +1,28 @@
 # Changelog
 
-## Unreleased
+## 0.5.5 — 2026-11-08
 
 **新增**
 - 认证表单对齐终端 `/login`：Provider 改为下拉选择（内置 pi 1.4.0 全部 42 个 provider，models.json 自定义与已存凭据动态并入，附「账号 / API key」状态徽标），认证方式分「账号登录（OAuth）」与「API key」两档——仅 OAuth provider 可选账号；本版选账号时展示终端 `/login <provider>` 指引卡（一键复制命令），浏览器 OAuth 授权将在下个版本接入；API key 写入路径不变。
 - 真机验收缺陷批（spec 013）：Provider 下拉可搜索（空格=AND 关键词、键盘导航、自定义项钉底）；「账号登录」分段常驻「暂未接入」角标，指引卡新增「在 IDE 终端打开」——IDEA 终端自动输入并执行 pi（终端不可用时自动降级为激活终端+复制命令+气泡提示）；认证行展开三角换成旋转 chevron 图标；models.json 详情中数组改为格式化 JSON 块（限高滚动 + 自动换行切换），key 列不再被挤压；修复点「设置 key」无反应（编辑表单误嵌在详情展开块内，现直接渲染在行下）。
 
+**变更**
+- 「新建会话」按钮迁至顶栏放大镜右侧，底部工具栏同步移除——新会话入口固定在最高层级。
+
+**修复**
+- 中文界面下确认弹窗的取消按钮不再显示硬编码「Cancel」：翻译缺失时回退通用文案。
+- 会话标题的 LLM 精炼在真机上从未生效：`pi -p` 在非 TTY stdin 下会等 stdin 关闭，而 GUI 拉起的 IDEA 没有 TTY，子进程继承了永不 EOF 的管道，读取永久阻塞直至超时——0.5.4 的每次精炼都以超时降级告终。现把一次性调用的 stdin 重定向到空临时文件（给 pi 它想要的 EOF），stdout 落盘、超时清理整棵进程树，真机上精炼正常返回。
+
 **Added**
 - The auth form mirrors the terminal `/login`: the provider is now a dropdown (all 42 pi 1.4.0 builtins, dynamically merged with models.json customs and stored credentials, each badged account/API key), and the method selector offers Account (OAuth) vs API key — the account route is enabled only for OAuth-capable providers and, in this iteration, shows a copyable terminal `/login <provider>` guide (real browser OAuth lands next version); the API-key write path is unchanged.
 - Real-machine acceptance defect batch (spec 013): the provider dropdown is searchable (space=AND keywords, keyboard navigation, pinned custom entry); the Account segment carries a standing "not wired yet" badge and its guide card gains "Open IDE terminal" — the IDE terminal auto-types and runs pi (graceful fallback to activating the terminal with the command copied + a balloon); the expand triangle is now a rotating chevron icon; arrays in the models.json detail render as formatted JSON blocks (height-capped scroll + wrap toggle) instead of squeezing the key column; and "Set key" actually opens the edit form, which used to render inside the collapsed detail block.
+
+**Changed**
+- The New-session button moves to the top bar, right of the magnifier, and leaves the bottom toolbar — one entry pinned at the top level.
+
+**Fixed**
+- Confirm dialogs no longer show a hardcoded "Cancel" in the Chinese UI: a missing translation falls back to the common label.
+- Stage-B LLM title refinement never worked on a real machine: `pi -p` with a non-TTY stdin waits for stdin to close, but a GUI-launched IDE has no TTY and its children inherit a pipe that never reaches EOF, so the read blocked until the timeout — every refinement in 0.5.4 ended in the fallback. One-shot calls now redirect stdin to an empty temp file (giving pi the EOF it wants), write stdout to a file and clean up the whole process tree on timeout; refinement now returns on a real machine.
 
 ## 0.5.4 — 2026-11-07
 
@@ -22,11 +36,17 @@
 - Auth 页签升级为 provider 管理：新增 / 设置 key / 删除（应用内确认框），凭据明文不过桥、不进日志；自定义 provider 直接写 models.json 的 apiKey，内置 provider 按 pi 的锁协议写 auth.json。
 - 图片点击弹出预览模态框：`当前/总数` 切换、滚轮与按钮缩放（25%–600%）、拖拽平移、另存为（IDE 保存对话框）与复制到系统剪贴板——失败与取消都有可见提示，绝不假装成功。
 
+**变更**
+- 管理顶栏瘦身：pi 环境信息（版本、二进制路径、更新按钮）迁入「诊断」页签首卡片，窄工具窗下不再互相挤压；管理根页只留信任状态。
+
 **修复**
 - 引用 skill 时不再把 SKILL.md 全文打印进会话：气泡、复制、引用一律显示 `/skill:名称` 标记 + 原问题，pi 的原文仅保留在数据层（搜索与导出仍可找到全文）。
 - Windows 上「更新 pi」与其它 CLI 结果的中文不再乱码：进程输出按字节读取、严格 UTF-8 失败回退本地代码页（与 0.5.2 修复的「检测 pi 找不到中文路径」同一根因的最后一块），并剥离 ANSI 转义与进度条残影、按字符安全截断。
+- 中文 IDE 里右键菜单的「Pi Agent」子菜单把 `%action.addDirectory.text` 这样的 key 原样显示出来了。平台的 `<action text="%key">` 不会展开 `%`，菜单文案只有按 action id 命名（`action.PiAgent.AddDirectory.text`、`action.PiAgent.SendFile.text`……）才会从资源包解析。现已改为 id 约定，并加了一致性测试卡住「plugin.xml 的 id / group」与「资源包 key」的对应关系，改名漏改会直接测试失败。
+- 状态栏的 pi 版本号不再被 `env: node: No such file or directory` 污染：GUI 拉起的 IDE 里子进程 PATH 缺 node，shebang 报错文本曾被当作版本号展示（纯显示层，0.5.3 起既有）；现改经 node 解释器解析并对结果做合理性校验。
+- 切换管理页签后界面残留旧帧、上下两截：JCEF OSR 帧滞后（DOM 已切页、屏幕停在旧帧）——页签切换（含 Manage 子页签）后强制全量重绘；管理子页签同时持久化，重进管理不回默认页、也不重复环境检测。
 
-**Fixed**
+**Added**
 - The model picker groups by provider with the current group pinned, locates and highlights the current model on open, and closes on outside click / Esc; the 200-entry cap stays.
 - Session titles are now owned by the plugin: the first message names the session (skill references fold to a `/skill:name` marker plus the question), the status bar and the Sessions row share one inline editor, and a hand-set title wins over later pi events.
 - Stage-B title refinement: once the first assistant reply is in, a one-shot pi process (same provider/model, `--no-session --no-tools`) proposes a better title; it overwrites the first-message truncation only on success — failures, timeouts, kills and a hand rename in flight all keep the heuristic result (at most one lightweight model call per new session; skill-expanded messages fold to the question before the excerpt).
@@ -35,16 +55,16 @@
 - First-run setup is exclusive while pi is missing (no tabs, no chat, no escape hatch), flows into a skippable provider-config step after install, and a failed detection never locks the UI.
 - The Auth tab becomes provider management: add / set key / delete behind the in-app confirm dialog; credentials never cross the bridge as plaintext — built-in providers go to auth.json under pi's own lock protocol, custom providers write models.json directly.
 - Clicking an image opens a preview modal with a counter, arrow navigation, wheel/button zoom (25%–600%), drag panning, save-as via the IDE dialog and copy to the system clipboard — failures and cancellations are always visible.
-- Referencing a skill no longer dumps the whole SKILL.md into the transcript: bubbles, copy and quote all show the `/skill:name` marker plus the question; the raw text stays in the data layer for search and export.
-- Chinese output from `pi update` and other CLI commands no longer turns into `????` on Windows: process output is decoded from bytes (strict UTF-8 with a native-code-page fallback — the last piece of the same root cause fixed for pi detection in 0.5.2), with ANSI escapes and progress frames stripped and code-point-safe truncation.
 
-## 0.5.4 — 2026-11-06
-
-**修复**
-- 中文 IDE 里右键菜单的「Pi Agent」子菜单把 `%action.addDirectory.text` 这样的 key 原样显示出来了。平台的 `<action text="%key">` 不会展开 `%`，菜单文案只有按 action id 命名（`action.PiAgent.AddDirectory.text`、`action.PiAgent.SendFile.text`……）才会从资源包解析。现已改为 id 约定，并加了一致性测试卡住「plugin.xml 的 id / group」与「资源包 key」的对应关系，改名漏改会直接测试失败。
+**Changed**
+- The Manage header slims down: pi environment info (version, binary path, update button) moves into a first card in the Diagnostics tab, so narrow tool windows stop squeezing it; the Manage root keeps only the trust state.
 
 **Fixed**
+- Referencing a skill no longer dumps the whole SKILL.md into the transcript: bubbles, copy and quote all show the `/skill:name` marker plus the question; the raw text stays in the data layer for search and export.
+- Chinese output from `pi update` and other CLI commands no longer turns into `????` on Windows: process output is decoded from bytes (strict UTF-8 with a native-code-page fallback — the last piece of the same root cause fixed for pi detection in 0.5.2), with ANSI escapes and progress frames stripped and code-point-safe truncation.
 - The right-click "Pi Agent" submenu rendered raw `%action.addDirectory.text` keys in a Chinese IDE. The platform never expands `%` inside `<action text>`; menu labels only resolve when the keys are named after the action id (`action.PiAgent.AddDirectory.text`, `action.PiAgent.SendFile.text`, …). Switched to the id convention and added a consistency test pinning plugin.xml ids/groups to their bundle keys, so a rename that misses the bundle now fails the build.
+- The status-bar pi version no longer shows `env: node: No such file or directory`: in a GUI-launched IDE the child PATH lacks node and the shebang error text was displayed as a version (display-only, existed since 0.5.3); detection now goes through the node interpreter and sanity-checks the result.
+- Switching tabs could leave a stale frame on screen — a half-old/half-new image from JCEF OSR frame lag (the DOM had already switched, the screen had not). Tab switches (Manage sub-tabs included) now force a full repaint, and the last Manage sub-tab is remembered, so re-entering Manage neither resets the tab nor re-runs environment detection.
 
 ## 0.5.3 — 2026-11-06
 
