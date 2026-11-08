@@ -1,0 +1,19 @@
+<svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Plugin logo (light theme): pi badge. Marketplace / Plugins-dialog icon,
+       40x40 with >=2px transparent padding, 32x32 square badge per
+       plugins.jetbrains.com/docs/intellij/plugin-icon-file.html.
+       Fills are fine here — the single-colour repaint constraint only
+       applies to New UI tool window stripe icons (icons/piAgent.svg). -->
+  <defs>
+    <linearGradient id="piBadgeLight" x1="4" y1="4" x2="36" y2="36" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8B94B8"/>
+      <stop offset="1" stop-color="#565E7C"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="32" height="32" rx="8" fill="url(#piBadgeLight)"/>
+  <g transform="translate(6.4,6.4) scale(1.7)" stroke="#FFFFFF" stroke-width="1.5" stroke-linecap="round" fill="none">
+    <path d="M4.2 4.8H11.8"/>
+    <path d="M5.7 4.8V11.2"/>
+    <path d="M10.3 4.8C10.3 7.7 10 9.4 8.5 11.1"/>
+  </g>
+</svg>
