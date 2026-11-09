@@ -1,7 +1,8 @@
 package dev.pi.agent.title
 
-import dev.pi.agent.process.OsProcess
 import java.io.File
+import org.junit.jupiter.api.condition.EnabledOnOs
+import org.junit.jupiter.api.condition.OS
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -111,8 +112,8 @@ class TitleGeneratorTest {
     }
 
     @Test
+    @EnabledOnOs(OS.MAC, OS.LINUX) // the fake is a /bin/sh script
     fun `a happy one-shot returns the cleaned title`() {
-        if (OsProcess.isWindows) return // the fake is a /bin/sh script
         val result = TitleGenerator.generate(fakePi("echo '\"Fixed login bug\"'").path, "u", "a", null, null)
         assertEquals("Fixed login bug", result["title"]?.toString()?.trim('"'))
     }
@@ -124,8 +125,8 @@ class TitleGeneratorTest {
      * an empty title.
      */
     @Test
+    @EnabledOnOs(OS.WINDOWS)
     fun `the excerpt reaches a cmd shim through stdin`() {
-        if (!OsProcess.isWindows) return
         val dump = File(System.getProperty("java.io.tmpdir"), "fake-pi-stdin-${System.nanoTime()}.txt")
         dump.deleteOnExit()
         val result = TitleGenerator.generate(fakePiCmd(dump).absolutePath, "hello\nworld", "assistant reply", null, null)
@@ -137,8 +138,8 @@ class TitleGeneratorTest {
     }
 
     @Test
+    @EnabledOnOs(OS.MAC, OS.LINUX) // the fake is a /bin/sh script
     fun `a non-zero exit becomes an error entry, never a title`() {
-        if (OsProcess.isWindows) return
         val result = TitleGenerator.generate(fakePi("echo 'API key not found' >&2; exit 1").path, "u", "a", null, null)
         assertTrue(result["error"] != null, result.toString())
         assertTrue(result["title"] == null, result.toString())
