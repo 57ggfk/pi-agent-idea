@@ -54,6 +54,16 @@ class LocalUiServer private constructor() {
     private val bridgeAuth = BridgeAuth(ownOrigin = baseUrl.dropLast(1))
     private val projectTokens = ConcurrentHashMap<String, Project>()
 
+    /**
+     * First-contact breadcrumbs. A panel stuck on "Connecting to pi…" is
+     * otherwise indistinguishable between "the page never called us" (CEF
+     * network stack wedged — the real-machine 144-vs-122 mismatch) and "we
+     * answered but the renderer never got it", so name both transitions once
+     * per server lifetime.
+     */
+    private val healthProbeSeen = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val pollConnectedSeen = java.util.concurrent.atomic.AtomicBoolean(false)
+
     /** Load URL for a project's tool window panel; carries its bridge token. */
     fun uiUrlFor(project: Project): String {
         pruneDisposed()
@@ -112,6 +122,9 @@ class LocalUiServer private constructor() {
 
         when {
             uriPath == "/bridge/health" && method == "GET" -> {
+                if (healthProbeSeen.compareAndSet(false, true)) {
+                    LOG.info("bridge health probe answered — the embedded page reached the UI server")
+                }
                 respondJson(exchange, 200, buildJsonObject { put("ok", true) })
             }
 
@@ -138,6 +151,9 @@ class LocalUiServer private constructor() {
                 }
                 val service = BridgeService.getInstance(project)
                 service.ensureWired()
+                if (pollConnectedSeen.compareAndSet(false, true)) {
+                    LOG.info("bridge poll connected — the frontend is authenticated and polling")
+                }
                 val params = exchange.requestURI.rawQuery ?: ""
                 val cursor = params.split("&")
                     .map { it.split("=", limit = 2) }
