@@ -46,4 +46,19 @@ describe("clampComposerHeight", () => {
     // app 600 → cap 270
     expect(clampComposerHeight(400, 600)).toBe(270);
   });
+
+  test("an app height of 0 / NaN means not-laid-out: the absolute cap applies", () => {
+    // Regression (0.5.6 real-machine feedback): an IDE prompt injected while
+    // the tool window was still being activated measured app height 0 and the
+    // box collapsed to the single-line floor instead of growing.
+    expect(clampComposerHeight(400, 0)).toBe(320);
+    expect(clampComposerHeight(400, NaN)).toBe(320);
+    // Single-line content still sits at the floor, unchanged.
+    expect(clampComposerHeight(20, 0)).toBe(MIN_COMPOSER_HEIGHT);
+  });
+
+  test("a small but real app height keeps its own cap (only unknown falls back)", () => {
+    expect(clampComposerHeight(400, 100)).toBe(45);
+    expect(clampComposerHeight(400, 1)).toBe(MIN_COMPOSER_HEIGHT);
+  });
 });

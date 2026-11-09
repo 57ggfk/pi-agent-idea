@@ -26,6 +26,14 @@ class BridgeTransport {
     private val lock = ReentrantLock()
     private val condition = lock.newCondition()
 
+    /**
+     * nanoTime of the last `/bridge/poll` that reached this project, or 0.
+     * The page polls for its whole life, so "no poll for a while" is the one
+     * reliable sign that the embedded browser stopped running the SPA — a dead
+     * renderer is invisible from Swing (see PiAgentPanel's health watch).
+     */
+    private val lastPollAt = AtomicLong(0)
+
     /** Appends a record and wakes up pollers. Returns the assigned sequence. */
     fun push(record: JsonObject): Long {
         val entry = Entry(seq.incrementAndGet(), record)
@@ -53,15 +61,23 @@ class BridgeTransport {
      * Returns the records in order (possibly empty on timeout).
      */
     fun pollAfter(cursor: Long, timeoutMs: Long): List<Entry> {
-        val deadline = System.currentTimeMillis() + timeoutMs
+        // Recorded on arrival, not on return: a request that parks the full
+        // 20s still proves the page is alive and running.
+        lastPollAt.set(System.nanoTime())
+        // nanoTime, not currentTimeMillis: a wall-clock correction (NTP step,
+        // the user fixing the system clock) while a poll is parked would
+        // otherwise stretch the wait by the size of the jump — a request that
+        // was meant to last 20s could sleep for an hour and the panel would
+        // look frozen until the next event arrived.
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs)
         lock.lock()
         try {
             while (true) {
                 val ready = buffer.filter { it.seq > cursor }
                 if (ready.isNotEmpty()) return ready
-                val remaining = deadline - System.currentTimeMillis()
+                val remaining = deadline - System.nanoTime()
                 if (remaining <= 0) return emptyList()
-                condition.await(remaining, TimeUnit.MILLISECONDS)
+                condition.await(remaining, TimeUnit.NANOSECONDS)
             }
         } finally {
             lock.unlock()
@@ -77,6 +93,17 @@ class BridgeTransport {
         } finally {
             lock.unlock()
         }
+    }
+
+    /**
+     * Milliseconds since the frontend last polled, or [Long.MAX_VALUE] when it
+     * never has (a project whose panel was never opened, or one that never
+     * reached this window's token).
+     */
+    fun sinceLastPollMs(): Long {
+        val at = lastPollAt.get()
+        if (at == 0L) return Long.MAX_VALUE
+        return TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - at)
     }
 
     companion object {

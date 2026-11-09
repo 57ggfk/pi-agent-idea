@@ -54,6 +54,16 @@ class LocalUiServer private constructor() {
     private val bridgeAuth = BridgeAuth(ownOrigin = baseUrl.dropLast(1))
     private val projectTokens = ConcurrentHashMap<String, Project>()
 
+    /**
+     * First-contact breadcrumbs. A panel stuck on "Connecting to pi…" is
+     * otherwise indistinguishable between "the page never called us" (CEF
+     * network stack wedged — the real-machine 144-vs-122 mismatch) and "we
+     * answered but the renderer never got it", so name both transitions once
+     * per server lifetime.
+     */
+    private val healthProbeSeen = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val pollConnectedSeen = java.util.concurrent.atomic.AtomicBoolean(false)
+
     /** Load URL for a project's tool window panel; carries its bridge token. */
     fun uiUrlFor(project: Project): String {
         pruneDisposed()
@@ -91,7 +101,9 @@ class LocalUiServer private constructor() {
         try {
             handle(exchange)
         } catch (e: Exception) {
-            LOG.warn("UI request failed: ${exchange.requestURI}", e)
+            // Path only: the query string carries the project's bridge token,
+            // and idea.log gets pasted into bug reports.
+            LOG.warn("UI request failed: ${exchange.requestURI.path}", e)
             try {
                 exchange.sendResponseHeaders(500, -1)
                 exchange.close()
@@ -110,6 +122,9 @@ class LocalUiServer private constructor() {
 
         when {
             uriPath == "/bridge/health" && method == "GET" -> {
+                if (healthProbeSeen.compareAndSet(false, true)) {
+                    LOG.info("bridge health probe answered — the embedded page reached the UI server")
+                }
                 respondJson(exchange, 200, buildJsonObject { put("ok", true) })
             }
 
@@ -136,6 +151,9 @@ class LocalUiServer private constructor() {
                 }
                 val service = BridgeService.getInstance(project)
                 service.ensureWired()
+                if (pollConnectedSeen.compareAndSet(false, true)) {
+                    LOG.info("bridge poll connected — the frontend is authenticated and polling")
+                }
                 val params = exchange.requestURI.rawQuery ?: ""
                 val cursor = params.split("&")
                     .map { it.split("=", limit = 2) }
@@ -178,13 +196,21 @@ class LocalUiServer private constructor() {
         if (resource == null) {
             // A missing bundle asset is exactly what a blank panel looks like
             // from the outside, so name the path in the log.
-            LOG.warn("UI resource not found: $resourcePath (from ${exchange.requestURI})")
+            LOG.warn("UI resource not found: $resourcePath (from ${exchange.requestURI.path})")
             exchange.sendResponseHeaders(404, -1)
             exchange.close()
             return
         }
 
         val bytes = resource.use { it.readBytes() }
+        // The document load is the only trace the plugin can leave that the
+        // embedded page (re)started: the platform runs CEF with logging
+        // disabled, and a dead renderer produces no other evidence. Without
+        // this line, "the panel froze" and "the panel was idle" look identical
+        // in idea.log. Path only — the query string is the bridge token.
+        if (resourcePath.endsWith("/index.html")) {
+            LOG.info("UI page served (${bytes.size} bytes, from ${exchange.requestURI.path})")
+        }
         exchange.responseHeaders.set("Content-Type", contentType(resourcePath))
         exchange.responseHeaders.set("Cache-Control", "no-store")
         exchange.sendResponseHeaders(200, bytes.size.toLong())

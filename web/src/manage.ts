@@ -145,6 +145,42 @@ export interface AuthOverviewResult extends CliOutcome {
   modelsError?: string;
 }
 
+/**
+ * One pi AuthEvent mirrored through the `auth` bridge event (spec 014).
+ * info/auth_url/device_code/progress — exactly pi's wire shape, so the UI
+ * stays forward-compatible with new providers.
+ */
+export interface AuthLoginEvent {
+  type: "info" | "auth_url" | "device_code" | "progress";
+  message?: string;
+  url?: string;
+  instructions?: string;
+  userCode?: string;
+  verificationUri?: string;
+}
+
+/** One interaction.prompt from the helper (text/secret/select/manual_code). */
+export interface AuthLoginPrompt {
+  type: "text" | "secret" | "select" | "manual_code";
+  message: string;
+  placeholder?: string;
+  options?: { id: string; label: string; description?: string }[];
+}
+
+/** The `data` of an `auth` bridge event. */
+export interface AuthLoginEventData {
+  kind: "started" | "event" | "prompt" | "done";
+  provider?: string;
+  ev?: AuthLoginEvent;
+  /** Set by the backend when it opened the system browser for the URL. */
+  browserOpened?: boolean;
+  id?: number;
+  p?: AuthLoginPrompt;
+  ok?: boolean;
+  cancelled?: boolean;
+  error?: string;
+}
+
 export interface EnvironmentResult extends CliOutcome {
   found?: boolean;
   path?: string;
@@ -244,6 +280,11 @@ export function manageApi(bridge: Bridge) {
     /** Writes a provider credential. Responses carry the provider name only —
      *  the key material never crosses the bridge (012 T127). */
     authSet: (p: { provider: string; key: string }) => call<CliOutcome & { provider?: string }>("manage.authSet", p),
+    /** spec 014: browser OAuth through the pi-login helper (one at a time). */
+    authLoginStart: (p: { provider: string }) =>
+      call<CliOutcome & { provider?: string }>("manage.authLoginStart", p),
+    authLoginAnswer: (p: { id: number; value: string }) => call<CliOutcome>("manage.authLoginAnswer", p),
+    authLoginCancel: () => call<CliOutcome & { wasActive?: boolean }>("manage.authLoginCancel"),
     authDelete: (p: { provider: string }) => call<CliOutcome & { provider?: string }>("manage.authDelete", p),
     providerSetKey: (p: { provider: string; key: string }) =>
       call<CliOutcome & { provider?: string }>("manage.providerSetKey", p),

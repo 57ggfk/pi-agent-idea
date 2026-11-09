@@ -17,6 +17,7 @@ import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.UIUtil
 import dev.pi.agent.process.PiConnectionState
+import dev.pi.agent.process.PiModelReload
 import dev.pi.agent.process.PiProcessManager
 import dev.pi.agent.rpc.PiRpcClient
 import kotlinx.coroutines.CoroutineScope
@@ -25,10 +26,15 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
@@ -54,6 +60,14 @@ class BridgeService(private val project: Project) : Disposable {
 
     /** Per-project event buffer: separate IDE windows never share a stream. */
     private val transport = BridgeTransport()
+
+    /**
+     * Paths of the file/folder drag that just entered this window's browser
+     * (spec 016). Filled by [PiAgentPanel][dev.pi.agent.toolwindow.PiAgentPanel]
+     * from CEF's drag handler, drained by `files.takeDrop` when the composer
+     * receives the HTML5 drop.
+     */
+    val ideFileDrop = IdeFileDrop()
 
     /** Mirror of pi's message queue (spec 005); per-project by construction. */
     private var messageQueueField: dev.pi.agent.queue.PiMessageQueue? = null
@@ -115,7 +129,10 @@ class BridgeService(private val project: Project) : Disposable {
                 "sessions.exportHtml" -> sessionsExportHtml(params)
                 "title.generate" -> titleGenerate(params)
                 "files.list" -> filesList(params)
+                "files.relpath" -> filesRelPath(params)
+                "files.takeDrop" -> filesTakeDrop()
                 "ide.repaint" -> repaintBrowser()
+                "ui.reload" -> uiReloaded(params)
                 "ide.openFile" -> openFileInEditor(params)
                 "ide.showFileDiff" -> showFileDiff(params)
                 "ide.openTerminal" -> dev.pi.agent.bridge.PiIdeTerminal.open(
@@ -129,6 +146,9 @@ class BridgeService(private val project: Project) : Disposable {
                 "approval.getPolicy" -> approvalGetPolicy()
                 "approval.setPolicy" -> approvalSetPolicy(params)
                 "rpc.restart" -> restartPi()
+                // spec 017: re-read the model catalog after a credential or
+                // models.json write, without restarting pi (session intact).
+                "models.reload" -> reloadModels()
                 "manage.env" -> dev.pi.agent.manage.PiManage.environment()
                 "manage.envDetect" -> dev.pi.agent.manage.PiEnvironment.detect()
                 "manage.envInstall" -> dev.pi.agent.manage.PiEnvironment.install(
@@ -162,6 +182,10 @@ class BridgeService(private val project: Project) : Disposable {
                 "manage.authSet" -> dev.pi.agent.manage.PiCredentials.authSet(params)
                 "manage.authDelete" -> dev.pi.agent.manage.PiCredentials.authDelete(params)
                 "manage.providerSetKey" -> dev.pi.agent.manage.PiCredentials.providerSetKey(params)
+                // spec 014: browser OAuth via the pi-login helper (one at a time).
+                "manage.authLoginStart" -> dev.pi.agent.manage.PiLoginSupport.start(project, params)
+                "manage.authLoginAnswer" -> dev.pi.agent.manage.PiLoginSupport.answer(params)
+                "manage.authLoginCancel" -> dev.pi.agent.manage.PiLoginSupport.cancel()
                 "manage.settingsRead" -> dev.pi.agent.manage.PiManage.settingsRead()
                 "manage.settingsWrite" -> dev.pi.agent.manage.PiManage.settingsWrite(params)
                 "trust.get" -> trustGet()
@@ -246,6 +270,61 @@ class BridgeService(private val project: Project) : Disposable {
             ?: throw IllegalStateException("failed to restart pi (see logs)")
         return buildJsonObject { put("ok", true) }
     }
+
+    /** Serializes catalog reloads: saving two providers must not refresh twice at once. */
+    private val modelsReloadLock = Mutex()
+
+    /**
+     * Re-reads pi's model catalog (spec 017).
+     *
+     * pi picks up auth.json on its own, but a models.json change only enters the
+     * availability snapshot after `ModelRuntime.refresh()` — and RPC mode has no
+     * refresh command. The bundled pi-models extension registers one
+     * (`pi-agent-reload-models`) whose handler awaits that refresh, so pi
+     * answering "handled" already means the snapshot is rebuilt.
+     *
+     * When the command is missing (extraction failed, older pi) the list is
+     * still re-read and `refreshed=false` lets the UI degrade without an error.
+     */
+    private suspend fun reloadModels(): JsonObject = modelsReloadLock.withLock {
+        val client: PiRpcClient = PiProcessManager.getInstance(project).client()
+            ?: throw IllegalStateException("pi process is not running")
+
+        suspend fun request(command: JsonObject, timeoutMs: Long) =
+            client.send(command, timeoutMs = timeoutMs).await()
+
+        val commands = request(buildJsonObject { put("type", "get_commands") }, 10_000)
+        val refreshed = PiModelReload.COMMAND in commandNames(commands.data)
+        if (refreshed) {
+            val answer = request(
+                buildJsonObject {
+                    put("type", "prompt")
+                    put("message", "/${PiModelReload.COMMAND}")
+                },
+                30_000,
+            )
+            if (!answer.success) {
+                throw IllegalStateException(answer.error ?: "model reload was rejected by pi")
+            }
+        }
+
+        val models = request(buildJsonObject { put("type", "get_available_models") }, 15_000)
+        if (!models.success) {
+            throw IllegalStateException(models.error ?: "get_available_models failed")
+        }
+        val list = ((models.data as? JsonObject)?.get("models") as? JsonArray) ?: JsonArray(emptyList())
+        buildJsonObject {
+            put("models", list)
+            put("refreshed", refreshed)
+        }
+    }
+
+    /** Defensive read of a `get_commands` payload: a malformed shape means "none". */
+    private fun commandNames(data: JsonElement?): Set<String> =
+        ((data as? JsonObject)?.get("commands") as? JsonArray)
+            ?.mapNotNull { entry -> ((entry as? JsonObject)?.get("name") as? JsonPrimitive)?.contentOrNull }
+            ?.toSet()
+            ?: emptySet()
 
     private fun lastModel(): JsonObject {
         val prefs = dev.pi.agent.process.PiModelPreferences.getInstance(project).get()
@@ -590,6 +669,18 @@ class BridgeService(private val project: Project) : Disposable {
 
     private fun ok(value: Boolean): JsonObject = buildJsonObject { put("ok", value) }
 
+    /**
+     * The frontend's watchdog is about to reload the page because its long-poll
+     * stopped succeeding. Trace only — this is the log line that makes a
+     * self-heal distinguishable from "the plugin did nothing" (CEF's own log is
+     * disabled by the platform, so there is no other record of it).
+     */
+    private fun uiReloaded(params: JsonObject): JsonObject {
+        val silentMs = (params["silentMs"] as? JsonPrimitive)?.contentOrNull ?: "?"
+        LOG.warn("UI watchdog: page reloading after ${silentMs}ms without a successful poll")
+        return ok(true)
+    }
+
     private fun openFileInEditor(params: JsonObject): JsonObject {
         val path = (params["path"] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
             ?: throw IllegalArgumentException("ide.openFile requires path")
@@ -933,6 +1024,13 @@ class BridgeService(private val project: Project) : Disposable {
     /** Lowest buffered sequence; a frontend cursor below it has missed events. */
     fun oldestSeq(): Long = transport.oldestSeq()
 
+    /**
+     * Milliseconds since this project's frontend last long-polled, or
+     * [Long.MAX_VALUE] if it never has. Used by the panel to notice that its
+     * embedded browser stopped running the page.
+     */
+    fun sinceFrontendPollMs(): Long = transport.sinceLastPollMs()
+
     /** Lazily wires pi event listeners on first frontend contact. */
     fun ensureWired() {
         wirePiEvents()
@@ -940,9 +1038,11 @@ class BridgeService(private val project: Project) : Disposable {
 
     /**
      * Injects a prompt drafted by IDE editor actions (Explain/Fix/Send with Pi)
-     * into the frontend composer. Pushed as an `ide` event.
+     * into the frontend composer. Pushed as an `ide` event. [refs] (spec 015)
+     * rides on the same event so the composer gets the reference chips and the
+     * prompt text atomically — two separate events would race the store.
      */
-    fun pushIdePrompt(text: String) {
+    fun pushIdePrompt(text: String, refs: List<Pair<String, Boolean>> = emptyList()) {
         // Ensure a pi process exists and the frontend gets state events.
         wirePiEvents()
         PiProcessManager.getInstance(project).client()
@@ -952,9 +1052,86 @@ class BridgeService(private val project: Project) : Disposable {
             put("data", buildJsonObject {
                 put("kind", "prompt")
                 put("text", text)
+                if (refs.isNotEmpty()) {
+                    put("files", ideRefArray(refs))
+                }
             })
         })
     }
+
+    /** `files` payload shared by pushIdePrompt / pushIdeRefs: (path, isDirectory). */
+    private fun ideRefArray(refs: List<Pair<String, Boolean>>) = buildJsonArray {
+        refs.forEach { (path, dir) ->
+            add(buildJsonObject {
+                put("path", path)
+                put("dir", dir)
+            })
+        }
+    }
+
+    /**
+     * Injects file/directory references (spec 015) drafted by the file-popup
+     * actions ("Add Directory / Send File to Pi") into the frontend composer,
+     * where they become removable chips. Only the path ever travels — pi
+     * resolves `@path` references itself at send time. Pushed as an `ide`
+     * event with kind "refs"; [refs] pairs are (project-relative path, isDirectory).
+     */
+    fun pushIdeRefs(refs: List<Pair<String, Boolean>>) {
+        if (refs.isEmpty()) return
+        wirePiEvents()
+        PiProcessManager.getInstance(project).client()
+        push(buildJsonObject {
+            put("t", "event")
+            put("name", "ide")
+            put("data", buildJsonObject {
+                put("kind", "refs")
+                put("files", ideRefArray(refs))
+            })
+        })
+    }
+
+    /**
+     * Resolves dropped / pasted paths (spec 015) for the composer chips:
+     * absolute paths inside the project become project-relative, and the
+     * directory flag is confirmed against the real filesystem so a dropped
+     * folder shows the folder icon. Paths outside the project come back
+     * unchanged — pi reads absolute paths too.
+     */
+    private fun filesRelPath(params: JsonObject): JsonObject {
+        val inputs = params["paths"] as? kotlinx.serialization.json.JsonArray ?: kotlinx.serialization.json.JsonArray(emptyList())
+        val pairs = ArrayList<Pair<String, Boolean>>(inputs.size)
+        for (item in inputs) {
+            val obj = item as? JsonObject ?: continue
+            val raw = (obj["path"] as? JsonPrimitive)?.content ?: ""
+            val hintDir = (obj["dir"] as? JsonPrimitive)?.booleanOrNull == true
+            pairs.add(raw to hintDir)
+        }
+        return buildJsonObject { put("refs", refsJson(DropRefs.resolve(projectRoot(), pairs))) }
+    }
+
+    /**
+     * Hands the composer the real paths of the file/folder drag that just
+     * entered the browser (spec 016). The HTML5 drop event only carries bare
+     * file names, so without this the chip would show `a.kt` with no directory
+     * — pi could not `@`-resolve it. One-shot: the buffer is drained here.
+     */
+    private fun filesTakeDrop(): JsonObject {
+        val paths = ideFileDrop.take()
+        val refs = if (paths.isEmpty()) emptyList() else DropRefs.resolve(projectRoot(), paths.map { it to false })
+        return buildJsonObject { put("refs", refsJson(refs)) }
+    }
+
+    private fun refsJson(refs: List<DropRef>) = buildJsonArray {
+        refs.forEach { ref ->
+            add(buildJsonObject {
+                put("path", ref.path)
+                put("dir", ref.dir)
+            })
+        }
+    }
+
+    private fun projectRoot(): java.nio.file.Path? =
+        project.basePath?.let { runCatching { java.nio.file.Path.of(it) }.getOrNull() }
 
     override fun dispose() {
         messageQueueField?.shutdown()

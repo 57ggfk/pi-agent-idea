@@ -161,12 +161,19 @@ export class MockBridge implements Bridge {
     typeof location !== "undefined" && new URLSearchParams(location.search).has("approval")
       ? "ask"
       : "yolo";
-  /** Resolver of the currently pending approval dialog, if any. */
-  private approvalResolve: ((confirmed: boolean) => void) | null = null;
+  /** Resolver of the currently pending approval/dialog request, if any. */
+  private approvalResolve: ((answer: boolean | string | null) => void) | null = null;
   // Approval gating for the bash tool call, enabled via ?approval=1 so the
   // existing specs keep the ungated timing.
   private readonly approvalScenario =
     typeof location !== "undefined" && new URLSearchParams(location.search).has("approval");
+  /**
+   * `?dialog=select|input|editor` — a run that asks a non-confirm question, the
+   * way a pi extension does through ctx.ui.select/input/editor. The answer is
+   * echoed into the transcript so a spec can assert it made the round trip.
+   */
+  private readonly dialogScenario =
+    typeof location !== "undefined" ? new URLSearchParams(location.search).get("dialog") : null;
   // Transcript of the current branch. Kept so get_messages / fork behave like
   // pi 1.5.0 (measured, see specs/007-message-fork/fork-semantics.json): a fork
   // branches *before* the chosen user entry, so that entry and everything after
@@ -206,6 +213,8 @@ export class MockBridge implements Bridge {
   /** `?files=volatile` — the file list loses one entry after the first read. */
   private readonly volatileFiles = query()?.get("files") === "volatile";
   private fileReads = 0;
+  /** `?drop=a,b` — the first `files.takeDrop` returns these, then nothing. */
+  private dropConsumed = false;
   /** `?install=hang` — the in-flight install, resolvable only by a cancel. */
   private pendingInstall: { output: string; resolve?: (cancelled: boolean) => void } | null = null;
   /** `?pistate=1` — report starting → running, so auto-recovery can be observed. */
@@ -252,8 +261,24 @@ export class MockBridge implements Bridge {
   private setupErrorShown = false;
   /** Provider names with stored credentials; writes mutate it (012 T128). */
   private authProviders = ["mock-provider"];
+  /** spec 014: one simulated OAuth login at a time, like the real helper. */
+  private authLoginActive = false;
   /** `?authwrite=fail` makes every credential write fail (012 T133). */
   private readonly authWriteKnob = query()?.get("authwrite");
+  /**
+   * Spec 016: providers credentialled during this session, each carrying one
+   * synthetic model. They model the real behaviour that a fresh credential
+   * adds models to the catalog.
+   */
+  private readonly dynamicModels: MockModel[] = [];
+  /**
+   * `?reload=strict` hides [dynamicModels] from plain `get_available_models`
+   * until `models.reload` runs — that is the models.json case, where only an
+   * in-process refresh makes the addition visible.
+   */
+  private readonly reloadStrict = query()?.get("reload") === "strict";
+  /** How many times the UI asked for a catalog reload (spec 017 assertions). */
+  modelsReloads = 0;
   /** Q8 default: the provider-setup skip persists in prefs. */
   private providerSetupSkipped = false;
 
@@ -385,6 +410,12 @@ export class MockBridge implements Bridge {
     } catch {
       // Storage unavailable (vitest, privacy settings): start empty.
     }
+    // e2e hook (spec 015): lets Playwright inject `ide` events exactly the way
+    // the real Kotlin side does (pushIdePrompt / pushIdeRefs).
+    if (typeof window !== "undefined") {
+      (window as unknown as { __piMockIde?: (data: unknown) => void }).__piMockIde = (data) =>
+        this.emit("ide", data);
+    }
   }
 
   async request<T>(method: string, params?: unknown): Promise<T> {
@@ -405,6 +436,53 @@ export class MockBridge implements Bridge {
           ? MOCK_FILES.filter((f) => f !== "src/store/store.ts")
           : MOCK_FILES;
       return { files } as T;
+    }
+    if (method === "files.takeDrop") {
+      // Spec 016: the IDE side is the only place a file drag's absolute paths
+      // exist, so the composer asks here instead of trusting bare file names.
+      // `?drop=/tmp/mock-project/src,/tmp/mock-project/README.md` stands in for
+      // a real drag; a trailing slash marks a directory, and the buffer is
+      // one-shot exactly like the Kotlin one.
+      const raw = this.dropConsumed ? "" : (query()?.get("drop") ?? "");
+      this.dropConsumed = true;
+      const refs = raw
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((p) => {
+          const dir = p.endsWith("/");
+          const abs = p.replace(/\/+$/, "");
+          const path = abs.startsWith(`${MOCK_PROJECT_PATH}/`)
+            ? abs.slice(MOCK_PROJECT_PATH.length + 1)
+            : abs;
+          return { path, dir };
+        })
+        .filter((r) => r.path.length > 0);
+      return { refs } as T;
+    }
+    if (method === "files.relpath") {
+      // Spec 015: drop/paste references get resolved to project-relative
+      // paths. The mock has no filesystem to stat — paths under the mock
+      // project root are made relative, everything else comes back as-is so
+      // an absolute reference stays usable, and the dir flag passes through.
+      const p = params as { paths?: Array<{ path?: unknown; dir?: unknown }> } | undefined;
+      const refs = (p?.paths ?? [])
+        .map((i) => {
+          const raw = typeof i?.path === "string" ? i.path : "";
+          let path = raw;
+          if (raw === MOCK_PROJECT_PATH) path = "";
+          else if (raw.startsWith(`${MOCK_PROJECT_PATH}/`)) path = raw.slice(MOCK_PROJECT_PATH.length + 1);
+          return { path, dir: i?.dir === true || raw.endsWith("/") };
+        })
+        .filter((r) => r.path.length > 0);
+      return { refs } as T;
+    }
+    if (method === "models.reload") {
+      // Spec 016: the real bridge asks pi to refresh the catalog and returns
+      // the new list in one round-trip. Here the "refresh" is what makes the
+      // strict fixtures visible.
+      this.modelsReloads += 1;
+      return { models: this.availableModels(true), refreshed: true } as T;
     }
     if (method === "ide.repaint") {
       return Promise.resolve({ ok: true } as T);
@@ -852,14 +930,72 @@ export class MockBridge implements Bridge {
         if (!p.provider || !p.key) return { ok: false, error: "missing provider or key" };
         // The mock keeps provider names only — it models the contract that the
         // key material never round-trips (012 T133).
-        if (!this.authProviders.includes(p.provider)) this.authProviders.push(p.provider);
+        if (!this.authProviders.includes(p.provider)) {
+          this.authProviders.push(p.provider);
+          // Spec 016: a fresh credential brings that provider's models along.
+          this.dynamicModels.push({
+            id: `${p.provider}-auto-1`,
+            name: `${p.provider} Auto`,
+            provider: p.provider,
+            contextWindow: 128000,
+            reasoning: false,
+          });
+        }
         return { ok: true, provider: p.provider };
       }
       case "manage.authDelete": {
         const p = (params ?? {}) as { provider?: string };
         if (p.provider === "mock-provider") return { ok: false, error: "the default credential cannot be removed (mock)" };
         this.authProviders = this.authProviders.filter((n) => n !== p.provider);
+        // Removing a credential takes that provider's models away (spec 017).
+        for (let i = this.dynamicModels.length - 1; i >= 0; i -= 1) {
+          if (this.dynamicModels[i].provider === p.provider) this.dynamicModels.splice(i, 1);
+        }
         return { ok: true, provider: p.provider ?? "" };
+      }
+      case "manage.authLoginStart": {
+        // spec 014 mock: a compact replay of the real helper's wire traffic —
+        // auth_url (browser opened), a manual_code prompt, then success once
+        // answered. Cancel aborts. Enough to exercise the full panel flow.
+        const p = (params ?? {}) as { provider?: string };
+        if (!p.provider) return { ok: false, error: "missing provider" };
+        if (this.authLoginActive) return { ok: false, error: "a login is already in progress — cancel it first" };
+        this.authLoginActive = true;
+        const provider = p.provider;
+        setTimeout(() => {
+          this.emit("auth", { kind: "started", provider });
+          this.emit("auth", {
+            kind: "event",
+            browserOpened: true,
+            ev: { type: "auth_url", url: "https://mock.pi.dev/oauth/authorize", instructions: "Complete sign-in in your browser." },
+          });
+          this.emit("auth", {
+            kind: "prompt",
+            id: 1,
+            p: { type: "manual_code", message: "Complete login in your browser, or paste the final redirect URL here:", placeholder: "http://127.0.0.1:1455/auth/callback" },
+          });
+        }, 30);
+        return { ok: true, provider };
+      }
+      case "manage.authLoginAnswer": {
+        const p = (params ?? {}) as { id?: number; value?: string };
+        if (!this.authLoginActive) return { ok: false, error: "no login in progress" };
+        if (!p.value || !p.value.startsWith("http")) {
+          return { ok: false, error: "The pasted callback URL must start with http://127.0.0.1:1455/auth/callback" };
+        }
+        this.authLoginActive = false;
+        setTimeout(() => {
+          this.emit("auth", { kind: "event", ev: { type: "progress", message: "Exchanging authorization code for tokens..." } });
+          this.emit("auth", { kind: "done", ok: true });
+          if (!this.authProviders.includes("mock-oauth")) this.authProviders.push("mock-oauth");
+        }, 30);
+        return { ok: true };
+      }
+      case "manage.authLoginCancel": {
+        const wasActive = this.authLoginActive;
+        this.authLoginActive = false;
+        if (wasActive) setTimeout(() => this.emit("auth", { kind: "done", ok: false, cancelled: true, error: "login cancelled" }), 20);
+        return { ok: true, wasActive };
       }
       case "manage.settingsRead":
         return { ok: true, path: "/tmp/mock-home/.pi/agent/settings.json", text: "{\n  \"theme\": \"dark\"\n}" };
@@ -1218,6 +1354,22 @@ export class MockBridge implements Bridge {
     }
   }
 
+  /**
+   * The catalog the UI sees. [afterReload] marks a read made right after
+   * `models.reload`: under `?reload=strict` only then do providers credentialled
+   * in this session appear (models.json semantics); otherwise they show up as
+   * soon as the credential is stored (auth.json semantics — pi handles that on
+   * its own, no refresh needed).
+   */
+  private availableModels(afterReload: boolean): MockModel[] {
+    const merged = pickerModels(this.pickerKnob).slice();
+    if (this.reloadStrict && !afterReload) return merged;
+    for (const m of this.dynamicModels) {
+      if (!merged.some((e) => e.provider === m.provider && e.id === m.id)) merged.push(m);
+    }
+    return merged;
+  }
+
   private handleCommand(command: Record<string, unknown>): unknown {
     const type = command["type"] as string;
     switch (type) {
@@ -1236,7 +1388,7 @@ export class MockBridge implements Bridge {
           },
         };
       case "get_available_models":
-        return { success: true, data: { models: pickerModels(this.pickerKnob) } };
+        return { success: true, data: { models: this.availableModels(false) } };
       case "get_available_thinking_levels":
         return { success: true, data: { levels: ["off", "minimal", "low", "medium", "high"] } };
       case "get_session_stats":
@@ -1260,6 +1412,13 @@ export class MockBridge implements Bridge {
             commands: [
               { name: "skill:pdf-tools", description: "Extract text from PDFs", source: "skill" },
               { name: "fix-tests", description: "Fix failing tests", source: "prompt" },
+              // Spec 016: real bridged pi lists the plugin's own extension
+              // command; the store must filter it out of slash completion.
+              {
+                name: "pi-agent-reload-models",
+                description: "Reload the model catalog (Pi Agent plugin)",
+                source: "extension",
+              },
             ],
           },
         };
@@ -1376,7 +1535,7 @@ export class MockBridge implements Bridge {
         return { success: true };
       }
       case "set_model": {
-        const found = MOCK_MODELS.find(
+        const found = this.availableModels(false).find(
           (m) => m.provider === command["provider"] && m.id === command["modelId"],
         );
         if (!found) return { success: false, error: "Model not found" };
@@ -1390,7 +1549,14 @@ export class MockBridge implements Bridge {
       case "extension_ui_response": {
         const resolve = this.approvalResolve;
         this.approvalResolve = null;
-        resolve?.(command["confirmed"] === true);
+        // confirm 回布尔，select/input/editor 回字符串，cancelled 表示放弃。
+        const answer =
+          typeof command["value"] === "string"
+            ? command["value"]
+            : command["cancelled"] === true
+              ? null
+              : command["confirmed"] === true;
+        resolve?.(answer);
         return { success: true };
       }
       case "set_auto_compaction":
@@ -1539,11 +1705,26 @@ export class MockBridge implements Bridge {
    */
   private requestApproval(id: string, title: string, message: string): Promise<boolean> {
     return new Promise((resolve) => {
-      this.approvalResolve = (confirmed) => {
+      this.approvalResolve = (answer) => {
         this.approvalResolve = null;
-        resolve(confirmed);
+        resolve(answer === true);
       };
       this.emit("pi", { type: "extension_ui_request", id, method: "confirm", title, message, timeout: 300000 });
+    });
+  }
+
+  /**
+   * Emits a select/input/editor dialog and waits for the answer, exactly like
+   * an extension calling ctx.ui.select/input/editor over RPC. `null` is the
+   * cancellation reply (pi resolves the extension's promise with undefined).
+   */
+  private requestDialog(id: string, method: string, title: string, extra: Record<string, unknown>): Promise<string | null> {
+    return new Promise((resolve) => {
+      this.approvalResolve = (answer) => {
+        this.approvalResolve = null;
+        resolve(typeof answer === "string" ? answer : null);
+      };
+      this.emit("pi", { type: "extension_ui_request", id, method, title, timeout: 300000, ...extra });
     });
   }
 
@@ -1708,6 +1889,45 @@ export class MockBridge implements Bridge {
       isError: false,
       durationMs: 8,
     });
+
+    // ?dialog=select|input|editor|multi —— 扩展在工具之间问用户（ctx.ui.select 等）。
+    // 答案回显进对话，spec 才能断言这一次 round-trip 真的把值送回了 pi。
+    // multi 复现 rpiv-ask-user-question 在 RPC 下的降级形态：编号选项写在
+    // input 的标题里，占位符提示 "1,3; custom answer"。
+    if (!this.aborted && this.dialogScenario) {
+      const scenario = this.dialogScenario;
+      const multiTitle = [
+        "你想先盖哪几个？（可多选）",
+        "",
+        "1. Flyway 迁移能干净跑通 — 从 V1 跑到 V2",
+        "2. 唯一索引冲突 → 业务异常 — 真库抛 DuplicateKeyException",
+        "3. 分页 + 排序 SQL 正确性 — 验证 count 与 order by",
+        "",
+        'Enter the numbers of all that apply, comma-separated (e.g. "1,3").',
+      ].join("\n");
+      const method = scenario === "multi" ? "input" : scenario;
+      const title = scenario === "multi" ? multiTitle : `mock ${scenario}`;
+      const extra: Record<string, unknown> =
+        scenario === "select"
+          ? { options: ["Fast", "Balanced", "Thorough"] }
+          : scenario === "input"
+            ? { placeholder: "type a name" }
+            : scenario === "multi"
+              ? { placeholder: "1,3; custom answer" }
+              : { prefill: "line one\nline two" };
+      const answer = await this.requestDialog("ui-dialog-1", method, title, extra);
+      if (this.aborted) return;
+      const text = `dialog answer: ${answer ?? "(cancelled)"}`;
+      const dialogMessage = {
+        role: "assistant",
+        content: [{ type: "text", text }],
+        timestamp: Date.now(),
+      };
+      await sleep(30);
+      emit({ type: "message_start", message: dialogMessage });
+      await sleep(30);
+      emit({ type: "message_end", message: dialogMessage });
+    }
 
     // pi injects one queued steering message at the next turn boundary; the
     // mock reproduces that so the queue bar can be watched draining (US5).

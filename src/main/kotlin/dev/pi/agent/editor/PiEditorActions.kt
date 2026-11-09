@@ -4,11 +4,11 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
-import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.openapi.vfs.VirtualFile
+import dev.pi.agent.PiAgentBundle
 import dev.pi.agent.bridge.BridgeService
 import java.nio.file.Path
 
@@ -44,16 +44,12 @@ internal fun selectionKind(files: List<VirtualFile>?): Pair<TargetKind, Boolean>
 }
 
 /**
- * Prompt for "Explain File with Pi" (spec 009 T007): directories and binaries
- * send the path only and let pi read from disk (FR-005); text files keep the
- * "summarize and flag" wording with the optional caret location.
+ * Prompt for "Explain File with Pi" (spec 015): the file itself travels as a
+ * reference chip pushed alongside this prompt, so the text carries only the
+ * intent — no path, no contents — with the optional caret location appended.
  */
-internal fun explainPromptFor(kind: TargetKind, path: String, where: String = ""): String = when (kind) {
-    TargetKind.Directory ->
-        "Look at the directory `$path`. Summarize its structure and purpose (what each subdirectory and key file is for), and flag anything suspicious."
-    else ->
-        "Look at `$path`$where. Summarize what this file does and flag anything suspicious."
-}
+internal fun explainPromptFor(isDirectory: Boolean, where: String = ""): String =
+    PiAgentBundle.message(if (isDirectory) "prompt.explain.dir" else "prompt.explain.file") + where
 
 /** Project-relative, slash-separated path, or null when it cannot be computed. */
 internal fun projectRelativePath(project: Project, vf: VirtualFile?): String? {
@@ -97,19 +93,17 @@ abstract class PiSelectionAction : AnAction() {
 
 class SendSelectionToPi : PiSelectionAction() {
     override fun prompt(selection: String, path: String, line: Int, language: String): String =
-        "Regarding `$path:$line`:\n${codeBlock(selection, language)}\n"
+        PiAgentBundle.message("prompt.sendSelection", "$path:$line") + codeBlock(selection, language) + "\n"
 }
 
 class ExplainWithPi : PiSelectionAction() {
     override fun prompt(selection: String, path: String, line: Int, language: String): String =
-        "Explain the following code from `$path:$line` (concise, then any caveats you notice):\n" +
-            codeBlock(selection, language) + "\n"
+        PiAgentBundle.message("prompt.explainSelection", "$path:$line") + codeBlock(selection, language) + "\n"
 }
 
 class FixWithPi : PiSelectionAction() {
     override fun prompt(selection: String, path: String, line: Int, language: String): String =
-        "Fix the following code from `$path:$line`. Provide the corrected code and briefly state what was wrong:\n" +
-            codeBlock(selection, language) + "\n"
+        PiAgentBundle.message("prompt.fixSelection", "$path:$line") + codeBlock(selection, language) + "\n"
 }
 
 /**
@@ -119,11 +113,12 @@ class FixWithPi : PiSelectionAction() {
  * greyed out in the project tree even though "the whole file" is exactly the
  * project-view case.
  *
- * Since 0.5.3 it also accepts directories and binaries (path only, pi reads
- * from disk), which is what keeps the popup from being all-grey on a folder
- * (FR-005). update() runs on BGT: the project-tree context is a
- * PreCachedDataContext and refuses data keys requested on the EDT (verified
- * in the sandbox — SEVERE "is requested on EDT by ExplainFileWithPi").
+ * Since 0.5.6 the file rides along as a reference chip (spec 015) and the
+ * prompt is a localized sentence of intent — pi reads the file from disk, so
+ * directories and binaries work identically. update() runs on BGT: the
+ * project-tree context is a PreCachedDataContext and refuses data keys
+ * requested on the EDT (verified in the sandbox — SEVERE "is requested on EDT
+ * by ExplainFileWithPi").
  */
 class ExplainFileWithPi : AnAction() {
 
@@ -133,13 +128,14 @@ class ExplainFileWithPi : AnAction() {
         val vf = editor?.let { FileDocumentManager.getInstance().getFile(it.document) }
             ?: selectedVirtualFile(e)
             ?: return
-        val path = projectRelativePath(project, vf) ?: vf.name
         val where = editor
-            ?.let { " (caret at line ${it.document.getLineNumber(it.caretModel.offset) + 1})" }
+            ?.let { " " + PiAgentBundle.message("prompt.explain.caret", it.document.getLineNumber(it.caretModel.offset) + 1) }
             ?: ""
-        val (kind, _) = selectionKind(listOf(vf))
 
-        BridgeService.getInstance(project).pushIdePrompt(explainPromptFor(kind, path, where))
+        BridgeService.getInstance(project).pushIdePrompt(
+            explainPromptFor(vf.isDirectory, where),
+            listOf((projectRelativePath(project, vf) ?: vf.path) to vf.isDirectory),
+        )
         ToolWindowManager.getInstance(project).getToolWindow("Pi Agent")?.activate(null)
     }
 
@@ -154,25 +150,19 @@ class ExplainFileWithPi : AnAction() {
 }
 
 /**
- * "Send File to Pi Agent" from the project view / editor tab context menu:
- * hands the whole file to pi with its path context. Directories, binaries and
- * oversized files stay disabled — now with the reason in the description and
- * a pointer at the action that *can* handle them (FR-006).
+ * "Send File to Pi Agent" from the project view / editor tab context menu.
+ * Since spec 015 the file travels as a path reference only — nothing is read,
+ * so binaries and oversized files work too (the availability matrix was
+ * widened accordingly). Directories still point at Add Directory.
  */
 class SendFileToPi : AnAction() {
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
         val vf = selectedVirtualFile(e) ?: return
-        val path = projectRelativePath(project, vf) ?: vf.path
 
-        val content = readFileCapped(vf)
-            ?: return // binary, oversized or unreadable (update() explains why)
-
-        BridgeService.getInstance(project).pushIdePrompt(
-            "Here is the file `$path`. Read it, then wait for my instructions:\n" +
-                "```" + (vf.extension ?: "") + "\n$content\n```\n"
-        )
+        BridgeService.getInstance(project)
+            .pushIdeRefs(listOf((projectRelativePath(project, vf) ?: vf.path) to false))
         ToolWindowManager.getInstance(project).getToolWindow("Pi Agent")?.activate(null)
     }
 
@@ -184,19 +174,13 @@ class SendFileToPi : AnAction() {
     }
 
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
-
-    private fun readFileCapped(vf: com.intellij.openapi.vfs.VirtualFile): String? = try {
-        if (vf.length > MAX_SEND_FILE_BYTES) null
-        else String(vf.inputStream.readBytes(), Charsets.UTF_8)
-    } catch (_: Exception) {
-        null
-    }
 }
 
 /**
- * "Add Directory to Pi" (spec 009 US3): walks the selected directory on a
- * pooled thread and drops a structure summary (paths only, no contents) into
- * the composer. This is the action that keeps a directory right-click usable
+ * "Add Directory to Pi" (spec 009 US3, simplified by spec 015): the directory
+ * becomes a single reference chip in the composer — pi lists and reads it
+ * itself, so there is no walk, no entry list and no pooled thread here
+ * anymore. This is the action that keeps a directory right-click usable
  * (FR-003) and replaces "type @ for every file" (SC-003).
  */
 class AddDirectoryToPi : AnAction() {
@@ -204,17 +188,10 @@ class AddDirectoryToPi : AnAction() {
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
         val dir = targetDirectory(e.getData(CommonDataKeys.VIRTUAL_FILE_ARRAY)) ?: return
-        val projectRoot = project.basePath?.let { runCatching { Path.of(it) }.getOrNull() }
 
-        // Activate first so focus lands in the composer while the walk runs.
+        BridgeService.getInstance(project)
+            .pushIdeRefs(listOf((projectRelativePath(project, dir) ?: dir.path) to true))
         ToolWindowManager.getInstance(project).getToolWindow("Pi Agent")?.activate(null)
-
-        ApplicationManager.getApplication().executeOnPooledThread {
-            val listing = runCatching {
-                listDirectory(dir.toNioPath(), projectRoot)
-            }.getOrNull() ?: return@executeOnPooledThread
-            BridgeService.getInstance(project).pushIdePrompt(directoryPromptFor(listing))
-        }
     }
 
     override fun update(e: AnActionEvent) {

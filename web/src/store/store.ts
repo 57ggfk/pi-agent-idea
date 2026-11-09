@@ -9,7 +9,22 @@ import {
   sanitizeLlmTitle,
   validateSessionTitle,
 } from "../lib/sessionTitle";
-import { manageApi, type EnvDetectResult } from "../manage";
+import { manageApi, type AuthLoginEventData, type AuthLoginEvent, type AuthLoginPrompt, type EnvDetectResult } from "../manage";
+
+/**
+ * Panel-side mirror of one pi OAuth login. `events` is capped: providers emit
+ * a handful (auth_url → progress), but a chatty one must not grow unbounded.
+ */
+export interface AuthLoginState {
+  phase: "idle" | "running" | "done";
+  provider: string | null;
+  events: AuthLoginEvent[];
+  browserOpened: boolean;
+  prompt: { id: number; p: AuthLoginPrompt } | null;
+  done: { ok: boolean; cancelled?: boolean; error?: string } | null;
+}
+
+const AUTH_LOGIN_EVENT_CAP = 10;
 import {
   applyEvent,
   approvalFromEvent,
@@ -43,6 +58,12 @@ import { i18n, initI18n, isRegistered } from "../i18n";
 /** Shorthand for store-side (non-React) copy; English falls out of the base bundle. */
 const t = i18n.t.bind(i18n);
 
+/**
+ * Prefix reserved for commands registered by the plugin's own pi extensions
+ * (approval, model reload). They are plumbing, not user-facing slash commands.
+ */
+const INTERNAL_COMMAND_PREFIX = "pi-agent-";
+
 export type SendMode = "auto" | "steer" | "followUp";
 export type Tab = "chat" | "sessions" | "manage";
 
@@ -55,12 +76,39 @@ export type Tab = "chat" | "sessions" | "manage";
  *             blockquote: the user is getting their own draft back
  */
 export type PromptMode = "replace" | "quote" | "edit" | "restore";
+
+/**
+ * A file/directory reference waiting to become a composer chip (spec 015):
+ * `path` is project-relative when the IDE could compute it, absolute otherwise
+ * (desktop drags land outside the project too). pi resolves `@path` refs at
+ * send time, so only the path travels — no listings, no file contents.
+ */
+export interface PendingRef {
+  path: string;
+  dir: boolean;
+}
+
+/** Normalizes the `files` payload of an `ide` event into pending refs. */
+function toPendingRefs(files: unknown): PendingRef[] {
+  if (!Array.isArray(files)) return [];
+  const out: PendingRef[] = [];
+  for (const f of files) {
+    const o = (f ?? {}) as { path?: unknown; dir?: unknown };
+    if (typeof o.path === "string" && o.path.length > 0) {
+      out.push({ path: o.path, dir: o.dir === true });
+    }
+  }
+  return out;
+}
+
 export interface PendingPrompt {
   text: string;
   id: number;
   mode: PromptMode;
   /** Images to drop into the composer chips (queue restore). */
   images?: Array<{ data: string; mimeType: string }>;
+  /** File/directory references to drop into the composer chips (spec 015). */
+  refs?: PendingRef[];
 }
 
 /** The user message an edit-and-resend will branch from. */
@@ -237,6 +285,13 @@ interface PiStore {
   driftAck: boolean;
   /** Set when a session change would discard queued entries (FR-012). */
   queueDiscardConfirm: { count: number; kind: "new" | "switch"; file?: string } | null;
+  /**
+   * Live state of the browser-OAuth login (spec 014), fed by `auth` bridge
+   * events. Survives tab switches (US4) until the next start or a reset.
+   */
+  authLogin: AuthLoginState;
+  applyAuthEvent(data: AuthLoginEventData): void;
+  resetAuthLogin(): void;
   /** Editor-initiated prompt ("ide" event) waiting for the Composer to pick up. */
   pendingPrompt: PendingPrompt | null;
   /**
@@ -287,6 +342,12 @@ interface PiStore {
   pendingSearchJump: { query: string; hitIndex: number } | null;
   openSearch(): void;
   closeSearch(): void;
+  /**
+   * Toolbar button semantics: opens the bar when it is closed and closes it
+   * (clearing the query, like the × button) when it is already open. Ctrl/Cmd+F
+   * keeps calling [openSearch] — it must focus an open bar, never close it.
+   */
+  toggleSearch(): void;
   setSearchQuery(query: string): void;
   /** Moves the current hit by `delta` with wrap-around; no-op without hits. */
   searchGo(delta: number): void;
@@ -379,6 +440,14 @@ interface PiStore {
   init(): Promise<void>;
   send(text: string, mode: SendMode): Promise<void>;
   sendImages(text: string, images: Array<{ data: string; mimeType: string }>, mode: SendMode): Promise<void>;
+  /** Resolves dropped/copied paths to project-relative references (spec 015). */
+  resolveRefs(inputs: Array<{ path: string; dir: boolean }>): Promise<PendingRef[]>;
+  /**
+   * Takes the paths of the file/folder drag that just entered the panel from
+   * the IDE side (spec 016) — the only place the real absolute paths exist.
+   * Empty when the drag carried no files or the bridge is too old.
+   */
+  takeDroppedRefs(): Promise<PendingRef[]>;
   abort(): Promise<void>;
   // -- message queue (spec 005) ---------------------------------------------
   /** Pulls the current queue snapshot (webview reload restore, FR-001). */
@@ -397,6 +466,13 @@ interface PiStore {
   setThinkingLevel(level: string): Promise<void>;
   compact(): Promise<void>;
   restartPi(): Promise<void>;
+  /**
+   * spec 017: re-read the model catalog after a credential or models.json
+   * change. pi refreshes auth.json by itself; models.json goes through the
+   * bundled pi-models extension, triggered by the bridge. Returns false when
+   * the in-process refresh was unavailable (list is still re-read).
+   */
+  reloadModels(): Promise<boolean>;
   refreshStats(): Promise<void>;
   /** Retries `get_commands` — init() races the pi process and used to leave
    *  the slash menu permanently empty. */
@@ -444,7 +520,12 @@ interface PiStore {
   sendEdited(text: string): Promise<void>;
   openFile(path: string, line: number): Promise<void>;
   showFileDiff(path: string): Promise<void>;
-  respondApproval(id: string, confirmed: boolean): Promise<void>;
+  /**
+   * Answers a pending extension_ui_request: `confirm` takes a boolean,
+   * `select`/`input`/`editor` take the chosen string, `null` cancels (pi
+   * receives `undefined`/`false`).
+   */
+  respondApproval(id: string, answer: boolean | string | null): Promise<void>;
   setApprovalMode(mode: "ask" | "yolo"): Promise<void>;
   setAutoCompaction(enabled: boolean): Promise<void>;
   setAutoRetry(enabled: boolean): Promise<void>;
@@ -756,6 +837,55 @@ export const usePiStore = create<PiStore>((set, get) => {
     });
   };
 
+  /**
+   * Reduces one `auth` bridge event (spec 014). Events arrive strictly
+   * ordered from the single login session; `started` resets any previous
+   * run's tail so the panel never mixes two attempts.
+   */
+  const applyAuthEvent = (data: AuthLoginEventData) => {
+    const current = get().authLogin;
+    switch (data.kind) {
+      case "started":
+        set({
+          authLogin: {
+            phase: "running",
+            provider: data.provider ?? null,
+            events: [],
+            browserOpened: false,
+            prompt: null,
+            done: null,
+          },
+        });
+        return;
+      case "event": {
+        if (!data.ev) return;
+        const events = [...current.events, data.ev].slice(-AUTH_LOGIN_EVENT_CAP);
+        set({
+          authLogin: {
+            ...current,
+            events,
+            browserOpened: current.browserOpened || Boolean(data.browserOpened),
+          },
+        });
+        return;
+      }
+      case "prompt":
+        if (data.id === undefined || !data.p) return;
+        set({ authLogin: { ...current, prompt: { id: data.id, p: data.p } } });
+        return;
+      case "done":
+        set({
+          authLogin: {
+            ...current,
+            phase: "done",
+            prompt: null,
+            done: { ok: Boolean(data.ok), cancelled: data.cancelled, error: data.error },
+          },
+        });
+        return;
+    }
+  };
+
   const handlePiEvent = (event: Record<string, unknown>) => {
     const type = event["type"];
     const state = get();
@@ -935,6 +1065,7 @@ export const usePiStore = create<PiStore>((set, get) => {
     queue: { items: [], paused: false, pauseReason: null, drift: false },
     driftAck: false,
     queueDiscardConfirm: null,
+    authLogin: { phase: "idle", provider: null, events: [], browserOpened: false, prompt: null, done: null },
     pendingPrompt: null,
     editing: null,
     confirm: null,
@@ -991,6 +1122,11 @@ export const usePiStore = create<PiStore>((set, get) => {
 
     closeSearch() {
       set({ search: { open: false, query: "", index: 0 }, pendingSearchJump: null });
+    },
+
+    toggleSearch() {
+      if (get().search.open) get().closeSearch();
+      else get().openSearch();
     },
 
     setSearchQuery(query: string) {
@@ -1077,12 +1213,40 @@ export const usePiStore = create<PiStore>((set, get) => {
           handlePiEvent(data as Record<string, unknown>);
         } else if (name === "queue") {
           applyQueueState(data as QueueStateEvent);
+        } else if (name === "auth") {
+          // spec 014: browser-OAuth login progress (single login at a time).
+          applyAuthEvent(data as AuthLoginEventData);
         } else if (name === "ide") {
           // Editor action (e.g. "Explain with Pi"): pre-fill the composer and
           // switch to chat. The Composer consumes pendingPrompt and focuses.
-          const d = (data ?? {}) as { kind?: string; text?: string };
+          const d = (data ?? {}) as { kind?: string; text?: string; files?: unknown };
           if (d.kind === "prompt") {
-            set({ tab: "chat", pendingPrompt: { text: String(d.text ?? ""), id: ++promptSeq, mode: "replace" } });
+            const refs = toPendingRefs(d.files);
+            set({
+              tab: "chat",
+              pendingPrompt: {
+                text: String(d.text ?? ""),
+                id: ++promptSeq,
+                mode: "replace",
+                ...(refs.length > 0 ? { refs } : {}),
+              },
+            });
+          } else if (d.kind === "refs") {
+            // Spec 015: "Add Directory / Send File" push references, not
+            // prompt text. Successive right-clicks must accumulate (add two
+            // directories in a row keeps both), so merge into whatever
+            // pendingPrompt is already waiting instead of replacing it.
+            const incoming = toPendingRefs(d.files);
+            if (incoming.length === 0) return;
+            const cur = get().pendingPrompt;
+            if (cur) {
+              set({
+                tab: "chat",
+                pendingPrompt: { ...cur, refs: [...(cur.refs ?? []), ...incoming], id: ++promptSeq },
+              });
+            } else {
+              set({ tab: "chat", pendingPrompt: { text: "", id: ++promptSeq, mode: "replace", refs: incoming } });
+            }
           }
         } else if (name === "theme") {
           const t = (data ?? {}) as { theme?: unknown };
@@ -1270,6 +1434,33 @@ export const usePiStore = create<PiStore>((set, get) => {
       }
     },
 
+    async resolveRefs(inputs) {
+      if (inputs.length === 0) return [];
+      if (!bridge) return inputs;
+      try {
+        const res = await bridge.request<{ refs?: Array<{ path?: unknown; dir?: unknown }> }>("files.relpath", {
+          paths: inputs.map((i) => ({ path: i.path, dir: i.dir })),
+        });
+        const refs = toPendingRefs(res.refs);
+        return refs.length > 0 ? refs : inputs;
+      } catch {
+        // An older IDE side without the RPC: the raw paths still work —
+        // pi reads absolute paths just fine. This is only cosmetic.
+        return inputs;
+      }
+    },
+
+    async takeDroppedRefs() {
+      if (!bridge) return [];
+      try {
+        const res = await bridge.request<{ refs?: Array<{ path?: unknown; dir?: unknown }> }>("files.takeDrop");
+        return toPendingRefs(res.refs);
+      } catch {
+        // Older IDE side: no such RPC. The DataTransfer fallback still runs.
+        return [];
+      }
+    },
+
     async abort() {
       if (!bridge) return;
       // Approval cards belong to the run being aborted.
@@ -1396,6 +1587,16 @@ export const usePiStore = create<PiStore>((set, get) => {
       set({ confirm: null });
     },
 
+    applyAuthEvent(data: AuthLoginEventData) {
+      applyAuthEvent(data);
+    },
+
+    resetAuthLogin() {
+      set({
+        authLogin: { phase: "idle", provider: null, events: [], browserOpened: false, prompt: null, done: null },
+      });
+    },
+
     async newSession() {
       if (!bridge) return;
       const state = get();
@@ -1448,6 +1649,9 @@ export const usePiStore = create<PiStore>((set, get) => {
         set({ items: [], stats: undefined, aborted: false, isStreaming: false });
         await get().refreshStats();
         await get().replayMessages();
+        // A restarted process re-reads auth.json and models.json: the catalog
+        // may legitimately differ now (spec 017).
+        void get().reloadModels();
       } catch (e) {
         const item = emptyItem("system", [
           { kind: "text", text: t("error.restart.failed", { msg: (e as Error).message }), done: true },
@@ -1766,14 +1970,31 @@ export const usePiStore = create<PiStore>((set, get) => {
       });
     },
 
+    async reloadModels() {
+      if (!bridge) return false;
+      const b = bridge;
+      let refreshed = false;
+      // Goes through the source machine so a failure stays visible in the
+      // diagnostics panel instead of leaving the picker silently stale (003).
+      await get().loadSource("models", async () => {
+        const r = await b.request<{ models?: ModelInfo[]; refreshed?: boolean }>("models.reload");
+        refreshed = r.refreshed !== false;
+        if (Array.isArray(r.models)) set({ models: r.models });
+      });
+      return refreshed;
+    },
+
     async refreshCommands() {
       if (!bridge) return;
       const b = bridge;
       await get().loadSource("commands", async () => {
         const r = await rpc<{ commands: CommandInfo[] }>(b, { type: "get_commands" });
+        // spec 017: the plugin's own extension command is an implementation
+        // detail — it must not show up in slash completion.
+        const visible = (r.commands ?? []).filter((c) => !c.name.startsWith(INTERNAL_COMMAND_PREFIX));
         // Keep the previous list on an empty answer: pi has no commands until
         // its extensions are loaded, and wiping it would blink the menu empty.
-        if (r.commands?.length) set({ commands: r.commands });
+        if (visible.length) set({ commands: visible });
       });
     },
 
@@ -1915,16 +2136,22 @@ export const usePiStore = create<PiStore>((set, get) => {
     /**
      * Answers a pending extension_ui_request. The run is blocked until the
      * response arrives, so the card is removed optimistically.
+     *
+     * `confirm` is a yes/no; `select`/`input`/`editor` answer with the option
+     * or the typed text. `null` is the shared cancellation reply — the only
+     * way out of a dialog that is not a confirm (see pi's rpc-extension-ui).
      */
-    async respondApproval(id: string, confirmed: boolean) {
+    async respondApproval(id: string, answer: boolean | string | null) {
       if (!bridge) return;
       const target = get().approvals.find((a) => a.id === id);
       set({ approvals: get().approvals.filter((a) => a.id !== id) });
       if (!target) return;
       const command: Record<string, unknown> =
         target.method === "confirm"
-          ? { type: "extension_ui_response", id, confirmed }
-          : { type: "extension_ui_response", id, cancelled: true };
+          ? { type: "extension_ui_response", id, confirmed: answer === true }
+          : typeof answer === "string"
+            ? { type: "extension_ui_response", id, value: answer }
+            : { type: "extension_ui_response", id, cancelled: true };
       try {
         await rpc(bridge, command);
       } catch {

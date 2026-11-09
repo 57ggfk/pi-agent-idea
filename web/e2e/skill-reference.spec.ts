@@ -54,10 +54,12 @@ test.describe("skill reference folding", () => {
     const clip = await page.evaluate(() => navigator.clipboard.readText());
     expect(clip).toBe("/skill:demo-skill how do I use it");
 
-    // quote: composer gets the folded text as a blockquote
+    // quote: composer gets the folded text as a blockquote. Since spec 015
+    // the quote ends with exactly one newline so the caret starts on a fresh
+    // line instead of being glued to the quoted text.
     await user.hover();
     await user.getByTestId("act-quote").click();
-    await expect(page.getByTestId("composer-input")).toHaveValue("> /skill:demo-skill how do I use it");
+    await expect(page.getByTestId("composer-input")).toHaveValue("> /skill:demo-skill how do I use it\n");
     await page.getByTestId("composer-input").fill("");
   });
 

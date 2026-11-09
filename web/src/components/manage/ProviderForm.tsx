@@ -6,6 +6,8 @@ import { copyText } from "../../lib/clipboard";
 import { KNOWN_PROVIDERS, mergeProviderOptions } from "../../lib/knownProviders";
 import type { ProviderOption } from "../../lib/knownProviders";
 import ProviderPicker, { PROVIDER_CUSTOM } from "./ProviderPicker";
+import { tip } from "../Tooltip";
+import { usePiStore } from "../../store/store";
 
 const CUSTOM = PROVIDER_CUSTOM;
 
@@ -19,9 +21,15 @@ type Method = "account" | "key";
  * Mirrors the terminal /login flow: the provider comes from a dropdown (bundled
  * pi registry ∪ the live authOverview: models.json customs join as customs,
  * stored credentials add a badge) and the method selector offers the same two
- * routes — account (OAuth) and API key. This iteration stops at guidance for
- * the account method (real browser OAuth arrives with the pi SDK login
- * helper); the API-key route writes exactly as before:
+ * routes — account (OAuth) and API key.
+ *
+ * The account route (spec 014) drives pi's real browser OAuth in-panel: the
+ * pi-login helper runs on the user's own pi installation, events stream into
+ * the store's authLogin slice, interaction prompts render right here and the
+ * credential is written by pi itself. The terminal guide stays below as the
+ * fallback path (old pi / import failure).
+ *
+ * The API-key route writes exactly as before:
  *
  *  - a provider defined in models.json (custom) → `providerSetKey` fills its
  *    `apiKey`;
@@ -59,6 +67,15 @@ export default function ProviderForm({
   const [copied, setCopied] = useState(false);
   /** Result note for the "open IDE terminal" action (US2). */
   const [termNote, setTermNote] = useState<string | null>(null);
+
+  // spec 014: live OAuth flow state (shared across tab switches, US4).
+  const authLogin = usePiStore((s) => s.authLogin);
+  const loginBusy = authLogin.phase === "running";
+  const [promptValue, setPromptValue] = useState("");
+  // A fresh prompt clears the previous answer's text.
+  useEffect(() => {
+    setPromptValue("");
+  }, [authLogin.prompt?.id]);
 
   // Edit mode: the custom flag decides the write path (models.json vs
   // auth.json) exactly like before; the dropdown just isn't rendered.
@@ -101,6 +118,21 @@ export default function ProviderForm({
 
   const accountAvailable = activeOption?.oauth ?? false;
 
+  // spec 014: latest-of renders — providers emit one auth_url/device_code per
+  // attempt, progress/info lines trail the interesting events.
+  const authUrl = useMemo(
+    () => [...authLogin.events].reverse().find((e) => e.type === "auth_url") ?? null,
+    [authLogin.events],
+  );
+  const deviceCode = useMemo(
+    () => [...authLogin.events].reverse().find((e) => e.type === "device_code") ?? null,
+    [authLogin.events],
+  );
+  const progressNote = useMemo(
+    () => [...authLogin.events].reverse().find((e) => e.type === "progress" || e.type === "info")?.message ?? null,
+    [authLogin.events],
+  );
+
   const pickProvider = (value: string) => {
     setSelected(value);
     setError(null);
@@ -139,6 +171,50 @@ export default function ProviderForm({
       setTermNote(t("auth.terminalFailed", { msg: (e as Error).message }));
     }
   };
+
+  /**
+   * spec 014 US1: hand the login to the pi-login helper. Backend errors
+   * (pi missing, node missing, concurrent login) surface verbatim; a started
+   * login drives the panel through the store's authLogin slice.
+   */
+  const startLogin = async () => {
+    setError(null);
+    setOkNote(null);
+    setTermNote(null);
+    const id = customMode ? customName.trim() : fixedProvider ?? selected;
+    if (!id) {
+      setError(t("provider.pickRequired"));
+      return;
+    }
+    const res = await api.authLoginStart({ provider: id }).catch((e) => ({
+      ok: false as const,
+      error: (e as Error).message,
+    }));
+    if (!res.ok) setError(res.error ?? t("provider.writeFailed"));
+  };
+
+  const cancelLogin = async () => {
+    await api.authLoginCancel().catch(() => undefined);
+  };
+
+  /** US2: answer the pending interaction prompt (select answers with the id). */
+  const submitPrompt = async (value?: string) => {
+    const p = authLogin.prompt;
+    if (!p) return;
+    const v = value ?? promptValue;
+    if (!v.trim() && p.p.type !== "manual_code") return;
+    const res = await api.authLoginAnswer({ id: p.id, value: v }).catch((e) => ({
+      ok: false as const,
+      error: (e as Error).message,
+    }));
+    if (!res.ok) setError(res.error ?? t("provider.writeFailed"));
+  };
+
+  // A successful login refreshes the parent's overview (row badge → account).
+  useEffect(() => {
+    if (authLogin.done?.ok && authLogin.provider) onDone?.(authLogin.provider);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authLogin.done?.ok, authLogin.done, authLogin.provider]);
 
   const submit = async () => {
     setError(null);
@@ -187,16 +263,19 @@ export default function ProviderForm({
             aria-checked={method === "account"}
             className={`segment ${method === "account" ? "segment-active" : ""}`}
             data-testid={`${testPrefix}-method-account`}
-            disabled={!accountAvailable}
-            title={accountAvailable ? undefined : t("auth.methodUnsupported")}
+            disabled={!accountAvailable || loginBusy}
+            {...tip(accountAvailable ? undefined : t("auth.methodUnsupported"))}
             onClick={() => setMethod("account")}
           >
             {t("auth.methodAccount")}
-            {/* 013 US2: OAuth is not wired in the panel yet — say so before
-                the user commits to the route, not only in the guide card. */}
-            <span className="segment-badge" data-testid={`${testPrefix}-account-badge`}>
-              {t("auth.methodBadgeSoon")}
-            </span>
+            {/* spec 014 real-machine feedback: dimming alone read as "still a
+                choice". Providers without an OAuth route carry a badge saying
+                so, before the user commits to the route. */}
+            {!accountAvailable ? (
+              <span className="segment-badge" data-testid={`${testPrefix}-account-badge`}>
+                {t("auth.methodBadgeNoOauth")}
+              </span>
+            ) : null}
           </button>
         )}
         <button
@@ -205,6 +284,7 @@ export default function ProviderForm({
           aria-checked={method === "key"}
           className={`segment ${method === "key" ? "segment-active" : ""}`}
           data-testid={`${testPrefix}-method-key`}
+          disabled={loginBusy}
           onClick={() => setMethod("key")}
         >
           {t("auth.methodApiKey")}
@@ -235,14 +315,14 @@ export default function ProviderForm({
         <>
           <div className="provider-form-row">
             <label htmlFor={`${testPrefix}-pick`}>{t("provider.pickLabel")}</label>
-            <ProviderPicker
-              options={options ?? []}
-              value={selected}
-              onChange={pickProvider}
-              disabled={busy}
-              loading={options === null}
-              testPrefix={testPrefix}
-            />
+              <ProviderPicker
+                options={options ?? []}
+                value={selected}
+                onChange={pickProvider}
+                disabled={busy || loginBusy}
+                loading={options === null}
+                testPrefix={testPrefix}
+              />
           </div>
           {customMode ? (
             <div className="provider-form-row">
@@ -270,6 +350,117 @@ export default function ProviderForm({
               provider: activeOption?.oauthLabel ?? providerId,
             })}
           </div>
+          <div className="provider-oauth-row">
+            <button
+              className="btn btn-send"
+              data-testid={`${testPrefix}-oauth-start`}
+              disabled={loginBusy}
+              onClick={() => void startLogin()}
+            >
+              {t("auth.loginStart")}
+            </button>
+            {loginBusy ? (
+              <>
+                <span className="panel-row-sub" data-testid={`${testPrefix}-oauth-running`}>
+                  {/* The login outlives form re-entries (US4): name its provider
+                      so a re-expanded form never looks stuck on a stale pick. */}
+                  {t("auth.loginRunningProvider", { provider: authLogin.provider ?? providerId })}
+                </span>
+                <button
+                  className="btn"
+                  data-testid={`${testPrefix}-oauth-cancel`}
+                  onClick={() => void cancelLogin()}
+                >
+                  {t("auth.loginCancel")}
+                </button>
+              </>
+            ) : null}
+          </div>
+          {authUrl ? (
+            <div className="provider-oauth-url" data-testid={`${testPrefix}-oauth-url`}>
+              <div className="panel-row-sub">
+                {authLogin.browserOpened ? t("auth.loginBrowserAuto") : t("auth.loginBrowserManual")}{" "}
+                <a href={authUrl.url} target="_blank" rel="noreferrer">
+                  {authUrl.url}
+                </a>
+              </div>
+              {authUrl.instructions ? <div className="panel-row-sub">{authUrl.instructions}</div> : null}
+            </div>
+          ) : null}
+          {deviceCode ? (
+            <div className="provider-oauth-url" data-testid={`${testPrefix}-oauth-device`}>
+              <div className="provider-guide-title">
+                {t("auth.loginUserCode")}: <span className="mono">{deviceCode.userCode}</span>
+              </div>
+              <div className="panel-row-sub">
+                <a href={deviceCode.verificationUri} target="_blank" rel="noreferrer">
+                  {deviceCode.verificationUri}
+                </a>
+              </div>
+            </div>
+          ) : null}
+          {progressNote ? (
+            <div className="panel-row-sub" data-testid={`${testPrefix}-oauth-progress`}>
+              {progressNote}
+            </div>
+          ) : null}
+          {authLogin.prompt ? (
+            <div className="provider-oauth-prompt" data-testid={`${testPrefix}-oauth-prompt`}>
+              <div className="provider-form-row">
+                <label htmlFor={`${testPrefix}-oauth-prompt-input`}>{authLogin.prompt.p.message}</label>
+                {authLogin.prompt.p.type === "select" ? (
+                  <div className="provider-oauth-select">
+                    {authLogin.prompt.p.options?.map((opt) => (
+                      <button
+                        key={opt.id}
+                        className="btn"
+                        data-testid={`${testPrefix}-oauth-choice-${opt.id}`}
+                        onClick={() => void submitPrompt(opt.id)}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="provider-oauth-row">
+                    <input
+                      id={`${testPrefix}-oauth-prompt-input`}
+                      className="setup-input"
+                      data-testid={`${testPrefix}-oauth-prompt-input`}
+                      type={authLogin.prompt.p.type === "secret" ? "password" : "text"}
+                      value={promptValue}
+                      onChange={(e) => setPromptValue(e.target.value)}
+                      placeholder={authLogin.prompt.p.placeholder ?? ""}
+                      spellCheck={false}
+                      autoComplete="off"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") void submitPrompt();
+                      }}
+                    />
+                    <button
+                      className="btn btn-send"
+                      data-testid={`${testPrefix}-oauth-prompt-submit`}
+                      onClick={() => void submitPrompt()}
+                    >
+                      {t("auth.loginSubmit")}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : null}
+          {authLogin.phase === "done" && authLogin.done ? (
+            <div
+              className="panel-note"
+              data-testid={`${testPrefix}-oauth-done`}
+            >
+              {authLogin.done.ok
+                ? t("auth.loginDone", { provider: authLogin.provider ?? providerId })
+                : authLogin.done.cancelled
+                  ? t("auth.loginCancelled")
+                  : (authLogin.done.error ?? t("provider.writeFailed"))}
+            </div>
+          ) : null}
           <div className="provider-account-command">
             <span className="mono" data-testid={`${testPrefix}-account-command`}>
               /login {providerId}

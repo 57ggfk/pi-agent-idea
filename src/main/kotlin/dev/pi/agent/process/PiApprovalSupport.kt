@@ -71,6 +71,16 @@ object PiApprovalSupport {
 
     fun policyFile(): File = File(agentDir(), POLICY_FILE_NAME)
 
+    /**
+     * IDE 语言（`zh` / `en`），供 pi-approve 生成对话框文案。
+     *
+     * 扩展是在 pi 进程里跑的，读不到 IDE 的 Locale，也不会自己判断语言；
+     * 插件在启动 pi 时用 `PI_APPROVE_LANG` 告诉它——不这么做，中文 IDE 里
+     * 的审批标题永远是英文 `Allow bash?`。判定口径与前端一致
+     * （BridgeService 的 `env.locale` 也用 `Locale.getDefault().language`）。
+     */
+    fun languageTag(): String = if (java.util.Locale.getDefault().language == "zh") "zh" else "en"
+
     /** Current policy as JSON; defaults when the file is missing or invalid. */
     fun policy(): JsonObject {
         val file = policyFile()

@@ -51,12 +51,40 @@ export default function AuthPanel({ api }: { api: ReturnType<typeof manageApi> }
   const [openNote, setOpenNote] = useState<string | null>(null);
   /** null = no editor; "new" = adding; otherwise = the provider being edited. */
   const [formMode, setFormMode] = useState<"new" | string | null>(null);
+
+  /**
+   * spec 014 real-machine finding: a running browser login pins the form
+   * (single-login policy disables the picker/start), so users read "collapse"
+   * as the way out — and re-expanding felt stuck. Every explicit close or
+   * switch of the form therefore cancels the running login; tab switches keep
+   * it alive (US4), only form dismissal cancels.
+   */
+  const switchForm = (next: "new" | string | null) => {
+    if (next !== formMode && usePiStore.getState().authLogin.phase === "running") {
+      void api.authLoginCancel().catch(() => undefined);
+    }
+    setFormMode(next);
+  };
   /** 013 US4: pretty JSON blocks wrap (pre-wrap) instead of scrolling sideways. */
   const [wrapDetail, setWrapDetail] = useState(false);
 
   const refresh = useCallback(async () => {
     setOverview(await api.authOverview().catch(() => null));
   }, [api]);
+
+  const reloadModels = usePiStore((s) => s.reloadModels);
+  /**
+   * Spec 016: a saved/removed credential must reach the chat tab's model
+   * picker. pi re-reads auth.json by itself; models.json needs the bundled
+   * extension, which the bridge triggers. [staleModels] only appears when that
+   * refresh was unavailable — the credential itself is already written.
+   */
+  const [staleModels, setStaleModels] = useState(false);
+  const afterCredentialChange = useCallback(async () => {
+    await refresh();
+    const refreshed = await reloadModels();
+    setStaleModels(!refreshed);
+  }, [refresh, reloadModels]);
 
   useEffect(() => {
     void refresh();
@@ -115,7 +143,7 @@ export default function AuthPanel({ api }: { api: ReturnType<typeof manageApi> }
           try {
             const res = await api.authDelete({ provider });
             if (!res.ok) setOpenNote(res.error ?? null);
-            await refresh();
+            await afterCredentialChange();
           } catch (e) {
             setOpenNote((e as Error).message);
           }
@@ -149,7 +177,7 @@ export default function AuthPanel({ api }: { api: ReturnType<typeof manageApi> }
         </div>
       ) : null}
       <div className="panel-toolbar">
-        <button className="btn" data-testid="auth-add" onClick={() => setFormMode(formMode === "new" ? null : "new")}>
+        <button className="btn" data-testid="auth-add" onClick={() => switchForm(formMode === "new" ? null : "new")}>
           {formMode === "new" ? t("provider.addClose") : t("provider.add")}
         </button>
         <button className="btn" data-testid="auth-refresh" onClick={() => void refresh()}>
@@ -157,12 +185,19 @@ export default function AuthPanel({ api }: { api: ReturnType<typeof manageApi> }
         </button>
         <span className="panel-row-sub">{t("auth.checkHint")}</span>
       </div>
+      {/* Spec 016: the credential is saved either way; only the in-process
+          refresh was missing, so this is an instruction, not an error. */}
+      {staleModels ? (
+        <div className="panel-note" data-testid="models-reload-note">
+          {t("auth.modelsStale")}
+        </div>
+      ) : null}
       {formMode === "new" ? (
         <ProviderForm
           api={api}
           defaultCustom={false}
           testPrefix="provider-add"
-          onDone={() => void refresh()}
+          onDone={() => void afterCredentialChange()}
         />
       ) : null}
       {providers.length === 0 ? (
@@ -206,7 +241,7 @@ export default function AuthPanel({ api }: { api: ReturnType<typeof manageApi> }
                 <button
                   className="btn"
                   data-testid={`provider-setkey-${p}`}
-                  onClick={() => setFormMode(formMode === p ? null : p)}
+                  onClick={() => switchForm(formMode === p ? null : p)}
                 >
                   {formMode === p ? t("provider.editClose") : t("provider.edit")}
                 </button>
@@ -238,7 +273,7 @@ export default function AuthPanel({ api }: { api: ReturnType<typeof manageApi> }
                 fixedProvider={p}
                 defaultCustom={!withCreds.has(p)}
                 testPrefix={`provider-edit-${p}`}
-                onDone={() => void refresh()}
+                onDone={() => void afterCredentialChange()}
               />
             ) : null}
             {expanded === p ? (

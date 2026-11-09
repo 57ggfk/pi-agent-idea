@@ -204,3 +204,30 @@ describe("MockBridge sessions.search (spec 006 US3)", () => {
     expect(resp.scanned).toBe(0);
   });
 });
+
+describe("MockBridge model catalog reload (spec 017)", () => {
+  it("brings a freshly credentialled provider into the reloaded catalog", async () => {
+    const bridge = new MockBridge();
+    const before = await bridge.request<{ models: Array<{ provider: string }> }>("models.reload");
+
+    await bridge.request("manage.authSet", { provider: "deepseek", key: "not-a-real-key" });
+    const after = await bridge.request<{ models: Array<{ provider: string }>; refreshed: boolean }>(
+      "models.reload",
+    );
+
+    expect(after.refreshed).toBe(true);
+    expect(after.models.some((m) => m.provider === "deepseek")).toBe(true);
+    expect(after.models.length).toBe(before.models.length + 1);
+    expect(bridge.modelsReloads).toBe(2);
+  });
+
+  it("drops that provider again when the credential is deleted", async () => {
+    const bridge = new MockBridge();
+    await bridge.request("manage.authSet", { provider: "deepseek", key: "not-a-real-key" });
+    await bridge.request("manage.authDelete", { provider: "deepseek" });
+
+    const after = await bridge.request<{ models: Array<{ provider: string }> }>("models.reload");
+
+    expect(after.models.some((m) => m.provider === "deepseek")).toBe(false);
+  });
+});

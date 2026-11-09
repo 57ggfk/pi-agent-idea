@@ -554,6 +554,27 @@ button {
   border-top: 1px solid var(--border);
   padding: 8px 10px;
   background: var(--bg-secondary);
+  /* Anchors the drag-and-drop hint (spec 016) over the whole composer. */
+  position: relative;
+}
+
+/* Shown while a file/folder drag hovers the composer: says what releasing
+   will do, and makes the drop target visible at all. Pointer events stay off
+   so the drag itself (and the textarea under it) is untouched. */
+.composer-drop {
+  position: absolute;
+  inset: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px dashed var(--accent);
+  border-radius: 8px;
+  background: var(--bg-input);
+  color: var(--accent);
+  font-size: 12px;
+  pointer-events: none;
+  z-index: 5;
 }
 
 .queue-note {
@@ -862,6 +883,24 @@ button {
   color: var(--text-secondary);
   cursor: pointer;
   padding: 0 2px;
+}
+
+/* File/directory reference chips (spec 015): same layout as image chips, a
+   folder/file icon, and an ellipsised project-relative path. */
+.ref-chip {
+  color: var(--text-secondary);
+  max-width: 100%;
+}
+
+.ref-chip .ic-sm {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.ref-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .btn-icon {
@@ -1605,8 +1644,8 @@ button {
   color: var(--text-secondary);
 }
 
-/* /login-style account method: this iteration shows terminal guidance only;
-   the interactive OAuth flow replaces this card in a later version. */
+/* /login-style account method (spec 014): the in-panel browser OAuth flow is
+   primary; the /login command row below it stays as the fallback path. */
 .provider-account-guide {
   display: flex;
   flex-direction: column;
@@ -1620,6 +1659,31 @@ button {
 .provider-guide-title {
   font-size: 12px;
   font-weight: 600;
+}
+
+.provider-oauth-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.provider-oauth-url,
+.provider-oauth-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.provider-oauth-url a,
+.provider-oauth-prompt a {
+  word-break: break-all;
+}
+
+.provider-oauth-select {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .provider-account-command {
@@ -2974,6 +3038,18 @@ button {
   color: var(--text);
 }
 
+/* spec 014 real-machine feedback: a borderless transparent button gives no
+   native disabled affordance — without this, "no account login for this
+   provider" is indistinguishable from "click me". */
+.segment:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.segment:disabled:hover {
+  color: var(--text-secondary);
+}
+
 .segment-active {
   background: var(--bg-elevated);
   color: var(--text);
@@ -3047,6 +3123,78 @@ button {
   margin-bottom: 6px;
   color: var(--warning);
   font-size: var(--fs-xs);
+}
+
+/* select：选项按钮换行排布，长选项不挤压卡片 */
+.approval-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 2px 0 8px;
+}
+
+.approval-option {
+  text-align: left;
+  white-space: normal;
+}
+
+/* 多选：扩展把编号写在标题里时的可点条目，点中即写回编号 */
+.approval-option-on {
+  border-color: var(--accent);
+  background: var(--accent-soft, var(--surface-hover));
+  color: var(--text);
+}
+
+.approval-pick-n {
+  display: inline-block;
+  min-width: 14px;
+  margin-right: 5px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.approval-option-on .approval-pick-n {
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.approval-hint {
+  margin: -2px 0 8px;
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
+}
+
+/* input / editor：与输入框同源的字号与边框，保持卡片内一致性 */
+.approval-input,
+.approval-editor {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 2px 0 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-input);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+}
+
+.approval-input:focus,
+.approval-editor:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.approval-editor {
+  min-height: 76px;
+  resize: vertical;
+  font-family: var(--font-mono);
+  line-height: 1.45;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .approval-actions {
@@ -4062,6 +4210,27 @@ button {
 .tab-tool-btn:hover {
   background: var(--bg-subtle);
   color: var(--text);
+}
+
+/* Top-bar tool buttons: bare icons on a narrow tool window, icon + short
+   label once there is room (same .btn-lbl idiom as the composer). The scoped
+   hide + scoped show keeps this threshold independent of the global 480px
+   .btn-lbl breakpoint, which is tuned for the composer row. */
+.tab-tools .btn-lbl {
+  display: none;
+  white-space: nowrap;
+}
+
+@container (min-width: 560px) {
+  .tab-tools .btn-lbl {
+    display: inline;
+  }
+
+  .tab-tools .tab-tool-btn {
+    width: auto;
+    padding: 0 8px;
+    gap: 6px;
+  }
 }
 
 /* User-message outline (US1) ------------------------------------------------ */

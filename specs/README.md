@@ -255,3 +255,16 @@ Phase 7 收尾：i18n / 全基线 / MANUAL_TEST / 真机目视
 - 独占态一律用 `toHaveCount(0)` 断言「不渲染」，不用 `not.toBeVisible()`。
 - `setup.spec.ts` 7 条按新语义改写后全绿，其余默认 `needsSetup=false` 的 e2e 零回归；基线变化逐条注明「非回归」。
 - 凭据明文在 DOM / 日志 / bridge 响应 / 测试快照中零出现；图片复制与另存失败必须可见。
+
+---
+
+# 0.5.6 批次（2026-11-09 追加）
+
+> 版本分支：`release/0.5.6`（进行中，未打 tag）。016（拖拽）在本分支直接实现；017（模型重载）在临时分支 `feature/016-models-reload` 上开发后合回本分支，spec 编号顺延为 **017**（目录 `specs/017-models-reload`）以避免与 016 撞号；临时分支名保持原样，历史记录里的 `016-models-reload` 指的就是 017。
+
+| Feature | Tasks | 内容 | 状态 |
+|---|---|---|---|
+| [016 从 IDE 拖文件 / 目录进输入框](./016-ide-drag-drop/spec.md) | 15 | 从项目树 / 编辑器标签 / 系统文件管理器拖文件或目录进输入框 → 可删的引用 chip（发送只带 `@相对路径`）；真路径由 CEF `CefDragHandler.onDragEnter` 取得（CEF 是唯一能看到磁盘绝对路径的地方），前端先问 IDE（`files.takeDrop`）拿不到才退回 DataTransfer；一次性缓冲 + 60s TTL；拖纯文本改为插到光标，不再生成 `fun`/`main()` 假引用 | 已实现，待真机 |
+| [017 新认证后模型列表自动生效](./017-models-reload/spec.md) | 12 | 认证保存 / OAuth 完成 / 删除凭据后即时重读模型目录；models.json 新增 provider 由扩展在 pi 进程内 refresh；选择器打开时按 15s TTL 兜底；内部命令不进斜杠补全 | 已实现，待真机 |
+
+**017 关键实证**（2026-11-09，pi 1.5.0，临时 `PI_CODING_AGENT_DIR` 隔离）：pi 对 **auth.json 会自动重读**（空 auth 0 个模型 → 写入 deepseek key 后立即 2 个），对 **models.json 不会**（新增自定义 provider 后仍 0 个；扩展内 `ctx.modelRegistry.refresh()` 后变 1 个且 `set_model` 成功）。因此本 feature 不需要重启 pi 进程。
