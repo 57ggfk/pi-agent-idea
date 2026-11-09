@@ -216,6 +216,17 @@ export const zh: Dict = {
   "sessions.exportTitle": "导出为 HTML",
   "sessions.deleteTitle": "删除此会话",
 
+  // -- approval card（pi 的 extension_ui_request 对话框）---------------------------
+  "approval.titleFallback": "需要你的确认",
+  "approval.allow": "允许",
+  "approval.deny": "拒绝",
+  "approval.submit": "确定",
+  "approval.cancel": "取消",
+  "approval.queued": "另有 {{n}} 个等待处理",
+  "approval.inputPlaceholder": "输入内容…",
+  "approval.editorPlaceholder": "编辑内容…",
+  "approval.multiHint": "点条目可多选，也能在框里补充自己的答案；提交时按编号原样回传。",
+
   // -- confirmation dialogs (store-driven) ----------------------------------------
   "confirm.newSession.title": "新建会话？",
   "confirm.newSession.titleStreaming": "pi 正在回答时新建会话？",

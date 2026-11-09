@@ -217,6 +217,17 @@ export const en = {
   "sessions.exportTitle": "Export as HTML",
   "sessions.deleteTitle": "Delete this session",
 
+  // -- approval card (pi's extension_ui_request dialogs) --------------------------
+  "approval.titleFallback": "Confirmation needed",
+  "approval.allow": "Allow",
+  "approval.deny": "Deny",
+  "approval.submit": "Submit",
+  "approval.cancel": "Cancel",
+  "approval.queued": "{{n}} more waiting",
+  "approval.inputPlaceholder": "Type a value…",
+  "approval.editorPlaceholder": "Edit the text…",
+  "approval.multiHint": "Click entries to pick several, or add your own text — the numbers are sent back as typed.",
+
   // -- confirmation dialogs (store-driven) ----------------------------------------
   "confirm.newSession.title": "Start a new session?",
   "confirm.newSession.titleStreaming": "Start a new session while pi is answering?",

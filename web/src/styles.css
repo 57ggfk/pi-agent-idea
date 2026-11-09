@@ -3125,6 +3125,78 @@ button {
   font-size: var(--fs-xs);
 }
 
+/* select：选项按钮换行排布，长选项不挤压卡片 */
+.approval-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 2px 0 8px;
+}
+
+.approval-option {
+  text-align: left;
+  white-space: normal;
+}
+
+/* 多选：扩展把编号写在标题里时的可点条目，点中即写回编号 */
+.approval-option-on {
+  border-color: var(--accent);
+  background: var(--accent-soft, var(--surface-hover));
+  color: var(--text);
+}
+
+.approval-pick-n {
+  display: inline-block;
+  min-width: 14px;
+  margin-right: 5px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.approval-option-on .approval-pick-n {
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.approval-hint {
+  margin: -2px 0 8px;
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
+}
+
+/* input / editor：与输入框同源的字号与边框，保持卡片内一致性 */
+.approval-input,
+.approval-editor {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 2px 0 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-input);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+}
+
+.approval-input:focus,
+.approval-editor:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.approval-editor {
+  min-height: 76px;
+  resize: vertical;
+  font-family: var(--font-mono);
+  line-height: 1.45;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .approval-actions {
   display: flex;
   gap: 8px;

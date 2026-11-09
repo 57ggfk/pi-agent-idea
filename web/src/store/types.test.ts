@@ -387,6 +387,30 @@ describe("approvalFromEvent", () => {
     expect(a!.options).toEqual(["Allow", "Block"]);
   });
 
+  it("keeps the input placeholder and the editor prefill", () => {
+    const input = approvalFromEvent({
+      type: "extension_ui_request",
+      id: "ui-3",
+      method: "input",
+      title: "Enter a value",
+      placeholder: "type something...",
+    });
+    expect(input!.method).toBe("input");
+    expect(input!.placeholder).toBe("type something...");
+    expect(input!.prefill).toBeUndefined();
+
+    const editor = approvalFromEvent({
+      type: "extension_ui_request",
+      id: "ui-4",
+      method: "editor",
+      title: "Edit some text",
+      prefill: "Line 1\nLine 2",
+    });
+    expect(editor!.method).toBe("editor");
+    expect(editor!.prefill).toBe("Line 1\nLine 2");
+    expect(editor!.placeholder).toBeUndefined();
+  });
+
   it("returns null for fire-and-forget methods", () => {
     expect(approvalFromEvent({ type: "extension_ui_request", id: "n1", method: "notify", message: "hi" })).toBeNull();
     expect(approvalFromEvent({ type: "extension_ui_request", id: "n2", method: "setStatus" })).toBeNull();

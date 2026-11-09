@@ -24,6 +24,17 @@ import fs from "node:fs";
 
 const CONFIRM_TIMEOUT_MS = 5 * 60 * 1000;
 
+/**
+ * Dialog copy. The extension runs inside pi, which has no idea what language
+ * the IDE is in, so the plugin passes it through PI_APPROVE_LANG. The tool name
+ * itself stays verbatim — it is pi's identifier, not prose.
+ */
+const LANG = String(process.env.PI_APPROVE_LANG || "en").toLowerCase().startsWith("zh") ? "zh" : "en";
+const CONFIRM_TITLE = {
+  en: (tool) => `Allow ${tool}?`,
+  zh: (tool) => `允许执行 ${tool}？`,
+};
+
 function readPolicy() {
   const fallback = { mode: "yolo", allow: [] };
   const path = process.env.PI_APPROVE_POLICY;
@@ -68,7 +79,7 @@ export default function (pi) {
       return { block: true, reason: `${event.toolName} blocked: no UI to confirm` };
     }
     const approved = await ctx.ui.confirm(
-      `Allow ${event.toolName}?`,
+      CONFIRM_TITLE[LANG](event.toolName),
       summarizeInput(event.input),
       { timeout: CONFIRM_TIMEOUT_MS },
     );

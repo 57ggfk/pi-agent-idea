@@ -520,7 +520,12 @@ interface PiStore {
   sendEdited(text: string): Promise<void>;
   openFile(path: string, line: number): Promise<void>;
   showFileDiff(path: string): Promise<void>;
-  respondApproval(id: string, confirmed: boolean): Promise<void>;
+  /**
+   * Answers a pending extension_ui_request: `confirm` takes a boolean,
+   * `select`/`input`/`editor` take the chosen string, `null` cancels (pi
+   * receives `undefined`/`false`).
+   */
+  respondApproval(id: string, answer: boolean | string | null): Promise<void>;
   setApprovalMode(mode: "ask" | "yolo"): Promise<void>;
   setAutoCompaction(enabled: boolean): Promise<void>;
   setAutoRetry(enabled: boolean): Promise<void>;
@@ -2131,16 +2136,22 @@ export const usePiStore = create<PiStore>((set, get) => {
     /**
      * Answers a pending extension_ui_request. The run is blocked until the
      * response arrives, so the card is removed optimistically.
+     *
+     * `confirm` is a yes/no; `select`/`input`/`editor` answer with the option
+     * or the typed text. `null` is the shared cancellation reply — the only
+     * way out of a dialog that is not a confirm (see pi's rpc-extension-ui).
      */
-    async respondApproval(id: string, confirmed: boolean) {
+    async respondApproval(id: string, answer: boolean | string | null) {
       if (!bridge) return;
       const target = get().approvals.find((a) => a.id === id);
       set({ approvals: get().approvals.filter((a) => a.id !== id) });
       if (!target) return;
       const command: Record<string, unknown> =
         target.method === "confirm"
-          ? { type: "extension_ui_response", id, confirmed }
-          : { type: "extension_ui_response", id, cancelled: true };
+          ? { type: "extension_ui_response", id, confirmed: answer === true }
+          : typeof answer === "string"
+            ? { type: "extension_ui_response", id, value: answer }
+            : { type: "extension_ui_response", id, cancelled: true };
       try {
         await rpc(bridge, command);
       } catch {

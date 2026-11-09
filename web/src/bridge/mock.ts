@@ -161,12 +161,19 @@ export class MockBridge implements Bridge {
     typeof location !== "undefined" && new URLSearchParams(location.search).has("approval")
       ? "ask"
       : "yolo";
-  /** Resolver of the currently pending approval dialog, if any. */
-  private approvalResolve: ((confirmed: boolean) => void) | null = null;
+  /** Resolver of the currently pending approval/dialog request, if any. */
+  private approvalResolve: ((answer: boolean | string | null) => void) | null = null;
   // Approval gating for the bash tool call, enabled via ?approval=1 so the
   // existing specs keep the ungated timing.
   private readonly approvalScenario =
     typeof location !== "undefined" && new URLSearchParams(location.search).has("approval");
+  /**
+   * `?dialog=select|input|editor` — a run that asks a non-confirm question, the
+   * way a pi extension does through ctx.ui.select/input/editor. The answer is
+   * echoed into the transcript so a spec can assert it made the round trip.
+   */
+  private readonly dialogScenario =
+    typeof location !== "undefined" ? new URLSearchParams(location.search).get("dialog") : null;
   // Transcript of the current branch. Kept so get_messages / fork behave like
   // pi 1.5.0 (measured, see specs/007-message-fork/fork-semantics.json): a fork
   // branches *before* the chosen user entry, so that entry and everything after
@@ -1542,7 +1549,14 @@ export class MockBridge implements Bridge {
       case "extension_ui_response": {
         const resolve = this.approvalResolve;
         this.approvalResolve = null;
-        resolve?.(command["confirmed"] === true);
+        // confirm 回布尔，select/input/editor 回字符串，cancelled 表示放弃。
+        const answer =
+          typeof command["value"] === "string"
+            ? command["value"]
+            : command["cancelled"] === true
+              ? null
+              : command["confirmed"] === true;
+        resolve?.(answer);
         return { success: true };
       }
       case "set_auto_compaction":
@@ -1691,11 +1705,26 @@ export class MockBridge implements Bridge {
    */
   private requestApproval(id: string, title: string, message: string): Promise<boolean> {
     return new Promise((resolve) => {
-      this.approvalResolve = (confirmed) => {
+      this.approvalResolve = (answer) => {
         this.approvalResolve = null;
-        resolve(confirmed);
+        resolve(answer === true);
       };
       this.emit("pi", { type: "extension_ui_request", id, method: "confirm", title, message, timeout: 300000 });
+    });
+  }
+
+  /**
+   * Emits a select/input/editor dialog and waits for the answer, exactly like
+   * an extension calling ctx.ui.select/input/editor over RPC. `null` is the
+   * cancellation reply (pi resolves the extension's promise with undefined).
+   */
+  private requestDialog(id: string, method: string, title: string, extra: Record<string, unknown>): Promise<string | null> {
+    return new Promise((resolve) => {
+      this.approvalResolve = (answer) => {
+        this.approvalResolve = null;
+        resolve(typeof answer === "string" ? answer : null);
+      };
+      this.emit("pi", { type: "extension_ui_request", id, method, title, timeout: 300000, ...extra });
     });
   }
 
@@ -1860,6 +1889,45 @@ export class MockBridge implements Bridge {
       isError: false,
       durationMs: 8,
     });
+
+    // ?dialog=select|input|editor|multi —— 扩展在工具之间问用户（ctx.ui.select 等）。
+    // 答案回显进对话，spec 才能断言这一次 round-trip 真的把值送回了 pi。
+    // multi 复现 rpiv-ask-user-question 在 RPC 下的降级形态：编号选项写在
+    // input 的标题里，占位符提示 "1,3; custom answer"。
+    if (!this.aborted && this.dialogScenario) {
+      const scenario = this.dialogScenario;
+      const multiTitle = [
+        "你想先盖哪几个？（可多选）",
+        "",
+        "1. Flyway 迁移能干净跑通 — 从 V1 跑到 V2",
+        "2. 唯一索引冲突 → 业务异常 — 真库抛 DuplicateKeyException",
+        "3. 分页 + 排序 SQL 正确性 — 验证 count 与 order by",
+        "",
+        'Enter the numbers of all that apply, comma-separated (e.g. "1,3").',
+      ].join("\n");
+      const method = scenario === "multi" ? "input" : scenario;
+      const title = scenario === "multi" ? multiTitle : `mock ${scenario}`;
+      const extra: Record<string, unknown> =
+        scenario === "select"
+          ? { options: ["Fast", "Balanced", "Thorough"] }
+          : scenario === "input"
+            ? { placeholder: "type a name" }
+            : scenario === "multi"
+              ? { placeholder: "1,3; custom answer" }
+              : { prefill: "line one\nline two" };
+      const answer = await this.requestDialog("ui-dialog-1", method, title, extra);
+      if (this.aborted) return;
+      const text = `dialog answer: ${answer ?? "(cancelled)"}`;
+      const dialogMessage = {
+        role: "assistant",
+        content: [{ type: "text", text }],
+        timestamp: Date.now(),
+      };
+      await sleep(30);
+      emit({ type: "message_start", message: dialogMessage });
+      await sleep(30);
+      emit({ type: "message_end", message: dialogMessage });
+    }
 
     // pi injects one queued steering message at the next turn boundary; the
     // mock reproduces that so the queue bar can be watched draining (US5).

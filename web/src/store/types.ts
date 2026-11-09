@@ -131,6 +131,10 @@ export interface PendingApproval {
   title: string;
   message: string;
   options?: string[];
+  /** `input` only: pi's placeholder text for the free-form field. */
+  placeholder?: string;
+  /** `editor` only: multiline content pi wants edited. */
+  prefill?: string;
   timeoutMs?: number;
   receivedAt: number;
 }
@@ -154,6 +158,8 @@ export function approvalFromEvent(event: AnyRecord): PendingApproval | null {
     title: String(event["title"] ?? ""),
     message: String(event["message"] ?? ""),
     options: Array.isArray(event["options"]) ? event["options"].map(String) : undefined,
+    placeholder: typeof event["placeholder"] === "string" ? event["placeholder"] : undefined,
+    prefill: typeof event["prefill"] === "string" ? event["prefill"] : undefined,
     timeoutMs: typeof event["timeout"] === "number" ? event["timeout"] : undefined,
     receivedAt: Date.now(),
   };

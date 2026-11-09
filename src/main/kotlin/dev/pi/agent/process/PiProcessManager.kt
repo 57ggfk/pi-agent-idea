@@ -135,6 +135,8 @@ class PiProcessManager(private val project: Project) : Disposable {    private v
             addAll(PiLocator.loginShellPath())
         })
         pb.environment()["PI_APPROVE_POLICY"] = PiApprovalSupport.policyFile().absolutePath
+        // pi-approve 在 pi 进程里跑，只有插件知道 IDE 是中文还是英文。
+        pb.environment()["PI_APPROVE_LANG"] = PiApprovalSupport.languageTag()
 
         val process: Process = try {
             pb.start()
