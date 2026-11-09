@@ -58,6 +58,12 @@ import { i18n, initI18n, isRegistered } from "../i18n";
 /** Shorthand for store-side (non-React) copy; English falls out of the base bundle. */
 const t = i18n.t.bind(i18n);
 
+/**
+ * Prefix reserved for commands registered by the plugin's own pi extensions
+ * (approval, model reload). They are plumbing, not user-facing slash commands.
+ */
+const INTERNAL_COMMAND_PREFIX = "pi-agent-";
+
 export type SendMode = "auto" | "steer" | "followUp";
 export type Tab = "chat" | "sessions" | "manage";
 
@@ -454,6 +460,13 @@ interface PiStore {
   setThinkingLevel(level: string): Promise<void>;
   compact(): Promise<void>;
   restartPi(): Promise<void>;
+  /**
+   * spec 016: re-read the model catalog after a credential or models.json
+   * change. pi refreshes auth.json by itself; models.json goes through the
+   * bundled pi-models extension, triggered by the bridge. Returns false when
+   * the in-process refresh was unavailable (list is still re-read).
+   */
+  reloadModels(): Promise<boolean>;
   refreshStats(): Promise<void>;
   /** Retries `get_commands` — init() races the pi process and used to leave
    *  the slash menu permanently empty. */
@@ -1620,6 +1633,9 @@ export const usePiStore = create<PiStore>((set, get) => {
         set({ items: [], stats: undefined, aborted: false, isStreaming: false });
         await get().refreshStats();
         await get().replayMessages();
+        // A restarted process re-reads auth.json and models.json: the catalog
+        // may legitimately differ now (spec 016).
+        void get().reloadModels();
       } catch (e) {
         const item = emptyItem("system", [
           { kind: "text", text: t("error.restart.failed", { msg: (e as Error).message }), done: true },
@@ -1938,14 +1954,31 @@ export const usePiStore = create<PiStore>((set, get) => {
       });
     },
 
+    async reloadModels() {
+      if (!bridge) return false;
+      const b = bridge;
+      let refreshed = false;
+      // Goes through the source machine so a failure stays visible in the
+      // diagnostics panel instead of leaving the picker silently stale (003).
+      await get().loadSource("models", async () => {
+        const r = await b.request<{ models?: ModelInfo[]; refreshed?: boolean }>("models.reload");
+        refreshed = r.refreshed !== false;
+        if (Array.isArray(r.models)) set({ models: r.models });
+      });
+      return refreshed;
+    },
+
     async refreshCommands() {
       if (!bridge) return;
       const b = bridge;
       await get().loadSource("commands", async () => {
         const r = await rpc<{ commands: CommandInfo[] }>(b, { type: "get_commands" });
+        // spec 016: the plugin's own extension command is an implementation
+        // detail — it must not show up in slash completion.
+        const visible = (r.commands ?? []).filter((c) => !c.name.startsWith(INTERNAL_COMMAND_PREFIX));
         // Keep the previous list on an empty answer: pi has no commands until
         // its extensions are loaded, and wiping it would blink the menu empty.
-        if (r.commands?.length) set({ commands: r.commands });
+        if (visible.length) set({ commands: visible });
       });
     },
 

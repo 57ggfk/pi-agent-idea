@@ -274,6 +274,7 @@ export const zh: Dict = {
   "auth.notConfigured": "未配置",
   "auth.refresh": "刷新",
   "auth.checkHint": "每个 provider 执行一次 `pi auth check --no-refresh`。",
+  "auth.modelsStale": "凭据已保存，但运行中的 pi 未能重新加载模型列表——重启 pi 后即可看到新模型。",
   "auth.empty": "还没有已存凭据或自定义模型的 provider。",
   "auth.credentialsStored": "凭据已存储",
   "auth.customProvider": "自定义 provider（models.json）",

@@ -30,13 +30,15 @@ internal object PiStartArgs {
 
     /**
      * @param model last-used provider/model pair, restored on start
-     * @param approvalExtension absolute path of the tool-approval extension
+     * @param extensions absolute paths passed as repeated `--extension` flags;
+     *   the approval extension and the model-reload extension (spec 016) both
+     *   ride along, and an empty list means neither could be extracted
      * @param approveProjectFiles append `--approve`: honoured only for a start
      *   the user explicitly authorised in this session
      */
     fun build(
         model: Pair<String, String>?,
-        approvalExtension: String?,
+        extensions: List<String>,
         approveProjectFiles: Boolean,
     ): List<String> = buildList {
         add("--mode")
@@ -47,7 +49,7 @@ internal object PiStartArgs {
             add("--model")
             add(name)
         }
-        approvalExtension?.let {
+        extensions.forEach {
             add("--extension")
             add(it)
         }
@@ -108,13 +110,17 @@ class PiProcessManager(private val project: Project) : Disposable {    private v
         setState(PiConnectionState.Starting(installation))
         val cwd = project.basePath ?: System.getProperty("user.home")
 
-        // Tool-approval extension: extracted per start so upgrades propagate;
-        // its policy file is re-read per tool call, so toggling never needs a
-        // restart. When extraction fails pi simply runs without approval.
+        // Extensions: the approval extension and the model-reload extension are
+        // extracted per start so upgrades propagate. The approval policy file is
+        // re-read per tool call, so toggling never needs a restart. When
+        // extraction fails pi simply runs without that extension.
         val piArgs = PiStartArgs.build(
             // Resume the user's last model choice (persisted on set_model).
             model = PiModelPreferences.getInstance(project).get(),
-            approvalExtension = PiApprovalSupport.ensureExtensionInstalled()?.absolutePath,
+            extensions = listOfNotNull(
+                PiApprovalSupport.ensureExtensionInstalled()?.absolutePath,
+                PiModelReload.ensureExtensionInstalled()?.absolutePath,
+            ),
             approveProjectFiles = consumeApproveOnNextStart(),
         )
         val command = PiLocator.spawnCommand(installation.path, piArgs)

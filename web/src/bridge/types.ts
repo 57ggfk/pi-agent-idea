@@ -18,6 +18,7 @@ export type BridgeMethod =
   | "env"
   | "rpc.request"
   | "rpc.restart"
+  | "models.reload"
   | "sessions.list"
   | "sessions.search"
   | "sessions.delete"

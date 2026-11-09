@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { usePiStore } from "../store/store";
+import { MODELS_TTL_MS, needsRefresh } from "../store/sources";
 import { useT } from "../i18n/useT";
 import { buildPickerData, ensureVisible, type PickerModelData } from "../lib/modelGroups";
 import { tip } from "./Tooltip";
@@ -22,6 +23,8 @@ export default function ModelPicker() {
   const [query, setQuery] = useState("");
   const [highlight, setHighlight] = useState(0);
   const models = usePiStore((s) => s.models);
+  const modelsSource = usePiStore((s) => s.sources.models);
+  const reloadModels = usePiStore((s) => s.reloadModels);
   const model = usePiStore((s) => s.model);
   const setModel = usePiStore((s) => s.setModel);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -48,6 +51,17 @@ export default function ModelPicker() {
       requestAnimationFrame(() => inputRef.current?.focus());
     }
   }, [open]);
+
+  /**
+   * Spec 016: credentials changed outside the plugin (terminal `/login`, a
+   * hand-edited models.json) never pass through the auth panel, so the picker
+   * re-reads the catalog on open once the data is stale. Not awaited — the
+   * popover renders from whatever is already there and updates when it lands.
+   */
+  useEffect(() => {
+    if (!open) return;
+    if (needsRefresh(modelsSource, Date.now(), MODELS_TTL_MS)) void reloadModels();
+  }, [open, modelsSource, reloadModels]);
 
   // US1: locate the current model once per open — highlight it and scroll only
   // if it is out of view. `models` is a dependency so a list that arrives late

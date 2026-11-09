@@ -258,6 +258,20 @@ export class MockBridge implements Bridge {
   private authLoginActive = false;
   /** `?authwrite=fail` makes every credential write fail (012 T133). */
   private readonly authWriteKnob = query()?.get("authwrite");
+  /**
+   * Spec 016: providers credentialled during this session, each carrying one
+   * synthetic model. They model the real behaviour that a fresh credential
+   * adds models to the catalog.
+   */
+  private readonly dynamicModels: MockModel[] = [];
+  /**
+   * `?reload=strict` hides [dynamicModels] from plain `get_available_models`
+   * until `models.reload` runs — that is the models.json case, where only an
+   * in-process refresh makes the addition visible.
+   */
+  private readonly reloadStrict = query()?.get("reload") === "strict";
+  /** How many times the UI asked for a catalog reload (spec 016 assertions). */
+  modelsReloads = 0;
   /** Q8 default: the provider-setup skip persists in prefs. */
   private providerSetupSkipped = false;
 
@@ -455,6 +469,13 @@ export class MockBridge implements Bridge {
         })
         .filter((r) => r.path.length > 0);
       return { refs } as T;
+    }
+    if (method === "models.reload") {
+      // Spec 016: the real bridge asks pi to refresh the catalog and returns
+      // the new list in one round-trip. Here the "refresh" is what makes the
+      // strict fixtures visible.
+      this.modelsReloads += 1;
+      return { models: this.availableModels(true), refreshed: true } as T;
     }
     if (method === "ide.repaint") {
       return Promise.resolve({ ok: true } as T);
@@ -902,13 +923,27 @@ export class MockBridge implements Bridge {
         if (!p.provider || !p.key) return { ok: false, error: "missing provider or key" };
         // The mock keeps provider names only — it models the contract that the
         // key material never round-trips (012 T133).
-        if (!this.authProviders.includes(p.provider)) this.authProviders.push(p.provider);
+        if (!this.authProviders.includes(p.provider)) {
+          this.authProviders.push(p.provider);
+          // Spec 016: a fresh credential brings that provider's models along.
+          this.dynamicModels.push({
+            id: `${p.provider}-auto-1`,
+            name: `${p.provider} Auto`,
+            provider: p.provider,
+            contextWindow: 128000,
+            reasoning: false,
+          });
+        }
         return { ok: true, provider: p.provider };
       }
       case "manage.authDelete": {
         const p = (params ?? {}) as { provider?: string };
         if (p.provider === "mock-provider") return { ok: false, error: "the default credential cannot be removed (mock)" };
         this.authProviders = this.authProviders.filter((n) => n !== p.provider);
+        // Removing a credential takes that provider's models away (spec 016).
+        for (let i = this.dynamicModels.length - 1; i >= 0; i -= 1) {
+          if (this.dynamicModels[i].provider === p.provider) this.dynamicModels.splice(i, 1);
+        }
         return { ok: true, provider: p.provider ?? "" };
       }
       case "manage.authLoginStart": {
@@ -1312,6 +1347,22 @@ export class MockBridge implements Bridge {
     }
   }
 
+  /**
+   * The catalog the UI sees. [afterReload] marks a read made right after
+   * `models.reload`: under `?reload=strict` only then do providers credentialled
+   * in this session appear (models.json semantics); otherwise they show up as
+   * soon as the credential is stored (auth.json semantics — pi handles that on
+   * its own, no refresh needed).
+   */
+  private availableModels(afterReload: boolean): MockModel[] {
+    const merged = pickerModels(this.pickerKnob).slice();
+    if (this.reloadStrict && !afterReload) return merged;
+    for (const m of this.dynamicModels) {
+      if (!merged.some((e) => e.provider === m.provider && e.id === m.id)) merged.push(m);
+    }
+    return merged;
+  }
+
   private handleCommand(command: Record<string, unknown>): unknown {
     const type = command["type"] as string;
     switch (type) {
@@ -1330,7 +1381,7 @@ export class MockBridge implements Bridge {
           },
         };
       case "get_available_models":
-        return { success: true, data: { models: pickerModels(this.pickerKnob) } };
+        return { success: true, data: { models: this.availableModels(false) } };
       case "get_available_thinking_levels":
         return { success: true, data: { levels: ["off", "minimal", "low", "medium", "high"] } };
       case "get_session_stats":
@@ -1354,6 +1405,13 @@ export class MockBridge implements Bridge {
             commands: [
               { name: "skill:pdf-tools", description: "Extract text from PDFs", source: "skill" },
               { name: "fix-tests", description: "Fix failing tests", source: "prompt" },
+              // Spec 016: real bridged pi lists the plugin's own extension
+              // command; the store must filter it out of slash completion.
+              {
+                name: "pi-agent-reload-models",
+                description: "Reload the model catalog (Pi Agent plugin)",
+                source: "extension",
+              },
             ],
           },
         };
@@ -1470,7 +1528,7 @@ export class MockBridge implements Bridge {
         return { success: true };
       }
       case "set_model": {
-        const found = MOCK_MODELS.find(
+        const found = this.availableModels(false).find(
           (m) => m.provider === command["provider"] && m.id === command["modelId"],
         );
         if (!found) return { success: false, error: "Model not found" };
