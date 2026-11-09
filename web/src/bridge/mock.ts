@@ -387,6 +387,12 @@ export class MockBridge implements Bridge {
     } catch {
       // Storage unavailable (vitest, privacy settings): start empty.
     }
+    // e2e hook (spec 015): lets Playwright inject `ide` events exactly the way
+    // the real Kotlin side does (pushIdePrompt / pushIdeRefs).
+    if (typeof window !== "undefined") {
+      (window as unknown as { __piMockIde?: (data: unknown) => void }).__piMockIde = (data) =>
+        this.emit("ide", data);
+    }
   }
 
   async request<T>(method: string, params?: unknown): Promise<T> {
@@ -407,6 +413,23 @@ export class MockBridge implements Bridge {
           ? MOCK_FILES.filter((f) => f !== "src/store/store.ts")
           : MOCK_FILES;
       return { files } as T;
+    }
+    if (method === "files.relpath") {
+      // Spec 015: drop/paste references get resolved to project-relative
+      // paths. The mock has no filesystem to stat — paths under the mock
+      // project root are made relative, everything else comes back as-is so
+      // an absolute reference stays usable, and the dir flag passes through.
+      const p = params as { paths?: Array<{ path?: unknown; dir?: unknown }> } | undefined;
+      const refs = (p?.paths ?? [])
+        .map((i) => {
+          const raw = typeof i?.path === "string" ? i.path : "";
+          let path = raw;
+          if (raw === MOCK_PROJECT_PATH) path = "";
+          else if (raw.startsWith(`${MOCK_PROJECT_PATH}/`)) path = raw.slice(MOCK_PROJECT_PATH.length + 1);
+          return { path, dir: i?.dir === true || raw.endsWith("/") };
+        })
+        .filter((r) => r.path.length > 0);
+      return { refs } as T;
     }
     if (method === "ide.repaint") {
       return Promise.resolve({ ok: true } as T);

@@ -96,18 +96,21 @@ test("the searchable dropdown filters and pins the custom option (013 US1)", asy
 test("the method selector mirrors /login: account only where supported", async ({ page }) => {
   await page.getByTestId("auth-add").click();
 
-  // deepseek is API-key only → the account segment is disabled
+  // deepseek is API-key only → the account segment is disabled, and since the
+  // spec 014 real-machine pass the badge lives ON the disabled segment saying
+  // so (dimming alone read as "still a choice").
   await pickProvider(page, "provider-add", "deepseek");
   await expect(page.getByTestId("provider-add-method-account")).toBeDisabled();
+  await expect(page.getByTestId("provider-add-account-badge")).toContainText(/No OAuth|不支持/);
 
-  // anthropic supports OAuth → selecting it shows the account guidance card
+  // anthropic supports OAuth → selecting it shows the account guidance card;
+  // there is no "not wired" badge — the route exists since spec 014.
   await pickProvider(page, "provider-add", "anthropic");
   await page.getByTestId("provider-add-method-account").click();
   await expect(page.getByTestId("provider-add-account-guide")).toBeVisible();
   await expect(page.getByTestId("provider-add-account-command")).toHaveText("/login anthropic");
   await expect(page.getByTestId("provider-add-account-copy")).toBeVisible();
-  // 013 US2: the badge says so before the route is chosen, on the segment
-  await expect(page.getByTestId("provider-add-account-badge")).toContainText(/暂未接入|not wired yet/i);
+  await expect(page.getByTestId("provider-add-account-badge")).toHaveCount(0);
   // no key route while the account method is selected
   await expect(page.getByTestId("provider-add-key")).toHaveCount(0);
   await expect(page.getByTestId("provider-add-submit")).toHaveCount(0);

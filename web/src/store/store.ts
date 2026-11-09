@@ -70,12 +70,39 @@ export type Tab = "chat" | "sessions" | "manage";
  *             blockquote: the user is getting their own draft back
  */
 export type PromptMode = "replace" | "quote" | "edit" | "restore";
+
+/**
+ * A file/directory reference waiting to become a composer chip (spec 015):
+ * `path` is project-relative when the IDE could compute it, absolute otherwise
+ * (desktop drags land outside the project too). pi resolves `@path` refs at
+ * send time, so only the path travels — no listings, no file contents.
+ */
+export interface PendingRef {
+  path: string;
+  dir: boolean;
+}
+
+/** Normalizes the `files` payload of an `ide` event into pending refs. */
+function toPendingRefs(files: unknown): PendingRef[] {
+  if (!Array.isArray(files)) return [];
+  const out: PendingRef[] = [];
+  for (const f of files) {
+    const o = (f ?? {}) as { path?: unknown; dir?: unknown };
+    if (typeof o.path === "string" && o.path.length > 0) {
+      out.push({ path: o.path, dir: o.dir === true });
+    }
+  }
+  return out;
+}
+
 export interface PendingPrompt {
   text: string;
   id: number;
   mode: PromptMode;
   /** Images to drop into the composer chips (queue restore). */
   images?: Array<{ data: string; mimeType: string }>;
+  /** File/directory references to drop into the composer chips (spec 015). */
+  refs?: PendingRef[];
 }
 
 /** The user message an edit-and-resend will branch from. */
@@ -401,6 +428,8 @@ interface PiStore {
   init(): Promise<void>;
   send(text: string, mode: SendMode): Promise<void>;
   sendImages(text: string, images: Array<{ data: string; mimeType: string }>, mode: SendMode): Promise<void>;
+  /** Resolves dropped/copied paths to project-relative references (spec 015). */
+  resolveRefs(inputs: Array<{ path: string; dir: boolean }>): Promise<PendingRef[]>;
   abort(): Promise<void>;
   // -- message queue (spec 005) ---------------------------------------------
   /** Pulls the current queue snapshot (webview reload restore, FR-001). */
@@ -1155,9 +1184,34 @@ export const usePiStore = create<PiStore>((set, get) => {
         } else if (name === "ide") {
           // Editor action (e.g. "Explain with Pi"): pre-fill the composer and
           // switch to chat. The Composer consumes pendingPrompt and focuses.
-          const d = (data ?? {}) as { kind?: string; text?: string };
+          const d = (data ?? {}) as { kind?: string; text?: string; files?: unknown };
           if (d.kind === "prompt") {
-            set({ tab: "chat", pendingPrompt: { text: String(d.text ?? ""), id: ++promptSeq, mode: "replace" } });
+            const refs = toPendingRefs(d.files);
+            set({
+              tab: "chat",
+              pendingPrompt: {
+                text: String(d.text ?? ""),
+                id: ++promptSeq,
+                mode: "replace",
+                ...(refs.length > 0 ? { refs } : {}),
+              },
+            });
+          } else if (d.kind === "refs") {
+            // Spec 015: "Add Directory / Send File" push references, not
+            // prompt text. Successive right-clicks must accumulate (add two
+            // directories in a row keeps both), so merge into whatever
+            // pendingPrompt is already waiting instead of replacing it.
+            const incoming = toPendingRefs(d.files);
+            if (incoming.length === 0) return;
+            const cur = get().pendingPrompt;
+            if (cur) {
+              set({
+                tab: "chat",
+                pendingPrompt: { ...cur, refs: [...(cur.refs ?? []), ...incoming], id: ++promptSeq },
+              });
+            } else {
+              set({ tab: "chat", pendingPrompt: { text: "", id: ++promptSeq, mode: "replace", refs: incoming } });
+            }
           }
         } else if (name === "theme") {
           const t = (data ?? {}) as { theme?: unknown };
@@ -1342,6 +1396,28 @@ export const usePiStore = create<PiStore>((set, get) => {
         errorItem.done = true;
         errorItem.isError = true;
         set({ items: [...get().items, errorItem] });
+      }
+    },
+
+    async resolveRefs(inputs) {
+      if (inputs.length === 0) return [];
+      if (!bridge) return inputs;
+      try {
+        const res = await bridge.request<{ refs?: Array<{ path?: unknown; dir?: unknown }> }>("files.relpath", {
+          paths: inputs.map((i) => ({ path: i.path, dir: i.dir })),
+        });
+        const refs: PendingRef[] = [];
+        for (const r of res.refs ?? []) {
+          const o = (r ?? {}) as { path?: unknown; dir?: unknown };
+          if (typeof o.path === "string" && o.path.length > 0) {
+            refs.push({ path: o.path, dir: o.dir === true });
+          }
+        }
+        return refs.length > 0 ? refs : inputs;
+      } catch {
+        // An older IDE side without the RPC: the raw paths still work —
+        // pi reads absolute paths just fine. This is only cosmetic.
+        return inputs;
       }
     },
 

@@ -864,6 +864,24 @@ button {
   padding: 0 2px;
 }
 
+/* File/directory reference chips (spec 015): same layout as image chips, a
+   folder/file icon, and an ellipsised project-relative path. */
+.ref-chip {
+  color: var(--text-secondary);
+  max-width: 100%;
+}
+
+.ref-chip .ic-sm {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.ref-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .btn-icon {
   padding: 4px 6px;
 }

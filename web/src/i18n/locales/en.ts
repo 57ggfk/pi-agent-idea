@@ -68,6 +68,7 @@ export const en = {
   "composer.menu.footerHint": "Files from the project index",
   "composer.image.remove": "Remove {{name}}",
   "composer.image.fallback": "image",
+  "composer.ref.remove": "Remove the reference to {{path}}",
   "composer.editNote": "Editing message · sending replaces it and the reply below",
   "composer.editCancel": "Cancel editing",
 

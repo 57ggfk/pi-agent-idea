@@ -32,7 +32,15 @@ export function composerMaxHeight(appHeight: number): number {
 /** One clamp step, pure so the policy can be unit-tested without a DOM. */
 export function clampComposerHeight(contentHeight: number, appHeight: number): number {
   if (!Number.isFinite(contentHeight) || contentHeight <= 0) return MIN_COMPOSER_HEIGHT;
-  const cap = Math.max(composerMaxHeight(appHeight), MIN_COMPOSER_HEIGHT);
+  // An app height of 0 (or non-finite) means "not laid out yet" — the tool
+  // window is being activated, the chat tab just mounted. Clamping against it
+  // crushes the box to the single-line floor exactly when an IDE action has
+  // just injected a multi-line prompt ("调了没完全调"), so the absolute cap
+  // stands in until the ResizeObserver corrects it with the real height. A
+  // *small but real* height keeps its own cap — only the unknown case falls back.
+  const viewportCap =
+    Number.isFinite(appHeight) && appHeight > 0 ? composerMaxHeight(appHeight) : MAX_COMPOSER_CAP;
+  const cap = Math.max(viewportCap, MIN_COMPOSER_HEIGHT);
   return Math.min(Math.max(contentHeight, MIN_COMPOSER_HEIGHT), cap);
 }
 
@@ -43,10 +51,14 @@ export function clampComposerHeight(contentHeight: number, appHeight: number): n
  */
 export function autosize(ta: HTMLTextAreaElement, appEl?: HTMLElement | null): void {
   const app = appEl ?? (ta.closest(".app") as HTMLElement | null);
-  const cap = composerMaxHeight(app?.clientHeight ?? 0);
-  if (app) app.style.setProperty("--composer-max-h", `${cap}px`);
+  const appHeight = app?.clientHeight ?? 0;
+  const cap = composerMaxHeight(appHeight);
+  // Never publish a 0 cap to CSS: before the app has been laid out it would
+  // clamp the textarea's own max-height to 0 and hide the injected text even
+  // though the JS height below is correct.
+  if (app && cap > 0) app.style.setProperty("--composer-max-h", `${cap}px`);
   ta.style.height = "auto";
-  ta.style.height = `${clampComposerHeight(ta.scrollHeight, app?.clientHeight ?? 0)}px`;
+  ta.style.height = `${clampComposerHeight(ta.scrollHeight, appHeight)}px`;
 }
 
 /** After sending (FR-008): back to a single line immediately. */
