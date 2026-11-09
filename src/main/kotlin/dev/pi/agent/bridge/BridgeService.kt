@@ -56,6 +56,14 @@ class BridgeService(private val project: Project) : Disposable {
     /** Per-project event buffer: separate IDE windows never share a stream. */
     private val transport = BridgeTransport()
 
+    /**
+     * Paths of the file/folder drag that just entered this window's browser
+     * (spec 016). Filled by [PiAgentPanel][dev.pi.agent.toolwindow.PiAgentPanel]
+     * from CEF's drag handler, drained by `files.takeDrop` when the composer
+     * receives the HTML5 drop.
+     */
+    val ideFileDrop = IdeFileDrop()
+
     /** Mirror of pi's message queue (spec 005); per-project by construction. */
     private var messageQueueField: dev.pi.agent.queue.PiMessageQueue? = null
 
@@ -117,6 +125,7 @@ class BridgeService(private val project: Project) : Disposable {
                 "title.generate" -> titleGenerate(params)
                 "files.list" -> filesList(params)
                 "files.relpath" -> filesRelPath(params)
+                "files.takeDrop" -> filesTakeDrop()
                 "ide.repaint" -> repaintBrowser()
                 "ide.openFile" -> openFileInEditor(params)
                 "ide.showFileDiff" -> showFileDiff(params)
@@ -1007,35 +1016,39 @@ class BridgeService(private val project: Project) : Disposable {
      */
     private fun filesRelPath(params: JsonObject): JsonObject {
         val inputs = params["paths"] as? kotlinx.serialization.json.JsonArray ?: kotlinx.serialization.json.JsonArray(emptyList())
-        val root = project.basePath?.let { runCatching { java.nio.file.Path.of(it) }.getOrNull() }
-        val refs = buildJsonArray {
-            for (item in inputs) {
-                val obj = item as? JsonObject ?: continue
-                val raw = (obj["path"] as? JsonPrimitive)?.content?.trim()?.trimEnd('/') ?: ""
-                if (raw.isEmpty()) continue
-                val hintDir = (obj["dir"] as? JsonPrimitive)?.booleanOrNull == true
-                val p = runCatching { java.nio.file.Path.of(raw) }.getOrNull() ?: continue
-                // In-project absolute paths go relative; everything else (out-of-project
-                // files, already-relative text drops) stays as reported.
-                val relative = if (p.isAbsolute && root != null && p.startsWith(root)) {
-                    runCatching { root.relativize(p).toString().replace('\\', '/') }.getOrNull()
-                } else {
-                    null
-                }
-                val resolved = when {
-                    p.isAbsolute -> p
-                    root != null -> root.resolve(raw)
-                    else -> null
-                }
-                val isDir = resolved?.let { java.nio.file.Files.isDirectory(it) } ?: hintDir
-                add(buildJsonObject {
-                    put("path", relative?.takeIf { it.isNotEmpty() } ?: raw)
-                    put("dir", isDir)
-                })
-            }
+        val pairs = ArrayList<Pair<String, Boolean>>(inputs.size)
+        for (item in inputs) {
+            val obj = item as? JsonObject ?: continue
+            val raw = (obj["path"] as? JsonPrimitive)?.content ?: ""
+            val hintDir = (obj["dir"] as? JsonPrimitive)?.booleanOrNull == true
+            pairs.add(raw to hintDir)
         }
-        return buildJsonObject { put("refs", refs) }
+        return buildJsonObject { put("refs", refsJson(DropRefs.resolve(projectRoot(), pairs))) }
     }
+
+    /**
+     * Hands the composer the real paths of the file/folder drag that just
+     * entered the browser (spec 016). The HTML5 drop event only carries bare
+     * file names, so without this the chip would show `a.kt` with no directory
+     * — pi could not `@`-resolve it. One-shot: the buffer is drained here.
+     */
+    private fun filesTakeDrop(): JsonObject {
+        val paths = ideFileDrop.take()
+        val refs = if (paths.isEmpty()) emptyList() else DropRefs.resolve(projectRoot(), paths.map { it to false })
+        return buildJsonObject { put("refs", refsJson(refs)) }
+    }
+
+    private fun refsJson(refs: List<DropRef>) = buildJsonArray {
+        refs.forEach { ref ->
+            add(buildJsonObject {
+                put("path", ref.path)
+                put("dir", ref.dir)
+            })
+        }
+    }
+
+    private fun projectRoot(): java.nio.file.Path? =
+        project.basePath?.let { runCatching { java.nio.file.Path.of(it) }.getOrNull() }
 
     override fun dispose() {
         messageQueueField?.shutdown()

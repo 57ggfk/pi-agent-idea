@@ -6,12 +6,15 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.ui.jcef.JBCefApp
 import com.intellij.ui.jcef.JBCefBrowser
+import dev.pi.agent.bridge.BridgeService
 import dev.pi.agent.ui.LocalUiServer
 import dev.pi.agent.ui.PiUiErrorPanel
 import org.cef.CefSettings
 import org.cef.browser.CefBrowser
 import org.cef.browser.CefFrame
+import org.cef.callback.CefDragData
 import org.cef.handler.CefDisplayHandlerAdapter
+import org.cef.handler.CefDragHandler
 import org.cef.handler.CefLoadHandler
 import org.cef.handler.CefLoadHandlerAdapter
 import org.cef.handler.CefRequestHandlerAdapter
@@ -115,6 +118,33 @@ class PiAgentPanel(private val project: Project) : JPanel(), Disposable {
         }
     }
 
+    /**
+     * File/folder drags from the IDE (Project View, editor tab) or the OS
+     * deliver their real absolute paths only to CEF, never to the page: the
+     * HTML5 `drop` event is limited to bare file names for security. Recording
+     * them here is what lets the composer show a usable `@relative/path` chip
+     * (spec 016); the frontend drains the buffer via `files.takeDrop` when it
+     * receives the drop. Returning false keeps CEF's own drop handling.
+     */
+    private val dragHandler = object : CefDragHandler {
+        override fun onDragEnter(browser: CefBrowser?, dragData: CefDragData?, mask: Int): Boolean {
+            // Always record — an empty list is meaningful: this drag carries no
+            // files, so a file batch recorded moments ago must not leak into it.
+            val files = runCatching {
+                val names = java.util.Vector<String>()
+                if (dragData != null && dragData.isFile && dragData.getFileNames(names)) {
+                    names.toList()
+                } else {
+                    emptyList()
+                }
+            }.getOrElse { emptyList() }
+            if (disposed) return false
+            BridgeService.getInstance(project).ideFileDrop.record(files)
+            if (files.isNotEmpty()) log.debug("Pi Agent drop: ${files.size} path(s) entered the browser")
+            return false
+        }
+    }
+
     init {
         layout = BorderLayout()
         border = BorderFactory.createEmptyBorder()
@@ -167,6 +197,7 @@ class PiAgentPanel(private val project: Project) : JPanel(), Disposable {
             created.jbCefClient.addRequestHandler(linkHandler, created.cefBrowser)
             created.jbCefClient.addLoadHandler(loadHandler, created.cefBrowser)
             created.jbCefClient.addDisplayHandler(consoleHandler, created.cefBrowser)
+            created.jbCefClient.addDragHandler(dragHandler, created.cefBrowser)
             add(created.component, BorderLayout.CENTER)
             created.loadURL(url)
         } catch (t: Throwable) {
@@ -232,6 +263,7 @@ class PiAgentPanel(private val project: Project) : JPanel(), Disposable {
         runCatching { current.jbCefClient.removeRequestHandler(linkHandler, current.cefBrowser) }
         runCatching { current.jbCefClient.removeLoadHandler(loadHandler, current.cefBrowser) }
         runCatching { current.jbCefClient.removeDisplayHandler(consoleHandler, current.cefBrowser) }
+        runCatching { current.jbCefClient.removeDragHandler(dragHandler, current.cefBrowser) }
         runCatching { current.dispose() }
     }
 
