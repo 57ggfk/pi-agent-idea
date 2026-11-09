@@ -38,10 +38,12 @@ class ActionAvailabilityTest {
         disabled(PiFileAction.SendFile, TargetKind.Directory)
 
     @Test
-    fun `send file refuses binary files with a reason`() = disabled(PiFileAction.SendFile, TargetKind.Binary)
+    fun `binary files work now — the file travels as a reference, nothing is read (015)`() =
+        enabled(PiFileAction.SendFile, TargetKind.Binary)
 
     @Test
-    fun `send file refuses oversized files with a reason`() = disabled(PiFileAction.SendFile, TargetKind.Oversized)
+    fun `oversized files work now — the file travels as a reference, nothing is read (015)`() =
+        enabled(PiFileAction.SendFile, TargetKind.Oversized)
 
     @Test
     fun `send file refuses a missing target`() = disabled(PiFileAction.SendFile, TargetKind.None)

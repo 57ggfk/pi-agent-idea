@@ -29,6 +29,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
@@ -115,6 +116,7 @@ class BridgeService(private val project: Project) : Disposable {
                 "sessions.exportHtml" -> sessionsExportHtml(params)
                 "title.generate" -> titleGenerate(params)
                 "files.list" -> filesList(params)
+                "files.relpath" -> filesRelPath(params)
                 "ide.repaint" -> repaintBrowser()
                 "ide.openFile" -> openFileInEditor(params)
                 "ide.showFileDiff" -> showFileDiff(params)
@@ -944,9 +946,11 @@ class BridgeService(private val project: Project) : Disposable {
 
     /**
      * Injects a prompt drafted by IDE editor actions (Explain/Fix/Send with Pi)
-     * into the frontend composer. Pushed as an `ide` event.
+     * into the frontend composer. Pushed as an `ide` event. [refs] (spec 015)
+     * rides on the same event so the composer gets the reference chips and the
+     * prompt text atomically — two separate events would race the store.
      */
-    fun pushIdePrompt(text: String) {
+    fun pushIdePrompt(text: String, refs: List<Pair<String, Boolean>> = emptyList()) {
         // Ensure a pi process exists and the frontend gets state events.
         wirePiEvents()
         PiProcessManager.getInstance(project).client()
@@ -956,8 +960,81 @@ class BridgeService(private val project: Project) : Disposable {
             put("data", buildJsonObject {
                 put("kind", "prompt")
                 put("text", text)
+                if (refs.isNotEmpty()) {
+                    put("files", ideRefArray(refs))
+                }
             })
         })
+    }
+
+    /** `files` payload shared by pushIdePrompt / pushIdeRefs: (path, isDirectory). */
+    private fun ideRefArray(refs: List<Pair<String, Boolean>>) = buildJsonArray {
+        refs.forEach { (path, dir) ->
+            add(buildJsonObject {
+                put("path", path)
+                put("dir", dir)
+            })
+        }
+    }
+
+    /**
+     * Injects file/directory references (spec 015) drafted by the file-popup
+     * actions ("Add Directory / Send File to Pi") into the frontend composer,
+     * where they become removable chips. Only the path ever travels — pi
+     * resolves `@path` references itself at send time. Pushed as an `ide`
+     * event with kind "refs"; [refs] pairs are (project-relative path, isDirectory).
+     */
+    fun pushIdeRefs(refs: List<Pair<String, Boolean>>) {
+        if (refs.isEmpty()) return
+        wirePiEvents()
+        PiProcessManager.getInstance(project).client()
+        push(buildJsonObject {
+            put("t", "event")
+            put("name", "ide")
+            put("data", buildJsonObject {
+                put("kind", "refs")
+                put("files", ideRefArray(refs))
+            })
+        })
+    }
+
+    /**
+     * Resolves dropped / pasted paths (spec 015) for the composer chips:
+     * absolute paths inside the project become project-relative, and the
+     * directory flag is confirmed against the real filesystem so a dropped
+     * folder shows the folder icon. Paths outside the project come back
+     * unchanged — pi reads absolute paths too.
+     */
+    private fun filesRelPath(params: JsonObject): JsonObject {
+        val inputs = params["paths"] as? kotlinx.serialization.json.JsonArray ?: kotlinx.serialization.json.JsonArray(emptyList())
+        val root = project.basePath?.let { runCatching { java.nio.file.Path.of(it) }.getOrNull() }
+        val refs = buildJsonArray {
+            for (item in inputs) {
+                val obj = item as? JsonObject ?: continue
+                val raw = (obj["path"] as? JsonPrimitive)?.content?.trim()?.trimEnd('/') ?: ""
+                if (raw.isEmpty()) continue
+                val hintDir = (obj["dir"] as? JsonPrimitive)?.booleanOrNull == true
+                val p = runCatching { java.nio.file.Path.of(raw) }.getOrNull() ?: continue
+                // In-project absolute paths go relative; everything else (out-of-project
+                // files, already-relative text drops) stays as reported.
+                val relative = if (p.isAbsolute && root != null && p.startsWith(root)) {
+                    runCatching { root.relativize(p).toString().replace('\\', '/') }.getOrNull()
+                } else {
+                    null
+                }
+                val resolved = when {
+                    p.isAbsolute -> p
+                    root != null -> root.resolve(raw)
+                    else -> null
+                }
+                val isDir = resolved?.let { java.nio.file.Files.isDirectory(it) } ?: hintDir
+                add(buildJsonObject {
+                    put("path", relative?.takeIf { it.isNotEmpty() } ?: raw)
+                    put("dir", isDir)
+                })
+            }
+        }
+        return buildJsonObject { put("refs", refs) }
     }
 
     override fun dispose() {
