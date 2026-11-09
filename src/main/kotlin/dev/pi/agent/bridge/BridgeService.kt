@@ -146,7 +146,7 @@ class BridgeService(private val project: Project) : Disposable {
                 "approval.getPolicy" -> approvalGetPolicy()
                 "approval.setPolicy" -> approvalSetPolicy(params)
                 "rpc.restart" -> restartPi()
-                // spec 016: re-read the model catalog after a credential or
+                // spec 017: re-read the model catalog after a credential or
                 // models.json write, without restarting pi (session intact).
                 "models.reload" -> reloadModels()
                 "manage.env" -> dev.pi.agent.manage.PiManage.environment()
@@ -275,7 +275,7 @@ class BridgeService(private val project: Project) : Disposable {
     private val modelsReloadLock = Mutex()
 
     /**
-     * Re-reads pi's model catalog (spec 016).
+     * Re-reads pi's model catalog (spec 017).
      *
      * pi picks up auth.json on its own, but a models.json change only enters the
      * availability snapshot after `ModelRuntime.refresh()` — and RPC mode has no

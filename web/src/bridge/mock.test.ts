@@ -205,7 +205,7 @@ describe("MockBridge sessions.search (spec 006 US3)", () => {
   });
 });
 
-describe("MockBridge model catalog reload (spec 016)", () => {
+describe("MockBridge model catalog reload (spec 017)", () => {
   it("brings a freshly credentialled provider into the reloaded catalog", async () => {
     const bridge = new MockBridge();
     const before = await bridge.request<{ models: Array<{ provider: string }> }>("models.reload");

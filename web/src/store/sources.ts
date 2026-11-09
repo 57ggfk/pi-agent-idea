@@ -50,7 +50,7 @@ export const FILES_TTL_MS = 30_000;
 
 /**
  * The model picker re-reads the catalog on open once data is older than this
- * (spec 016). Short on purpose: an external /login or a hand-edited models.json
+ * (spec 017). Short on purpose: an external /login or a hand-edited models.json
  * must show up without the user knowing to restart anything.
  */
 export const MODELS_TTL_MS = 15_000;

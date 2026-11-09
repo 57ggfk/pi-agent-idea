@@ -988,7 +988,7 @@ describe("auth login reduction (spec 014)", () => {
   });
 });
 
-describe("model catalog reload (spec 016)", () => {
+describe("model catalog reload (spec 017)", () => {
   beforeEach(() => {
     h.state.calls.length = 0;
     h.state.methods.clear();

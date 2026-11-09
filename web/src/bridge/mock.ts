@@ -270,7 +270,7 @@ export class MockBridge implements Bridge {
    * in-process refresh makes the addition visible.
    */
   private readonly reloadStrict = query()?.get("reload") === "strict";
-  /** How many times the UI asked for a catalog reload (spec 016 assertions). */
+  /** How many times the UI asked for a catalog reload (spec 017 assertions). */
   modelsReloads = 0;
   /** Q8 default: the provider-setup skip persists in prefs. */
   private providerSetupSkipped = false;
@@ -940,7 +940,7 @@ export class MockBridge implements Bridge {
         const p = (params ?? {}) as { provider?: string };
         if (p.provider === "mock-provider") return { ok: false, error: "the default credential cannot be removed (mock)" };
         this.authProviders = this.authProviders.filter((n) => n !== p.provider);
-        // Removing a credential takes that provider's models away (spec 016).
+        // Removing a credential takes that provider's models away (spec 017).
         for (let i = this.dynamicModels.length - 1; i >= 0; i -= 1) {
           if (this.dynamicModels[i].provider === p.provider) this.dynamicModels.splice(i, 1);
         }

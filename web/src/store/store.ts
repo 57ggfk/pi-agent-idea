@@ -461,7 +461,7 @@ interface PiStore {
   compact(): Promise<void>;
   restartPi(): Promise<void>;
   /**
-   * spec 016: re-read the model catalog after a credential or models.json
+   * spec 017: re-read the model catalog after a credential or models.json
    * change. pi refreshes auth.json by itself; models.json goes through the
    * bundled pi-models extension, triggered by the bridge. Returns false when
    * the in-process refresh was unavailable (list is still re-read).
@@ -1634,7 +1634,7 @@ export const usePiStore = create<PiStore>((set, get) => {
         await get().refreshStats();
         await get().replayMessages();
         // A restarted process re-reads auth.json and models.json: the catalog
-        // may legitimately differ now (spec 016).
+        // may legitimately differ now (spec 017).
         void get().reloadModels();
       } catch (e) {
         const item = emptyItem("system", [
@@ -1973,7 +1973,7 @@ export const usePiStore = create<PiStore>((set, get) => {
       const b = bridge;
       await get().loadSource("commands", async () => {
         const r = await rpc<{ commands: CommandInfo[] }>(b, { type: "get_commands" });
-        // spec 016: the plugin's own extension command is an implementation
+        // spec 017: the plugin's own extension command is an implementation
         // detail — it must not show up in slash completion.
         const visible = (r.commands ?? []).filter((c) => !c.name.startsWith(INTERNAL_COMMAND_PREFIX));
         // Keep the previous list on an empty answer: pi has no commands until

@@ -4,7 +4,7 @@ import com.intellij.openapi.diagnostic.Logger
 import java.io.File
 
 /**
- * Installs the bundled model-reload extension (spec 016).
+ * Installs the bundled model-reload extension (spec 017).
  *
  * pi reloads auth.json by itself, but a models.json change made while pi is
  * running only enters the availability snapshot after `ModelRuntime.refresh()`

@@ -31,7 +31,7 @@ internal object PiStartArgs {
     /**
      * @param model last-used provider/model pair, restored on start
      * @param extensions absolute paths passed as repeated `--extension` flags;
-     *   the approval extension and the model-reload extension (spec 016) both
+     *   the approval extension and the model-reload extension (spec 017) both
      *   ride along, and an empty list means neither could be extracted
      * @param approveProjectFiles append `--approve`: honoured only for a start
      *   the user explicitly authorised in this session
