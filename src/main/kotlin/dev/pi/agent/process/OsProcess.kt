@@ -5,6 +5,7 @@ import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
 import java.nio.charset.Charset
 import java.nio.charset.CodingErrorAction
+import java.util.concurrent.TimeUnit
 
 /**
  * Cross-platform process helpers.
@@ -107,15 +108,191 @@ object OsProcess {
     }
 
     /**
-     * Prepends [extraDirs] to the child's PATH using the OS-correct separator.
-     * Order matters: node's dir goes first so pi and its MCP servers resolve
-     * node even when the IDE was launched from a GUI with a minimal PATH.
+     * Directories every Windows child process is expected to inherit.
+     *
+     * An IDE launched from a Git Bash / MSYS-derived context can come up with a
+     * PATH built only from that shell's entries — observed on a real machine:
+     * six directories, none of them `C:\Windows\System32`, because the shell
+     * that started the IDE never had it either. The damage is silent and wide:
+     * `where`, `findstr`, `reg`, `powershell` and every other system tool
+     * disappear from the agent's commands, and the user sees "not found"
+     * errors that have nothing to do with what they asked for.
+     *
+     * `%LOCALAPPDATA%\Microsoft\WindowsApps` is in the same boat and is easy to
+     * miss: it holds the **app execution aliases** of every Store-installed
+     * tool (PowerShell 7, winget, python…), so losing it makes an installed
+     * `pwsh` look like it was never installed at all.
+     *
+     * Only directories that actually exist are returned, so a non-standard
+     * `%SystemRoot%` / `%LOCALAPPDATA%` cannot inject dead entries.
+     */
+    private fun windowsBaseDirs(): List<String> {
+        if (!isWindows) return emptyList()
+        val root = sequenceOf(System.getenv("SystemRoot"), System.getenv("windir"), "C:\\Windows")
+            .filterNotNull()
+            .map { it.trim().trimEnd('\\') }
+            .firstOrNull { it.isNotEmpty() }
+            ?: return emptyList()
+        val storeAliases = System.getenv("LOCALAPPDATA")
+            ?.trim()
+            ?.trimEnd('\\')
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { "$it\\Microsoft\\WindowsApps" }
+        return listOfNotNull(
+            "$root\\system32",
+            root,
+            "$root\\System32\\Wbem",
+            // Windows PowerShell 5.1 lives here; without it `powershell.exe`
+            // is unresolvable even though the IDE itself runs fine.
+            "$root\\System32\\WindowsPowerShell\\v1.0",
+            // Last: app execution aliases are a convenience, not a system dir.
+            storeAliases,
+        ).filter { File(it).isDirectory }
+    }
+
+    /**
+     * Machine + user PATH as stored in the registry, expanded and split.
+     *
+     * The inherited PATH is a snapshot of whatever launched the IDE. On a real
+     * machine that was a Git Bash-derived shell, so pi saw 6 entries while the
+     * machine's own PATH holds 44 — Java, Maven, Go, WSL, VS Code, conda's
+     * `Library\bin` and a dozen personal tool directories were simply absent.
+     * Restoring only the system directories fixes `powershell` but leaves every
+     * one of those invisible.
+     *
+     * These are **appended after** the inherited PATH: existing entries keep
+     * their precedence, so a tool cannot silently switch version between the
+     * IDE and the children it spawns, while the missing ones become reachable.
+     *
+     * Read once per process — installing something mid-session already needs an
+     * IDE restart before the IDE itself can see it.
+     */
+    private val registryPathDirs: List<String> by lazy { readRegistryPath() }
+
+    private fun readRegistryPath(): List<String> {
+        if (!isWindows) return emptyList()
+        val reg = sequenceOf(
+            System.getenv("SystemRoot")?.let { "$it\\System32\\reg.exe" },
+            "C:\\Windows\\System32\\reg.exe",
+        ).filterNotNull().firstOrNull { File(it).isFile } ?: return emptyList()
+        // Machine first, then user: that is the order Windows composes them in.
+        val keys = listOf(
+            "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
+            "HKCU\\Environment",
+        )
+        return keys.flatMap { key ->
+            val out = runCapture(listOf(reg, "query", key, "/v", "Path", "/reg:64"), 5)
+                ?: return@flatMap emptyList()
+            parseRegistryPath(out)
+                ?.split(File.pathSeparator)
+                ?.map { expandEnvVars(it.trim()) }
+                ?.filter { it.isNotEmpty() }
+                .orEmpty()
+        }
+    }
+
+    /**
+     * Extracts the value from `reg query … /v Path` output, which looks like:
+     *
+     * ```
+     * HKEY_LOCAL_MACHINE\SYSTEM\…\Environment
+     *     Path    REG_EXPAND_SZ    %SystemRoot%\system32;…
+     * ```
+     *
+     * `REG_EXPAND_SZ` values still contain `%SystemRoot%`-style references;
+     * leaving them unexpanded would hand the child a PATH full of literals that
+     * resolve to nothing.
+     */
+    internal fun parseRegistryPath(output: String): String? {
+        for (raw in output.lineSequence()) {
+            val line = raw.trim()
+            if (!line.startsWith("Path", ignoreCase = true)) continue
+            val marker = when {
+                line.contains("REG_EXPAND_SZ") -> "REG_EXPAND_SZ"
+                line.contains("REG_SZ") -> "REG_SZ"
+                else -> continue
+            }
+            return line.substringAfter(marker).trim().takeIf { it.isNotEmpty() }
+        }
+        return null
+    }
+
+    /** Substitutes `%NAME%` from the IDE's environment; unknown names are kept. */
+    internal fun expandEnvVars(value: String): String =
+        ENV_REFERENCE.replace(value) { m -> System.getenv(m.groupValues[1]) ?: m.value }
+
+    private fun runCapture(command: List<String>, timeoutSec: Long): String? = try {
+        val process = ProcessBuilder(command).redirectErrorStream(true).start()
+        val bytes = process.inputStream.use { it.readBytes() }
+        if (!process.waitFor(timeoutSec, TimeUnit.SECONDS)) {
+            process.destroyForcibly()
+            null
+        } else {
+            decodeOutput(bytes)
+        }
+    } catch (_: Exception) {
+        null
+    }
+
+    /**
+     * Prepends [extraDirs] to the child's PATH using the OS-correct separator,
+     * then rebuilds the rest so it matches what a **terminal** would see.
+     *
+     * A terminal's PATH is the registry's machine value followed by the user
+     * value; the IDE's own PATH is only a snapshot of whatever launched it and
+     * can be missing most of it (six entries against 44 on a real machine).
+     * Half-merging the two would also change resolution order, so the same
+     * command could pick a different binary than it does in a terminal.
+     *
+     * Order:
+     *  1. [extraDirs] — the node directory, so pi and its MCP servers use the
+     *     interpreter the plugin resolved, never another install on PATH;
+     *  2. the registry's machine + user PATH, i.e. the terminal's PATH;
+     *  3. inherited entries the registry does not know about (a shell-specific
+     *     `mingw64\bin` and friends), as a last resort.
+     *
+     * When the registry cannot be read (locked-down machine, reg.exe blocked)
+     * this falls back to [windowsBaseDirs] plus the inherited PATH, which is
+     * still enough for system tools to resolve.
      */
     fun augmentPathEnv(pb: ProcessBuilder, extraDirs: List<String>) {
         val env = pb.environment()
-        val dirs = (extraDirs.map { it.trim() } + (env["PATH"] ?: ""))
-            .filter { it.isNotBlank() }
-            .distinct()
-        env["PATH"] = dirs.joinToString(File.pathSeparator)
+        val inherited = (env["PATH"] ?: "").split(File.pathSeparator)
+        env["PATH"] = mergePath(extraDirs, inherited, registryPathDirs, windowsBaseDirs())
+            .joinToString(File.pathSeparator)
     }
+
+    /**
+     * The PATH assembly behind [augmentPathEnv], extracted so the ordering and
+     * de-duplication rules are testable without a registry (and so a machine
+     * where `reg.exe` is blocked still exercises the fallback branch).
+     */
+    internal fun mergePath(
+        extraDirs: List<String>,
+        inherited: List<String>,
+        registryDirs: List<String>,
+        baseDirs: List<String>,
+    ): List<String> {
+        val entries = if (registryDirs.isEmpty()) {
+            extraDirs + baseDirs + inherited
+        } else {
+            extraDirs + registryDirs + inherited
+        }
+        val seen = HashSet<String>(entries.size)
+        val dirs = ArrayList<String>(entries.size)
+        for (raw in entries) {
+            val dir = raw.trim()
+            if (dir.isEmpty()) continue
+            // Windows paths are case-insensitive: C:\Windows and c:\windows are
+            // the same entry, and emitting both only bloats every child's env.
+            val key = if (isWindows) dir.lowercase() else dir
+            // First occurrence wins, so node stays first, the registry keeps its
+            // terminal order, and inherited duplicates land at the very end.
+            if (seen.add(key)) dirs.add(dir)
+        }
+        return dirs
+    }
+
+    /** `%NAME%` references inside a REG_EXPAND_SZ PATH value. */
+    private val ENV_REFERENCE = Regex("%([^%]+)%")
 }
