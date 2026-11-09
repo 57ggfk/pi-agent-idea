@@ -1,7 +1,7 @@
 # 016 从 IDE 拖文件 / 目录进输入框
 
 > 来源：0.5.6 真机反馈——「与 IDEA 的整合，希望支持拖动文件或目录到输入框」。0.5.6（spec 015）已经在前端实现了 DnD 三路解析，但真机从 IDEA 项目树拖进去要么没反应，要么只得到 `a.kt` 这种只有文件名的 chip（pi 解析不到）。
-> 版本归属：0.5.7（Unreleased）。关联：spec 015（引用 chip / `files.relpath` / `@path` 不展开的实证）、spec 009（IDE 事件通道）。
+> 版本归属：0.5.6（未发版，CHANGELOG 挂在 Unreleased，随 release/0.5.6 一起发）。关联：spec 015（引用 chip / `files.relpath` / `@path` 不展开的实证）、spec 009（IDE 事件通道）。
 
 ## 调研结论（决定方案的关键事实）
 
