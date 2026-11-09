@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { usePiStore, type PendingRef, type SendMode } from "../store/store";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { usePiStore, type SendMode } from "../store/store";
 import { needsRefresh } from "../store/sources";
 import { autosize, resetComposerHeight } from "../lib/autosize";
+import { collectPathRefs, type PathRef } from "../lib/clipboardRefs";
+import { findTokens, removeRange, tokenBackspaceAt } from "../lib/inlineChips";
 import { useT } from "../i18n/useT";
 import ModelPicker from "./ModelPicker";
 import SendButton from "./SendButton";
@@ -18,37 +20,12 @@ interface PendingImage {
 
 const FILE_MENU_MAX = 20;
 
-/** Raw paths collected from a drop/paste, before the bridge resolves them. */
-interface DroppedPath {
-  path: string;
-  dir: boolean;
-}
-
-/** Merges two ref lists, keeping the first occurrence of every path (015). */
-function mergeRefs(prev: PendingRef[], next: PendingRef[]): PendingRef[] {
-  const seen = new Set(prev.map((r) => r.path));
-  const out = [...prev];
-  for (const r of next) {
-    if (r.path && !seen.has(r.path)) {
-      seen.add(r.path);
-      out.push(r);
-    }
-  }
-  return out;
-}
-
-/**
- * A bare text token that plausibly names a file (dropped paths only) — not a
- * dragged line of code. Keeps a code drag from turning `fun` into a chip.
- */
-function looksLikePath(token: string): boolean {
-  return (
-    /^[a-zA-Z]:[\\/]/.test(token) || // C:\…
-    token.startsWith("/") ||
-    token.startsWith("~/") ||
-    token.startsWith("./") ||
-    token.startsWith("../")
-  );
+/** Human-readable byte estimate from a base64 payload (no size field exists). */
+function estimateSize(base64: string): string {
+  const bytes = Math.round((base64.length * 3) / 4);
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${bytes} B`;
 }
 
 /**
@@ -58,65 +35,6 @@ function looksLikePath(token: string): boolean {
 function dragCarriesFiles(dt: DataTransfer | null): boolean {
   const types = Array.from(dt?.types ?? []);
   return types.includes("Files") || types.includes("text/uri-list");
-}
-
-/**
- * Synchronous sweep of a DataTransfer during drop/paste (the object is
- * neutered once the handler yields, so everything must be read here).
- *
- * Images stay on the image-chip path (existing behaviour); everything else
- * becomes a file/directory reference (spec 015). Desktop drags are read via
- * `webkitGetAsEntry()` — Chromium reports the absolute path of a native drag
- * in `fullPath`, which a plain `File` object never exposes. IDEA project-tree
- * drags and copied files that arrive as uri-list / plain text are parsed from
- * their `file://` lines instead.
- *
- * Caveat (spec 016): for native drags Chromium only ever exposes the bare
- * file *name*, and `fullPath` is `/name` rather than a real path. The IDE side
- * therefore supplies the authoritative paths (`files.takeDrop`); this sweep is
- * the fallback for text flavours and for an older IDE side.
- */
-function collectDroppedRefs(dt: DataTransfer): DroppedPath[] {
-  const out: DroppedPath[] = [];
-  for (const item of Array.from(dt.items ?? [])) {
-    if (item.kind !== "file") continue;
-    const file = item.getAsFile?.();
-    if (file && file.type.startsWith("image/")) continue; // images → image chips
-    const entry = item.webkitGetAsEntry?.();
-    if (entry) {
-      // Chromium's `fullPath` for a native drop is just "/name" — a single
-      // segment is not a path, and chipping it would claim an absolute path
-      // the file does not have. Only a multi-segment value is usable here.
-      const p = entry.fullPath ?? "";
-      const segments = p.split("/").filter(Boolean);
-      if (segments.length > 1) {
-        out.push({ path: p, dir: entry.isDirectory });
-        continue;
-      }
-    }
-    if (file) out.push({ path: file.name, dir: entry?.isDirectory === true }); // best effort: name only
-  }
-  if (out.length > 0) return out;
-  // No usable file items — try the uri-list / plain-text flavours
-  // (IDEA project-tree drags, files copied in a file manager).
-  const text = dt.getData("text/uri-list") || dt.getData("text/plain") || "";
-  for (const line of text.split(/\r?\n/)) {
-    const token = line.trim().split(/\s+/)[0];
-    if (!token || token.startsWith("#")) continue; // uri-list comment lines
-    if (token.startsWith("file://")) {
-      try {
-        const u = new URL(token);
-        const p = decodeURIComponent(u.pathname);
-        if (p.length > 1) out.push({ path: p, dir: p.endsWith("/") });
-      } catch {
-        // Malformed URI — skip the line rather than the whole drop.
-      }
-    } else if (!token.includes("://") && !token.startsWith("data:") && looksLikePath(token)) {
-      // A bare absolute path (some drag sources only offer plain text).
-      out.push({ path: token, dir: token.endsWith("/") });
-    }
-  }
-  return out;
 }
 
 /**
@@ -213,7 +131,6 @@ export default function Composer() {
   const [text, setText] = useState("");
   const [mode, setMode] = useState<SendMode>("auto");
   const [images, setImages] = useState<PendingImage[]>([]);
-  const [refs, setRefs] = useState<PendingRef[]>([]);
   const [dropActive, setDropActive] = useState(false);
   const [highlightIndex, setHighlightIndex] = useState(0);
   // Menus dismissed with Escape stay closed until the text changes.
@@ -236,12 +153,14 @@ export default function Composer() {
   const clearPendingPrompt = usePiStore((s) => s.clearPendingPrompt);
   const resolveRefs = usePiStore((s) => s.resolveRefs);
   const takeDroppedRefs = usePiStore((s) => s.takeDroppedRefs);
+  const openComposerPreview = usePiStore((s) => s.openComposerPreview);
   const editing = usePiStore((s) => s.editing);
   const cancelEditMessage = usePiStore((s) => s.cancelEditMessage);
   const sendEdited = usePiStore((s) => s.sendEdited);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const controlsRef = useRef<HTMLDivElement>(null);
+  const mirrorRef = useRef<HTMLDivElement>(null);
   // IME composition (spec 010 FR-009): while the user is mid-composition the
   // browser mutates the textarea freely; measuring in between makes the box
   // bounce under the candidate window. Resizing resumes on compositionend.
@@ -268,6 +187,54 @@ export default function Composer() {
       const ta = taRef.current;
       if (ta) resetComposerHeight(ta, ta.closest(".app") as HTMLElement | null);
     });
+  }, []);
+
+  // Spec 018 US1: the text is the single source of truth — a reference is the
+  // `@path` text itself, and the mirror overlay paints a pill over each token.
+  const tokens = useMemo(() => findTokens(text), [text]);
+  /** The mirror's children: the full text (identical flow → identical
+   *  wrapping), with each token span styled as a pill whose padding is
+   *  cancelled by negative margins so line-break decisions stay byte-equal
+   *  to the textarea's. A trailing newline gets a visible extra line. */
+  const mirrorContent = useMemo(() => {
+    const parts: ReactNode[] = [];
+    let pos = 0;
+    for (const tok of tokens) {
+      if (tok.start > pos) parts.push(text.slice(pos, tok.start));
+      parts.push(
+        <span
+          key={`tok-${tok.start}`}
+          className="ref-token"
+          data-testid="ref-token"
+          data-path={tok.path}
+          // Click selects the whole token (then Backspace/typing replaces it).
+          onMouseDown={(e) => {
+            e.preventDefault();
+            const ta = taRef.current;
+            if (ta) {
+              ta.focus();
+              ta.setSelectionRange(tok.start, tok.end);
+            }
+          }}
+        >
+          {`@${tok.path}`}
+        </span>,
+      );
+      pos = tok.end;
+    }
+    parts.push(text.slice(pos));
+    if (text.endsWith("\n")) parts.push("\n");
+    return parts;
+  }, [text, tokens]);
+
+  /** Keeps the mirror aligned when the capped textarea scrolls internally. */
+  const syncMirrorScroll = useCallback(() => {
+    const ta = taRef.current;
+    const mirror = mirrorRef.current;
+    if (ta && mirror) {
+      mirror.scrollTop = ta.scrollTop;
+      mirror.scrollLeft = ta.scrollLeft;
+    }
   }, []);
 
   /** Picks the densest level that still fits on one line — measured, so a long
@@ -382,7 +349,17 @@ export default function Composer() {
       );
     }
     if (pendingPrompt.refs && pendingPrompt.refs.length > 0) {
-      setRefs((prev) => mergeRefs(prev, pendingPrompt.refs!));
+      // Spec 018 US1: injected references become tokens at the tail of
+      // whatever the modes above produced (no caret semantics on injection).
+      // Each token carries a trailing space so a finished token never
+      // re-opens the @ menu (AT_QUERY_RE only matches a query at the very
+      // end); a draft not ending in whitespace gets a separator space, since
+      // a `word@src` glue would not even read as a token.
+      const toks = pendingPrompt.refs.map((r) => `@${r.path} `).join("");
+      setText((prev) => {
+        if (prev.length === 0) return toks;
+        return /\s$/.test(prev) ? `${prev}${toks}` : `${prev} ${toks}`;
+      });
     }
     clearPendingPrompt();
     // The caret has to land at the end of the *new* value, which is only
@@ -404,7 +381,6 @@ export default function Composer() {
     if (composerResetSeq === 0) return;
     setText("");
     setImages([]);
-    setRefs([]);
     setSlashDismissed(false);
     setFileDismissed(false);
     if (taRef.current) {
@@ -461,27 +437,24 @@ export default function Composer() {
 
   const doSend = () => {
     const body = text.trim();
-    if (!body && images.length === 0 && refs.length === 0) return;
+    // Tokens live inline in the text (018 US1) — a message of only references
+    // is non-empty text, so "text or images" is the whole sendability rule.
+    if (!body && images.length === 0) return;
     // Read the mode before clearing: an edit owns the composer, and sending it
     // must branch the old version off rather than append to it.
     const isEditing = editing != null;
-    // References (spec 015) ride as `@path` tokens on their own line — pi
-    // resolves them itself, so only the path ever travels.
-    const refToken = refs.map((r) => `@${r.path}`).join(" ");
-    const outgoing = refToken ? (body ? `${refToken}\n${body}` : refToken) : body;
     setText("");
     setImages([]);
-    setRefs([]);
     setHighlightIndex(0);
     setFileHighlight(0);
     // Back to a single line immediately (FR-008) — not a slow collapse, no
     // leftover blank space. Measured after the empty value lands.
     collapseComposer();
     if (isEditing) {
-      void sendEdited(outgoing);
+      void sendEdited(body);
       return;
     }
-    void send(outgoing, images.map((img) => ({ data: img.data, mimeType: img.mimeType })), mode);
+    void send(body, images.map((img) => ({ data: img.data, mimeType: img.mimeType })), mode);
   };
 
   /** Drops the edit target and the draft it filled in — no RPC, no history change. */
@@ -537,30 +510,81 @@ export default function Composer() {
     if (added.length) setImages((prev) => [...prev, ...added]);
   };
 
-  /** Turns raw dropped paths into references: the bridge converts absolute
-   *  paths to project-relative ones and confirms the directory flag. A bridge
-   *  without the RPC (older IDE side) still yields usable absolute paths. */
-  const addRefs = async (dropped: DroppedPath[]) => {
-    if (dropped.length === 0) return;
-    try {
-      const resolved = await resolveRefs(dropped);
-      setRefs((prev) => mergeRefs(prev, resolved));
-    } catch {
-      // Resolve is cosmetic (relative vs absolute) — a failure must not eat
-      // the drop; the paths stay as the drag source reported them.
-      setRefs((prev) => mergeRefs(prev, dropped));
-    }
-  };
+  /** Synchronous sweep of a DataTransfer's file items — the object is
+   *  neutered once the handler yields, so this must run before any await.
+   *  Classification (images out, single-segment `fullPath` degradation) lives
+   *  in the pure `clipboardRefs` helpers (018 US3). */
+  const sweepFiles = (dt: DataTransfer) =>
+    Array.from(dt.items ?? [])
+      .filter((item) => item.kind === "file")
+      .map((item) => {
+        const file = item.getAsFile?.();
+        const entry = item.webkitGetAsEntry?.();
+        return {
+          name: file?.name ?? entry?.name ?? "",
+          fullPath: entry?.fullPath ?? null,
+          isDirectory: entry?.isDirectory === true,
+          isImage: !!file && file.type.startsWith("image/"),
+        };
+      });
+
+  /** Inserts `@path ` tokens at the caret (at the end when unfocused) and
+   *  leaves the caret after the last one. The trailing space keeps a finished
+   *  token from re-opening the @ menu (AT_QUERY_RE needs the query at the
+   *  very end of the text). Uses the functional update so a resolve that
+   *  resolved after more typing cannot clobber the newer draft. */
+  const insertRefTokens = useCallback(
+    (paths: string[]) => {
+      if (paths.length === 0) return;
+      const toks = paths.map((p) => `@${p} `).join("");
+      const ta = taRef.current;
+      const focused = !!ta && document.activeElement === ta;
+      let caretTo = -1;
+      setText((prev) => {
+        const at = focused ? Math.min(ta?.selectionStart ?? prev.length, prev.length) : prev.length;
+        const end = focused ? Math.min(ta?.selectionEnd ?? at, prev.length) : prev.length;
+        caretTo = at + toks.length;
+        return prev.slice(0, at) + toks + prev.slice(end);
+      });
+      requestAnimationFrame(() => {
+        const el = taRef.current;
+        if (!el) return;
+        el.focus();
+        if (caretTo >= 0) el.setSelectionRange(caretTo, caretTo);
+        if (!composingRef.current) autosize(el, el.closest(".app") as HTMLElement | null);
+      });
+    },
+    [],
+  );
+
+  /** Drop/paste file items → tokens: the bridge converts absolute paths to
+   *  project-relative ones; a bridge without the RPC (older IDE side) still
+   *  yields usable absolute paths. Resolve failure must not eat the drop. */
+  const resolveAndInsert = useCallback(
+    async (raw: PathRef[]) => {
+      if (raw.length === 0) return;
+      let paths: string[];
+      try {
+        paths = (await resolveRefs(raw)).map((r) => r.path);
+      } catch {
+        paths = raw.map((r) => r.path);
+      }
+      insertRefTokens(paths);
+    },
+    [insertRefTokens, resolveRefs],
+  );
 
   /**
-   * Drop → reference chips (spec 015 + 016). Channel order is deliberate:
+   * Drop → inline reference tokens (spec 015 + 016, 018 US1). Channel order
+   * is deliberate:
    *
    * 1. The IDE side (`files.takeDrop`) — CEF is the only place a native or
    *    project-tree drag exposes real absolute paths; the page only ever sees
-   *    bare file names. This is what makes a chip say `src/store/store.ts`
+   *    bare file names. This is what makes a token say `src/store/store.ts`
    *    instead of `store.ts`.
-   * 2. The DataTransfer itself — uri-list / plain-text flavours when the IDE
-   *    had nothing (older IDE side, or a drag from another browser window).
+   * 2. The DataTransfer itself — uri-list / whole-payload text rules
+   *    (`collectPathRefs`) when the IDE had nothing (older IDE side, or a
+   *    drag from another browser window).
    *
    * Images keep their image chips and never become references. A drag that
    * carries no files at all is text: it is inserted at the caret like the
@@ -571,24 +595,25 @@ export default function Composer() {
     // neutered as soon as the handler yields.
     const files = Array.from(dt.files ?? []);
     const imageFiles = files.filter((f) => f.type.startsWith("image/"));
-    const nonImageFiles = files.filter((f) => !f.type.startsWith("image/"));
-    const dropped = collectDroppedRefs(dt);
+    const hasNonImages = files.some((f) => !f.type.startsWith("image/"));
     const plain = dt.getData("text/plain") ?? "";
+    const dropped = collectPathRefs(sweepFiles(dt), dt.getData("text/uri-list") ?? "", plain);
 
     if (imageFiles.length > 0) void addFiles(imageFiles);
     // Files/folders (from the OS, the Project View or an editor tab) or text
     // that already parsed into paths.
-    if (nonImageFiles.length > 0 || dropped.length > 0) {
+    if (hasNonImages || dropped.length > 0) {
       void (async () => {
-        let fromIde: PendingRef[] = [];
-        if (nonImageFiles.length > 0) {
-          fromIde = await takeDroppedRefs();
+        // The IDE side wins when it saw real paths; otherwise resolve the
+        // swept ones (relative-ization is cosmetic, never eats the drop).
+        if (hasNonImages) {
+          const fromIde = await takeDroppedRefs();
+          if (fromIde.length > 0) {
+            insertRefTokens(fromIde.map((r) => r.path));
+            return;
+          }
         }
-        if (fromIde.length > 0) {
-          setRefs((prev) => mergeRefs(prev, fromIde));
-        } else {
-          await addRefs(dropped);
-        }
+        await resolveAndInsert(dropped);
       })();
       return;
     }
@@ -713,40 +738,47 @@ export default function Composer() {
       ) : null}
       {images.length > 0 ? (
         <div className="image-chips" data-testid="image-chips">
-          {images.map((img, i) => (
-            <span key={i} className="image-chip">
-              <Icon name="image" className="ic-sm" />
-              {img.name || t("composer.image.fallback")}
-              <button
-                type="button"
-                className="chip-remove"
-                aria-label={t("composer.image.remove", { name: img.name || "image" })}
-                onClick={() => setImages((prev) => prev.filter((_, j) => j !== i))}
-              >
-                <Icon name="x" className="ic-sm" />
-              </button>
-            </span>
-          ))}
+          {images.map((img, i) => {
+            const label = img.name || t("composer.image.fallback");
+            const src = `data:${img.mimeType};base64,${img.data}`;
+            const size = estimateSize(img.data);
+            return (
+              <span key={i} className="image-card" data-testid="image-card">
+                {/* 018 US2: the thumbnail opens the shared preview modal; the
+                    list is handed over with the click (composer images never
+                    enter the transcript). */}
+                <img
+                  className="image-card-thumb"
+                  src={src}
+                  alt={label}
+                  title={size ? `${label} · ${size}` : label}
+                  onClick={() =>
+                    openComposerPreview(
+                      images.map((im) => ({
+                        src: `data:${im.mimeType};base64,${im.data}`,
+                        label: im.name || t("composer.image.fallback"),
+                      })),
+                      i,
+                    )
+                  }
+                />
+                <span className="image-card-name">{label}</span>
+                <button
+                  type="button"
+                  className="chip-remove"
+                  aria-label={t("composer.image.remove", { name: label })}
+                  onClick={() => setImages((prev) => prev.filter((_, j) => j !== i))}
+                >
+                  <Icon name="x" className="ic-sm" />
+                </button>
+              </span>
+            );
+          })}
         </div>
       ) : null}
-      {refs.length > 0 ? (
-        <div className="image-chips" data-testid="ref-chips">
-          {refs.map((r, i) => (
-            <span key={r.path} className="image-chip ref-chip" data-dir={r.dir ? "true" : "false"}>
-              <Icon name={r.dir ? "folder" : "file"} className="ic-sm" />
-              <span className="ref-path">{r.path}</span>
-              <button
-                type="button"
-                className="chip-remove"
-                aria-label={t("composer.ref.remove", { path: r.path })}
-                onClick={() => setRefs((prev) => prev.filter((_, j) => j !== i))}
-              >
-                <Icon name="x" className="ic-sm" />
-              </button>
-            </span>
-          ))}
-        </div>
-      ) : null}
+      {/* Reference chips moved inline (018 US1): tokens are rendered by the
+          mirror overlay inside the textarea wrap below, so nothing occupies a
+          separate row above the box anymore. */}
       {/* The old "N queued messages" note is replaced by QueueBar (spec 005 US1):
           it shows what is queued, not just how many. */}
       {editing ? (
@@ -776,13 +808,21 @@ export default function Composer() {
             e.target.value = "";
           }}
         />
-        <textarea
+        <div className="composer-input-wrap">
+          {/* Mirror overlay (018 US1): paints the token pills over the raw
+              text. It is non-interactive except the pills themselves; the
+              textarea below owns the caret, selection and IME. */}
+          <div className="composer-mirror" data-testid="composer-mirror" aria-hidden="true" ref={mirrorRef}>
+            {mirrorContent}
+          </div>
+          <textarea
           ref={taRef}
           data-testid="composer-input"
           className="composer-input"
           placeholder={t("composer.placeholder")}
           rows={1}
           value={text}
+          onScroll={syncMirrorScroll}
           onChange={(e) => {
             setText(e.target.value);
             setHighlightIndex(0);
@@ -799,19 +839,25 @@ export default function Composer() {
             autosize(e.currentTarget, e.currentTarget.closest(".app") as HTMLElement | null);
           }}
           onPaste={(e) => {
-            const pasted = Array.from(e.clipboardData.files).filter((f) => f.type.startsWith("image/"));
+            const cb = e.clipboardData;
+            const pasted = Array.from(cb.files).filter((f) => f.type.startsWith("image/"));
             if (pasted.length > 0) {
               e.preventDefault();
               void addFiles(pasted);
               return;
             }
-            // A copied file / project-tree node pastes as a reference (015).
-            // Plain-text paste must be left alone — collectDroppedRefs only
-            // reports file items and file:// / path-looking text.
-            const dropped = collectDroppedRefs(e.clipboardData);
+            // A copied file / project-tree node still pastes as a reference
+            // (015), but 018 US3 tightened the text flavour: only a whole
+            // payload of one whitespace-free path counts. Multi-line markdown
+            // pastes are text now — the default browser insertion runs.
+            const dropped = collectPathRefs(
+              sweepFiles(cb),
+              cb.getData("text/uri-list") ?? "",
+              cb.getData("text/plain") ?? "",
+            );
             if (dropped.length > 0) {
               e.preventDefault();
-              void addRefs(dropped);
+              void resolveAndInsert(dropped);
             }
           }}
           onKeyDown={(e) => {
@@ -865,6 +911,28 @@ export default function Composer() {
                 return;
               }
             }
+            // One Backspace at a pill's right edge removes the whole token
+            // (018 US1, separator space included). Skipped while the @ menu
+            // is open: the trailing token is then a query being typed, which
+            // must edit character-wise.
+            if (e.key === "Backspace" && !atOpen && !slashOpen) {
+              const ta = taRef.current;
+              if (ta && ta.selectionStart === ta.selectionEnd) {
+                const span = tokenBackspaceAt(tokens, text, ta.selectionStart);
+                if (span) {
+                  e.preventDefault();
+                  applyText(removeRange(text, span.start, span.end));
+                  requestAnimationFrame(() => {
+                    const el = taRef.current;
+                    if (el) {
+                      el.focus();
+                      el.setSelectionRange(span.start, span.start);
+                    }
+                  });
+                  return;
+                }
+              }
+            }
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               doSend();
@@ -878,6 +946,7 @@ export default function Composer() {
             }
           }}
         />
+        </div>
         <div
           className="composer-controls"
           data-testid="composer-controls"
@@ -939,7 +1008,7 @@ export default function Composer() {
               mode={mode}
               setMode={(m: SendMode) => setMode(m)}
               onMain={doSend}
-              disabled={!text.trim() && images.length === 0 && refs.length === 0}
+              disabled={!text.trim() && images.length === 0}
               isStreaming={isStreaming}
             />
           </div>

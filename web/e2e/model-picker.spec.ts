@@ -277,3 +277,80 @@ test.describe("model picker geometry", () => {
     });
   }
 });
+
+// -- 018 US5: provider groups collapse ----------------------------------------
+
+test.describe("model picker collapse", () => {
+  test("clicking a header folds the group; keyboard skips hidden entries", async ({ page }) => {
+    await page.goto("/?picker=g12");
+    await expect(page.getByTestId("empty-state")).toBeVisible();
+    await openPicker(page);
+    await expect(page.getByTestId("model-option")).toHaveCount(12);
+
+    const alpha = page.getByTestId("model-group").nth(1);
+    await expect(alpha).toHaveAttribute("aria-expanded", "true");
+    await alpha.click();
+    await expect(page.getByTestId("model-option")).toHaveCount(8); // 12 − 4 alpha
+    await expect(alpha).toHaveAttribute("aria-expanded", "false");
+    // header + count survive the fold
+    await expect(alpha).toContainText("4");
+
+    // 30 ArrowDown from the top must rest on the last VISIBLE entry (index 7),
+    // not on a hidden one — the index space is the visible sequence.
+    const search = page.getByTestId("model-search");
+    for (let i = 0; i < 30; i++) await search.press("ArrowDown");
+    const activeIdx = await page.evaluate(() =>
+      Array.from(document.querySelectorAll("[data-model-key]")).findIndex(
+        (el) => el.getAttribute("data-active") === "true",
+      ),
+    );
+    expect(activeIdx).toBe(7);
+
+    // unfold restores every entry
+    await alpha.click();
+    await expect(page.getByTestId("model-option")).toHaveCount(12);
+  });
+
+  test("a non-empty search force-expands collapsed groups", async ({ page }) => {
+    await page.goto("/?picker=g12");
+    await expect(page.getByTestId("empty-state")).toBeVisible();
+    await openPicker(page);
+    await page.getByTestId("model-group").nth(1).click();
+    await expect(page.getByTestId("model-option")).toHaveCount(8);
+
+    await page.getByTestId("model-search").fill("alpha");
+    // alpha models match the filter and must be visible despite the fold
+    await expect(page.getByTestId("model-option")).toHaveCount(4);
+    await page.getByTestId("model-search").fill("");
+    await expect(page.getByTestId("model-option")).toHaveCount(8);
+  });
+
+  test("the collapsed set survives a reload via localStorage", async ({ page }) => {
+    await page.goto("/?picker=g12");
+    await expect(page.getByTestId("empty-state")).toBeVisible();
+    await openPicker(page);
+    await page.getByTestId("model-group").nth(1).click();
+    await expect(page.getByTestId("model-option")).toHaveCount(8);
+
+    await page.reload();
+    await expect(page.getByTestId("empty-state")).toBeVisible();
+    await openPicker(page);
+    await expect(page.getByTestId("model-option")).toHaveCount(8);
+    await expect(page.getByTestId("model-group").nth(1)).toHaveAttribute("aria-expanded", "false");
+  });
+
+  test("opening auto-expands the current model's group and locates it", async ({ page }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem("pi-agent.model-collapsed", JSON.stringify(["mock"]));
+    });
+    await page.goto("/?picker=g12");
+    await expect(page.getByTestId("empty-state")).toBeVisible();
+    await openPicker(page);
+
+    // mock holds the current model — the fold must not hide the locate target
+    const active = page.locator('[data-model-key="mock/mock-model-pro"]');
+    await expect(active).toBeVisible();
+    await expect(active).toHaveAttribute("data-active", "true");
+    await expect(page.getByTestId("model-group").nth(0)).toHaveAttribute("aria-expanded", "true");
+  });
+});

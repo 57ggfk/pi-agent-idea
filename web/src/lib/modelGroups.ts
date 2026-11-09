@@ -47,8 +47,12 @@ export interface FlattenedGroups {
 export interface PickerModelData extends FlattenedGroups {
   /** Filtered count across all groups (uncapped). */
   total: number;
-  /** Flat index of the current model among rendered entries, or null. */
+  /** Flat index of the current model among VISIBLE rendered entries, or null. */
   activeFlatIndex: number | null;
+  /** Entries whose group is not collapsed, in render order — the DOM order
+   *  of `[data-model-key]` rows and the one index space for highlight /
+   *  keyboard / locate (018 US5). Equals `flat` when nothing is collapsed. */
+  visibleFlat: FlatModelEntry[];
 }
 
 /** Space-separated keywords, each required somewhere in `provider id name`. */
@@ -135,26 +139,33 @@ export function flattenGroups(groups: ModelGroup[], cap: number): FlattenedGroup
   return { groups: rendered, flat, hidden };
 }
 
-/** Current model's flat index among rendered entries, or null when filtered
- *  out / beyond the cap / not present (custom model, load failure). */
+/** Current model's flat index among VISIBLE rendered entries, or null when
+ *  filtered out / beyond the cap / not present / inside a collapsed group.
+ *  `collapsed` maps provider → folded (018 US5); null/undefined keeps every
+ *  group open (a non-empty search forces the same from the caller). */
 export function buildPickerData(
   models: ModelInfo[],
   current: { provider: string; id: string } | null,
   keywords: string[],
   cap: number = MODEL_RENDER_CAP,
+  collapsed?: ReadonlySet<string> | null,
 ): PickerModelData {
   const { groups, activeGroupIndex, total } = buildModelGroups(models, current, keywords);
   const { groups: renderedGroups, flat, hidden } = flattenGroups(groups, cap);
 
+  const visibleFlat = collapsed
+    ? flat.filter((f) => !collapsed.has(renderedGroups[f.groupIndex].provider))
+    : flat;
+
   let activeFlatIndex: number | null = null;
   if (current) {
     activeFlatIndex =
-      flat.find((f) => f.model.provider === current.provider && f.model.id === current.id)
+      visibleFlat.find((f) => f.model.provider === current.provider && f.model.id === current.id)
         ?.flatIndex ?? null;
   }
   void activeGroupIndex;
 
-  return { groups: renderedGroups, flat, hidden, total, activeFlatIndex };
+  return { groups: renderedGroups, flat, hidden, total, activeFlatIndex, visibleFlat };
 }
 
 /**

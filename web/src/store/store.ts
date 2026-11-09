@@ -405,6 +405,9 @@ interface PiStore {
   providerStep: "hidden" | "offered";
   /** Open image preview request (012 US7, T139): which block to show. */
   imagePreview: { itemId: number; blockIndex: number } | null;
+  /** Composer-side preview request (018 US2): the images live in the
+   *  composer's local state, so a click hands the modal the list itself. */
+  composerPreview: { images: Array<{ src: string; label: string }>; index: number } | null;
   /** Manage sub-tab, persisted across ManageView mounts (0.5.4 real-machine
    *  UX: leaving Manage and returning no longer resets to MCP). */
   manageTab: "mcp" | "packages" | "skills" | "agents" | "auth" | "settings" | "diagnostics";
@@ -494,6 +497,9 @@ interface PiStore {
   /** Image preview (012 US7). */
   openImagePreview(itemId: number, blockIndex: number): void;
   closeImagePreview(): void;
+  /** Composer image preview (018 US2). */
+  openComposerPreview(images: Array<{ src: string; label: string }>, index: number): void;
+  closeComposerPreview(): void;
   /** Inline title editing shared by the status bar and session list (T107/T108).
    *  Without a file the editor targets the current session; with one, that row. */
   beginEditSessionTitle(file?: string): void;
@@ -727,6 +733,21 @@ export const usePiStore = create<PiStore>((set, get) => {
     }
   };
 
+  /**
+   * 018 US7: a fork clones the parent's title, so the list would show two
+   * indistinguishable rows. Append the localized suffix once — forking a
+   * fork must not stack suffixes, and an unnamed parent stays unnamed (the
+   * auto-titler owns that case). `renameSession(name, false)` keeps the
+   * manual flag off, so neither auto-title path fires over the suffix; if pi
+   * renames the session itself later, pi's name wins (documented boundary).
+   */
+  const applyForkSuffix = async () => {
+    const name = get().sessionName;
+    const suffix = t("session.forkSuffix");
+    if (!name || name.endsWith(suffix)) return;
+    await get().renameSession(`${name}${suffix}`, false);
+  };
+
   /** Branches at one pi reply; the caller has already confirmed. */
   const runForkAtItem = async (itemId: number) => {
     if (!bridge) return;
@@ -778,6 +799,7 @@ export const usePiStore = create<PiStore>((set, get) => {
       }
       await syncAfterBranch();
       resetConversationLocalState();
+      await applyForkSuffix();
     } catch (e) {
       appendError(t("error.fork.failed", { msg: (e as Error).message }));
     }
@@ -803,6 +825,7 @@ export const usePiStore = create<PiStore>((set, get) => {
       }
       await syncAfterBranch();
       resetConversationLocalState();
+      await applyForkSuffix();
     } catch (e) {
       appendError(t("error.fork.failed", { msg: (e as Error).message }));
     }
@@ -1099,6 +1122,7 @@ export const usePiStore = create<PiStore>((set, get) => {
     setupGate: { needsSetup: false, state: "loading" },
     providerStep: "hidden",
     imagePreview: null,
+    composerPreview: null,
     manageTab: "mcp",
     sources: emptySources(),
 
@@ -1768,6 +1792,14 @@ export const usePiStore = create<PiStore>((set, get) => {
 
     closeImagePreview() {
       set({ imagePreview: null });
+    },
+
+    openComposerPreview(images: Array<{ src: string; label: string }>, index: number) {
+      set({ composerPreview: { images, index } });
+    },
+
+    closeComposerPreview() {
+      set({ composerPreview: null });
     },
 
     offerProviderStep() {

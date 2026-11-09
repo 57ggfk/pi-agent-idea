@@ -216,3 +216,32 @@ describe("ensureVisible", () => {
     expect(assigned).toBe(-10);
   });
 });
+
+// -- 018 US5: collapsing provider groups -------------------------------------
+
+describe("buildPickerData with collapsed groups", () => {
+  const catalog = [
+    { provider: "openrouter", id: "m1", name: "M1" },
+    { provider: "openrouter", id: "m2", name: "M2" },
+    { provider: "deepseek", id: "d1", name: "D1" },
+  ] as unknown as Parameters<typeof buildPickerData>[0];
+
+  test("collapsed groups leave visibleFlat (and the index space) entirely", () => {
+    const data = buildPickerData(catalog, null, [], undefined, new Set(["openrouter"]));
+    expect(data.visibleFlat.map((e) => e.model.id)).toEqual(["d1"]);
+    // `flat` still accounts for everything the cap rendered.
+    expect(data.flat).toHaveLength(3);
+  });
+
+  test("activeFlatIndex is null while the current model's group is collapsed", () => {
+    const data = buildPickerData(catalog, { provider: "openrouter", id: "m2" }, [], undefined, new Set(["openrouter"]));
+    expect(data.activeFlatIndex).toBeNull();
+    const open = buildPickerData(catalog, { provider: "openrouter", id: "m2" }, [], undefined, null);
+    expect(open.activeFlatIndex).toBe(1);
+  });
+
+  test("an empty collapsed set makes visibleFlat identical to flat", () => {
+    const data = buildPickerData(catalog, null, [], undefined, new Set());
+    expect(data.visibleFlat).toEqual(data.flat);
+  });
+});

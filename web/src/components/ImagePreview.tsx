@@ -22,7 +22,9 @@ export default function ImagePreview() {
   const { t } = useT();
   const items = usePiStore((s) => s.items);
   const request = usePiStore((s) => s.imagePreview);
+  const composerRequest = usePiStore((s) => s.composerPreview);
   const closeImagePreview = usePiStore((s) => s.closeImagePreview);
+  const closeComposerPreview = usePiStore((s) => s.closeComposerPreview);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -30,7 +32,10 @@ export default function ImagePreview() {
   const dialogRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ x: number; y: number; baseX: number; baseY: number } | null>(null);
 
-  const images = useMemo(() => collectImages(items), [items]);
+  const transcriptImages = useMemo(() => collectImages(items), [items]);
+  // Composer images (018 US2) win while a composer request is active: the
+  // click hands the modal the list itself — they never live in the transcript.
+  const images = composerRequest ? composerRequest.images : transcriptImages;
 
   // A click on a transcript thumbnail raises the request; the modal derives
   // its index from the same collection the navigation uses. The request is
@@ -39,13 +44,13 @@ export default function ImagePreview() {
   // mid-navigation.
   const appliedRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!request) {
-      appliedRef.current = null;
+    if (!request || composerRequest) {
+      if (!request) appliedRef.current = null;
       return;
     }
     const key = `${request.itemId}:${request.blockIndex}`;
     if (appliedRef.current === key) return;
-    const idx = images.findIndex((i) => i.itemId === request.itemId && i.blockIndex === request.blockIndex);
+    const idx = transcriptImages.findIndex((i) => i.itemId === request.itemId && i.blockIndex === request.blockIndex);
     if (idx >= 0) {
       appliedRef.current = key;
       setPreviewIndex(idx);
@@ -53,7 +58,17 @@ export default function ImagePreview() {
       setOffset({ x: 0, y: 0 });
       setSaveNote(null);
     }
-  }, [request, images]);
+  }, [request, composerRequest, transcriptImages]);
+
+  // A composer click carries its own list and start index; applied once per
+  // request (stepping inside the modal must not yank back to the start).
+  useEffect(() => {
+    if (!composerRequest) return;
+    setPreviewIndex(Math.min(composerRequest.index, composerRequest.images.length - 1));
+    setScale(1);
+    setOffset({ x: 0, y: 0 });
+    setSaveNote(null);
+  }, [composerRequest]);
 
   const open = previewIndex != null && previewIndex < images.length;
 
@@ -62,8 +77,9 @@ export default function ImagePreview() {
     setScale(1);
     setOffset({ x: 0, y: 0 });
     setSaveNote(null);
-    closeImagePreview();
-  }, [closeImagePreview]);
+    if (composerRequest) closeComposerPreview();
+    else closeImagePreview();
+  }, [composerRequest, closeComposerPreview, closeImagePreview]);
 
   const step = useCallback(
     (delta: number) => {

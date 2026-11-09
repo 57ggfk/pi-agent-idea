@@ -331,6 +331,27 @@ button {
   margin-bottom: 0;
 }
 
+/* Message tables (018 US4): the browser default is borderless, which reads as
+   broken columns inside a bubble. Weak theme borders — the same var(--border)
+   family as bubbles and cards; the header divider is one step stronger. */
+.markdown table {
+  border-collapse: collapse;
+  margin: 0 0 8px;
+  font-size: var(--fs-sm);
+}
+
+.markdown th,
+.markdown td {
+  border: 1px solid var(--border);
+  padding: 3px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.markdown thead th {
+  border-bottom: 1px solid var(--border-strong);
+}
+
 .markdown pre {
   position: relative;
   background: var(--code-bg);
@@ -1185,12 +1206,15 @@ button {
 }
 
 /* Provider group header (011 US2): label + entry count, visually distinct
-   from options but never wider than the popover (360px windows included). */
+   from options but never wider than the popover (360px windows included).
+   018 US5: the header is a <button> that folds the group — reset the form
+   control so it reads exactly like the old div. */
 .model-group-title {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  width: 100%;
   padding: 6px 10px 2px;
   font-size: 11px;
   font-weight: 600;
@@ -1198,6 +1222,24 @@ button {
   text-transform: uppercase;
   color: var(--text-secondary);
   user-select: none;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.model-group-title:hover {
+  color: var(--text);
+}
+
+.model-group-caret {
+  flex-shrink: 0;
+  transition: transform var(--dur, 120ms) ease;
+}
+
+.model-group-caret-open {
+  transform: rotate(90deg);
 }
 
 .model-group-count {
@@ -2378,6 +2420,43 @@ button {
   color: var(--text-tertiary);
 }
 
+/* Inline reference tokens (018 US1). The mirror overlays the textarea and
+   paints a pill over each `@path` token; the textarea keeps the caret,
+   selection and IME. Wrapping must stay byte-identical between the two:
+   same font metrics, same padding, same width, pre-wrap — and the pill's
+   horizontal padding is cancelled by negative margins so the token's flow
+   width equals the raw text's (line-break decisions never move). */
+.composer-input-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.composer-mirror {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+  padding: 4px 5px 6px;
+  font-size: var(--fs-base);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  color: transparent;
+  user-select: none;
+}
+
+.ref-token {
+  pointer-events: auto;
+  cursor: pointer;
+  border-radius: 5px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  box-shadow: 0 0 0 1px var(--accent-ring);
+  padding: 0 3px;
+  margin: 0 -3px;
+}
+
 .composer-controls {
   display: flex;
   align-items: center;
@@ -2450,6 +2529,56 @@ button {
 
 .chip-remove:hover {
   color: var(--text);
+}
+
+/* Composer image cards (018 US2): a 64px thumbnail instead of a name-only
+   chip. Clicking the thumb opens the shared preview modal; the × removes. */
+.image-card {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-subtle);
+}
+
+.image-card-thumb {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 4px;
+  cursor: zoom-in;
+  display: block;
+  background: var(--bg-input);
+}
+
+.image-card-name {
+  max-width: 64px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+
+.image-card .chip-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  align-items: center;
+  justify-content: center;
+}
+
+.image-card .chip-remove .ic-sm {
+  width: 10px;
+  height: 10px;
 }
 
 /* Icon buttons */

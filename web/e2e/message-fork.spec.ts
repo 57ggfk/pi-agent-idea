@@ -137,3 +137,26 @@ test("a fork cancelled by a pi extension shows an error and stays put", async ({
   await expect(error).toHaveClass(/item-error/);
   await expect(page.getByTestId("item-user")).toHaveCount(2);
 });
+
+// -- 018 US7: the forked session's title carries a localized suffix -----------
+
+test("a fork appends the (fork) suffix to the cloned title, once", async ({ page }) => {
+  // The mock normally keeps boot state nameless (the auto-titler owns it);
+  // ?sessname gives the session a name so the suffix has something to attach to.
+  await page.goto("/?sessname=My%20Session");
+  await expect(page.getByTestId("empty-state")).toBeVisible();
+  await sendAndWait(page, "hello there");
+
+  await forkAt(page, 0);
+  await page.getByTestId("confirm-ok").click();
+
+  // The clone inherited the parent title; the plugin appends the suffix once.
+  await expect(page.getByTestId("status-session")).toContainText("My Session (fork)", { timeout: 15_000 });
+
+  // Forking again must not stack suffixes.
+  await forkAt(page, 0);
+  await page.getByTestId("confirm-ok").click();
+  await expect(page.getByTestId("status-session")).toContainText("My Session (fork)", { timeout: 15_000 });
+  const value = await page.getByTestId("status-session").innerText();
+  expect(value.split("(fork)").length - 1).toBe(1);
+});

@@ -183,6 +183,10 @@ export class MockBridge implements Bridge {
   private entrySeq = 0;
   /** `?cancelfork=1` — a pi extension cancels the branch (007 US1-7). */
   private readonly cancelFork = query()?.get("cancelfork") === "1";
+  /** `?sessname=` — get_state reports this session name (018 US7 e2e). */
+  private readonly sessNameKnob = query()?.get("sessname");
+  /** `?md=table` — the mock reply is a markdown table (018 US4 e2e). */
+  private readonly mdKnob = query()?.get("md");
   /** The session file the live transcript belongs to (fork / switch target). */
   private currentFile: string | null = null;
   /** Saved transcripts per session file, so switching back restores them. */
@@ -233,8 +237,14 @@ export class MockBridge implements Bridge {
   private readonly mcpOverride = query()?.get("mcpoverride") === "1";
   /** Reported by manage.env; bumped by a successful manage.envUpdate. */
   private piVersion = "1.4.0-mock";
-  /** Installed packages as `pi list` lines; packageUpdate bumps the version. */
-  private packages = ["npm:@example/pi-tools@1.0.0"];
+  /** Installed packages as `pi list` lines; packageUpdate bumps the version.
+   *  `?pkgs=2` adds a second package and `?pkgs=0` empties the list, so the
+   *  update-all flow (018 US6) has both an "all" of two rows and the empty
+   *  state its button must refuse. */
+  private packages = [
+    ...(query()?.get("pkgs") === "0" ? [] : ["npm:@example/pi-tools@1.0.0"]),
+    ...(query()?.get("pkgs") === "2" ? ["git:github.com/example/pi-git-pkg@0.3.0"] : []),
+  ];
   /** `?models=broken|missing` — the models.json world the Auth panel must explain. */
   private readonly modelsKnob = query()?.get("models");
   /**
@@ -785,6 +795,30 @@ export class MockBridge implements Bridge {
         );
         this.packages[idx] = bumped;
         return { ok: true, exitCode: 0, output: `updated ${p.source} -> ${bumped}` };
+      }
+      case "manage.packageUpdateAll": {
+        // Mirrors `pi update --extensions`: pi reports one line per package in
+        // its own output, and every version in the list moves (018 US6).
+        if (this.packages.length === 0) {
+          return { ok: true, exitCode: 0, output: "no extensions installed" };
+        }
+        if (this.shouldFail("update")) {
+          return {
+            ok: false,
+            exitCode: 1,
+            output:
+              "npm error code E404\nnpm error update failed for @example/pi-extra@latest",
+          };
+        }
+        const lines = this.packages.map((l, i) => {
+          const bumped = l.replace(
+            /(\d+)\.(\d+)\.(\d+)/,
+            (_m, a: string, b: string, c: string) => `${a}.${Number(b) + 1}.${c}`,
+          );
+          this.packages[i] = bumped;
+          return `updated ${l} -> ${bumped}`;
+        });
+        return { ok: true, exitCode: 0, output: lines.join("\n") };
       }
       case "manage.envUpdate": {
         if (this.updateKnob === "garbled") {
@@ -1381,6 +1415,10 @@ export class MockBridge implements Bridge {
             thinkingLevel: this.thinkingLevel,
             isStreaming: this.isStreaming,
             sessionId: "session-aaa", // matches mockSessions[0]: the live session row (012 title editing)
+            // Normally pi reports a name only after a rename, so boot state
+            // stays nameless (the auto-titler owns it). The knob exists for
+            // the 018 US7 fork-suffix e2e, which needs a named session.
+            sessionName: this.sessNameKnob ?? undefined,
             sessionFile: "/tmp/mock-project/session.jsonl",
             autoCompactionEnabled: this.autoCompactionEnabled,
             messageCount: this.messageCount,
@@ -1768,10 +1806,12 @@ export class MockBridge implements Bridge {
 
     // text block
     const text =
-      `Here is my plan for **${prompt.slice(0, 60)}**:\n\n` +
-      "1. Inspect the repository layout\n" +
-      "2. Run a quick sanity check\n\n" +
-      "Let me start with a shell command.";
+      this.mdKnob === "table"
+        ? "| Column A | Column B |\n| --- | --- |\n| one | two |\n| three | four |"
+        : `Here is my plan for **${prompt.slice(0, 60)}**:\n\n` +
+          "1. Inspect the repository layout\n" +
+          "2. Run a quick sanity check\n\n" +
+          "Let me start with a shell command.";
     await sleep(30);
     emit({ type: "message_update", usage: {}, assistantMessageEvent: { type: "text_start", contentIndex: 1 } });
     for (const chunk of chunkWords(text)) {

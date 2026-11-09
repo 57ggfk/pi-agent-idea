@@ -167,6 +167,7 @@ class BridgeService(private val project: Project) : Disposable {
                 "manage.packageInstall" -> dev.pi.agent.manage.PiManage.packageInstall(params)
                 "manage.packageRemove" -> dev.pi.agent.manage.PiManage.packageRemove(params)
                 "manage.packageUpdate" -> dev.pi.agent.manage.PiManage.packageUpdate(params)
+                "manage.packageUpdateAll" -> dev.pi.agent.manage.PiManage.packageUpdateAll()
                 "manage.envUpdate" -> dev.pi.agent.manage.PiManage.envUpdate()
                 "manage.modelsReadProvider" -> dev.pi.agent.manage.PiManage.modelsReadProvider(params)
                 "manage.modelsOpenFile" -> modelsOpenFile(params)

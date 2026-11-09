@@ -73,6 +73,42 @@ class PiManageUpdateTest {
         assertTrue(result["error"]!!.jsonPrimitive.content.contains("missing source"))
     }
 
+    // -- 018 US6: package update all -------------------------------------------
+
+    @Test
+    fun `package update all runs pi update --extensions with the install timeout`() {
+        val runner = FakeRunner()
+        PiManage.packageUpdateAll(runner = runner)
+
+        assertEquals(1, runner.calls.size)
+        assertEquals(listOf("update", "--extensions"), runner.calls.single().first)
+        assertEquals(PiManage.UPDATE_TIMEOUT_SECONDS, runner.calls.single().second)
+    }
+
+    @Test
+    fun `package update all relays pi's per-package output verbatim`() {
+        val runner = FakeRunner().apply {
+            response = CliResult(0, "updated @example/a to 1.2.0\n@example/b already up to date\n", "")
+        }
+
+        val result = PiManage.packageUpdateAll(runner = runner)
+
+        assertEquals("true", result["ok"]!!.jsonPrimitive.content)
+        val output = result["output"]!!.jsonPrimitive.content
+        assertTrue(output.contains("already up to date"), "per-package lines must be relayed, got: $output")
+    }
+
+    @Test
+    fun `package update all failure passes the exit code and stderr through`() {
+        val runner = FakeRunner().apply { response = CliResult(1, "", "npm error EACCES: permission denied") }
+
+        val result = PiManage.packageUpdateAll(runner = runner)
+
+        assertEquals("false", result["ok"]!!.jsonPrimitive.content)
+        assertEquals(1, result["exitCode"]!!.jsonPrimitive.content.toInt())
+        assertTrue(result["output"]!!.jsonPrimitive.content.contains("EACCES"))
+    }
+
     // -- T015/T018: pi self update --------------------------------------------
 
     @Test
