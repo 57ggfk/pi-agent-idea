@@ -268,3 +268,15 @@ Phase 7 收尾：i18n / 全基线 / MANUAL_TEST / 真机目视
 | [017 新认证后模型列表自动生效](./017-models-reload/spec.md) | 12 | 认证保存 / OAuth 完成 / 删除凭据后即时重读模型目录；models.json 新增 provider 由扩展在 pi 进程内 refresh；选择器打开时按 15s TTL 兜底；内部命令不进斜杠补全 | 已实现，待真机 |
 
 **017 关键实证**（2026-11-09，pi 1.5.0，临时 `PI_CODING_AGENT_DIR` 隔离）：pi 对 **auth.json 会自动重读**（空 auth 0 个模型 → 写入 deepseek key 后立即 2 个），对 **models.json 不会**（新增自定义 provider 后仍 0 个；扩展内 `ctx.modelRegistry.refresh()` 后变 1 个且 `set_model` 成功）。因此本 feature 不需要重启 pi 进程。
+
+---
+
+# 0.5.7 批次（2026-11-10 追加）
+
+> 版本分支：`release/0.5.7`（进行中）。**017（模型重载）归属从 0.5.6 挪入本批**；新增 018。
+
+| Feature | Tasks | 内容 | 状态 |
+|---|---|---|---|
+| [017 新认证后模型列表自动生效](./017-models-reload/spec.md) | 12 | （同上，归属改为 0.5.7） | 已实现，待真机 |
+| [018 composer 行内引用 chip + 图片缩略图卡 + 粘贴识别收紧 + 消息表格弱边框 + 模型组折叠 + 扩展包全部升级 + fork 标题后缀](./018-composer-inline-chips/spec.md) | 26 | 引用 chip 内联进编辑区文本流（**B 方案**：textarea 保留 + 镜像覆盖层，`@path` token 唯一事实源，refs 数组/首行拼装删除）；图片升级缩略图卡、点击复用 ImagePreview 模态；粘贴/拖拽 text 兜底收紧为「单行+无空白+像路径」，修复粘贴 markdown 误生成多个引用；消息 Markdown 表格加 `var(--border)` 弱色边框（现状零表格样式、浏览器默认无边框）；模型选择器分组可折叠（索引切到可见条目、搜索强制展开、当前组打开自动展开、localStorage 记忆）；扩展包管理：新增「全部升级」（`pi update --extensions`，新 RPC 四处同步，降级方案为前端循环）、移除接确认框、补面板 i18n 漏网；fork 出的会话标题追加 `(fork)`/`（分支）`（pi clone 沿用父标题、列表不可辨） | ✅ 已实现（2026-11-10 凌晨，tasks 25/26；T20 真机全部升级待用户装扩展后目验；[执行记录](./0.5.7-run-report.md)） |
+| [019 工具窗多实例](./019-toolwindow-multi-instance/spec.md) | 待排（挂起） | 一个 Pi Agent 工具窗内开多个 pi 实例（multi-Content 原生标签，每 Content 独立浏览器+独立 pi 进程，web 侧零改动）；核心是 `PiProcessManager` 按实例注册表重构 + `BridgeService` 事件按 instanceId 路由（缺省实例 1 兼容旧页面）；上限默认 4、关闭流式中实例走确认框、崩溃重建只倒一个 | spec 已定稿；**架构级改动，排在 018 之后实现** |

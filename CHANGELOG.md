@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.5.7 — 2026-11-10（未发布）
+
+**新增**
+- 输入框引用内联化（spec 018 US1）：文件/目录引用不再停在输入框上方的独立行，而是像 Cursor / Slack 的 @-mention 一样以胶囊 chip 内嵌在文本流里——打 `@` 补全、拖拽、IDE 右键注入、粘贴文件统一落在光标处（注入追加尾部）。引用本身就是文本 `@相对路径`：发送即原文（pi 自行展开，不再拼消息首行），重复引用不去重；退格一次删除整枚引用，点击胶囊全选 token。实现在 textarea 之上加了镜像覆盖层，文本仍是唯一事实源，中文输入法与自动高度管线零改动。
+- 图片附件缩略图卡（018 US2）：输入框里的图片从纯名字 chip 升级为 64px 缩略图卡（文件名 + 悬停显示估算大小，× 移除），点击复用消息区的预览模态——缩放、多图 ←/→、另存、复制全部可用；输入框图片不进会话消息列表，模态按来源各自取列表。
+- 扩展包一键「全部升级」（018 US6）：包管理面板新增按钮，一条 `pi update --extensions` 升级全部扩展，逐包结果原样回显（沿用 001 的"不猜结果"契约）；移除扩展包前弹确认框（原先误点即删）；面板残留的四处硬编码英文收进中英字典。
+- fork 出的会话标题自动追加后缀（018 US7）：英文 `(fork)`、中文 `（分支）`，会话列表里与父会话可区分。fork 一条已经是 fork 的会话不叠加后缀；未命名的父会话不追加，交给既有自动命名；pi 侧后续自己改名时以 pi 为准。
+
+**变更**
+- 模型选择器分组可折叠（018 US5）：点供应商组标题折叠/展开（chevron 指示、计数保留），折叠集合存 localStorage、重启后保持；搜索关键词非空时强制全部展开（"搜到了却看不见"不可能发生）；打开选择器时若当前模型所在组被折叠会自动展开再定位；键盘导航/回车/高亮一律只走可见条目。
+
+**修复**
+- 粘贴 markdown 文本被误识别成多个引用 chip（018 US3）：原先对剪贴板纯文本逐行取"长得像路径的首个 token"，`/usr/bin/env node`、`./gradlew build` 这类行都会变成假引用。现在纯文本只有当**整段**是"单行、不含空白的路径"时才成为引用（保住"IDEA 项目树复制文件→粘贴"的合法场景），多行 markdown 一律按纯文本插入；拖拽侧的 `text/uri-list`（文件 flavor）保留逐行解析，`text/plain` 兜底用同一条单行规则。
+- 消息里的 markdown 表格没有边框（018 US4）：`styles.css` 从未写过表格样式，表格一直是浏览器默认的无边框渲染。现在单元格 1px 弱主题边框（`var(--border)`，与气泡/卡片同一套）、`border-collapse: collapse`、表头分隔线加重一档（`var(--border-strong)`），随亮暗主题。
+
+**Added**
+- Inline reference chips in the composer (spec 018 US1): file/directory references no longer sit in a separate row above the input — they render as pills embedded in the text flow, Cursor/@-mention style. `@` completion, drag & drop, IDE right-click injection and file pastes all land at the caret (injections append at the tail). A reference IS the `@path` text: sending is the raw text (pi resolves `@` itself, no first-line assembly), duplicates are allowed, one Backspace removes a whole pill, and clicking one selects the token. Built as a mirror overlay over the textarea — the text stays the single source of truth, so the IME and autosize pipelines are untouched.
+- Composer image cards (018 US2): pending images upgrade from name-only chips to 64px thumbnail cards (file name, estimated size on hover, × to remove); clicking a thumb opens the shared preview modal — zoom, ←/→ navigation, save and copy all work. Composer images never enter the transcript; the modal takes the list from whichever source raised the request.
+- One-click "Update all" for packages (018 US6): a new button in the packages panel runs a single `pi update --extensions` and relays pi's per-package output verbatim (the 001 "never guess the outcome" contract); removing a package now asks for confirmation (it used to delete on a single misclick); the panel's last hardcoded English strings moved into both dictionaries.
+- Forked sessions get a title suffix (018 US7): `(fork)` in English, `（分支）` in Chinese, so the session list can tell the clone from its parent. Forking a fork does not stack suffixes; an unnamed parent stays unnamed (the auto-titler owns that case); if pi renames the session itself later, pi wins.
+
+**Changed**
+- Model picker groups collapse (018 US5): click a provider header to fold/unfold it (chevron, count preserved); the collapsed set persists in localStorage across restarts. A non-empty search force-expands every group ("matched but invisible" cannot happen); opening the picker auto-expands the current model's group and locates it; keyboard navigation, Enter and highlighting only ever walk visible entries.
+
+**Fixed**
+- Pasting markdown was misread as multiple reference chips (018 US3): the old sweep took the first path-looking token of every pasted line, so `/usr/bin/env node` or `./gradlew build` lines turned into bogus references. Plain text now becomes a reference only when the WHOLE payload is a single, whitespace-free path (keeping the legit "copy a file in the IDEA project tree, paste it" case); multi-line markdown is always inserted as text. On the drag side the `text/uri-list` file flavour keeps its per-line parsing, and the `text/plain` fallback follows the same single-line rule.
+- Message tables had no borders (018 US4): no table CSS existed at all, so tables rendered with the browser's default borderless look. Cells now carry a 1px weak theme border (`var(--border)`, the same family as bubbles and cards), `border-collapse: collapse`, and the header divider is one step stronger (`var(--border-strong)`), following the light/dark theme.
+
+
 ## 0.5.6 — 2026-11-09
 
 **新增**
