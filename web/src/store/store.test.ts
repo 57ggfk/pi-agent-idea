@@ -1048,3 +1048,43 @@ describe("model catalog reload (spec 017)", () => {
     expect(usePiStore.getState().commands.map((c) => c.name)).toEqual(["fix-tests"]);
   });
 });
+
+/**
+ * The toolbar's 搜索 button is a toggle. Real machine: it only ever called
+ * openSearch(), so a second click did nothing and the × was the only way out.
+ */
+describe("session search bar toggle", () => {
+  beforeEach(() => {
+    usePiStore.setState({ search: { open: false, query: "", index: 0 } });
+  });
+
+  it("opens on the first click and closes on the second", () => {
+    usePiStore.getState().toggleSearch();
+    expect(usePiStore.getState().search.open).toBe(true);
+
+    usePiStore.getState().toggleSearch();
+    expect(usePiStore.getState().search.open).toBe(false);
+  });
+
+  it("clears the query when the toggle closes the bar", () => {
+    usePiStore.getState().openSearch();
+    usePiStore.getState().setSearchQuery("needle");
+
+    usePiStore.getState().toggleSearch();
+
+    const { search } = usePiStore.getState();
+    expect(search.open).toBe(false);
+    expect(search.query).toBe("");
+  });
+
+  it("leaves Ctrl/Cmd+F opening an already-open bar untouched", () => {
+    usePiStore.getState().openSearch();
+    usePiStore.getState().setSearchQuery("needle");
+
+    usePiStore.getState().openSearch();
+
+    const { search } = usePiStore.getState();
+    expect(search.open).toBe(true);
+    expect(search.query).toBe("needle");
+  });
+});

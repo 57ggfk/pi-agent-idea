@@ -342,6 +342,12 @@ interface PiStore {
   pendingSearchJump: { query: string; hitIndex: number } | null;
   openSearch(): void;
   closeSearch(): void;
+  /**
+   * Toolbar button semantics: opens the bar when it is closed and closes it
+   * (clearing the query, like the × button) when it is already open. Ctrl/Cmd+F
+   * keeps calling [openSearch] — it must focus an open bar, never close it.
+   */
+  toggleSearch(): void;
   setSearchQuery(query: string): void;
   /** Moves the current hit by `delta` with wrap-around; no-op without hits. */
   searchGo(delta: number): void;
@@ -1111,6 +1117,11 @@ export const usePiStore = create<PiStore>((set, get) => {
 
     closeSearch() {
       set({ search: { open: false, query: "", index: 0 }, pendingSearchJump: null });
+    },
+
+    toggleSearch() {
+      if (get().search.open) get().closeSearch();
+      else get().openSearch();
     },
 
     setSearchQuery(query: string) {
