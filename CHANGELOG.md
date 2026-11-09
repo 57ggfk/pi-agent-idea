@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+**新增**
+- 拖拽文件/目录到输入框（spec 016）：从 **IDEA 项目树**、编辑器标签或系统文件管理器把文件、目录拖进输入框，松手即变成可删的引用 chip（发送时只带 `@相对路径`）；拖动过程中输入框显示虚线高亮与「松开即把这个文件 / 目录加为引用」。路径取自 IDE 侧 CEF 真正看到的绝对路径（HTML5 drop 出于安全只给文件名）并换算成项目相对路径——项目树拖拽不再得到 `a.kt` 这种 pi 无法解析的引用；项目外路径保持绝对路径。
+
+**修复**
+- 拖入一段文字（例如编辑器里选中的代码）不再被当成路径生成引用 chip：按浏览器默认插到光标处。此前它既没插入文本，还会生成以 `fun`、`main()` 之类为名的假引用。
+
+**Added**
+- Drag a file or folder into the composer (spec 016): drop it from the **IDEA Project View**, an editor tab or the system file manager and it becomes a removable reference chip (the message only carries `@relative/path`); the composer shows a dashed highlight with "Release to reference this file or folder" while dragging. Paths come from the IDE side — CEF is the only place a native drag exposes real absolute paths (the HTML5 drop event is limited to bare file names) — and are converted to project-relative ones, so a Project View drag no longer yields an `a.kt` reference pi cannot resolve; out-of-project paths stay absolute.
+
+**Fixed**
+- Dropping plain text (e.g. code selected in an editor) no longer turns into reference chips: it is inserted at the caret like the browser default. Before, it neither inserted the text nor avoided bogus chips named `fun` or `main()`.
+
 ## 0.5.6 — 2026-11-08
 
 **新增**
