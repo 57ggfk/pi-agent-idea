@@ -127,6 +127,7 @@ class BridgeService(private val project: Project) : Disposable {
                 "files.relpath" -> filesRelPath(params)
                 "files.takeDrop" -> filesTakeDrop()
                 "ide.repaint" -> repaintBrowser()
+                "ui.reload" -> uiReloaded(params)
                 "ide.openFile" -> openFileInEditor(params)
                 "ide.showFileDiff" -> showFileDiff(params)
                 "ide.openTerminal" -> dev.pi.agent.bridge.PiIdeTerminal.open(
@@ -605,6 +606,18 @@ class BridgeService(private val project: Project) : Disposable {
 
     private fun ok(value: Boolean): JsonObject = buildJsonObject { put("ok", value) }
 
+    /**
+     * The frontend's watchdog is about to reload the page because its long-poll
+     * stopped succeeding. Trace only — this is the log line that makes a
+     * self-heal distinguishable from "the plugin did nothing" (CEF's own log is
+     * disabled by the platform, so there is no other record of it).
+     */
+    private fun uiReloaded(params: JsonObject): JsonObject {
+        val silentMs = (params["silentMs"] as? JsonPrimitive)?.contentOrNull ?: "?"
+        LOG.warn("UI watchdog: page reloading after ${silentMs}ms without a successful poll")
+        return ok(true)
+    }
+
     private fun openFileInEditor(params: JsonObject): JsonObject {
         val path = (params["path"] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
             ?: throw IllegalArgumentException("ide.openFile requires path")
@@ -947,6 +960,13 @@ class BridgeService(private val project: Project) : Disposable {
 
     /** Lowest buffered sequence; a frontend cursor below it has missed events. */
     fun oldestSeq(): Long = transport.oldestSeq()
+
+    /**
+     * Milliseconds since this project's frontend last long-polled, or
+     * [Long.MAX_VALUE] if it never has. Used by the panel to notice that its
+     * embedded browser stopped running the page.
+     */
+    fun sinceFrontendPollMs(): Long = transport.sinceLastPollMs()
 
     /** Lazily wires pi event listeners on first frontend contact. */
     fun ensureWired() {

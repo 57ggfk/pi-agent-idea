@@ -91,7 +91,9 @@ class LocalUiServer private constructor() {
         try {
             handle(exchange)
         } catch (e: Exception) {
-            LOG.warn("UI request failed: ${exchange.requestURI}", e)
+            // Path only: the query string carries the project's bridge token,
+            // and idea.log gets pasted into bug reports.
+            LOG.warn("UI request failed: ${exchange.requestURI.path}", e)
             try {
                 exchange.sendResponseHeaders(500, -1)
                 exchange.close()
@@ -178,13 +180,21 @@ class LocalUiServer private constructor() {
         if (resource == null) {
             // A missing bundle asset is exactly what a blank panel looks like
             // from the outside, so name the path in the log.
-            LOG.warn("UI resource not found: $resourcePath (from ${exchange.requestURI})")
+            LOG.warn("UI resource not found: $resourcePath (from ${exchange.requestURI.path})")
             exchange.sendResponseHeaders(404, -1)
             exchange.close()
             return
         }
 
         val bytes = resource.use { it.readBytes() }
+        // The document load is the only trace the plugin can leave that the
+        // embedded page (re)started: the platform runs CEF with logging
+        // disabled, and a dead renderer produces no other evidence. Without
+        // this line, "the panel froze" and "the panel was idle" look identical
+        // in idea.log. Path only — the query string is the bridge token.
+        if (resourcePath.endsWith("/index.html")) {
+            LOG.info("UI page served (${bytes.size} bytes, from ${exchange.requestURI.path})")
+        }
         exchange.responseHeaders.set("Content-Type", contentType(resourcePath))
         exchange.responseHeaders.set("Cache-Control", "no-store")
         exchange.sendResponseHeaders(200, bytes.size.toLong())
