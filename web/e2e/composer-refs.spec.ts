@@ -154,3 +154,56 @@ test("a Chinese IDE localizes the chip's remove label", async ({ page }) => {
     page.getByTestId("ref-chips").locator('button[aria-label="移除对 src 的引用"]'),
   ).toBeVisible();
 });
+
+// -- spec 016: dragging files/folders out of the IDE -------------------------
+
+test("a file drag shows the drop hint and takes the IDE's real path", async ({ page }) => {
+  // `?drop=…` makes the mock's files.takeDrop answer like the Kotlin side: the
+  // absolute path CEF saw, already made project-relative.
+  await page.goto("/?drop=/tmp/mock-project/src/store/store.ts");
+  await expect(page.getByTestId("composer-input")).toBeVisible();
+
+  const dataTransfer = await page.evaluateHandle(() => {
+    const dt = new DataTransfer();
+    // The page only ever learns the bare name; the path must come from the IDE.
+    dt.items.add(new File(["x"], "store.ts", { type: "text/plain" }));
+    return dt;
+  });
+  const composer = page.getByTestId("composer");
+  await composer.dispatchEvent("dragenter", { dataTransfer });
+  await expect(page.getByTestId("composer-drop")).toBeVisible();
+
+  await composer.dispatchEvent("drop", { dataTransfer });
+  await expect(page.getByTestId("composer-drop")).toHaveCount(0);
+  const chips = page.getByTestId("ref-chips");
+  await expect(chips.locator(".ref-chip")).toHaveCount(1);
+  await expect(chips.locator(".ref-chip")).toHaveText(/src\/store\/store\.ts/);
+});
+
+test("a folder drag keeps the directory flag from the IDE side", async ({ page }) => {
+  await page.goto("/?drop=/tmp/mock-project/src/");
+  await expect(page.getByTestId("composer-input")).toBeVisible();
+
+  const dataTransfer = await page.evaluateHandle(() => {
+    const dt = new DataTransfer();
+    // A folder drop arrives as a file item with no MIME type.
+    dt.items.add(new File([], "src", { type: "" }));
+    return dt;
+  });
+  await page.getByTestId("composer").dispatchEvent("drop", { dataTransfer });
+
+  const chips = page.getByTestId("ref-chips");
+  await expect(chips.locator(".ref-chip[data-dir='true']")).toHaveText(/src/);
+});
+
+test("dragged code lands as text, not as a bogus reference chip", async ({ page }) => {
+  const dataTransfer = await page.evaluateHandle(() => {
+    const dt = new DataTransfer();
+    dt.setData("text/plain", "const answer = 42;");
+    return dt;
+  });
+  await page.getByTestId("composer").dispatchEvent("drop", { dataTransfer });
+
+  await expect(page.getByTestId("composer-input")).toHaveValue("const answer = 42;");
+  await expect(page.getByTestId("ref-chips")).toHaveCount(0);
+});

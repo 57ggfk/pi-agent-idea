@@ -69,6 +69,7 @@ export const en = {
   "composer.image.remove": "Remove {{name}}",
   "composer.image.fallback": "image",
   "composer.ref.remove": "Remove the reference to {{path}}",
+  "composer.dropHint": "Release to reference this file or folder",
   "composer.editNote": "Editing message · sending replaces it and the reply below",
   "composer.editCancel": "Cancel editing",
 

@@ -70,6 +70,7 @@ export const zh: Dict = {
   "composer.image.remove": "移除 {{name}}",
   "composer.image.fallback": "图片",
   "composer.ref.remove": "移除对 {{path}} 的引用",
+  "composer.dropHint": "松开即把这个文件 / 目录加为引用",
   "composer.editNote": "正在编辑消息 · 发送将替换它及其下方的回复",
   "composer.editCancel": "取消编辑",
 

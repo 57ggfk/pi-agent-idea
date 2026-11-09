@@ -206,6 +206,8 @@ export class MockBridge implements Bridge {
   /** `?files=volatile` — the file list loses one entry after the first read. */
   private readonly volatileFiles = query()?.get("files") === "volatile";
   private fileReads = 0;
+  /** `?drop=a,b` — the first `files.takeDrop` returns these, then nothing. */
+  private dropConsumed = false;
   /** `?install=hang` — the in-flight install, resolvable only by a cancel. */
   private pendingInstall: { output: string; resolve?: (cancelled: boolean) => void } | null = null;
   /** `?pistate=1` — report starting → running, so auto-recovery can be observed. */
@@ -413,6 +415,29 @@ export class MockBridge implements Bridge {
           ? MOCK_FILES.filter((f) => f !== "src/store/store.ts")
           : MOCK_FILES;
       return { files } as T;
+    }
+    if (method === "files.takeDrop") {
+      // Spec 016: the IDE side is the only place a file drag's absolute paths
+      // exist, so the composer asks here instead of trusting bare file names.
+      // `?drop=/tmp/mock-project/src,/tmp/mock-project/README.md` stands in for
+      // a real drag; a trailing slash marks a directory, and the buffer is
+      // one-shot exactly like the Kotlin one.
+      const raw = this.dropConsumed ? "" : (query()?.get("drop") ?? "");
+      this.dropConsumed = true;
+      const refs = raw
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((p) => {
+          const dir = p.endsWith("/");
+          const abs = p.replace(/\/+$/, "");
+          const path = abs.startsWith(`${MOCK_PROJECT_PATH}/`)
+            ? abs.slice(MOCK_PROJECT_PATH.length + 1)
+            : abs;
+          return { path, dir };
+        })
+        .filter((r) => r.path.length > 0);
+      return { refs } as T;
     }
     if (method === "files.relpath") {
       // Spec 015: drop/paste references get resolved to project-relative

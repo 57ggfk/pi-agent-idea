@@ -430,6 +430,12 @@ interface PiStore {
   sendImages(text: string, images: Array<{ data: string; mimeType: string }>, mode: SendMode): Promise<void>;
   /** Resolves dropped/copied paths to project-relative references (spec 015). */
   resolveRefs(inputs: Array<{ path: string; dir: boolean }>): Promise<PendingRef[]>;
+  /**
+   * Takes the paths of the file/folder drag that just entered the panel from
+   * the IDE side (spec 016) — the only place the real absolute paths exist.
+   * Empty when the drag carried no files or the bridge is too old.
+   */
+  takeDroppedRefs(): Promise<PendingRef[]>;
   abort(): Promise<void>;
   // -- message queue (spec 005) ---------------------------------------------
   /** Pulls the current queue snapshot (webview reload restore, FR-001). */
@@ -1406,18 +1412,23 @@ export const usePiStore = create<PiStore>((set, get) => {
         const res = await bridge.request<{ refs?: Array<{ path?: unknown; dir?: unknown }> }>("files.relpath", {
           paths: inputs.map((i) => ({ path: i.path, dir: i.dir })),
         });
-        const refs: PendingRef[] = [];
-        for (const r of res.refs ?? []) {
-          const o = (r ?? {}) as { path?: unknown; dir?: unknown };
-          if (typeof o.path === "string" && o.path.length > 0) {
-            refs.push({ path: o.path, dir: o.dir === true });
-          }
-        }
+        const refs = toPendingRefs(res.refs);
         return refs.length > 0 ? refs : inputs;
       } catch {
         // An older IDE side without the RPC: the raw paths still work —
         // pi reads absolute paths just fine. This is only cosmetic.
         return inputs;
+      }
+    },
+
+    async takeDroppedRefs() {
+      if (!bridge) return [];
+      try {
+        const res = await bridge.request<{ refs?: Array<{ path?: unknown; dir?: unknown }> }>("files.takeDrop");
+        return toPendingRefs(res.refs);
+      } catch {
+        // Older IDE side: no such RPC. The DataTransfer fallback still runs.
+        return [];
       }
     },
 

@@ -554,6 +554,27 @@ button {
   border-top: 1px solid var(--border);
   padding: 8px 10px;
   background: var(--bg-secondary);
+  /* Anchors the drag-and-drop hint (spec 016) over the whole composer. */
+  position: relative;
+}
+
+/* Shown while a file/folder drag hovers the composer: says what releasing
+   will do, and makes the drop target visible at all. Pointer events stay off
+   so the drag itself (and the textarea under it) is untouched. */
+.composer-drop {
+  position: absolute;
+  inset: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px dashed var(--accent);
+  border-radius: 8px;
+  background: var(--bg-input);
+  color: var(--accent);
+  font-size: 12px;
+  pointer-events: none;
+  z-index: 5;
 }
 
 .queue-note {

@@ -38,6 +38,29 @@ function mergeRefs(prev: PendingRef[], next: PendingRef[]): PendingRef[] {
 }
 
 /**
+ * A bare text token that plausibly names a file (dropped paths only) — not a
+ * dragged line of code. Keeps a code drag from turning `fun` into a chip.
+ */
+function looksLikePath(token: string): boolean {
+  return (
+    /^[a-zA-Z]:[\\/]/.test(token) || // C:\…
+    token.startsWith("/") ||
+    token.startsWith("~/") ||
+    token.startsWith("./") ||
+    token.startsWith("../")
+  );
+}
+
+/**
+ * True when a drag carries files or file URIs — drives the drop hint only.
+ * A plain-text drag (dragged code) shows no hint and is inserted as text.
+ */
+function dragCarriesFiles(dt: DataTransfer | null): boolean {
+  const types = Array.from(dt?.types ?? []);
+  return types.includes("Files") || types.includes("text/uri-list");
+}
+
+/**
  * Synchronous sweep of a DataTransfer during drop/paste (the object is
  * neutered once the handler yields, so everything must be read here).
  *
@@ -47,6 +70,11 @@ function mergeRefs(prev: PendingRef[], next: PendingRef[]): PendingRef[] {
  * in `fullPath`, which a plain `File` object never exposes. IDEA project-tree
  * drags and copied files that arrive as uri-list / plain text are parsed from
  * their `file://` lines instead.
+ *
+ * Caveat (spec 016): for native drags Chromium only ever exposes the bare
+ * file *name*, and `fullPath` is `/name` rather than a real path. The IDE side
+ * therefore supplies the authoritative paths (`files.takeDrop`); this sweep is
+ * the fallback for text flavours and for an older IDE side.
  */
 function collectDroppedRefs(dt: DataTransfer): DroppedPath[] {
   const out: DroppedPath[] = [];
@@ -56,13 +84,17 @@ function collectDroppedRefs(dt: DataTransfer): DroppedPath[] {
     if (file && file.type.startsWith("image/")) continue; // images → image chips
     const entry = item.webkitGetAsEntry?.();
     if (entry) {
-      const p = entry.fullPath;
-      if (p && p.length > 1) {
+      // Chromium's `fullPath` for a native drop is just "/name" — a single
+      // segment is not a path, and chipping it would claim an absolute path
+      // the file does not have. Only a multi-segment value is usable here.
+      const p = entry.fullPath ?? "";
+      const segments = p.split("/").filter(Boolean);
+      if (segments.length > 1) {
         out.push({ path: p, dir: entry.isDirectory });
         continue;
       }
     }
-    if (file) out.push({ path: file.name, dir: false }); // best effort: name only
+    if (file) out.push({ path: file.name, dir: entry?.isDirectory === true }); // best effort: name only
   }
   if (out.length > 0) return out;
   // No usable file items — try the uri-list / plain-text flavours
@@ -79,8 +111,8 @@ function collectDroppedRefs(dt: DataTransfer): DroppedPath[] {
       } catch {
         // Malformed URI — skip the line rather than the whole drop.
       }
-    } else if (!token.includes("://") && !token.startsWith("data:")) {
-      // A bare path (some drag sources only offer plain text).
+    } else if (!token.includes("://") && !token.startsWith("data:") && looksLikePath(token)) {
+      // A bare absolute path (some drag sources only offer plain text).
       out.push({ path: token, dir: token.endsWith("/") });
     }
   }
@@ -182,6 +214,7 @@ export default function Composer() {
   const [mode, setMode] = useState<SendMode>("auto");
   const [images, setImages] = useState<PendingImage[]>([]);
   const [refs, setRefs] = useState<PendingRef[]>([]);
+  const [dropActive, setDropActive] = useState(false);
   const [highlightIndex, setHighlightIndex] = useState(0);
   // Menus dismissed with Escape stay closed until the text changes.
   const [slashDismissed, setSlashDismissed] = useState(false);
@@ -202,6 +235,7 @@ export default function Composer() {
   const composerResetSeq = usePiStore((s) => s.composerResetSeq);
   const clearPendingPrompt = usePiStore((s) => s.clearPendingPrompt);
   const resolveRefs = usePiStore((s) => s.resolveRefs);
+  const takeDroppedRefs = usePiStore((s) => s.takeDroppedRefs);
   const editing = usePiStore((s) => s.editing);
   const cancelEditMessage = usePiStore((s) => s.cancelEditMessage);
   const sendEdited = usePiStore((s) => s.sendEdited);
@@ -518,20 +552,89 @@ export default function Composer() {
     }
   };
 
+  /**
+   * Drop → reference chips (spec 015 + 016). Channel order is deliberate:
+   *
+   * 1. The IDE side (`files.takeDrop`) — CEF is the only place a native or
+   *    project-tree drag exposes real absolute paths; the page only ever sees
+   *    bare file names. This is what makes a chip say `src/store/store.ts`
+   *    instead of `store.ts`.
+   * 2. The DataTransfer itself — uri-list / plain-text flavours when the IDE
+   *    had nothing (older IDE side, or a drag from another browser window).
+   *
+   * Images keep their image chips and never become references. A drag that
+   * carries no files at all is text: it is inserted at the caret like the
+   * browser would have done, because `preventDefault()` on dragover claimed it.
+   */
+  const handleDrop = (dt: DataTransfer) => {
+    // Everything read from `dt` must be read synchronously — the object is
+    // neutered as soon as the handler yields.
+    const files = Array.from(dt.files ?? []);
+    const imageFiles = files.filter((f) => f.type.startsWith("image/"));
+    const nonImageFiles = files.filter((f) => !f.type.startsWith("image/"));
+    const dropped = collectDroppedRefs(dt);
+    const plain = dt.getData("text/plain") ?? "";
+
+    if (imageFiles.length > 0) void addFiles(imageFiles);
+    // Files/folders (from the OS, the Project View or an editor tab) or text
+    // that already parsed into paths.
+    if (nonImageFiles.length > 0 || dropped.length > 0) {
+      void (async () => {
+        let fromIde: PendingRef[] = [];
+        if (nonImageFiles.length > 0) {
+          fromIde = await takeDroppedRefs();
+        }
+        if (fromIde.length > 0) {
+          setRefs((prev) => mergeRefs(prev, fromIde));
+        } else {
+          await addRefs(dropped);
+        }
+      })();
+      return;
+    }
+    if (imageFiles.length === 0) insertDroppedText(plain);
+  };
+
+  /** Inserts dragged text where the caret is (the drop default we suppressed). */
+  const insertDroppedText = (insert: string) => {
+    if (!insert) return;
+    const ta = taRef.current;
+    const start = ta?.selectionStart ?? text.length;
+    const end = ta?.selectionEnd ?? start;
+    applyText(text.slice(0, start) + insert + text.slice(end));
+    const caret = start + insert.length;
+    requestAnimationFrame(() => {
+      ta?.focus();
+      ta?.setSelectionRange(caret, caret);
+    });
+  };
+
   return (
     <div
       className="composer"
       data-testid="composer"
-      onDragOver={(e) => e.preventDefault()}
+      data-drop-active={dropActive ? "true" : "false"}
+      onDragOver={(e) => {
+        // Claim every drag: dropping files from the OS / the Project View must
+        // reach onDrop, and a text drag is inserted by handleDrop itself.
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+      }}
+      onDragEnter={(e) => {
+        if (dragCarriesFiles(e.dataTransfer)) setDropActive(true);
+      }}
+      onDragLeave={(e) => {
+        // dragleave also fires when moving between children — only clear when
+        // the pointer really leaves the composer.
+        const next = e.relatedTarget as Node | null;
+        if (!next || !e.currentTarget.contains(next)) setDropActive(false);
+      }}
       onDrop={(e) => {
         e.preventDefault();
-        // Images keep their chips; every other file/directory becomes a
-        // reference (spec 015). The DataTransfer must be read synchronously —
-        // collectDroppedRefs does the sweep before any await.
-        const dropped = collectDroppedRefs(e.dataTransfer);
-        const imageFiles = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith("image/"));
-        if (imageFiles.length > 0) void addFiles(imageFiles);
-        if (dropped.length > 0) void addRefs(dropped);
+        setDropActive(false);
+        // The DataTransfer must be read synchronously — handleDrop does the
+        // sweep before its first await.
+        handleDrop(e.dataTransfer);
       }}
     >
       <div className="composer-inner">
@@ -843,6 +946,12 @@ export default function Composer() {
         </div>
       </div>
       </div>
+      {dropActive ? (
+        <div className="composer-drop" data-testid="composer-drop">
+          <Icon name="file" className="ic-sm" />
+          <span>{t("composer.dropHint")}</span>
+        </div>
+      ) : null}
     </div>
   );
 }
