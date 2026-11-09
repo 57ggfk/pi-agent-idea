@@ -279,6 +279,8 @@ export const en = {
   "auth.notConfigured": "not configured",
   "auth.refresh": "Refresh",
   "auth.checkHint": "Checks run `pi auth check --no-refresh` per provider.",
+  "auth.modelsStale":
+    "Credential saved, but the model list could not be reloaded in the running pi — restart pi to see the new models.",
   "auth.empty": "No providers with stored credentials or custom models yet.",
   "auth.credentialsStored": "credentials stored",
   "auth.customProvider": "custom provider (models.json)",

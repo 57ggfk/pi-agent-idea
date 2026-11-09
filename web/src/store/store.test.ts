@@ -987,3 +987,64 @@ describe("auth login reduction (spec 014)", () => {
     expect(usePiStore.getState().authLogin.events.at(-1)).toMatchObject({ message: "step 14" });
   });
 });
+
+describe("model catalog reload (spec 016)", () => {
+  beforeEach(() => {
+    h.state.calls.length = 0;
+    h.state.methods.clear();
+    h.state.rpc.clear();
+  });
+
+  it("replaces the list with what the bridge returns", async () => {
+    usePiStore.setState({ models: [{ provider: "old", id: "old-1" }] });
+    h.state.methods.set("models.reload", () => ({
+      models: [{ provider: "fresh", id: "fresh-1", name: "Fresh One" }],
+      refreshed: true,
+    }));
+
+    const refreshed = await usePiStore.getState().reloadModels();
+
+    expect(refreshed).toBe(true);
+    expect(usePiStore.getState().models.map((m) => m.id)).toEqual(["fresh-1"]);
+    expect(usePiStore.getState().sources.models.status).toBe("ready");
+    expect(h.state.calls.map((c) => c.method)).toContain("models.reload");
+  });
+
+  it("keeps the list when the in-process refresh was unavailable", async () => {
+    h.state.methods.set("models.reload", () => ({
+      models: [{ provider: "p", id: "p-1" }],
+      refreshed: false,
+    }));
+
+    const refreshed = await usePiStore.getState().reloadModels();
+
+    expect(refreshed).toBe(false);
+    expect(usePiStore.getState().models).toHaveLength(1);
+    expect(usePiStore.getState().sources.models.status).toBe("ready");
+  });
+
+  it("surfaces a failed reload through the models source", async () => {
+    h.state.methods.set("models.reload", () => {
+      throw new Error("pi process is not running");
+    });
+
+    const refreshed = await usePiStore.getState().reloadModels();
+
+    expect(refreshed).toBe(false);
+    expect(usePiStore.getState().sources.models.status).toBe("failed");
+    expect(usePiStore.getState().sources.models.error).toContain("not running");
+  });
+
+  it("keeps the plugin's own extension command out of slash completion", async () => {
+    h.state.rpc.set("get_commands", () => ({
+      commands: [
+        { name: "fix-tests", description: "Fix tests", source: "prompt" },
+        { name: "pi-agent-reload-models", description: "internal", source: "extension" },
+      ],
+    }));
+
+    await usePiStore.getState().refreshCommands();
+
+    expect(usePiStore.getState().commands.map((c) => c.name)).toEqual(["fix-tests"]);
+  });
+});

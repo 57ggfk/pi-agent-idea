@@ -17,6 +17,7 @@ import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.UIUtil
 import dev.pi.agent.process.PiConnectionState
+import dev.pi.agent.process.PiModelReload
 import dev.pi.agent.process.PiProcessManager
 import dev.pi.agent.rpc.PiRpcClient
 import kotlinx.coroutines.CoroutineScope
@@ -25,7 +26,11 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
@@ -131,6 +136,9 @@ class BridgeService(private val project: Project) : Disposable {
                 "approval.getPolicy" -> approvalGetPolicy()
                 "approval.setPolicy" -> approvalSetPolicy(params)
                 "rpc.restart" -> restartPi()
+                // spec 016: re-read the model catalog after a credential or
+                // models.json write, without restarting pi (session intact).
+                "models.reload" -> reloadModels()
                 "manage.env" -> dev.pi.agent.manage.PiManage.environment()
                 "manage.envDetect" -> dev.pi.agent.manage.PiEnvironment.detect()
                 "manage.envInstall" -> dev.pi.agent.manage.PiEnvironment.install(
@@ -252,6 +260,61 @@ class BridgeService(private val project: Project) : Disposable {
             ?: throw IllegalStateException("failed to restart pi (see logs)")
         return buildJsonObject { put("ok", true) }
     }
+
+    /** Serializes catalog reloads: saving two providers must not refresh twice at once. */
+    private val modelsReloadLock = Mutex()
+
+    /**
+     * Re-reads pi's model catalog (spec 016).
+     *
+     * pi picks up auth.json on its own, but a models.json change only enters the
+     * availability snapshot after `ModelRuntime.refresh()` — and RPC mode has no
+     * refresh command. The bundled pi-models extension registers one
+     * (`pi-agent-reload-models`) whose handler awaits that refresh, so pi
+     * answering "handled" already means the snapshot is rebuilt.
+     *
+     * When the command is missing (extraction failed, older pi) the list is
+     * still re-read and `refreshed=false` lets the UI degrade without an error.
+     */
+    private suspend fun reloadModels(): JsonObject = modelsReloadLock.withLock {
+        val client: PiRpcClient = PiProcessManager.getInstance(project).client()
+            ?: throw IllegalStateException("pi process is not running")
+
+        suspend fun request(command: JsonObject, timeoutMs: Long) =
+            client.send(command, timeoutMs = timeoutMs).await()
+
+        val commands = request(buildJsonObject { put("type", "get_commands") }, 10_000)
+        val refreshed = PiModelReload.COMMAND in commandNames(commands.data)
+        if (refreshed) {
+            val answer = request(
+                buildJsonObject {
+                    put("type", "prompt")
+                    put("message", "/${PiModelReload.COMMAND}")
+                },
+                30_000,
+            )
+            if (!answer.success) {
+                throw IllegalStateException(answer.error ?: "model reload was rejected by pi")
+            }
+        }
+
+        val models = request(buildJsonObject { put("type", "get_available_models") }, 15_000)
+        if (!models.success) {
+            throw IllegalStateException(models.error ?: "get_available_models failed")
+        }
+        val list = ((models.data as? JsonObject)?.get("models") as? JsonArray) ?: JsonArray(emptyList())
+        buildJsonObject {
+            put("models", list)
+            put("refreshed", refreshed)
+        }
+    }
+
+    /** Defensive read of a `get_commands` payload: a malformed shape means "none". */
+    private fun commandNames(data: JsonElement?): Set<String> =
+        ((data as? JsonObject)?.get("commands") as? JsonArray)
+            ?.mapNotNull { entry -> ((entry as? JsonObject)?.get("name") as? JsonPrimitive)?.contentOrNull }
+            ?.toSet()
+            ?: emptySet()
 
     private fun lastModel(): JsonObject {
         val prefs = dev.pi.agent.process.PiModelPreferences.getInstance(project).get()

@@ -255,3 +255,15 @@ Phase 7 收尾：i18n / 全基线 / MANUAL_TEST / 真机目视
 - 独占态一律用 `toHaveCount(0)` 断言「不渲染」，不用 `not.toBeVisible()`。
 - `setup.spec.ts` 7 条按新语义改写后全绿，其余默认 `needsSetup=false` 的 e2e 零回归；基线变化逐条注明「非回归」。
 - 凭据明文在 DOM / 日志 / bridge 响应 / 测试快照中零出现；图片复制与另存失败必须可见。
+
+---
+
+# 0.5.6 批次（2026-11-09 追加）
+
+> 版本分支：`release/0.5.6`（进行中，未打 tag）。016 在临时分支 `feature/016-models-reload` 上实现，完成后合回版本分支。
+
+| Feature | Tasks | 内容 | 状态 |
+|---|---|---|---|
+| [016 新认证后模型列表自动生效](./016-models-reload/spec.md) | 12 | 认证保存 / OAuth 完成 / 删除凭据后即时重读模型目录；models.json 新增 provider 由扩展在 pi 进程内 refresh；选择器打开时按 15s TTL 兜底；内部命令不进斜杠补全 | 已实现，待真机 |
+
+关键实证（2026-11-09，pi 1.5.0，临时 `PI_CODING_AGENT_DIR` 隔离）：pi 对 **auth.json 会自动重读**（空 auth 0 个模型 → 写入 deepseek key 后立即 2 个），对 **models.json 不会**（新增自定义 provider 后仍 0 个；扩展内 `ctx.modelRegistry.refresh()` 后变 1 个且 `set_model` 成功）。因此本 feature 不需要重启 pi 进程。

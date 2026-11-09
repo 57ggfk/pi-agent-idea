@@ -8,11 +8,17 @@
 **变更**
 - 顶栏图标按钮（目录 / 搜索 / 新建）悬停显示气泡提示，工具窗拉宽（≥560px）后展开为「图标+文字」（大纲 / 搜索 / 新建），窄面板保持纯图标；中英文案齐备。
 
+**修复**
+- 新增认证后聊天页的模型选择器仍是旧列表，必须重启 pi 或重开工具窗才能选到新模型（spec 016）：现在保存 API key、完成浏览器 OAuth、删除凭据都会立刻重读模型目录，选择器即时可见。pi 会自己重读 auth.json；models.json 里的自定义 provider 由随插件加载的扩展在进程内触发刷新——不重启进程、不打断当前会话。打开选择器时若数据超过 15 秒也会后台重读，覆盖在终端 `/login` 或手改 models.json 的情况；内部刷新命令不出现在斜杠补全里。
+
 **Added**
 - Real browser OAuth lands in the auth panel (spec 014): pick an OAuth-capable provider and press "Sign in via browser" — the authorization page opens in the system browser automatically (with the URL, instructions and copy fallback mirrored in the panel), device-code flows show the verification code and URI, and pi's interactive prompts (text / secret / select / paste-the-callback-URL) are answered right in the form; credentials are written by pi into auth.json under its own lock and row badges update immediately. The pi SDK is not bundled — it is imported at runtime from the user's installed pi (≥1.4.0), sharing the same credential store and device id as terminal `/login`; when pi is missing or too old the panel degrades to the existing terminal guide. One login at a time, cancellable at any point.
 
 **Changed**
 - Top-bar icon buttons (outline / search / new session) show hover tooltips and expand to icon+text once the tool window is wide enough (≥560px); narrow panels keep bare icons. Both languages covered.
+
+**Fixed**
+- The chat tab's model picker kept the startup list after a new credential, so the new models only appeared after restarting pi or reopening the tool window (spec 016). Saving an API key, completing browser OAuth, or deleting a credential now re-reads the catalog immediately and the picker reflects it. pi re-reads auth.json itself; a custom provider added through models.json is refreshed in-process by an extension shipped with the plugin — no restart, no interrupted session. Opening the picker also re-reads once the data is older than 15 seconds, covering a terminal `/login` or a hand-edited models.json; the internal refresh command stays out of slash completion.
 
 ## 0.5.5 — 2026-11-08
 

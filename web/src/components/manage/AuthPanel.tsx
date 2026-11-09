@@ -72,6 +72,20 @@ export default function AuthPanel({ api }: { api: ReturnType<typeof manageApi> }
     setOverview(await api.authOverview().catch(() => null));
   }, [api]);
 
+  const reloadModels = usePiStore((s) => s.reloadModels);
+  /**
+   * Spec 016: a saved/removed credential must reach the chat tab's model
+   * picker. pi re-reads auth.json by itself; models.json needs the bundled
+   * extension, which the bridge triggers. [staleModels] only appears when that
+   * refresh was unavailable — the credential itself is already written.
+   */
+  const [staleModels, setStaleModels] = useState(false);
+  const afterCredentialChange = useCallback(async () => {
+    await refresh();
+    const refreshed = await reloadModels();
+    setStaleModels(!refreshed);
+  }, [refresh, reloadModels]);
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -129,7 +143,7 @@ export default function AuthPanel({ api }: { api: ReturnType<typeof manageApi> }
           try {
             const res = await api.authDelete({ provider });
             if (!res.ok) setOpenNote(res.error ?? null);
-            await refresh();
+            await afterCredentialChange();
           } catch (e) {
             setOpenNote((e as Error).message);
           }
@@ -171,12 +185,19 @@ export default function AuthPanel({ api }: { api: ReturnType<typeof manageApi> }
         </button>
         <span className="panel-row-sub">{t("auth.checkHint")}</span>
       </div>
+      {/* Spec 016: the credential is saved either way; only the in-process
+          refresh was missing, so this is an instruction, not an error. */}
+      {staleModels ? (
+        <div className="panel-note" data-testid="models-reload-note">
+          {t("auth.modelsStale")}
+        </div>
+      ) : null}
       {formMode === "new" ? (
         <ProviderForm
           api={api}
           defaultCustom={false}
           testPrefix="provider-add"
-          onDone={() => void refresh()}
+          onDone={() => void afterCredentialChange()}
         />
       ) : null}
       {providers.length === 0 ? (
@@ -252,7 +273,7 @@ export default function AuthPanel({ api }: { api: ReturnType<typeof manageApi> }
                 fixedProvider={p}
                 defaultCustom={!withCreds.has(p)}
                 testPrefix={`provider-edit-${p}`}
-                onDone={() => void refresh()}
+                onDone={() => void afterCredentialChange()}
               />
             ) : null}
             {expanded === p ? (
