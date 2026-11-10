@@ -273,7 +273,7 @@ Phase 7 收尾：i18n / 全基线 / MANUAL_TEST / 真机目视
 
 # 0.5.7 批次（2026-11-10 追加）
 
-> 版本分支：`release/0.5.7`（进行中）。**017（模型重载）归属从 0.5.6 挪入本批**；新增 018 / 019 / 020 / 021。
+> 版本分支：`release/0.5.7`（进行中）。**017（模型重载）归属从 0.5.6 挪入本批**；新增 018 / 019 / 020 / 021 / 022。
 
 | Feature | Tasks | 内容 | 状态 |
 |---|---|---|---|
@@ -282,6 +282,7 @@ Phase 7 收尾：i18n / 全基线 / MANUAL_TEST / 真机目视
 | [019 工具窗多实例](./019-toolwindow-multi-instance/spec.md)（[plan](./019-toolwindow-multi-instance/plan.md)） | 待排（挂起） | 一个 Pi Agent 工具窗内开多个 pi 实例（multi-Content 原生标签，每 Content 独立浏览器+独立 pi 进程，web 侧零改动）；核心是 `PiProcessManager` 按实例注册表重构 + `BridgeService` 事件按 instanceId 路由（缺省实例 1 兼容旧页面）；上限默认 4、关闭流式中实例走确认框、崩溃重建只倒一个 | spec + plan 已定稿（plan 补入 2026-11-10）；**架构级改动，排在 018 之后实现** |
 | [020 模型选择器供应商上限 + 每家动态截断 + 标题左对齐 + 搜索态折叠](./020-model-picker-group-cap/spec.md)（[plan](./020-model-picker-group-cap/plan.md)） | 13（待开工） | 供应商最多 50 组（当前组置顶 + pi 原序）；每家上限 `P = clamp(floor(1000/n), 5, 200)`（n≤5 → 每家 200，n=10 → 100，n=50 → 20），每家按实际条数截断、配额不跨组搬运；当前模型即使被组内截断也插到组首保证可定位；组标题计数改 `已显示/总数` + 组末「还有 N 个」+ 末尾「还有 N 个供应商」；修 `.model-group-title` 三段 flex 配 `space-between` 导致**名称居中**的视觉 Bug（改 flex-start + name flex:1 + count margin-left:auto）；搜索态不再强制全展开，改为默认展开且可手动折叠（临时态、不落盘），50 上限与每家上限在搜索态同样生效 | spec + plan + tasks 已定稿；**仅文档，未开工** |
 | [021 会话切换与新建：点击后 1s+ 才有反应](./021-session-switch-latency/spec.md)（[plan](./021-session-switch-latency/plan.md)） | 17（待开工） | 两条延迟反馈（新建会话、点历史会话各等 1s+）合成一份规格：根因是**四段等待串联**——① 界面反馈被 `await` RPC 卡住（两处都是 RPC 回来才写 state）② 历史切换只有 RPC 成功后才 `tab:"chat"` ③ 跳转同一笔 `set` 清空 `items`，内容要再等一轮 `get_messages`，且 `get_messages`/`get_session_stats`/`get_state` 三段串行 ④ JCEF OSR 帧滞后——0.5.4 的 `ide.repaint` 修复**只接在页签点击上**，会话切换/新建是 store 内部改 view，从不重绘。修法：`pendingSwitch` 乐观反馈契约（点击即跳页+占位+禁发，失败回滚）、三段 RPC 并成 `Promise.all`、`refreshSessions` 移出关键路径、repaint 收敛为去抖入口、`PiSessionIndex` 两阶段读（先读首行判 cwd，不再为所有项目的每个文件解析 4000 行 JSON）+ `mtime/size` 缓存；阈值 T1≤150ms / T2≤300ms / T3≤600ms / T4≤1200ms，由 mock 注入 1.2s 延迟后断言（不靠真机手感） | spec + plan + tasks 已定稿；**仅文档，未开工**；A 轨（新建）可单独交付，B 轨（历史切换）可随 0.5.8 走 |
+| [022 滚轮卡顿：长列表与下拉「滑到底再往上滑不动」](./022-scroll-jank/spec.md)（[plan](./022-scroll-jank/plan.md)） | 14（待开工） | 两条反馈（会话历史滚轮到底回不去、模型下拉同款）合成一份规格，病根有两条：**已证**——两个 picker（`ModelPicker.tsx:270`、`ProviderPicker.tsx:180,214`）在 `onMouseEnter` 里 `setHighlight`，于是每滚一格就整表重渲染（模型选择器每次还为每组 `filter` 全表，359 条重建）+ `ensureVisible` 的两次 `getBoundingClientRect` 强制布局，主线程占满 → 滚轮排队，指针移开就正常（用户观察完全吻合）；**一半已证**——`MessageList` 的贴底判定是「距底 <60px」这种**距离**阈值，与单次滚轮位移同量级，向上滚一格仍被判贴底，被下一次更新拽回。修法：悬停视觉交给 CSS（`data-active` 收窄为「键盘当前项」，悬停写 ref 零渲染，Enter 仍选鼠标所指）、行组件 memo + 分组桶装、`ensureVisible` 只服务键盘、贴底改**方向优先**状态机（向上滚立即脱离，4px 容差）、`ItemView` memo + `content-visibility` 压每帧成本；指标 `scroll.frame` / `hover.render` 落 `idea.log`。**实施顺序 020 → 021 → 022**（020 会改 `PickerModelData` 与分组渲染） | spec + plan + tasks 已定稿；**仅文档，未开工** |
 
 **021 的拆分判断（2026-11-10）**：**不拆两份规格**，用 tasks 双轨 + 允许分批交付吸收差异。理由：① 根因链重合（四段里重叠 ≥4/6），拆开要把同一套埋点与阈值写两遍；② 延迟的「可接受」标准是同一张 T1–T4 表，分开会出现无法自洽的口径；③ 体量差异用 A/B 双轨解决，而不是拉高 spec 粒度。**触发拆分的情况**（写死在此）：实测证明历史切换瓶颈主要在消息渲染且必须上虚拟滚动；或 pi 侧 `switch_session`/`new_session` 自身 ≥800ms；或两条要分属不同版本发布。
 
