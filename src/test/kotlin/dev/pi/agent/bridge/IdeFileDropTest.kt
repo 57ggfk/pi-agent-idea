@@ -51,6 +51,33 @@ class IdeFileDropTest {
     }
 
     @Test
+    fun `an empty CEF drag does not erase the AWT batch`() {
+        val drop = IdeFileDrop()
+        drop.record(listOf("/p/a.kt"), DropSource.AWT)
+        // IDEA 项目树拖拽里 CEF 常常看不到文件；它的空记录不能清掉 AWT 的真路径。
+        drop.record(emptyList(), DropSource.CEF)
+        assertEquals(listOf("/p/a.kt"), drop.take())
+        assertTrue(drop.take().isEmpty())
+    }
+
+    @Test
+    fun `both sources merge, AWT first, without duplicates`() {
+        val drop = IdeFileDrop()
+        drop.record(listOf("/p/b.kt"), DropSource.CEF)
+        drop.record(listOf("/p/a.kt", "/p/b.kt"), DropSource.AWT)
+        assertEquals(listOf("/p/a.kt", "/p/b.kt"), drop.take())
+    }
+
+    @Test
+    fun `peek shows a pending batch without consuming it`() {
+        val drop = IdeFileDrop()
+        drop.record(listOf("/p/a.kt"), DropSource.AWT)
+        assertEquals(listOf("/p/a.kt"), drop.peek())
+        assertEquals(listOf("/p/a.kt"), drop.take())
+        assertTrue(drop.peek().isEmpty())
+    }
+
+    @Test
     fun `in-project absolute paths become relative and keep the directory flag`(@TempDir root: Path) {
         val dir = Files.createDirectory(root.resolve("src"))
         val file = Files.writeString(root.resolve("README.md"), "x")

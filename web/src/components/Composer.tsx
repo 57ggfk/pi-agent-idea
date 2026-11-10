@@ -578,10 +578,12 @@ export default function Composer() {
    * Drop → inline reference tokens (spec 015 + 016, 018 US1). Channel order
    * is deliberate:
    *
-   * 1. The IDE side (`files.takeDrop`) — CEF is the only place a native or
-   *    project-tree drag exposes real absolute paths; the page only ever sees
-   *    bare file names. This is what makes a token say `src/store/store.ts`
-   *    instead of `store.ts`.
+   * 1. The IDE side (`files.takeDrop`) — CEF's drag handler and an AWT
+   *    DropTarget listener are the only places a native or project-tree drag
+   *    exposes real absolute paths; the page only ever sees bare file names.
+   *    Asked unconditionally (spec 016 real-machine fix): an IDEA project-tree
+   *    drag may carry no `Files` flavour at all. This is what makes a token say
+   *    `src/store/store.ts` instead of `store.ts`.
    * 2. The DataTransfer itself — uri-list / whole-payload text rules
    *    (`collectPathRefs`) when the IDE had nothing (older IDE side, or a
    *    drag from another browser window).
@@ -598,26 +600,31 @@ export default function Composer() {
     const hasNonImages = files.some((f) => !f.type.startsWith("image/"));
     const plain = dt.getData("text/plain") ?? "";
     const dropped = collectPathRefs(sweepFiles(dt), dt.getData("text/uri-list") ?? "", plain);
+    // 真机诊断：这一行会由 JCEF 的 console handler 写进 idea.log，用来判断
+    // 页面到底有没有收到 HTML5 drop、以及它看到的 flavour 是什么。
+    console.log(
+      `[pi-agent] drop: types=${Array.from(dt.types ?? []).join(",")} files=${files.length} plain=${plain.length}`,
+    );
 
     if (imageFiles.length > 0) void addFiles(imageFiles);
-    // Files/folders (from the OS, the Project View or an editor tab) or text
-    // that already parsed into paths.
-    if (hasNonImages || dropped.length > 0) {
-      void (async () => {
-        // The IDE side wins when it saw real paths; otherwise resolve the
-        // swept ones (relative-ization is cosmetic, never eats the drop).
-        if (hasNonImages) {
-          const fromIde = await takeDroppedRefs();
-          if (fromIde.length > 0) {
-            insertRefTokens(fromIde.map((r) => r.path));
-            return;
-          }
-        }
+    void (async () => {
+      // 无条件先问 IDE（spec 016 真机修复）：CEF 与 AWT 两条通道任一记下真路径
+      // 都算数。IDEA 项目树拖拽常常只带 text/uri-list 或纯文本、没有 Files，
+      // 旧实现只在 dt.files 非空时才问，真路径通道就被整条跳过了。
+      const fromIde = await takeDroppedRefs();
+      if (fromIde.length > 0) {
+        insertRefTokens(fromIde.map((r) => r.path));
+        return;
+      }
+      // IDE 已经兜底推送过这批文件：再解析 DataTransfer 只会插出第二个
+      // （往往只有文件名的）chip。
+      if (Date.now() - usePiStore.getState().lastIdeDropAt < 1500) return;
+      if (hasNonImages || dropped.length > 0) {
         await resolveAndInsert(dropped);
-      })();
-      return;
-    }
-    if (imageFiles.length === 0) insertDroppedText(plain);
+        return;
+      }
+      if (imageFiles.length === 0) insertDroppedText(plain);
+    })();
   };
 
   /** Inserts dragged text where the caret is (the drop default we suppressed). */

@@ -14,34 +14,53 @@ import java.nio.file.Path
  * 缓冲带 TTL：用户拖进来又拖走（没松手），几秒后另一次无关的 drop 不能把这批
  * 文件顺手带上。
  */
+/** 真路径的两个来源：CEF 的原生拖拽回调、AWT DropTarget 旁听。 */
+enum class DropSource { CEF, AWT }
+
 class IdeFileDrop(
     private val ttlMs: Long = DEFAULT_TTL_MS,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
 
+    private data class Entry(val paths: List<String>, val at: Long)
+
     private val lock = Any()
-    private var paths: List<String> = emptyList()
-    private var recordedAt = 0L
+    private val entries = HashMap<DropSource, Entry>()
 
     /**
      * 记录刚刚进入浏览器的那次拖拽所携带的文件路径。
-     * 传空列表是**有效信息**：这次拖的是文字/链接，必须让上一次的文件记录失效。
+     * 传空列表是**有效信息**：这次拖的是文字/链接，必须让该来源上一次的记录失效。
+     *
+     * 两个来源分开存：CEF 的 `onDragEnter` 在 IDEA 内部拖拽里常常拿到空 dragData，
+     * 若它把 AWT 旁听刚记下的真路径一起清掉，这条通道就白做了。
      */
-    fun record(newPaths: List<String>) {
+    fun record(newPaths: List<String>, source: DropSource = DropSource.CEF) {
         val cleaned = newPaths.map { it.trim() }.filter { it.isNotEmpty() }
         synchronized(lock) {
-            paths = cleaned
-            recordedAt = clock()
+            entries[source] = Entry(cleaned, clock())
         }
     }
 
-    /** 取走缓冲（一次性）。已过期或为空都返回空列表。 */
+    /** 只看不取，供「页面没来拿就主动推送」的兜底判断使用。 */
+    fun peek(): List<String> = synchronized(lock) { combined(clock()) }
+
+    /** 取走缓冲（一次性，两个来源一起清）。已过期或为空都返回空列表。 */
     fun take(): List<String> = synchronized(lock) {
-        val fresh = paths.isNotEmpty() && clock() - recordedAt <= ttlMs
-        val out = if (fresh) paths else emptyList()
-        paths = emptyList()
-        recordedAt = 0L
+        val out = combined(clock())
+        entries.clear()
         out
+    }
+
+    /** AWT 的真路径优先，CEF 的补在后面；同源/跨源重复只留一个。 */
+    private fun combined(now: Long): List<String> {
+        val awt = fresh(DropSource.AWT, now)
+        val cef = fresh(DropSource.CEF, now)
+        return (awt + cef).distinct()
+    }
+
+    private fun fresh(source: DropSource, now: Long): List<String> {
+        val entry = entries[source] ?: return emptyList()
+        return if (entry.paths.isNotEmpty() && now - entry.at <= ttlMs) entry.paths else emptyList()
     }
 
     companion object {

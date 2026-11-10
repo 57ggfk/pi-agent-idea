@@ -224,6 +224,34 @@ test("a folder drag becomes a token at the caret", async ({ page }) => {
   await expect(page.getByTestId("ref-token").first()).toHaveText("@src");
 });
 
+// -- spec 016 真机修复：IDE 拖拽未必带 Files flavour -------------------------
+
+test("a drop with no Files flavour still takes the IDE's real path", async ({ page }) => {
+  await page.goto("/?drop=/tmp/mock-project/src/store/store.ts");
+  await expect(page.getByTestId("composer-input")).toBeVisible();
+  const dataTransfer = await page.evaluateHandle(() => {
+    const dt = new DataTransfer();
+    // 页面只看得到裸文件名，真路径在 IDE 侧；旧实现没有 Files 就跳过 takeDrop。
+    dt.setData("text/plain", "store.ts");
+    return dt;
+  });
+  await page.getByTestId("composer").dispatchEvent("drop", { dataTransfer });
+  await expect(page.getByTestId("composer-input")).toHaveValue("@src/store/store.ts ");
+});
+
+test("an IDE-pushed drop batch is not duplicated by a later HTML5 drop", async ({ page }) => {
+  await pushIde(page, { kind: "refs", files: [{ path: "src", dir: true }], fromDrop: true });
+  await expect(page.getByTestId("composer-input")).toHaveValue("@src ");
+  const dataTransfer = await page.evaluateHandle(() => {
+    const dt = new DataTransfer();
+    dt.items.add(new File(["x"], "src", { type: "" }));
+    return dt;
+  });
+  await page.getByTestId("composer").dispatchEvent("drop", { dataTransfer });
+  await expect(page.getByTestId("composer-input")).toHaveValue("@src ");
+  await expect(page.getByTestId("ref-token")).toHaveCount(1);
+});
+
 test("dragged code lands as text, not as a bogus reference token", async ({ page }) => {
   const dataTransfer = await page.evaluateHandle(() => {
     const dt = new DataTransfer();

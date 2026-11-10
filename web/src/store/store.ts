@@ -295,6 +295,12 @@ interface PiStore {
   /** Editor-initiated prompt ("ide" event) waiting for the Composer to pick up. */
   pendingPrompt: PendingPrompt | null;
   /**
+   * spec 016 兜底：页面没收到 HTML5 drop 时由 IDE 主动推送引用（ide 事件带
+   * fromDrop）。记下时间，Composer 在随后的一次 drop 里据此跳过 DataTransfer
+   * 兜底，避免同一批文件插出两个 chip。
+   */
+  lastIdeDropAt: number;
+  /**
    * Edit-and-resend target while the composer owns it. Null when idle; the
    * action matrix hides regenerate/edit whenever this is set (FR-010).
    */
@@ -1090,6 +1096,7 @@ export const usePiStore = create<PiStore>((set, get) => {
     queueDiscardConfirm: null,
     authLogin: { phase: "idle", provider: null, events: [], browserOpened: false, prompt: null, done: null },
     pendingPrompt: null,
+    lastIdeDropAt: 0,
     editing: null,
     confirm: null,
     composerResetSeq: 0,
@@ -1243,7 +1250,8 @@ export const usePiStore = create<PiStore>((set, get) => {
         } else if (name === "ide") {
           // Editor action (e.g. "Explain with Pi"): pre-fill the composer and
           // switch to chat. The Composer consumes pendingPrompt and focuses.
-          const d = (data ?? {}) as { kind?: string; text?: string; files?: unknown };
+          const d = (data ?? {}) as { kind?: string; text?: string; files?: unknown; fromDrop?: boolean };
+          const dropStamp = d.fromDrop ? Date.now() : get().lastIdeDropAt;
           if (d.kind === "prompt") {
             const refs = toPendingRefs(d.files);
             set({
@@ -1267,9 +1275,14 @@ export const usePiStore = create<PiStore>((set, get) => {
               set({
                 tab: "chat",
                 pendingPrompt: { ...cur, refs: [...(cur.refs ?? []), ...incoming], id: ++promptSeq },
+                lastIdeDropAt: dropStamp,
               });
             } else {
-              set({ tab: "chat", pendingPrompt: { text: "", id: ++promptSeq, mode: "replace", refs: incoming } });
+              set({
+                tab: "chat",
+                pendingPrompt: { text: "", id: ++promptSeq, mode: "replace", refs: incoming },
+                lastIdeDropAt: dropStamp,
+              });
             }
           }
         } else if (name === "theme") {
