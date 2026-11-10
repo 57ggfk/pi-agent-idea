@@ -4,7 +4,7 @@
 > 顺序即编号，串行执行。web 单测 `npx vitest run`，e2e `npx playwright test`，类型 `npm run typecheck`。
 > 技术方案、状态机规则、比较器契约一律以 [plan.md](./plan.md) 为准；本文只排顺序与验证方式。
 > 每条 task 自带「— 验证：…」；无断言覆盖的实现不得标记完成（宪法第 II 条）。
-> **实施顺序约束**：020 → 021 → 022。020 会改 `PickerModelData` 与分组渲染，本文件所有 picker 相关 task 必须按 020 之后的形状写。
+> **实施顺序约束**：以 `specs/README.md`「0.5.7 将来的实现顺序」为准（020 → 021 → **022** → 023）。020 会改 `PickerModelData` 与分组渲染，本文件所有 picker 相关 task 必须按 020 之后的形状写。
 
 ## A. 下拉列表：悬停不再抢滚轮
 

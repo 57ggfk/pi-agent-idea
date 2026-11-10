@@ -157,7 +157,7 @@ export function roundEndIndex(items: ChatItem[], index: number): number {
 4. **S4 测试同步**：4 个 e2e 文件的定位改到本轮末尾；补 A–C、G 场景。
 5. **S5 收尾**：`npm run typecheck` → `npx vitest run` → `npx playwright test`；run report 记录实际入口数。
 
-**与其它规格的顺序**：020 → 021 → 022 → **023**。
+**与其它规格的顺序**：以 `specs/README.md`「0.5.7 将来的实现顺序」为准 —— 020 → 021 → 022 → **023**（本文最后一条）。
 023 与 022 都改 `MessageList.tsx`（022 改吸底判定与 `ItemView` memo），022 的结构改动更大，先落 022 再落 023 冲突最小。
 
 ## 8. 风险与降级

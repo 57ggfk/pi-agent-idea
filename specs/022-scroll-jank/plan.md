@@ -182,7 +182,7 @@ export function nextPin(state: PinState, scrollTop: number, scrollHeight: number
 | 悬停高亮改 CSS 后与键盘高亮同屏（指针压在 A、键盘在 B）出现两个高亮 | 设计上接受：CSS `:hover` 用弱色、`data-active` 用强色；两者视觉可分（Q2 可调强弱） |
 | `content-visibility` 让「跳转到第 N 条」偏差 | `scrollToItem` 跳完二次校正；真机偏移则撤 D6（单条 CSS） |
 | `React.memo` 比较器漏掉变化导致 UI 不更新 | 比较器只覆盖 `item` 引用/命中块/action 序列；其余状态（编辑、流式）经 action 序列间接反映；并用 e2e 全量回归兜底 |
-| 与 020 改同一批文件冲突 | 实施顺序 020 → 021 → 022，022 按 020 之后的 `PickerModelData` 写 |
+| 与 020 改同一批文件冲突 | 实施顺序见 `specs/README.md`「0.5.7 将来的实现顺序」（020 → 021 → **022** → 023）；022 按 020 之后的 `PickerModelData` 写 |
 | 用户说的第三类「性能问题」不在本 spec 覆盖范围内 | spec 已列三种归位路径；确认后并入 US3 或另立 |
 
 ## 验证命令
