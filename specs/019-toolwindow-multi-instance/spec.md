@@ -7,9 +7,9 @@
 
 1. **现状是单例写死的**:`PiProcessManager`(project 级服务)内只有一个 `clientRef: AtomicReference<PiRpcClient?>`;`BridgeService` 单事件缓冲、单队列镜像,pi 事件广播给「唯一的」浏览器;`PiAgentPanel` 一个 JCEF 浏览器,自带 Disposable 与崩溃重建(`rebuildAfterCrash`)。
 2. **原生载体是 multi-Content tool window**(Run 窗口同款):一个工具窗、N 个 Content 标签,平台自带 tab 条/关闭/激活。每个 Content 装一个独立 `PiAgentPanel` = 独立 JCEF 浏览器。
-3. **每 Content 独立浏览器 ⇒ web 侧零改动**:每个浏览器是一份隔离的 React 应用(自带 store/会话/草稿),不需要在 web 层做实例路由;改动全部在 Kotlin 侧。
+3. **每 Content 独立浏览器 ⇒ web 侧几乎不用改**:每个浏览器是一份隔离的 React 应用(自带 store/会话/草稿),不需要在 web 层做实例路由;web 侧只需把「自己是第几个实例」回传到每个请求(一份 URL 参数,技术细节见 plan D4 —— 这一条修正了初版「零改动」的说法)。
 4. **隔离的正确切面是「实例」而非「标签」**:每个实例 = 独立 pi `--mode rpc` 进程(stdio,无端口冲突)+ 独立事件流 + 独立浏览器。pi 进程多开无共享状态问题(会话 jsonl 各自独立);项目级 Preferences(上次模型等)共享属预期行为。
-5. **向后兼容必须留**:envelope/事件带 `instanceId`,缺失时默认实例 1——防止 web 与 IDE 版本错配时旧页面白屏。
+5. **向后兼容必须留**:请求与事件带实例号,缺失时默认实例 1——防止 web 与 IDE 版本错配时旧页面白屏。
 
 ## User Stories
 
@@ -19,9 +19,9 @@
 
 ### US2 实例隔离(核心)
 
-- `PiProcessManager` 重构为按 `instanceId` 的注册表:`client(instanceId)`、`start/stop(instanceId)`、状态/事件监听按实例注册;旧无参 `client()` 保留为「实例 1」兼容门面。
-- `BridgeService`:`ide` 事件的投递目标按 `instanceId` 路由到对应浏览器(现状:广播给唯一浏览器);每实例独立事件缓冲与队列镜像;RPC 调用在 envelope 中携带 `instanceId`,Kotlin 侧按它选进程。
-- 验收口径:实例 A 的流式回复/排队/中断不出现在实例 B;A 中断不影响 B;一边流式一边另一边可正常发送。
+- 每个实例拥有**独立的 pi 进程、独立的事件流、独立的队列镜像与事件缓冲**:实例 A 的流式回复、排队条目、审批请求、连接状态一律不出现在实例 B。
+- 只有一个实例时,行为与现在完全一致(插件与页面的版本错配也不能白屏)。
+- 验收口径:实例 A 的流式回复/排队/中断不出现在实例 B;A 中断不影响 B;一边流式一边另一边可正常发送;A 的健康检查不能因为 B 的页面在轮询而误判为正常。
 
 ### US3 实例生命周期
 

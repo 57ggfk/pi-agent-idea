@@ -279,12 +279,24 @@ Phase 7 收尾：i18n / 全基线 / MANUAL_TEST / 真机目视
 |---|---|---|---|
 | [017 新认证后模型列表自动生效](./017-models-reload/spec.md) | 12 | （同上，归属改为 0.5.7） | 已实现，待真机 |
 | [018 composer 行内引用 chip + 图片缩略图卡 + 粘贴识别收紧 + 消息表格弱边框 + 模型组折叠 + 扩展包全部升级 + fork 标题后缀](./018-composer-inline-chips/spec.md) | 26 | 引用 chip 内联进编辑区文本流（**B 方案**：textarea 保留 + 镜像覆盖层，`@path` token 唯一事实源，refs 数组/首行拼装删除）；图片升级缩略图卡、点击复用 ImagePreview 模态；粘贴/拖拽 text 兜底收紧为「单行+无空白+像路径」，修复粘贴 markdown 误生成多个引用；消息 Markdown 表格加 `var(--border)` 弱色边框（现状零表格样式、浏览器默认无边框）；模型选择器分组可折叠（索引切到可见条目、~~搜索强制展开~~（已被 020 US3 推翻）、当前组打开自动展开、localStorage 记忆）；扩展包管理：新增「全部升级」（`pi update --extensions`，新 RPC 四处同步，降级方案为前端循环）、移除接确认框、补面板 i18n 漏网；fork 出的会话标题追加 `(fork)`/`（分支）`（pi clone 沿用父标题、列表不可辨） | ✅ 已实现（2026-11-10 凌晨，tasks 25/26；T20 真机全部升级待用户装扩展后目验；[执行记录](./0.5.7-run-report.md)） |
-| [019 工具窗多实例](./019-toolwindow-multi-instance/spec.md) | 待排（挂起） | 一个 Pi Agent 工具窗内开多个 pi 实例（multi-Content 原生标签，每 Content 独立浏览器+独立 pi 进程，web 侧零改动）；核心是 `PiProcessManager` 按实例注册表重构 + `BridgeService` 事件按 instanceId 路由（缺省实例 1 兼容旧页面）；上限默认 4、关闭流式中实例走确认框、崩溃重建只倒一个 | spec 已定稿；**架构级改动，排在 018 之后实现** |
-| [020 模型选择器供应商上限 + 每家动态截断 + 标题左对齐 + 搜索态折叠](./020-model-picker-group-cap/spec.md) | 13（待开工） | 供应商最多 50 组（当前组置顶 + pi 原序）；每家上限 `P = clamp(floor(1000/n), 5, 200)`（n≤5 → 每家 200，n=10 → 100，n=50 → 20），每家按实际条数截断、配额不跨组搬运；当前模型即使被组内截断也插到组首保证可定位；组标题计数改 `已显示/总数` + 组末「还有 N 个」+ 末尾「还有 N 个供应商」；修 `.model-group-title` 三段 flex 配 `space-between` 导致**名称居中**的视觉 Bug（改 flex-start + name flex:1 + count margin-left:auto）；搜索态不再强制全展开，改为默认展开且可手动折叠（临时态、不落盘），50 上限与每家上限在搜索态同样生效 | spec + tasks 已定稿；**仅文档，未开工** |
+| [019 工具窗多实例](./019-toolwindow-multi-instance/spec.md)（[plan](./019-toolwindow-multi-instance/plan.md)） | 待排（挂起） | 一个 Pi Agent 工具窗内开多个 pi 实例（multi-Content 原生标签，每 Content 独立浏览器+独立 pi 进程，web 侧零改动）；核心是 `PiProcessManager` 按实例注册表重构 + `BridgeService` 事件按 instanceId 路由（缺省实例 1 兼容旧页面）；上限默认 4、关闭流式中实例走确认框、崩溃重建只倒一个 | spec + plan 已定稿（plan 补入 2026-11-10）；**架构级改动，排在 018 之后实现** |
+| [020 模型选择器供应商上限 + 每家动态截断 + 标题左对齐 + 搜索态折叠](./020-model-picker-group-cap/spec.md)（[plan](./020-model-picker-group-cap/plan.md)） | 13（待开工） | 供应商最多 50 组（当前组置顶 + pi 原序）；每家上限 `P = clamp(floor(1000/n), 5, 200)`（n≤5 → 每家 200，n=10 → 100，n=50 → 20），每家按实际条数截断、配额不跨组搬运；当前模型即使被组内截断也插到组首保证可定位；组标题计数改 `已显示/总数` + 组末「还有 N 个」+ 末尾「还有 N 个供应商」；修 `.model-group-title` 三段 flex 配 `space-between` 导致**名称居中**的视觉 Bug（改 flex-start + name flex:1 + count margin-left:auto）；搜索态不再强制全展开，改为默认展开且可手动折叠（临时态、不落盘），50 上限与每家上限在搜索态同样生效 | spec + plan + tasks 已定稿；**仅文档，未开工** |
 
 **020 对既有条款的四处影响**（实现时逐条复核，不要按旧文档写）：
 
 1. **推翻 018 US5「搜索时忽略折叠」**：搜索态改为默认展开 + 可手动折叠，折叠不写 localStorage；该条已在上方 018 行加删除线。
-2. **改写 011 US2 的 200 上限语义**：从「全局 200 条」变为「每家 200 条」，`flattenGroups` 的 `cap` 参数与 `PickerModelData.hidden` 一并重构（见 020 spec 的接口契约）。
+2. **改写 011 US2 的 200 上限语义**：从「全局 200 条」变为「每家 200 条」，`flattenGroups` 的 `cap` 参数与 `PickerModelData.hidden` 一并重构（见 020 plan 的接口契约）。
 3. **`ModelPicker` 的「标题居中」是回归而非新需求**：`.model-group-title` 在 018 加折叠 chevron 后由两段变三段 flex，`space-between` 把名称推到中线。
 4. **用户明确接受「搜索只在前 50 个供应商内检索」**（2026-11-10 选择）：第 51 名之后的供应商搜不到，靠末尾「还有 N 个供应商」提示兜底；后续若改口径，只需放开搜索态的 `providerLimit`。
+
+### plan 补齐（2026-11-10）
+
+015–018 四个规格当年只写了 spec + tasks，没有 plan —— 没有任何记录表明这是有意的决定，属于流程漂移。
+按宪法「开发流程」第 1 条（_spec 不含技术选型；技术方案进 `plan.md`_），本次补两份：
+
+| 规格 | plan 内容 | 备注 |
+|---|---|---|
+| 020 | 常量与公式、`buildPickerData` 新签名、数值表、七个场景剧本、触及文件 | 从 spec 搬入；spec 现只留用户价值与验收口径 |
+| 019 | 实例注册表结构、事件分桶、请求带实例号、生命周期与关闭确认、四阶段顺序 | **纠正 spec 初版两处偏差**：「web 侧零改动」不成立（需回传实例号）；关闭确认不能用 web 的 `ConfirmDialog`（改用 IDE 原生对话框） |
+
+015–018 已实现并发布，不再回头补 plan（属文档考古）；新规格一律重新走 spec → plan → tasks。
