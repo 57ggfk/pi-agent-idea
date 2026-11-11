@@ -55,6 +55,7 @@ import {
 import { hitsFromItems, type SearchHit } from "../lib/search";
 import { requestRepaint } from "../lib/repaint";
 import { perfMark } from "../lib/perf";
+import { withTimeout } from "../lib/timeout";
 import { i18n, initI18n, isRegistered } from "../i18n";
 
 /** Shorthand for store-side (non-React) copy; English falls out of the base bundle. */
@@ -77,6 +78,29 @@ export interface PendingSwitch {
 /** 021 D8 / T308: after this long the copy softens; nothing rolls back — a
  *  slow pi is not a failed one. */
 export const SWITCH_LONG_MS = 10_000;
+
+/**
+ * 026: the switch flow bounds every pi round-trip locally (spec plan §0) — the
+ * bridge's 360s default stays for installs; a switch that outlives these is a
+ * failure with a retry, never an infinite placeholder. abort is 3s so the
+ * sequential worst case (abort + switch) stays inside the 8s US1 budget.
+ */
+export const SWITCH_RPC_TIMEOUT_MS = 5_000;
+export const SWITCH_ABORT_TIMEOUT_MS = 3_000;
+export const SWITCH_READ_TIMEOUT_MS = 3_000;
+
+/**
+ * 026 FR-007: the `reason=` value for `switch.failed`. `withTimeout` rejections
+ * carry "<label> timeout"; the abort hop is named so its signature is distinct
+ * from a hung `switch_session` (the real-machine attribution question spec §0
+ * leaves open).
+ */
+function switchFailReason(e: unknown): "timeout" | "rpc" | "abort_timeout" {
+  const msg = (e as Error | undefined)?.message ?? "";
+  if (msg.includes("abort timeout")) return "abort_timeout";
+  if (msg.includes("timeout")) return "timeout";
+  return "rpc";
+}
 
 export function isSwitchLong(startedAt: number, now: number): boolean {
   return now - startedAt >= SWITCH_LONG_MS;
@@ -803,7 +827,7 @@ export const usePiStore = create<PiStore>((set, get) => {
     perfMark("switch.pending", startedAt, { kind: "new" });
 
     try {
-      await rpc(b, { type: "new_session" });
+      await withTimeout(rpc(b, { type: "new_session" }), SWITCH_RPC_TIMEOUT_MS, "new_session");
       if (seq !== switchSeq) return;
       set({ pendingSwitch: null });
       perfMark("switch.content", startedAt, { kind: "new" });
@@ -816,6 +840,9 @@ export const usePiStore = create<PiStore>((set, get) => {
       perfMark("switch.ready", startedAt, { kind: "new" });
     } catch (e) {
       if (seq !== switchSeq) return;
+      // 026 FR-007: a visible failure mark — "pending without ready" stops
+      // being the only stuck signature in idea.log.
+      perfMark("switch.failed", startedAt, { reason: switchFailReason(e) });
       set({ pendingSwitch: null, items: previousItems });
       appendError(t("error.newSession.failed", { msg: (e as Error).message }));
     }
@@ -1833,18 +1860,33 @@ export const usePiStore = create<PiStore>((set, get) => {
       try {
         // A run still tied to the old session would keep streaming into the
         // new one — but abort after the visible switch, so the user waits on
-        // the page they asked for instead of on the old run settling.
-        if (wasStreaming) await get().abort();
-        await rpc(b, { type: "switch_session", sessionPath: file });
+        // the page they asked for instead of on the old run settling. 026: a
+        // hung abort is the suspected stuck-switch trigger, so it gets its own
+        // deadline and a hung one fails the switch (reason=abort_timeout)
+        // instead of parking the placeholder forever.
+        if (wasStreaming) {
+          await withTimeout(get().abort(), SWITCH_ABORT_TIMEOUT_MS, "abort");
+        }
+        await withTimeout(rpc(b, { type: "switch_session", sessionPath: file }), SWITCH_RPC_TIMEOUT_MS, "switch_session");
 
         // 021 D3: three independent reads in parallel, one set. Sequential
         // awaits added ~330ms of pure latency; separate sets would flash.
+        // 026: each read is bounded, but a read timeout only degrades to empty
+        // content (the catch below) — it must not fail the switch (FR-006).
         const [messages, stats, state] = await Promise.all([
-          rpc<{ messages: unknown[] }>(b, { type: "get_messages" }).catch(() => ({ messages: [] as unknown[] })),
-          rpc<SessionStats>(b, { type: "get_session_stats" }).catch(() => undefined),
-          rpc<{ sessionName?: string; sessionId?: string; model?: ModelInfo; thinkingLevel?: string }>(b, {
-            type: "get_state",
-          }).catch(() => undefined),
+          withTimeout(rpc<{ messages: unknown[] }>(b, { type: "get_messages" }), SWITCH_READ_TIMEOUT_MS, "get_messages").catch(
+            () => ({ messages: [] as unknown[] }),
+          ),
+          withTimeout(rpc<SessionStats>(b, { type: "get_session_stats" }), SWITCH_READ_TIMEOUT_MS, "get_session_stats").catch(
+            () => undefined,
+          ),
+          withTimeout(
+            rpc<{ sessionName?: string; sessionId?: string; model?: ModelInfo; thinkingLevel?: string }>(b, {
+              type: "get_state",
+            }),
+            SWITCH_READ_TIMEOUT_MS,
+            "get_state",
+          ).catch(() => undefined),
         ]);
         if (seq !== switchSeq) return; // D8: a newer target owns the screen
 
@@ -1862,6 +1904,9 @@ export const usePiStore = create<PiStore>((set, get) => {
         perfMark("switch.ready", startedAt, { kind: "history" });
       } catch (e) {
         if (seq !== switchSeq) return;
+        // 026 FR-007: timeout and RPC refusal are the same failure to the
+        // user, but the log keeps them apart for real-machine attribution.
+        perfMark("switch.failed", startedAt, { reason: switchFailReason(e) });
         // D3/Q3: land back on the list rather than on an empty transcript.
         set({ pendingSwitch: null, tab: "sessions", items: [] });
         appendError(t("error.switchSession.failed", { msg: (e as Error).message }));

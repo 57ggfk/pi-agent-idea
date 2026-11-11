@@ -12,7 +12,7 @@
   — 验证：`perf.test.ts` 增一条格式断言（`[pi-agent] perf switch.failed 123 reason=timeout`），
   `npx vitest run perf.test.ts` 全绿。
 
-- [ ] **T803** `store.ts` 超时接线（FR-001/002/006）：`switch_session`/`new_session` 5s、关键路径
+- [x] **T803** `store.ts` 超时接线（FR-001/002/006）：`switch_session`/`new_session` 5s、关键路径
   `abort` 3s、三段并行读各 3s（`.catch` 兜底原样保留，读超时只降级为空内容）；超时错误与 RPC 抛错
   走同一条失败路径；catch（seq 匹配）发 `switch.failed`（reason=timeout|rpc|abort_timeout）。
   — 验证：`store.test.ts` 新增 U1（吞 switch_session → 5s 后 pending 清空+回列表+错误条目+埋点）、

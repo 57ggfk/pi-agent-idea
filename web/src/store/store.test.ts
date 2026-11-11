@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { emptySources } from "./sources";
 import { emptyItem } from "./types";
 
@@ -50,7 +50,16 @@ const h = vi.hoisted(() => {
 
 vi.mock("../bridge", () => ({ getBridge: () => Promise.resolve(h.bridge) }));
 
-import { usePiStore, branchTargetFor, isSwitchLong, roundEndIndex, userCountUpTo } from "./store";
+import {
+  usePiStore,
+  branchTargetFor,
+  isSwitchLong,
+  roundEndIndex,
+  userCountUpTo,
+  SWITCH_RPC_TIMEOUT_MS,
+  SWITCH_ABORT_TIMEOUT_MS,
+  SWITCH_READ_TIMEOUT_MS,
+} from "./store";
 
 /** Commands actually sent to pi, in order, flattened to their type. */
 function commandTypes(): string[] {
@@ -1403,5 +1412,110 @@ describe("session switching (021)", () => {
     const started = 1_000;
     expect(isSwitchLong(started, started + 9_999)).toBe(false);
     expect(isSwitchLong(started, started + 10_000)).toBe(true);
+  });
+});
+
+// -- 026: switch stuck — deadlines, convergence, retry ------------------------
+
+describe("switch stuck & convergence (026)", () => {
+  /** A promise the test resolves by hand — models a slow pi RPC. */
+  function deferred<T>() {
+    let resolve!: (v: T) => void;
+    let reject!: (e: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  }
+
+  /** The `switch.failed` perf lines emitted so far (026 FR-007). */
+  function failedMarks(): Array<{ line: string; reason: string }> {
+    return (consoleLogSpy.mock.calls.map((c) => String(c[0])) ?? [])
+      .filter((line) => line.startsWith("[pi-agent] perf switch.failed"))
+      .map((line) => ({ line, reason: /reason=(\w+)/.exec(line)?.[1] ?? "" }));
+  }
+
+  let consoleLogSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(async () => {
+    h.state.calls.length = 0;
+    h.state.rpc.clear();
+    h.state.methods.clear();
+    await usePiStore.getState().init();
+    h.state.calls.length = 0;
+    usePiStore.setState({
+      items: [],
+      isStreaming: false,
+      editing: null,
+      pendingSwitch: null,
+      tab: "chat",
+      sessionName: undefined,
+      stats: undefined,
+    });
+    consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("US1: a hung switch_session converges into a retryable failure at the deadline", async () => {
+    vi.useFakeTimers();
+    h.state.rpc.set("switch_session", () => new Promise(() => {}));
+
+    const done = usePiStore.getState().switchSession("/sessions/stuck.jsonl");
+    expect(usePiStore.getState().pendingSwitch).toMatchObject({ kind: "history", file: "/sessions/stuck.jsonl" });
+
+    await vi.advanceTimersByTimeAsync(SWITCH_RPC_TIMEOUT_MS + 1);
+    await done;
+
+    const s = usePiStore.getState();
+    expect(s.pendingSwitch).toBeNull();
+    expect(s.tab).toBe("sessions");
+    expect(s.items.some((i) => i.isError)).toBe(true);
+    // FR-007: the failure is discoverable in the log with its reason.
+    expect(failedMarks().some((m) => m.reason === "timeout")).toBe(true);
+    // Never answered, so no reads were dispatched on top of it.
+    expect(commandTypes()).not.toContain("get_messages");
+  });
+
+  it("FR-006: a hung read degrades to empty content instead of failing the switch", async () => {
+    vi.useFakeTimers();
+    h.state.rpc.set("switch_session", () => ({}));
+    h.state.rpc.set("get_messages", () => new Promise(() => {}));
+    h.state.rpc.set("get_session_stats", () => ({ messages: 1 }));
+    h.state.rpc.set("get_state", () => ({ sessionName: "Slow read" }));
+
+    const done = usePiStore.getState().switchSession("/sessions/t.jsonl");
+    await vi.advanceTimersByTimeAsync(SWITCH_READ_TIMEOUT_MS + 1);
+    await done;
+
+    const s = usePiStore.getState();
+    expect(s.pendingSwitch).toBeNull();
+    expect(s.tab).toBe("chat");
+    expect(s.sessionName).toBe("Slow read");
+    expect(s.items.some((i) => i.isError)).toBe(false);
+    expect(failedMarks()).toEqual([]);
+  });
+
+  it("US1: a hung abort fails the switch with reason=abort_timeout before any reads", async () => {
+    vi.useFakeTimers();
+    usePiStore.setState({ isStreaming: true });
+    h.state.rpc.set("abort", () => new Promise(() => {}));
+    h.state.rpc.set("switch_session", () => ({}));
+
+    const done = usePiStore.getState().switchSession("/sessions/t.jsonl");
+    await vi.advanceTimersByTimeAsync(SWITCH_ABORT_TIMEOUT_MS + 1);
+    await done;
+
+    const s = usePiStore.getState();
+    expect(s.pendingSwitch).toBeNull();
+    expect(s.tab).toBe("sessions");
+    expect(s.items.some((i) => i.isError)).toBe(true);
+    expect(failedMarks().some((m) => m.reason === "abort_timeout")).toBe(true);
+    // The switch never reached pi — the abort hop failed first.
+    expect(commandTypes()).not.toContain("switch_session");
   });
 });
