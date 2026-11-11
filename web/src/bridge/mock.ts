@@ -215,6 +215,11 @@ export class MockBridge implements Bridge {
    *  the optimistic-switch rollback (021 US3) has a failure to roll back. */
   private readonly failCmdPlan = parseFailPlan(query()?.get("failcmd"));
   private failCmdServed = new Map<string, number>();
+  /** `?hang=switch_session` — the first call(s) of that rpc command never
+   *  answer at all (026 US1): not an error, not a delay, a swallowed response.
+   *  Only a local deadline can converge a page in this state. */
+  private readonly hangPlan = parseFailPlan(query()?.get("hang"));
+  private hangServed = new Map<string, number>();
   /** `?unsupported=policy` — that source answers `not_implemented` (FR-009). */
   private readonly unsupported = new Set(
     (query()?.get("unsupported") ?? "")
@@ -397,6 +402,15 @@ export class MockBridge implements Bridge {
     const used = this.failCmdServed.get(type) ?? 0;
     if (used >= budget) return false;
     this.failCmdServed.set(type, used + 1);
+    return true;
+  }
+
+  /** 026: same one-shot budget rule as `?failcmd=`, but the call never settles. */
+  private shouldHangCommand(type: string): boolean {
+    const budget = this.hangPlan.get(type) ?? 0;
+    const used = this.hangServed.get(type) ?? 0;
+    if (used >= budget) return false;
+    this.hangServed.set(type, used + 1);
     return true;
   }
 
@@ -660,6 +674,11 @@ export class MockBridge implements Bridge {
     }
     if (this.shouldFailCommand(commandType)) {
       return { success: false, error: `${commandType} failed: mock refusal` } as T;
+    }
+    if (this.shouldHangCommand(commandType)) {
+      // 026 US1: the response is swallowed, not delayed — the promise neither
+      // resolves nor rejects, so only the caller's own deadline can move on.
+      return new Promise<never>(() => {}) as T;
     }
     await this.commandDelay(commandType);
     return this.handleCommand(command) as T;

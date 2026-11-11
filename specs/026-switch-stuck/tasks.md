@@ -37,7 +37,7 @@
   — 验证：`store.test.ts` 新增 U8（超时失败 → retrySwitch=file → retryLastSwitch 重发原 file →
   成功后 retrySwitch null）绿；U1 断言含 retrySwitch=file。
 
-- [ ] **T807** `bridge/mock.ts`：`?hang=<cmd>[:count]` —— 首次（或前 N 次）rpc 命令永不 settle；
+- [x] **T807** `bridge/mock.ts`：`?hang=<cmd>[:count]` —— 首次（或前 N 次）rpc 命令永不 settle；
   接线在 `shouldFailCommand` 之后、`commandDelay` 之前；`?slow=`/`?failcmd=` 语义不变。
   — 验证：`mock.test.ts` 新增一条（首次调用挂起、第二次正常返回），`npx vitest run mock.test.ts`
   全绿。

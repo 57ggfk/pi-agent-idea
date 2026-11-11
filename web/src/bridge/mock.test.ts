@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MockBridge } from "./mock";
 import { rpc } from "./types";
 
@@ -229,5 +229,33 @@ describe("MockBridge model catalog reload (spec 017)", () => {
     const after = await bridge.request<{ models: Array<{ provider: string }> }>("models.reload");
 
     expect(after.models.some((m) => m.provider === "deepseek")).toBe(false);
+  });
+});
+
+describe("MockBridge ?hang= knob (026 US1)", () => {
+  it("swallows the first matching rpc command and answers the next one", async () => {
+    vi.stubGlobal("location", { search: "?hang=switch_session" });
+    try {
+      const bridge = new MockBridge();
+
+      const hung = bridge.request("rpc.request", {
+        command: { type: "switch_session", sessionPath: "/s/a.jsonl" },
+      });
+      let settled = false;
+      void hung.then(
+        () => (settled = true),
+        () => (settled = true),
+      );
+      // Not an error, not a delay: nothing settles on its own.
+      await new Promise((r) => setTimeout(r, 25));
+      expect(settled).toBe(false);
+
+      const second = await bridge.request<{ success?: boolean }>("rpc.request", {
+        command: { type: "switch_session", sessionPath: "/s/b.jsonl" },
+      });
+      expect(second.success).not.toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
