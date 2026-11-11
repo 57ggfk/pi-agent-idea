@@ -348,6 +348,10 @@ interface PiStore {
   /** 021: non-null from the click until the target session's content is on
    *  screen (or the switch failed and rolled back). */
   pendingSwitch: PendingSwitch | null;
+  /** 026 FR-005: the session file a failed switch was aiming at, so the
+   *  retry bar can re-fire it without the user re-finding the row. Cleared on
+   *  any successful switch/new session and by the bar's dismiss button. */
+  retrySwitch: string | null;
   retryInfo: { attempt: number; maxAttempts: number; delayMs: number; errorMessage: string } | null;
   /**
    * Mirror of pi's queue (spec 005), pushed as full snapshots by the Kotlin
@@ -562,6 +566,10 @@ interface PiStore {
   refreshCommands(): Promise<void>;
   refreshSessions(): Promise<void>;
   switchSession(file: string): Promise<void>;
+  /** 026 FR-005: re-fires the failed switch's target (no-op when none kept). */
+  retryLastSwitch(): Promise<void>;
+  /** 026: the retry bar's dismiss — forget the failed target. */
+  clearRetrySwitch(): void;
   /** Renames the current session; [manual] = user-typed (beats pi name
    *  events). Returns false when the RPC failed (error already surfaced). */
   renameSession(name: string, manual?: boolean): Promise<boolean>;
@@ -848,7 +856,7 @@ export const usePiStore = create<PiStore>((set, get) => {
         clearOwnPending(startedAt); // 026 FR-003
         return;
       }
-      set({ pendingSwitch: null });
+      set({ pendingSwitch: null, retrySwitch: null });
       perfMark("switch.content", startedAt, { kind: "new" });
       // D2: neither the stats read nor the session-list rescan belongs on the
       // critical path; one tick later so they cannot race pi's first answer.
@@ -865,7 +873,7 @@ export const usePiStore = create<PiStore>((set, get) => {
       // 026 FR-007: a visible failure mark — "pending without ready" stops
       // being the only stuck signature in idea.log.
       perfMark("switch.failed", startedAt, { reason: switchFailReason(e) });
-      set({ pendingSwitch: null, items: previousItems });
+      set({ pendingSwitch: null, items: previousItems, retrySwitch: null });
       appendError(t("error.newSession.failed", { msg: (e as Error).message }));
     }
   };
@@ -1224,6 +1232,7 @@ export const usePiStore = create<PiStore>((set, get) => {
     isStreaming: false,
     aborted: false,
     pendingSwitch: null,
+    retrySwitch: null,
     retryInfo: null,
     queue: { items: [], paused: false, pauseReason: null, drift: false },
     driftAck: false,
@@ -1923,6 +1932,9 @@ export const usePiStore = create<PiStore>((set, get) => {
           model: state?.model,
           thinkingLevel: state?.thinkingLevel ?? "medium",
           pendingSwitch: null,
+          // 026 FR-005: also covers late-success-after-timeout — the target
+          // came through after all, so the retry bar must go.
+          retrySwitch: null,
         });
         perfMark("switch.content", startedAt, { kind: "history" });
         requestRepaint();
@@ -1936,9 +1948,20 @@ export const usePiStore = create<PiStore>((set, get) => {
         // user, but the log keeps them apart for real-machine attribution.
         perfMark("switch.failed", startedAt, { reason: switchFailReason(e) });
         // D3/Q3: land back on the list rather than on an empty transcript.
-        set({ pendingSwitch: null, tab: "sessions", items: [] });
+        // 026 FR-005: remember the target so the retry bar can re-fire it.
+        set({ pendingSwitch: null, tab: "sessions", items: [], retrySwitch: file });
         appendError(t("error.switchSession.failed", { msg: (e as Error).message }));
       }
+    },
+
+    async retryLastSwitch() {
+      const file = get().retrySwitch;
+      if (!file) return;
+      await get().switchSession(file);
+    },
+
+    clearRetrySwitch() {
+      set({ retrySwitch: null });
     },
 
     async renameSession(name: string, manual = true) {

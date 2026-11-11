@@ -1605,4 +1605,31 @@ describe("switch stuck & convergence (026)", () => {
     expect(commandTypes()).not.toContain("new_session");
     expect(usePiStore.getState().pendingSwitch?.startedAt).toBe(456);
   });
+
+  it("FR-005: a failed switch keeps its target and retryLastSwitch re-fires it", async () => {
+    vi.useFakeTimers();
+    const switchTargets: string[] = [];
+    h.state.rpc.set("switch_session", (cmd) => {
+      switchTargets.push(String(cmd["sessionPath"]));
+      // First attempt hangs → 026 timeout; the retry answers normally.
+      return switchTargets.length === 1 ? new Promise(() => {}) : {};
+    });
+    h.state.rpc.set("get_messages", () => ({ messages: [{ role: "user", content: "back again" }] }));
+    h.state.rpc.set("get_session_stats", () => ({}));
+    h.state.rpc.set("get_state", () => ({ sessionName: "Retry target" }));
+
+    const first = usePiStore.getState().switchSession("/sessions/target.jsonl");
+    await vi.advanceTimersByTimeAsync(SWITCH_RPC_TIMEOUT_MS + 1);
+    await first;
+    expect(usePiStore.getState().retrySwitch).toBe("/sessions/target.jsonl");
+
+    await usePiStore.getState().retryLastSwitch();
+
+    const s = usePiStore.getState();
+    expect(switchTargets).toEqual(["/sessions/target.jsonl", "/sessions/target.jsonl"]);
+    expect(s.retrySwitch).toBeNull();
+    expect(s.pendingSwitch).toBeNull();
+    expect(s.tab).toBe("chat");
+    expect(s.sessionName).toBe("Retry target");
+  });
 });

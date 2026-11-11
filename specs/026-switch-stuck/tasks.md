@@ -31,7 +31,7 @@
   发出）、U7（new pending 时点新建 → 早退不发）两条绿；既有「ignores a second new-session」
   （calls===1）仍绿。
 
-- [ ] **T806** `store.ts` FR-005：state 增 `retrySwitch: string | null`、action 增
+- [x] **T806** `store.ts` FR-005：state 增 `retrySwitch: string | null`、action 增
   `retryLastSwitch()`；写入点=switchSession catch（seq 匹配）；清空点=history 成功、newSession
   成功、迟到成功（统一放 seq 匹配的成功路径）、bar 的 ×。
   — 验证：`store.test.ts` 新增 U8（超时失败 → retrySwitch=file → retryLastSwitch 重发原 file →
