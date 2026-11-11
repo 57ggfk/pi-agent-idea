@@ -17,5 +17,5 @@
   E5 未贴底来新消息按钮仍在）。
   — 验证：`npx playwright test jump-bottom` 5 条绿；`npx playwright test scroll` 零回归。
 
-- [ ] **T1104** 收尾：全量三件套；`changelog.d/029-jump-to-bottom.added.md`（两行）；run-report 更新。
+- [x] **T1104** 收尾：全量三件套；`changelog.d/029-jump-to-bottom.added.md`（两行）；run-report 更新。
   — 验证：三件套全绿；run-report 029 全 ✅。
