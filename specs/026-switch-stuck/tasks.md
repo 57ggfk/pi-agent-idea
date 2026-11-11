@@ -42,7 +42,7 @@
   — 验证：`mock.test.ts` 新增一条（首次调用挂起、第二次正常返回），`npx vitest run mock.test.ts`
   全绿。
 
-- [ ] **T808** UI：`SwitchRetryBar.tsx`（bar + 重试 + ×，data-testid 三件套）+ `App.tsx` 挂载在
+- [x] **T808** UI：`SwitchRetryBar.tsx`（bar + 重试 + ×，data-testid 三件套）+ `App.tsx` 挂载在
   `<QueueDiscardBanner />` 之后（所有 tab 可见）+ `styles.css` 的 `.switch-retry-bar` + i18n
   `switch.failed`（zh/en 双字典，复用 `common.retry`）。
   — 验证：`npm run typecheck` 0 错误；`npx vitest run` 全绿（store 层断言已覆盖状态机）；

@@ -275,6 +275,9 @@ export const zh: Dict = {
   "error.queueClear.failed": "queue.clear 失败：{{msg}}",
   "error.switchSession.failed": "切换会话失败：{{msg}}",
   "error.restart.failed": "重启失败：{{msg}}",
+  // 026：重试横条（所有页签可见——失败落在会话列表页，聊天区的错误条目看不见）。
+  "switch.retryBar": "会话切换失败，目标：{{file}}",
+  "switch.retryDismiss": "忽略",
 
   // -- manage shell (header, tabs, trust) --------------------------------------
   "manage.tab.mcp": "MCP 服务器",

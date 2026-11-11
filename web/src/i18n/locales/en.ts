@@ -281,6 +281,10 @@ export const en = {
   "error.queueClear.failed": "queue.clear failed: {{msg}}",
   "error.switchSession.failed": "switch_session failed: {{msg}}",
   "error.restart.failed": "restart failed: {{msg}}",
+  // 026: the retry bar (visible on every tab — a failed switch lands on the
+  // session list where transcript error items would be invisible).
+  "switch.retryBar": "Session switch failed — target: {{file}}",
+  "switch.retryDismiss": "Dismiss",
 
   // -- manage shell (header, tabs, trust) --------------------------------------
   "manage.tab.mcp": "MCP Servers",
