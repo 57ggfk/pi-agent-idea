@@ -17,12 +17,12 @@
   — 验证：`mock.test.ts` 新增（save→get_available_models 出现新模型；test 两形态；响应无明文 key）
   绿；typecheck 0 错。
 
-- [ ] **T904** `lib/customProvider.ts`（级别常量/默认、validateCustomProvider）+ 单测；
+- [x] **T904** `lib/customProvider.ts`（级别常量/默认、validateCustomProvider）+ 单测；
   `CustomProviderForm.tsx`（FR-001 全字段 + 思考级别勾选展开 + 高级 thinkingFormat 折叠 +
   测试连通 + 编辑回填掩码 + 重名二次确认条）。
   — 验证：`npx vitest run customProvider` 绿；typecheck 0 错；组件行为由 T906 e2e 锁。
 
-- [ ] **T905** AuthPanel 入口（新建按钮 + 自定义行编辑/删除，删除走确认框）；
+- [x] **T905** AuthPanel 入口（新建按钮 + 自定义行编辑/删除，删除走确认框）；
   ProviderSetupCard 折叠「自定义 Provider…」复用**同一**组件（FR-009）。
   — 验证：`npx vitest run` 全绿；`npx playwright test provider` 既有用例零回归。
 
