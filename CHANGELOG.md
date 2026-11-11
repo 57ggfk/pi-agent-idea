@@ -1,41 +1,34 @@
 # Changelog
 
-## 0.5.7 — 2026-11-10（未发布）
+## 0.5.7 — 2026-11-11
 
 **新增**
-- 输入框引用内联化（spec 018 US1）：文件/目录引用不再停在输入框上方的独立行，而是像 Cursor / Slack 的 @-mention 一样以胶囊 chip 内嵌在文本流里——打 `@` 补全、拖拽、IDE 右键注入、粘贴文件统一落在光标处（注入追加尾部）。引用本身就是文本 `@相对路径`：发送即原文（pi 自行展开，不再拼消息首行），重复引用不去重；退格一次删除整枚引用，点击胶囊全选 token。实现在 textarea 之上加了镜像覆盖层，文本仍是唯一事实源，中文输入法与自动高度管线零改动。
-- 图片附件缩略图卡（018 US2）：输入框里的图片从纯名字 chip 升级为 64px 缩略图卡（文件名 + 悬停显示估算大小，× 移除），点击复用消息区的预览模态——缩放、多图 ←/→、另存、复制全部可用；输入框图片不进会话消息列表，模态按来源各自取列表。
-- 扩展包一键「全部升级」（018 US6）：包管理面板新增按钮，一条 `pi update --extensions` 升级全部扩展，逐包结果原样回显（沿用 001 的"不猜结果"契约）；移除扩展包前弹确认框（原先误点即删）；面板残留的四处硬编码英文收进中英字典。
-- fork 出的会话标题自动追加后缀（018 US7）：英文 `(fork)`、中文 `（分支）`，会话列表里与父会话可区分。fork 一条已经是 fork 的会话不叠加后缀；未命名的父会话不追加，交给既有自动命名；pi 侧后续自己改名时以 pi 为准。
+- 输入框引用内联化（018 US1）：引用不再单占一行，而是像 Cursor 的 @-mention 以胶囊嵌在文本里；补全、拖拽、右键注入、粘贴都落在光标处，引用即 `@相对路径` 文本，退格一次删整枚。
+- 图片附件缩略图（018 US2）：输入框图片改为 64px 缩略图卡，点击复用消息区预览——缩放、左右切换、另存、复制都可用。
+- 扩展包一键升级（018 US6）：包面板新增「全部升级」，一条命令升级所有扩展并原样回显逐包结果；移除扩展包前先确认。
+- fork 出的会话带标题后缀（018 US7）：英文 `(fork)`、中文 `（分支）`，与父会话一眼可分；fork 的 fork 不叠加后缀。
 
 **变更**
-- 模型选择器（018 US5 / 020）：点供应商组标题折叠/展开（chevron 指示、计数保留），折叠集合存 localStorage、重启后保持；搜索关键词非空时默认全部展开、但仍可手动折叠；打开选择器时若当前模型所在组被折叠会自动展开再定位。超大目录不再一次全部渲染：最多 50 家供应商，每家按总数动态截断到 5–200 条，组标题显示「已显示/总数」，组末与列表末提示还有多少条/多少家没显示；被截断时当前模型仍置顶可见。键盘导航/回车/高亮一律只走可见条目。
+- 模型选择器（018 US5 / 020）：点供应商标题折叠/展开，状态重启后保持；超大目录不再全量渲染（最多 50 家，每家截断到 5–200 条），标题显示「已显示/总数」；键盘导航只走可见条目。
 
 **修复**
-- 粘贴 markdown 文本被误识别成多个引用 chip（018 US3）：原先对剪贴板纯文本逐行取"长得像路径的首个 token"，`/usr/bin/env node`、`./gradlew build` 这类行都会变成假引用。现在纯文本只有当**整段**是"单行、不含空白的路径"时才成为引用（保住"IDEA 项目树复制文件→粘贴"的合法场景），多行 markdown 一律按纯文本插入；拖拽侧的 `text/uri-list`（文件 flavor）保留逐行解析，`text/plain` 兜底用同一条单行规则。
-- 消息里的 markdown 表格没有边框（018 US4）：`styles.css` 从未写过表格样式，表格一直是浏览器默认的无边框渲染。现在单元格 1px 弱主题边框（`var(--border)`，与气泡/卡片同一套）、`border-collapse: collapse`、表头分隔线加重一档（`var(--border-strong)`），随亮暗主题。
-- 切换会话要等 pi 回完才换画面（021）：点历史会话或新建时，进程要读几百条消息，期间界面停在旧会话上一动不动。现在点击即清屏并显示「正在切换」，随后并行读取消息、统计与会话状态，一笔渲染完成；期间发送按钮禁用、目标行标忙，失败退回会话列表并提示。
-- 滚轮被下拉框抢走、消息列表自己往上弹（022）：模型下拉里有几百条时，悬停会让高亮条跟着鼠标跑并顺手改滚动位置，滚轮也常常滚不动列表；消息列表则会把向上翻看的视图拽回底部。现在悬停不再改高亮（回车仍选悬停项），滚轮只滚列表；只有真正滚到底部才重新吸底，向上滚动后新消息不会抢回视图。
-- 一条提问的多条 pi 回复每条都有 Fork（023）：pi 的 fork 以用户消息为切点，同一轮里的每条回复其实岔到同一个地方，却都显示「其后的内容不会带入」。现在只有本轮最后一条回复提供 Fork，其余回复保留复制与引用。
-- 扩展提问的长选项叠字：选项按钮是 28px 固定高却又允许换行，标签一旦折成两行就顶出按钮上下边界、压到相邻选项上（多选条目与 `select` 选项都中）。现在按钮高度跟着内容走、编号留在第一行，没有空格的超长 token 也能断行。
+- 粘贴多行 markdown 不再生成假引用，消息表格补上边框（018 US3 / US4）：纯文本仅当整段是无空白单行路径时才成为引用；表格单元格 1px 主题弱边框、表头分隔线加重一档。
+- 消息区交互打磨（021 / 022）：切换或新建会话点击即清屏并显示「正在切换」，随后并行读取一次渲染；滚轮不再被模型下拉抢走，向上翻看不被抢回底部。
+- Fork 只在本轮最后一条 pi 回复上出现（023），其余回复保留复制与引用；扩展提问的长选项不再叠字。
 
 **Added**
-- Inline reference chips in the composer (spec 018 US1): file/directory references no longer sit in a separate row above the input — they render as pills embedded in the text flow, Cursor/@-mention style. `@` completion, drag & drop, IDE right-click injection and file pastes all land at the caret (injections append at the tail). A reference IS the `@path` text: sending is the raw text (pi resolves `@` itself, no first-line assembly), duplicates are allowed, one Backspace removes a whole pill, and clicking one selects the token. Built as a mirror overlay over the textarea — the text stays the single source of truth, so the IME and autosize pipelines are untouched.
-- Composer image cards (018 US2): pending images upgrade from name-only chips to 64px thumbnail cards (file name, estimated size on hover, × to remove); clicking a thumb opens the shared preview modal — zoom, ←/→ navigation, save and copy all work. Composer images never enter the transcript; the modal takes the list from whichever source raised the request.
-- One-click "Update all" for packages (018 US6): a new button in the packages panel runs a single `pi update --extensions` and relays pi's per-package output verbatim (the 001 "never guess the outcome" contract); removing a package now asks for confirmation (it used to delete on a single misclick); the panel's last hardcoded English strings moved into both dictionaries.
-- Forked sessions get a title suffix (018 US7): `(fork)` in English, `（分支）` in Chinese, so the session list can tell the clone from its parent. Forking a fork does not stack suffixes; an unnamed parent stays unnamed (the auto-titler owns that case); if pi renames the session itself later, pi wins.
+- Inline reference chips in the composer (018 US1): references embed in the text flow like Cursor's @-mentions instead of taking their own row; `@` completion, drag & drop, right-click injection and pastes land at the caret, and one Backspace removes a whole chip.
+- Composer image thumbnails (018 US2): pending images become 64px cards that open the shared preview on click — zoom, ←/→, save and copy all work.
+- One-click "Update all" for packages (018 US6): the packages panel updates every extension in one go and relays pi's per-package output verbatim; removing a package asks first.
+- Forked sessions get a title suffix (018 US7): `(fork)` in English, `（分支）` in Chinese, so a clone is easy to tell from its parent; forking a fork does not stack suffixes.
 
 **Changed**
-- Model picker (018 US5 / 020): click a provider header to fold/unfold it (chevron, count preserved) and the collapsed set persists in localStorage across restarts; a non-empty search starts fully expanded but each group can still be folded by hand, and opening the picker auto-expands the current model's group. Huge catalogs are no longer rendered in full: at most 50 providers, each truncated in proportion to its size (5–200 entries), with an "shown/total" count in the header plus a hint at the end of the group and of the list; a truncated current model is still pinned to the top. Keyboard navigation, Enter and highlighting only ever walk visible entries.
+- Model picker (018 US5 / 020): provider headers fold on click and the collapsed set survives a restart. Huge catalogs render at most 50 providers, truncated to 5–200 entries each with a shown/total count; keyboard navigation only walks visible entries.
 
 **Fixed**
-- Pasting markdown was misread as multiple reference chips (018 US3): the old sweep took the first path-looking token of every pasted line, so `/usr/bin/env node` or `./gradlew build` lines turned into bogus references. Plain text now becomes a reference only when the WHOLE payload is a single, whitespace-free path (keeping the legit "copy a file in the IDEA project tree, paste it" case); multi-line markdown is always inserted as text. On the drag side the `text/uri-list` file flavour keeps its per-line parsing, and the `text/plain` fallback follows the same single-line rule.
-- Message tables had no borders (018 US4): no table CSS existed at all, so tables rendered with the browser's default borderless look. Cells now carry a 1px weak theme border (`var(--border)`, the same family as bubbles and cards), `border-collapse: collapse`, and the header divider is one step stronger (`var(--border-strong)`), following the light/dark theme.
-- Switching sessions froze the old transcript on screen (021): clicking a history row or New made pi read hundreds of messages while the UI sat still. The click now clears the view at once and shows a "switching" placeholder, then reads messages, stats and state in parallel and paints them in one go; sending stays disabled, the target row is marked busy, and a failure lands back on the session list with the error visible.
-- The wheel was stolen by the model dropdown and the transcript kept snapping back (022): with hundreds of entries, hovering moved the highlight under the cursor and dragged the scroll position with it, and the wheel often did not move the list at all; the transcript likewise pulled a scrolled-up view back to the bottom. Hovering no longer changes the highlight (Enter still picks the hovered entry) and the wheel only scrolls the list; the view re-pins to the bottom only once it is genuinely at the bottom, so new output cannot grab it back while you read.
-- Every pi reply of a round offered Fork (023): pi forks at **user** entries, so all replies of one round branched to the same place while each claimed "everything after this reply is left behind". Only the round's last reply offers Fork now; the others keep copy and quote.
-- Long options in extension questions collided with the next row: the option buttons were a fixed 28px tall yet allowed to wrap, so a two-line label spilled above and below its own box and pressed on the neighbouring option (both the multi-select picks and `select` options). The button height now follows its content, the number stays on the first line, and unbreakable tokens wrap too.
-
+- Multi-line markdown no longer becomes reference chips, and message tables have borders (018 US3 / US4): plain text is a reference only when the whole paste is one whitespace-free path; table cells get a 1px theme border and a heavier header divider.
+- Message-area polish (021 / 022): switching or creating a session clears the view at once with a "switching" placeholder, then paints in one go; the wheel is no longer stolen by the model dropdown and reading up is no longer yanked back to the bottom.
+- Fork appears only on the last pi reply of a round (023), the rest keep copy and quote; long options in extension questions no longer overflow their buttons.
 
 ## 0.5.6 — 2026-11-09
 
