@@ -38,6 +38,6 @@
   `session-clone` 引用为 `session-fork`。
   — 验证：`npx playwright test session-list-actions sessions` 全绿；grep 全仓无残留 `session-clone`。
 
-- [ ] **T608** 收尾：全量三件套 + `./gradlew test`；写 `changelog.d/024-session-list-actions.fixed.md`
+- [x] **T608** 收尾：全量三件套 + `./gradlew test`；写 `changelog.d/024-session-list-actions.fixed.md`
   （两行）；更新 run-report 第 1/2 节。
   — 验证：typecheck 0 错 + vitest 全绿 + playwright 全绿 + gradlew test 全绿；run-report 024 全 ✅。
