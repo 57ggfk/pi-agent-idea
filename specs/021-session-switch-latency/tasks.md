@@ -1,6 +1,8 @@
 # 021 tasks
 
-> 状态：**已实现**（2026-11-11）。A/B/C/D 四轨全部落地，单测 + e2e 全绿。
+> 状态：**已实现并验收**（2026-11-11）。A/B/C/D 四轨全部落地，单测 + e2e 全绿；
+> T317 真机实测 `switch.pending 0ms` / `switch.content 234ms` / `switch.ready 234ms`，
+> C5（pi 侧耗时）不构成瓶颈，不拆分（见 [0.5.7-run-report](../0.5.7-run-report.md)）。
 > 两处按实现调整：① T309 的行级 `aria-busy`/disabled 已实现，但切换是**同一 tick** 内跳页，
 > 列表随即消失，e2e 无法观察到该状态 → 改由 store 单测覆盖（`pendingSwitch.file` 命中目标）。
 > ② T310 的 `session.switchFailed` 未新增，复用既有 `error.switchSession.failed`（避免同义键并存）；
@@ -37,7 +39,7 @@
 - [x] **T314** [US5] 新增 `web/src/lib/perf.ts`：`perfMark(event, startedAt, extra?)` 输出单行 `[pi-agent] perf <event> <ms> …`（JCEF console handler 已把该前缀写 idea.log）；在点击、`pendingSwitch` 置位、内容就绪、可再次发送四处埋点 — 验证：单测断言输出格式（`console.log` spy）、`extra` 键值序列化稳定；真机 `grep "\[pi-agent\] perf" idea.log` 能看到四个事件名
 - [x] **T315** [US5] mock 的 `?slow=` 扩展到 rpc 命令名（`switch_session` / `new_session` / `get_messages` / `get_session_stats` / `get_state`），语义与 `?fail=` 一致（默认只慢第一次）— 验证：`bridge/mock.test.ts` 断言 `?slow=switch_session:1200` 后首次请求耗时落在 1100–1400ms、第二次为 0
 - [x] **T316** [US5] e2e 新增：① 新建阈值（`?slow=new_session:1200`，空态 ≤150ms + 按钮禁用）② 历史阈值（`?slow=switch_session:1200`，跳页 ≤150ms + 占位 ≤300ms + 无 `empty-state`）③ 切换失败回列表 ④ 连点两行最终落在第二行 — 验证：`npx playwright test e2e/sessions.spec.ts` 全绿，四条用例均带显式 `timeout` 数字
-- [ ] **T317** 全量基线 + 文档 + 真机：`npm run typecheck` / `npx vitest run` / `npx playwright test` / `./gradlew test`；`CHANGELOG.md` 0.5.7「修复」补一条；`MANUAL_TEST.md` 增真机两条；真机记录 T1–T4 实测值 — 验证：逐条记录结果；真机实测填进 `specs/0.5.7-run-report.md`，`switch.ready` 若 >1200ms 且 `switch.tap→pending` 已 <150ms，则按 spec「拆分判断」把 C5（pi 侧耗时）单独立项
+- [x] **T317** 全量基线 + 文档 + 真机：`npm run typecheck` / `npx vitest run` / `npx playwright test` / `./gradlew test`；`CHANGELOG.md` 0.5.7「修复」补一条；`MANUAL_TEST.md` 增真机两条；真机记录 T1–T4 实测值 — 验证：逐条记录结果；真机实测填进 `specs/0.5.7-run-report.md`，`switch.ready` 若 >1200ms 且 `switch.tap→pending` 已 <150ms，则按 spec「拆分判断」把 C5（pi 侧耗时）单独立项
 
 ## 待真机确认
 

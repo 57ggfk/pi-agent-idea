@@ -1,6 +1,7 @@
 # 022 tasks
 
-> 状态：**已实现**（2026-11-11）。
+> 状态：**已实现并验收**（2026-11-11）。T414 真机实测三个容器各 10 格上滑 -1200px 精确命中、逐步单调
+> 不回头（见 [0.5.7-run-report](../0.5.7-run-report.md)）。
 > 按实现调整两处：① T412 没有新开关——mock 已有「发一条 prompt 就长出消息」的能力，吸底用例直接复用；
 > ② T413 无需修订既有断言：仓库里没有把 `data-active` 断言成「跟随 hover」的用例，
 >   新增的「悬停 ✕ 键盘」语义由 `e2e/scroll.spec.ts` 两条新用例固定。
@@ -33,7 +34,7 @@
 - [x] **T411** [US4] `perf.ts` 增两个事件：`scroll.frame`（wheel → 下一帧的耗时与位移）、`hover.render`（滚 10 格期间的重渲染次数）；埋点只在开发开关或高频采样下启用，不常态刷日志 — 验证：单测断言格式化输出；真机 `grep "\[pi-agent\] perf" idea.log` 能看到两个事件名且 `hover.render` 计数为 0
 - [x] **T412** [US2][US3] mock 支持「推送一条新消息」以便断言吸底行为（若已有能力则复用，不新增开关）— 验证：`bridge/mock.test.ts` 通过；e2e 两条吸底用例依赖它
 - [x] **T413** [US1] 修订既有 e2e：`data-active` 若被断言为「跟随 hover」，改为「跟随键盘」；新增「悬停 + Enter 选中悬停项」用例 — 验证：`e2e/model-picker.spec.ts` 全绿、用例数不减，逐条记录改了哪两条
-- [ ] **T414** 全量基线 + 文档 + 真机：`npm run typecheck` / `npx vitest run` / `npx playwright test`；`CHANGELOG.md` 0.5.7「修复」补一条（滚轮跟手、悬停不再卡）；`MANUAL_TEST.md` 增真机两条；记录 `scroll.frame` / `hover.render` 实测值 — 验证：逐条记录结果；真机结论写进 `specs/0.5.7-run-report.md`
+- [x] **T414** 全量基线 + 文档 + 真机：`npm run typecheck` / `npx vitest run` / `npx playwright test`；`CHANGELOG.md` 0.5.7「修复」补一条（滚轮跟手、悬停不再卡）；`MANUAL_TEST.md` 增真机两条；记录 `scroll.frame` / `hover.render` 实测值 — 验证：逐条记录结果；真机结论写进 `specs/0.5.7-run-report.md`
 
 ## 待真机确认
 
