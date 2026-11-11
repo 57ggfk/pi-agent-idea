@@ -13,7 +13,7 @@
   — 验证：`src/test/...` 新增 forkArgs 参数断言与 findNewFork 临时目录夹具两条，`./gradlew test --tests
   "*PiSessionFork*"`（或对应类）绿；全量 `./gradlew test` 无回归。
 
-- [ ] **T603** 桥接四处同步：`web/src/bridge/types.ts` 增 `"sessions.fork"`；mock.ts 实现（新行继承源
+- [x] **T603** 桥接四处同步：`web/src/bridge/types.ts` 增 `"sessions.fork"`；mock.ts 实现（新行继承源
   名、`?forkfail=1` 失败旋钮）；`METHOD_SOURCE` 记账。
   — 验证：`npx vitest run mock.test.ts` 增一条「sessions.fork 生成新行且名字继承」绿；typecheck 0 错。
 

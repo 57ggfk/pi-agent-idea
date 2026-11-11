@@ -22,6 +22,8 @@ export type BridgeMethod =
   | "sessions.list"
   | "sessions.search"
   | "sessions.delete"
+  | "sessions.rename"
+  | "sessions.fork"
   | "sessions.exportHtml"
   | "files.list"
   | "ide.repaint"

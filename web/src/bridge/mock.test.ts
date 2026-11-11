@@ -259,3 +259,40 @@ describe("MockBridge ?hang= knob (026 US1)", () => {
     }
   });
 });
+
+describe("MockBridge sessions.fork (024)", () => {
+  it("creates a new row that inherits the source name, without touching the live session", async () => {
+    const bridge = new MockBridge();
+    const before = await bridge.request<{ sessions: Array<{ file: string; id: string; name: string }> }>(
+      "sessions.list",
+    );
+    const src = before.sessions[0];
+    expect(src.name).toBe("Refactor auth module");
+
+    const forked = await bridge.request<{ ok: boolean; file: string }>("sessions.fork", { file: src.file });
+    expect(forked.ok).toBe(true);
+    expect(forked.file).not.toBe(src.file);
+
+    const after = await bridge.request<{ sessions: Array<{ file: string; id: string; name: string }> }>(
+      "sessions.list",
+    );
+    expect(after.sessions.length).toBe(before.sessions.length + 1);
+    const row = after.sessions.find((s) => s.file === forked.file);
+    expect(row?.name).toBe("Refactor auth module");
+    expect(row?.id).not.toBe(src.id);
+    // The live session row is untouched.
+    expect(after.sessions.find((s) => s.file === src.file)).toBeTruthy();
+  });
+
+  it("rejects when ?forkfail=1 is set (US3 failure path)", async () => {
+    vi.stubGlobal("location", { search: "?forkfail=1" });
+    try {
+      const bridge = new MockBridge();
+      await expect(bridge.request("sessions.fork", { file: "/tmp/mock-sessions/x.jsonl" })).rejects.toThrow(
+        /mock refusal/,
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});

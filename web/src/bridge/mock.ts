@@ -127,6 +127,8 @@ export class MockBridge implements Bridge {
   readonly kind = "mock" as const;
 
   private seq = 0;
+  /** 024: monotonic counter for list-level fork file names. */
+  private forkSeq = 0;
   private listeners: Listener[] = [];
   private timers: ReturnType<typeof setTimeout>[] = [];
 
@@ -609,6 +611,31 @@ export class MockBridge implements Bridge {
       if (!row) return Promise.reject(new Error("not a session file: " + p.file));
       this.mockSessions = this.mockSessions.map((s) => (s.file === p.file ? { ...s, name } : s));
       return Promise.resolve({ ok: true } as T);
+    }
+    if (method === "sessions.fork") {
+      // 024: full-copy fork of a list row — mirrors the real bridge's one-shot
+      // `pi --mode rpc --fork` process: a NEW file (new id) whose name is
+      // inherited from the source (the plugin appends the (fork) suffix
+      // offline via sessions.rename). `?forkfail=1` exercises US3's failure
+      // path (process could not be spawned / timed out).
+      const p = params as { file?: string };
+      if (query()?.get("forkfail") === "1") {
+        return Promise.reject(new Error("pi --fork produced no session (exit=1): mock refusal"));
+      }
+      const row = this.mockSessions.find((s) => s.file === p.file);
+      if (!row) return Promise.reject(new Error("not a session file: " + p.file));
+      this.forkSeq += 1;
+      const forked = {
+        file: `/tmp/mock-sessions/fork-${this.forkSeq}-${row.id}.jsonl`,
+        id: `session-fork-${this.forkSeq}`,
+        timestamp: new Date().toISOString(),
+        name: row.name,
+        preview: row.preview,
+        modifiedAt: Date.now(),
+        messageCount: row.messageCount,
+      };
+      this.mockSessions = [forked, ...this.mockSessions];
+      return Promise.resolve({ ok: true, file: forked.file } as T);
     }
     if (method === "title.generate") {
       // B-stage title refinement: the real bridge spawns a one-shot pi
