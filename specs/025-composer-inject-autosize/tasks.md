@@ -7,7 +7,7 @@
   — 验证：`autosize.test.ts` 增 2 条（plain-object textarea：长内容先长到 cap 再 `scrollTop ===
   scrollHeight`；内容不超高时的赋值契约），`npx vitest run autosize.test.ts` 绿。
 
-- [ ] **T702** `Composer.tsx` 收口 effect 改用 `autosizeAndReveal`（caret 在前、scroll 在后）+ 可疑测量
+- [x] **T702** `Composer.tsx` 收口 effect 改用 `autosizeAndReveal`（caret 在前、scroll 在后）+ 可疑测量
   判定（app clientHeight===0 或 高度==34 而文本非空）→ `revealPendingRef` 记 `pendingPrompt.id`（FR-002/
   003/004）；`.app` ResizeObserver 扩展：标记存在且布局恢复 → `autosizeAndReveal` 一次并清标记；
   其余重测路径保持裸 autosize（FR-005/006，不加任何 scroll 跟随）。

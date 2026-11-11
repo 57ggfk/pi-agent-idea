@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { usePiStore, type SendMode } from "../store/store";
 import { needsRefresh } from "../store/sources";
-import { autosize, resetComposerHeight } from "../lib/autosize";
+import { autosize, autosizeAndReveal, MIN_COMPOSER_HEIGHT, resetComposerHeight } from "../lib/autosize";
 import { collectPathRefs, type PathRef } from "../lib/clipboardRefs";
 import { findTokens, removeRange, tokenBackspaceAt } from "../lib/inlineChips";
 import { useT } from "../i18n/useT";
@@ -164,6 +164,11 @@ export default function Composer() {
   const fileRef = useRef<HTMLInputElement>(null);
   const controlsRef = useRef<HTMLDivElement>(null);
   const mirrorRef = useRef<HTMLDivElement>(null);
+  // 025 FR-003/004: the injection measured before the layout existed (hidden
+  // tool window, tab not yet painted) and clamped to the 34px floor. Holds the
+  // pendingPrompt id of the most recent suspect injection; the `.app`
+  // ResizeObserver consumes it exactly once, when the app has a real height.
+  const revealPendingRef = useRef<number | null>(null);
   // IME composition (spec 010 FR-009): while the user is mid-composition the
   // browser mutates the textarea freely; measuring in between makes the box
   // bounce under the candidate window. Resizing resumes on compositionend.
@@ -300,7 +305,17 @@ export default function Composer() {
     if (!ta) return;
     const app = ta.closest(".app") as HTMLElement | null;
     const remeasure = () => {
-      if (!composingRef.current) autosize(ta, app);
+      if (composingRef.current) return;
+      // 025 FR-003: a suspect injection waits for exactly this moment — the
+      // app regaining a real height. Re-measure WITH the reveal (the injected
+      // tail becomes visible), then drop the flag so later resizes never
+      // scroll (FR-004/FR-005).
+      if (revealPendingRef.current !== null && app && app.clientHeight > 0) {
+        revealPendingRef.current = null;
+        autosizeAndReveal(ta, app);
+        return;
+      }
+      autosize(ta, app);
     };
     remeasure();
     const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(remeasure);
@@ -367,13 +382,28 @@ export default function Composer() {
     clearPendingPrompt();
     // The caret has to land at the end of the *new* value, which is only
     // readable from the DOM after React commits it.
+    const promptId = pendingPrompt.id;
     requestAnimationFrame(() => {
       const ta = taRef.current;
       if (!ta) return;
+      const app = ta.closest(".app") as HTMLElement | null;
       ta.focus();
       const end = ta.value.length;
       ta.setSelectionRange(end, end);
-      autosize(ta, ta.closest(".app") as HTMLElement | null);
+      // 025: grow AND reveal — the caret alone never scrolls (FR-002).
+      autosizeAndReveal(ta, app);
+      // FR-003: did this measurement happen before the layout existed? A 0
+      // app height or a floor-clamped box with real content means the height
+      // is wrong until something re-measures; flag the prompt id so the app
+      // ResizeObserver redoes it (with the reveal) exactly once. A healthy
+      // measurement clears any stale flag — an older injection must not
+      // scroll over the user's later manual adjustments (FR-004).
+      const clampedToFloor =
+        ta.value.trim().length > 0 &&
+        parseFloat(ta.style.height) <= MIN_COMPOSER_HEIGHT &&
+        ta.scrollHeight > MIN_COMPOSER_HEIGHT;
+      const suspect = !app || app.clientHeight === 0 || clampedToFloor;
+      revealPendingRef.current = suspect ? promptId : null;
     });
   }, [pendingPrompt, clearPendingPrompt]);
 
