@@ -150,6 +150,54 @@ test.describe("transcript scrolling", () => {
       .toBeLessThan(before);
   });
 
+  /**
+   * 022 US2.5 — the gesture has to win *while the transcript is growing*, which
+   * is the only moment the old rule could steal it back. The append effect and
+   * the wheel land within the same frame, and Chromium coalesces the pair into
+   * "offset unchanged" (bottom → bottom), so no `scroll` event is dispatched at
+   * all: nothing notices the wheel and the view stays nailed to the bottom.
+   * That is the real-machine "停一下才能滑动".
+   */
+  /**
+   * 022 D6 was reverted on 2026-11-11 (measured, see the note in styles.css).
+   * A long transcript whose off-screen messages are pinned to a 120px hint
+   * cannot be scrolled up: rendering them grows the content, scroll anchoring
+   * pushes the offset back, and ten notches ended 3234px *lower* than they
+   * started. This test locks the decision in — if someone re-adds the
+   * optimisation, it has to be measured against a long transcript first.
+   */
+  test("the transcript body is not optimized with content-visibility", async ({ page }) => {
+    await seed(page);
+    const cv = await page.evaluate(() => {
+      const el = document.querySelector(".item-body");
+      return el ? getComputedStyle(el).contentVisibility : "missing";
+    });
+    expect(cv).toBe("visible");
+  });
+
+  test("scrolling up while pi is still answering is not yanked back", async ({ page }) => {
+    await seed(page);
+    await page.getByTestId("composer-input").fill("streaming round");
+    await page.getByTestId("send-btn").click();
+    await expect(page.getByTestId("status-dot")).toHaveClass(/busy/, { timeout: 20_000 });
+
+    const list = page.getByTestId("message-list");
+    const point = await center(list);
+    await page.mouse.move(point.x, point.y);
+    // Notches at roughly the mock's chunk cadence (40ms), i.e. every notch has
+    // a content append queued behind it.
+    for (let i = 0; i < 6; i++) {
+      await page.mouse.wheel(0, -120);
+      await page.waitForTimeout(45);
+    }
+
+    const pos = await page.evaluate(() => {
+      const el = document.querySelector<HTMLElement>('[data-testid="message-list"]')!;
+      return { top: el.scrollTop, max: el.scrollHeight - el.clientHeight };
+    });
+    expect(pos.top).toBeLessThan(pos.max - 200);
+  });
+
   test("a new message does not yank an unpinned view back to the bottom", async ({ page }) => {
     await seed(page);
     const list = page.getByTestId("message-list");

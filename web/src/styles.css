@@ -2064,18 +2064,26 @@ button {
   max-width: 92%;
 }
 
-/* 022 D6: a long transcript used to paint every message on every frame.
-   `auto` keeps the last measured height, so the scrollbar does not jump;
-   the intrinsic-size hint is only the first-paint estimate. Rollback is
-   this one rule if a real machine disagrees.
+/* 022 D6 tried `content-visibility: auto; contain-intrinsic-size: auto 120px`
+   here and it is deliberately *not* coming back (measured 2026-11-11).
 
-   It sits on the body, *not* on `.item`: `content-visibility` comes with paint
-   containment, which clipped the action toolbar hanging above the message's
-   top edge and left its buttons half-painted and unclickable. The body is also
-   where the cost is — the header is two short spans. */
+   Two separate failures, both real-machine visible:
+   1. paint containment clipped the action toolbar hanging above the message's
+      top edge, so its buttons were half-painted and unclickable;
+   2. worse, it broke "scroll up from the bottom" — the bug 022 exists to fix.
+      A freshly loaded transcript has never measured the messages above the
+      viewport, so they are laid out at the 120px hint while real messages are
+      3–6× that. Wheeling up renders them, their heights explode, and scroll
+      anchoring pushes `scrollTop` back down to keep the picture stable: ten
+      120px notches moved the view 3234px **downwards** instead of 1200px up.
+      Stop wheeling, let the layout settle, and it works again — exactly the
+      "滑不动，停一下才能滑动" complaint.
+
+   The list also carries hundreds of messages in practice, so no static hint is
+   close enough. `React.memo` on the item (the other half of 022) is where the
+   repaint saving came from; it does not touch geometry. */
 .item-body {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 120px;
+  content-visibility: visible;
 }
 
 .item-user {

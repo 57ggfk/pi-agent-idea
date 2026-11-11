@@ -26,6 +26,7 @@
 - [x] **T408** [US2] e2e 新增「到底回滚」用例：滚到 `scrollHeight` 后 `wheel(0,-120)`，断言 `scrollTop` 在 100ms 内减少 >0，且不需要额外停顿/移动鼠标 — 验证：新用例进 `e2e/scroll.spec.ts`，改造前应能复现「不变」（作为缺陷证据先跑一次红）
 - [x] **T409** [US3] `web/src/lib/messageActions.ts` 新增 `sameActionIds`；`ItemView` 改 `React.memo` + 自定义比较器（`item` 引用 + `activeHitBlockIndex` + action ids）— 验证：`messageActions.test.ts` 覆盖空/等长不同项/不同长度；e2e 断言「统计更新不重渲染消息」（用 `hover.render`/profiler 计数或 DOM 引用稳定：同一节点对象 `evaluate` 前后 `===` 不可测，改用计数器）
 - [x] **T410** [US3] `content-visibility: auto; contain-intrinsic-size: auto 120px`（plan D6）——落地位置改到 `.item-body`：放在 `.item` 上会连带 paint containment，把悬在消息上边缘之上的动作工具条裁掉一半、按钮点不中（023 的 Fork 点击 e2e 暴露）。语义不变，只在真机滚动与跳转时复验— 验证：真机检查 ① 滚动条长度不来回跳 ② 「大纲/搜索跳转到第 N 条」落点正确（复用 006 既有 e2e + 真机目验）；若偏移则撤掉本 task 并记录原因
+  **2026-11-11 真机复验后撤销**：`content-visibility` 是「往上滑不动」的**新根因**，与 US2 相冲突。会话刚加载时视口上方的消息从未被渲染，按 120px 提示高度占位（真实高度 3–6 倍）；向上滚一格它们开始渲染、高度暴涨，滚动锚定为保持画面稳定把 `scrollTop` 推回去 —— 实测 10 格上滑（应上移 1200px）结果**向下移动 3234px**；停下等布局稳定后才能正常滑，即用户说的「滑不动，停一下才能滑动」。已从 `.item-body` 移除（改为 `content-visibility: visible` 并留注释），保留 `React.memo` 那半的收益。回归守卫：`e2e/scroll.spec.ts` 的 `the transcript body is not optimized with content-visibility`。
 
 ## C. 度量与收尾
 
