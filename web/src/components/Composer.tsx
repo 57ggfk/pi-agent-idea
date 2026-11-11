@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { usePiStore, type SendMode } from "../store/store";
 import { needsRefresh } from "../store/sources";
-import { autosize, autosizeAndReveal, MIN_COMPOSER_HEIGHT, resetComposerHeight } from "../lib/autosize";
+import { autosize, autosizeAndReveal, clampComposerHeight, resetComposerHeight } from "../lib/autosize";
 import { collectPathRefs, type PathRef } from "../lib/clipboardRefs";
 import { findTokens, removeRange, tokenBackspaceAt } from "../lib/inlineChips";
 import { useT } from "../i18n/useT";
@@ -169,6 +169,10 @@ export default function Composer() {
   // pendingPrompt id of the most recent suspect injection; the `.app`
   // ResizeObserver consumes it exactly once, when the app has a real height.
   const revealPendingRef = useRef<number | null>(null);
+  // 025: the length the injected draft SHOULD have once React commits — the
+  // rAF below can fire before that commit and would size the box from the
+  // stale value (the "sometimes it works" flake this spec fixes).
+  const expectedLenRef = useRef<number | null>(null);
   // IME composition (spec 010 FR-009): while the user is mid-composition the
   // browser mutates the textarea freely; measuring in between makes the box
   // bounce under the candidate window. Resizing resumes on compositionend.
@@ -342,20 +346,36 @@ export default function Composer() {
     // it (0.5.6 real-machine feedback). restore/edit stay verbatim — the user
     // is getting their own draft back.
     const withNewline = (s: string) => `${s.replace(/\s+$/, "")}\n`;
+    // Every updater reports the length the value will have once committed, so
+    // the rAF below can tell a stale frame from the real result. React may
+    // run the updater *after* the first rAF (concurrent rendering defers the
+    // render pass), so the effect body plants the -1 sentinel meaning "an
+    // updater is queued but has not reported yet".
+    let textUpdateQueued = false;
+    const note = (next: string) => {
+      expectedLenRef.current = next.length;
+      return next;
+    };
     if (promptMode === "quote") {
+      textUpdateQueued = true;
       setText((prev) =>
-        prev.trim().length > 0 ? `${prev.replace(/\s+$/, "")}\n\n${withNewline(value)}` : withNewline(value),
+        note(
+          prev.trim().length > 0 ? `${prev.replace(/\s+$/, "")}\n\n${withNewline(value)}` : withNewline(value),
+        ),
       );
     } else if (promptMode === "restore") {
       // Queue take-back (spec 005 US3): the user's own draft comes back
       // verbatim — spacing matches quote, but no blockquote prefix.
-      setText((prev) => (prev.trim().length > 0 ? `${prev.replace(/\s+$/, "")}\n\n${value}` : value));
+      textUpdateQueued = true;
+      setText((prev) => note(prev.trim().length > 0 ? `${prev.replace(/\s+$/, "")}\n\n${value}` : value));
     } else if (promptMode === "edit") {
-      setText(value);
+      textUpdateQueued = true;
+      setText(note(value));
     } else if (value.length > 0) {
       // replace — but a refs-only push (spec 015) arrives with an empty text
       // and must not wipe a draft the user is typing.
-      setText(withNewline(value));
+      textUpdateQueued = true;
+      setText(note(withNewline(value)));
     }
     if (pendingPrompt.images && pendingPrompt.images.length > 0) {
       setImages(
@@ -374,37 +394,53 @@ export default function Composer() {
       // end); a draft not ending in whitespace gets a separator space, since
       // a `word@src` glue would not even read as a token.
       const toks = pendingPrompt.refs.map((r) => `@${r.path} `).join("");
+      textUpdateQueued = true;
       setText((prev) => {
-        if (prev.length === 0) return toks;
-        return /\s$/.test(prev) ? `${prev}${toks}` : `${prev} ${toks}`;
+        const next = prev.length === 0 ? toks : /\s$/.test(prev) ? `${prev}${toks}` : `${prev} ${toks}`;
+        return note(next);
       });
     }
+    // No text updater queued (images-only push): no expectation to wait for.
+    if (!textUpdateQueued) expectedLenRef.current = null;
+    else if (expectedLenRef.current === null) expectedLenRef.current = -1;
     clearPendingPrompt();
     // The caret has to land at the end of the *new* value, which is only
     // readable from the DOM after React commits it.
     const promptId = pendingPrompt.id;
-    requestAnimationFrame(() => {
+    // 025: the rAF can fire before React commits the setState calls above —
+    // sizing the box from the stale value is exactly the "sometimes it
+    // works" flake (reproduced: a deferred updater left the box at 38px with
+    // 168 committed chars). Wait (bounded by frames, no timers) until the
+    // committed value matches the expected length, then grow + reveal.
+    let frames = 0;
+    const settle = () => {
       const ta = taRef.current;
       if (!ta) return;
+      const expected = expectedLenRef.current;
+      const stale = expected === -1 || (expected !== null && ta.value.length !== expected);
+      if (stale && frames++ < 60) {
+        requestAnimationFrame(settle);
+        return;
+      }
+      expectedLenRef.current = null;
       const app = ta.closest(".app") as HTMLElement | null;
       ta.focus();
       const end = ta.value.length;
       ta.setSelectionRange(end, end);
       // 025: grow AND reveal — the caret alone never scrolls (FR-002).
       autosizeAndReveal(ta, app);
-      // FR-003: did this measurement happen before the layout existed? A 0
-      // app height or a floor-clamped box with real content means the height
-      // is wrong until something re-measures; flag the prompt id so the app
+      // FR-003: did this measurement happen before the layout existed? The
+      // policy says the box must be clamp(scrollHeight, appHeight) — a box
+      // smaller than that (0-height app, stale 38px from a lost race) is
+      // wrong until something re-measures; flag the prompt id so the app
       // ResizeObserver redoes it (with the reveal) exactly once. A healthy
       // measurement clears any stale flag — an older injection must not
       // scroll over the user's later manual adjustments (FR-004).
-      const clampedToFloor =
-        ta.value.trim().length > 0 &&
-        parseFloat(ta.style.height) <= MIN_COMPOSER_HEIGHT &&
-        ta.scrollHeight > MIN_COMPOSER_HEIGHT;
-      const suspect = !app || app.clientHeight === 0 || clampedToFloor;
+      const should = clampComposerHeight(ta.scrollHeight, app?.clientHeight ?? 0);
+      const suspect = !app || app.clientHeight === 0 || parseFloat(ta.style.height) < should - 1;
       revealPendingRef.current = suspect ? promptId : null;
-    });
+    };
+    requestAnimationFrame(settle);
   }, [pendingPrompt, clearPendingPrompt]);
 
   // 007 FR-013: a branch (fork / new session) must not carry the old draft or

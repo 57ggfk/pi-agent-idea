@@ -19,5 +19,5 @@
   — 验证：`npx playwright test composer-inject-autosize` 4 条绿；`npx playwright test ui-polish
   composer-refs` 零回归。
 
-- [ ] **T704** 收尾：全量三件套；`changelog.d/025-composer-reveal.fixed.md`（两行）；run-report 更新。
+- [x] **T704** 收尾：全量三件套；`changelog.d/025-composer-reveal.fixed.md`（两行）；run-report 更新。
   — 验证：三件套全绿；run-report 025 全 ✅。

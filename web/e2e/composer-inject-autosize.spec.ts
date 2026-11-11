@@ -128,10 +128,22 @@ test("US3: a short injection is exactly content-height; a draft survives a quote
   await expect(quoteBtn).toBeVisible({ timeout: 5_000 });
   await quoteBtn.click();
 
-  await page.waitForFunction(() => {
-    const ta = document.querySelector('[data-testid="composer-input"]') as HTMLTextAreaElement;
-    return ta && ta.value.startsWith("my own draft") && ta.scrollTop + ta.clientHeight >= ta.scrollHeight - 1;
-  });
+  await page.waitForFunction(
+    () => {
+      const ta = document.querySelector('[data-testid="composer-input"]') as HTMLTextAreaElement;
+      // The quoted reply must actually have landed (length grows past the
+      // draft) AND the box reveals its tail — a bare draft satisfies neither
+      // meaningfully.
+      return (
+        ta &&
+        ta.value.length > "my own draft".length &&
+        ta.value.startsWith("my own draft") &&
+        ta.scrollTop + ta.clientHeight >= ta.scrollHeight - 1
+      );
+    },
+    undefined,
+    { timeout: 5_000 },
+  );
   const after = await readTa(page);
   expect(after.valueLength).toBeGreaterThan("my own draft".length);
 });
