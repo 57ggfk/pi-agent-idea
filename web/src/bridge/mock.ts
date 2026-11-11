@@ -39,20 +39,28 @@ function mockSources() {
  * corporate `npm config get registry`.
  */
 function mockSetup(state: string, npmRegistry: string) {
-  const hasNode = state !== "nonode";
+  // 028: `nonode` = neither node nor npm (the vendor-script target); `nodeold`
+  // = a Node below the corrected 22.19 gate; everything else = current node.
+  const nodeless = state === "nonode";
+  const nodeold = state === "nodeold";
+  const nodeVersion = nodeless ? "" : nodeold ? "v20.11.0" : "v22.19.0";
+  const nodeOk = !nodeless && !nodeold;
   return {
     ok: true,
-    node: hasNode
-      ? { found: true, path: "/usr/local/bin/node", version: "v22.0.0" }
-      : { found: false, path: "", version: "" },
-    npm: hasNode
-      ? { found: true, path: "/usr/local/bin/npm", version: "10.0.0" }
-      : { found: false, path: "", version: "" },
+    node: nodeless
+      ? { found: false, path: "", version: "" }
+      : { found: true, path: "/usr/local/bin/node", version: nodeVersion },
+    npm: nodeless
+      ? { found: false, path: "", version: "" }
+      : { found: true, path: "/usr/local/bin/npm", version: "10.0.0" },
     pi: { found: false, path: "", version: "" },
-    nodeMajor: hasNode ? 22 : null,
-    nodeOk: hasNode,
-    minNodeMajor: 18,
-    canInstall: hasNode,
+    nodeMajor: nodeless ? null : nodeold ? 20 : 22,
+    nodeVersion,
+    nodeOk,
+    minNode: "22.19",
+    installBlocker: nodeless ? "no-node" : nodeold ? "node-version" : "",
+    scriptSupported: true,
+    canInstall: nodeOk,
     piPackage: "@earendil-works/pi-coding-agent",
     agentDir: "/tmp/mock-home/.pi/agent",
     customPath: "",
@@ -308,6 +316,8 @@ export class MockBridge implements Bridge {
   private readonly agentsKnob = query()?.get("agents");
   /** Set by a successful envInstall / envSetPath: releases the setup gate
    *  on the next envDetect (012 T124). */
+  /** 028: the explicit Node path from envSetNodePath (echoed by detect). */
+  private nodePathSet = "";
   private setupInstalled = false;
   /** `?setup=error1` fails the first envDetect only (retry path, T122). */
   private setupErrorShown = false;
@@ -773,6 +783,13 @@ export class MockBridge implements Bridge {
         }
         if (setup) {
           const detected = mockSetup(setup, query()?.get("npmregistry") ?? "");
+          // 028 FR-004: an explicit Node path wins over the fixture.
+          if (this.nodePathSet) {
+            detected.node = { found: true, path: this.nodePathSet, version: "v22.19.0" };
+            detected.nodeOk = true;
+            detected.installBlocker = "";
+            detected.canInstall = true;
+          }
           if (this.setupInstalled) {
             // A completed install / manual path releases the gate (T124).
             detected.needsSetup = false;
@@ -786,8 +803,11 @@ export class MockBridge implements Bridge {
           npm: { found: true, path: "/usr/local/bin/npm", version: "10.0.0" },
           pi: { found: true, path: "/usr/local/bin/pi", version: this.piVersion },
           nodeMajor: 22,
+          nodeVersion: "v22.0.0",
           nodeOk: true,
-          minNodeMajor: 18,
+          minNode: "22.19",
+          installBlocker: "",
+          scriptSupported: true,
           canInstall: true,
           piPackage: "@earendil-works/pi-coding-agent",
           agentDir: "/tmp/mock-home/.pi/agent",
@@ -800,6 +820,22 @@ export class MockBridge implements Bridge {
         };
       }
       case "manage.envInstall": {
+        // 028: the vendor script shares the npm install's contract (same
+        // success/fail/hang knobs, same stop channel).
+        if ((params as { method?: string } | undefined)?.method === "script") {
+          const scriptLine = "mock: irm https://pi.dev/install.ps1 | iex  (or the .sh twin)";
+          this.setupInstalled = true;
+          if (query()?.get("install") === "fail") {
+            return {
+              ok: false,
+              exitCode: 1,
+              method: "script",
+              output: `${scriptLine}\nboom: the script exploded`,
+              error: "The script failed. boom",
+            };
+          }
+          return { ok: true, found: true, exitCode: 0, method: "script", output: scriptLine, version: this.piVersion };
+        }
         // Echo the registry back so e2e can prove which value left the UI:
         // "npm default" means no --registry flag was passed at all.
         const payload = params as { source?: string; registry?: string } | undefined;
@@ -849,6 +885,11 @@ export class MockBridge implements Bridge {
       case "manage.envSetPath": {
         this.setupInstalled = true;
         return { ok: true, found: true, path: "/usr/local/bin/pi", version: this.piVersion };
+      }
+      // 028 FR-004: the explicit Node path — detect reports it verbatim.
+      case "manage.envSetNodePath": {
+        this.nodePathSet = String((params as { path?: string } | undefined)?.path ?? "");
+        return { ok: true, found: this.nodePathSet !== "", path: this.nodePathSet, version: "v22.19.0" };
       }
       case "manage.mcpList":
         return {

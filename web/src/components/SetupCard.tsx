@@ -57,6 +57,37 @@ export default function SetupCard() {
   const customId = env?.customSource ?? "custom";
   const isCustom = source === customId;
   const customBlank = isCustom && customRegistry.trim() === "";
+  // 028: the vendor-script install — its own confirm step, shared output.
+  const [scriptConfirm, setScriptConfirm] = useState(false);
+  const isWindows = navigator.userAgent.includes("Windows");
+  const scriptCommand = isWindows
+    ? "powershell -NoProfile -ExecutionPolicy Bypass -Command \"irm https://pi.dev/install.ps1 | iex\""
+    : "sh -c \"curl -fsSL https://pi.dev/install.sh | sh\"";
+
+  const installScript = async () => {
+    setBusy(true);
+    setError("");
+    setNotice("");
+    setLog("");
+    setScriptConfirm(false);
+    try {
+      const api = manageApi(await getBridge());
+      const result = await api.envInstall({ method: "script" });
+      setLog(result.output ?? "");
+      if (!result.ok) {
+        if (result.cancelled) setNotice(result.error ?? t("setup.noticeStopped"));
+        else setError(result.error ?? "install failed");
+        return;
+      }
+      await restartPi();
+      await detectSetup(true);
+      offerProviderStep();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const install = async () => {
     if (customBlank) {
@@ -139,22 +170,55 @@ export default function SetupCard() {
       </div>
 
       <div className="setup-tools">
-        <ToolRow label="Node.js" tool={env.node} hint={t("setup.nodeHint", { min: env.minNodeMajor ?? 18 })} />
+        <ToolRow label="Node.js" tool={env.node} hint={t("setup.nodeHint", { min: env.minNode ?? "22.19" })} />
         <ToolRow label="npm" tool={env.npm} hint={t("setup.npmHint")} />
         <ToolRow label="pi" tool={env.pi} hint={t("setup.piHint")} />
       </div>
 
       {!env.nodeOk ? (
         <div className="setup-warn" data-testid="setup-node-warning">
-          {t("setup.nodeWarn1", { min: env.minNodeMajor ?? 18 })}{" "}
-          <a href="https://nodejs.org/en/download" target="_blank" rel="noreferrer">
-            nodejs.org
-          </a>{" "}
-          {t("setup.nodeWarnMid")}{" "}
-          <a href="https://npmmirror.com/mirrors/node/" target="_blank" rel="noreferrer">
-            {t("setup.nodeWarnMirror")}
-          </a>
-          , {t("setup.nodeWarnEnd")}
+          {t("setup.nodeWarn1", { min: env.minNode ?? "22.19" })}{" "}
+          <span className="mono">{env.nodeVersion || t("setup.nodeMissing")}</span> —{" "}
+          {t("setup.nodeWarnScript")}
+        </div>
+      ) : null}
+
+      {/* 028 FR-001/002: the vendor script — offered before npm (it installs
+          its own Node), with the full command shown BEFORE anything runs. */}
+      {env.scriptSupported !== false ? (
+        <div className="setup-block" data-testid="setup-script-block">
+          <div className="setup-label">{t("setup.scriptLabel")}</div>
+          <div className="panel-row-sub">{t("setup.scriptHint")}</div>
+          <div className="mono setup-registry" data-testid="setup-script-command">
+            {scriptCommand}
+          </div>
+          {scriptConfirm ? (
+            <div className="setup-actions" data-testid="setup-script-confirm">
+              <span className="panel-row-sub">{t("setup.scriptConfirmBody")}</span>
+              <button
+                className="btn btn-send"
+                data-testid="setup-script-run"
+                onClick={() => void installScript()}
+                disabled={busy}
+              >
+                {busy ? t("setup.installing", { seconds: elapsed }) : t("setup.scriptRun")}
+              </button>
+              <button className="btn" data-testid="setup-script-cancel" onClick={() => setScriptConfirm(false)} disabled={busy}>
+                {t("common.cancel")}
+              </button>
+            </div>
+          ) : (
+            <div className="setup-actions">
+              <button
+                className="btn"
+                data-testid="setup-script-open"
+                onClick={() => setScriptConfirm(true)}
+                disabled={busy}
+              >
+                {t("setup.scriptOpen")}
+              </button>
+            </div>
+          )}
         </div>
       ) : null}
 
@@ -237,7 +301,12 @@ export default function SetupCard() {
         </div>
       ) : (
         <div className="setup-warn" data-testid="setup-no-npm">
-          {t("setup.noNpm")}
+          {/* 028 FR-009: WHY the npm route is off — three distinct reasons. */}
+          {env.installBlocker === "no-node"
+            ? t("setup.blockerNoNode")
+            : env.installBlocker === "node-version"
+              ? t("setup.blockerNodeVersion", { cur: env.nodeVersion || "", min: env.minNode ?? "22.19" })
+              : t("setup.noNpm")}
         </div>
       )}
 

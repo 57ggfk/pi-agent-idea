@@ -41,6 +41,7 @@ export type BridgeMethod =
   | "manage.envInstall"
   | "manage.envCancelInstall"
   | "manage.envSetPath"
+  | "manage.envSetNodePath"
   | "manage.mcpList"
   | "manage.mcpAdd"
   | "manage.mcpRemove"

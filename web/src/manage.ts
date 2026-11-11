@@ -266,7 +266,13 @@ export interface EnvDetectResult extends CliOutcome {
   nodeMajor?: number | null;
   nodeOk?: boolean;
   minNodeMajor?: number;
-  /** False when node or npm is missing: the manual path is the only option. */
+  // 028: the corrected gate and its presentation fields.
+  nodeVersion?: string;
+  minNode?: string;
+  /** "no-node" | "node-version" | "no-npm" — why the npm install is off. */
+  installBlocker?: string;
+  scriptSupported?: boolean;
+  /** False when node is missing or below 22.19: the manual path is the only option. */
   canInstall?: boolean;
   piPackage?: string;
   agentDir?: string;
@@ -304,10 +310,12 @@ export function manageApi(bridge: Bridge) {
     environment: () => call<EnvironmentResult>("manage.env"),
     envDetect: () => call<EnvDetectResult>("manage.envDetect"),
     /** No deadline: the user stops this one with [envCancelInstall]. */
-    envInstall: (p: { source: string; registry?: string }) =>
+    envInstall: (p: { source?: string; registry?: string; method?: "script" }) =>
       call<EnvInstallResult>("manage.envInstall", p, 0),
     envCancelInstall: () => call<{ ok: boolean; cancelled?: boolean; error?: string }>("manage.envCancelInstall"),
     envSetPath: (p: { path: string }) => call<EnvInstallResult>("manage.envSetPath", p),
+    /** 028: the explicit Node interpreter; empty clears back to discovery. */
+    envSetNodePath: (p: { path: string }) => call<EnvInstallResult>("manage.envSetNodePath", p),
     mcpList: () => call<McpListResult>("manage.mcpList"),
     mcpAdd: (p: { name: string; command?: string; args?: string[]; url?: string; env?: Record<string, string>; local?: boolean }) =>
       call<CliOutcome>("manage.mcpAdd", p),

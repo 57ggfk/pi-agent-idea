@@ -11,14 +11,14 @@
   locateNpm 优先 settings；BridgeService 增 `manage.envSetNodePath`。
   — 验证：`./gradlew test` 全量绿。
 
-- [ ] **T1003** Web：mock 旋钮（nonode/nodeold）+ detect 新字段四处同步；SetupCard 脚本区块
+- [x] **T1003** Web：mock 旋钮（nonode/nodeold）+ detect 新字段四处同步；SetupCard 脚本区块
   （命令+URL 展示、确认、共用输出/停止、失败原文+改用 npm）；SettingsPanel nodePath 输入。
   — 验证：typecheck 0 错；`npx vitest run` 全绿；`npx playwright test setup` 7 条零回归。
 
-- [ ] **T1004** e2e：新增 `web/e2e/install-methods.spec.ts`（nonode→npm 禁用+脚本命令可见+确认后成功；
+- [x] **T1004** e2e：新增 `web/e2e/install-methods.spec.ts`（nonode→npm 禁用+脚本命令可见+确认后成功；
   nodeold→文案含「22.19」与当前版本；nodePath 生效→detect.node.path 指向自定义）。
   — 验证：`npx playwright test install-methods setup` 全绿。
 
-- [ ] **T1005** 收尾：全量三件套 + gradlew；`changelog.d/028-node-gate-and-nodepath.fixed.md`（两行）；
+- [x] **T1005** 收尾：全量三件套 + gradlew；`changelog.d/028-node-gate-and-nodepath.fixed.md`（两行）；
   run-report 更新。
   — 验证：全部绿；run-report 028 全 ✅。
