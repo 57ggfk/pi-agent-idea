@@ -171,4 +171,50 @@ class PiSessionIndexTest {
             outside.delete()
         }
     }
+
+    // -- 021 US4: two-phase read + per-file cache ------------------------------
+
+    @Test
+    fun `only the target project's files are read past their header`() {
+        // Three projects, two sessions each. Phase 1 must look at every header
+        // (that is the only way to know the cwd) but phase 2 may only open the
+        // two files that belong to the requested project.
+        for (project in listOf("a", "b", "c")) {
+            writeSession("proj-$project", "$project-1.jsonl", sessionWith("/proj/$project", "id-$project-1", "n1"))
+            writeSession("proj-$project", "$project-2.jsonl", sessionWith("/proj/$project", "id-$project-2", "n2"))
+        }
+
+        PiSessionIndex.resetReadCounters()
+        val sessions = PiSessionIndex.list("/proj/b", rootOverride = tempDir)
+
+        assertEquals(2, sessions.size)
+        assertEquals(6, PiSessionIndex.headerReads.get(), "every header must be inspected")
+        assertEquals(2, PiSessionIndex.bodyReads.get(), "other projects' bodies must stay unread")
+    }
+
+    @Test
+    fun `a file without a session header is skipped and remembered as such`() {
+        writeSession("broken", "bad.jsonl", listOf("""{"type":"message","message":{"role":"user","content":"x"}}"""))
+        writeSession("good", "ok.jsonl", sessionWith("/proj/x", "id-x", "ok"))
+
+        PiSessionIndex.resetReadCounters()
+        assertEquals(1, PiSessionIndex.list("/proj/x", rootOverride = tempDir).size)
+
+        // Second pass: the negative result comes from the cache.
+        PiSessionIndex.resetReadCounters()
+        assertEquals(1, PiSessionIndex.list("/proj/x", rootOverride = tempDir).size)
+        assertEquals(0, PiSessionIndex.headerReads.get(), "a cached miss must not re-read")
+        assertEquals(0, PiSessionIndex.bodyReads.get(), "a cached summary must not re-read")
+    }
+
+    @Test
+    fun `a changed file invalidates its cached summary`() {
+        writeSession("cache", "c.jsonl", sessionWith("/proj/k", "id-k", "First name"))
+        val f = File(tempDir, "cache/c.jsonl")
+        assertEquals("First name", PiSessionIndex.list("/proj/k", rootOverride = tempDir)[0].name)
+
+        PiSessionIndex.renameSessionFile(f.absolutePath, "Renamed later", rootOverride = tempDir)
+
+        assertEquals("Renamed later", PiSessionIndex.list("/proj/k", rootOverride = tempDir)[0].name)
+    }
 }

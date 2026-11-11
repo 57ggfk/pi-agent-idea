@@ -2876,6 +2876,38 @@ button {
 }
 
 /* Empty state */
+/* 021 T307: stand-in for a transcript that is being fetched — deliberately
+   not the empty state, which would read as "this session is blank". */
+.session-switching {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 32px 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.session-switching-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: session-switching-pulse 900ms ease-in-out infinite;
+}
+
+@keyframes session-switching-pulse {
+  0%, 100% { opacity: 0.25; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-switching-dot {
+    animation: none;
+    opacity: 1;
+  }
+}
+
 .empty-state {
   /* Full width so the icon and text center on the message column's axis,
      instead of on the shrink-to-fit box of a plain text block. */
@@ -3009,6 +3041,17 @@ button {
 .session-current {
   border-color: var(--accent);
   background: var(--accent-soft);
+}
+
+/* 021 T309: the row the user just clicked. It cannot be "disabled grey" like
+   its neighbours — it is the one thing that is happening. */
+.session-pending {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.session-row-main:disabled {
+  cursor: default;
 }
 
 .session-row-main {

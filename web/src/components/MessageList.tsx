@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { usePiStore } from "../store/store";
+import { SWITCH_LONG_MS, isSwitchLong, usePiStore } from "../store/store";
 import { actionsForItem, type ChatItem, type ContentBlock, type MessageAction } from "../store/types";
 import { hitsFromItems } from "../lib/search";
 import { displaySkillText } from "../lib/skillDisplay";
@@ -136,6 +136,7 @@ export default function MessageList() {
   const isStreaming = usePiStore((s) => s.isStreaming);
   const editing = usePiStore((s) => s.editing);
   const search = usePiStore((s) => s.search);
+  const pendingSwitch = usePiStore((s) => s.pendingSwitch);
   const { t } = useT();
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
@@ -182,7 +183,14 @@ export default function MessageList() {
   return (
     <div className="message-list" ref={scrollRef} onScroll={onScroll} data-testid="message-list">
       <div className="message-col">
-        {items.length === 0 ? <EmptyState /> : null}
+        {/* 021 T307: a history switch empties `items` first — the empty state
+            would read as "this session is blank", so a switching placeholder
+            stands in until the transcript lands. A *new* session really is
+            empty, so it keeps the empty state (US2). */}
+        {items.length === 0 && pendingSwitch?.kind === "history" ? (
+          <SwitchingPlaceholder startedAt={pendingSwitch.startedAt} />
+        ) : null}
+        {items.length === 0 && pendingSwitch?.kind !== "history" ? <EmptyState /> : null}
         {items.map((item, i) => (
           <ItemView
             key={item.id}
@@ -207,6 +215,33 @@ export default function MessageList() {
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+/**
+ * 021 T307/T308 — stands in for a transcript that is being fetched. The copy
+ * softens after 10s (`session.switchingLong`) but nothing rolls back: a slow
+ * pi is not a failed one.
+ */
+function SwitchingPlaceholder({ startedAt }: { startedAt: number }) {
+  const { t } = useT();
+  const [long, setLong] = useState(() => isSwitchLong(startedAt, Date.now()));
+
+  useEffect(() => {
+    const elapsed = Date.now() - startedAt;
+    if (isSwitchLong(startedAt, Date.now())) {
+      setLong(true);
+      return;
+    }
+    const id = setTimeout(() => setLong(true), Math.max(0, SWITCH_LONG_MS - elapsed));
+    return () => clearTimeout(id);
+  }, [startedAt]);
+
+  return (
+    <div className="session-switching" data-testid="session-switching" role="status" aria-live="polite">
+      <span className="session-switching-dot" aria-hidden="true" />
+      <span>{long ? t("session.switchingLong") : t("session.switching")}</span>
     </div>
   );
 }

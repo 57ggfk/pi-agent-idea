@@ -16,12 +16,16 @@ export default function SendButton({
   onMain,
   disabled,
   isStreaming,
+  blockedHint,
 }: {
   mode: SendMode;
   setMode: (m: SendMode) => void;
   onMain: () => void;
   disabled: boolean;
   isStreaming: boolean;
+  /** 021 T304: why sending is blocked right now (e.g. `session.switching`),
+   *  shown instead of the plain label so a disabled button is never a mystery. */
+  blockedHint?: string;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -57,7 +61,7 @@ export default function SendButton({
         aria-label={t("send.label")}
         onClick={onMain}
         disabled={disabled}
-        title={isStreaming ? `${t("send.label")} · ${activeLabel}` : t("send.label")}
+        title={blockedHint ?? (isStreaming ? `${t("send.label")} · ${activeLabel}` : t("send.label"))}
       >
         <Icon name="arrow-up" />
       </button>

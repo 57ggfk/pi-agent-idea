@@ -28,10 +28,40 @@ data class SessionSummary(
  * Project matching uses the session header's `cwd` field rather than
  * replicating pi's directory-name encoding, which keeps this resilient to
  * encoding changes across pi versions.
+ *
+ * spec 021 (US4/D5): reading used to parse up to 4000 JSON lines of *every*
+ * file under *every* project just to filter by cwd. Two phases now:
+ *
+ * 1. read the first line (pi always writes the `session` header there) — a
+ *    cwd mismatch stops right here;
+ * 2. only a matching file is scanned further for name / preview / count.
+ *
+ * Both phases are memoised per file on `(lastModified, length)`, with `null`
+ * cached too so a corrupt file is not re-parsed on every list call.
  */
 object PiSessionIndex {
 
     private val json = Json { ignoreUnknownKeys = true }
+
+    /** Header facts, phase 1. */
+    private data class Header(val id: String?, val timestamp: String?, val cwd: String?)
+
+    /** Cache key: everything that can change a file's parsed result. */
+    private data class Stamp(val lastModified: Long, val length: Long)
+
+    private val headerCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Stamp, Header?>>()
+    private val summaryCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Stamp, SessionSummary?>>()
+
+    /** Test-only instrumentation: how often each phase actually read a file. */
+    internal val headerReads = java.util.concurrent.atomic.AtomicInteger()
+    internal val bodyReads = java.util.concurrent.atomic.AtomicInteger()
+
+    internal fun resetReadCounters() {
+        headerReads.set(0)
+        bodyReads.set(0)
+    }
+
+    private fun stampOf(file: File): Stamp = Stamp(file.lastModified(), file.length())
 
     private fun sessionsRoot(): File {
         System.getenv("PI_CODING_AGENT_SESSION_DIR")?.let { return File(it) }
@@ -48,29 +78,47 @@ object PiSessionIndex {
         root.walkTopDown()
             .filter { it.isFile && it.extension == "jsonl" }
             .forEach { file ->
-                parseHeader(file)?.let { summary ->
-                    summary.cwd?.let { if (normalizeCwd(it) == target) summaries.add(summary) }
-                }
+                val header = header(file) ?: return@forEach
+                // Phase 1 already answered "not this project" — the body of
+                // another project's transcript is never touched.
+                if (header.cwd == null || normalizeCwd(header.cwd) != target) return@forEach
+                val summary = summary(file, header) ?: return@forEach
+                summaries.add(summary)
             }
         return summaries.sortedByDescending { it.modifiedAt }.take(limit)
     }
 
-    /**
-     * cwd comparison tolerant of Windows quirks: unify separators, drop
-     * trailing separators, and ignore case on Windows. pi records the cwd it
-     * was launched with; IDEA's basePath can differ in case, separator
-     * direction, or a trailing slash, which previously made the session list
-     * silently empty.
-     */
-    private fun normalizeCwd(path: String): String {
-        val unified = path.replace('\\', '/').trimEnd('/')
-        return if (OsProcess.isWindows) unified.lowercase() else unified
+    /** Phase 1: the `session` header line, cached on the file's stamp. */
+    private fun header(file: File): Header? {
+        val key = file.absolutePath
+        val stamp = stampOf(file)
+        headerCache[key]?.let { (cached, value) -> if (cached == stamp) return value }
+
+        headerReads.incrementAndGet()
+        val parsed = runCatching {
+            file.bufferedReader().use { reader ->
+                val first = reader.readLine() ?: return@use null
+                val obj = json.parseToJsonElement(first) as? JsonObject ?: return@use null
+                if (obj["type"]?.jsonPrimitive?.content != "session") return@use null
+                Header(
+                    id = obj["id"]?.jsonPrimitive?.content,
+                    timestamp = obj["timestamp"]?.jsonPrimitive?.content,
+                    cwd = obj["cwd"]?.jsonPrimitive?.content,
+                )
+            }
+        }.getOrNull()
+
+        headerCache[key] = stamp to parsed
+        return parsed
     }
 
-    private fun parseHeader(file: File): SessionSummary? {
-        var id: String? = null
-        var timestamp: String? = null
-        var cwd: String? = null
+    /** Phase 2: name / preview / message count for a cwd-matching file. */
+    private fun summary(file: File, header: Header): SessionSummary? {
+        val key = file.absolutePath
+        val stamp = stampOf(file)
+        summaryCache[key]?.let { (cached, value) -> if (cached == stamp) return value }
+
+        bodyReads.incrementAndGet()
         var name: String? = null
         var preview: String? = null
         var messageCount = 0
@@ -90,15 +138,10 @@ object PiSessionIndex {
                     // marker check above keeps the fast path cheap.
                     val isInfoLine = SESSION_INFO_MARKER in line
                     if (parsed > 4000 && !isInfoLine) continue
-                    if (id != null && name != null && preview != null && !isInfoLine) continue
+                    if (name != null && preview != null && !isInfoLine) continue
                     parsed++
                     val obj = runCatching { json.parseToJsonElement(line) }.getOrNull() as? JsonObject ?: continue
                     when (obj["type"]?.jsonPrimitive?.content) {
-                        "session" -> {
-                            id = obj["id"]?.jsonPrimitive?.content
-                            timestamp = obj["timestamp"]?.jsonPrimitive?.content
-                            cwd = obj["cwd"]?.jsonPrimitive?.content
-                        }
                         "session_info" -> {
                             obj["name"]?.jsonPrimitive?.content?.let { name = it }
                         }
@@ -114,19 +157,34 @@ object PiSessionIndex {
                 }
             }
         } catch (_: Exception) {
+            summaryCache[key] = stamp to null
             return null
         }
 
-        return SessionSummary(
+        val summary = SessionSummary(
             file = file.absolutePath,
-            id = id,
-            timestamp = timestamp,
-            cwd = cwd,
+            id = header.id,
+            timestamp = header.timestamp,
+            cwd = header.cwd,
             name = name,
             preview = preview,
             modifiedAt = file.lastModified(),
             messageCount = messageCount,
         )
+        summaryCache[key] = stamp to summary
+        return summary
+    }
+
+    /**
+     * cwd comparison tolerant of Windows quirks: unify separators, drop
+     * trailing separators, and ignore case on Windows. pi records the cwd it
+     * was launched with; IDEA's basePath can differ in case, separator
+     * direction, or a trailing slash, which previously made the session list
+     * silently empty.
+     */
+    private fun normalizeCwd(path: String): String {
+        val unified = path.replace('\\', '/').trimEnd('/')
+        return if (OsProcess.isWindows) unified.lowercase() else unified
     }
 
     /**

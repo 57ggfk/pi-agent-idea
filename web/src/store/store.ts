@@ -53,10 +53,34 @@ import {
   type Sources,
 } from "./sources";
 import { hitsFromItems, type SearchHit } from "../lib/search";
+import { requestRepaint } from "../lib/repaint";
+import { perfMark } from "../lib/perf";
 import { i18n, initI18n, isRegistered } from "../i18n";
 
 /** Shorthand for store-side (non-React) copy; English falls out of the base bundle. */
 const t = i18n.t.bind(i18n);
+
+/**
+ * 021 D1: the single "a session switch is in flight" fact. The placeholder,
+ * the send gate, the row highlight and the double-click guards all read this
+ * one object instead of keeping their own booleans in sync.
+ */
+export interface PendingSwitch {
+  kind: "new" | "history";
+  /** Target session file for `kind: "history"`. */
+  file?: string;
+  /** `performance.now()` at the click — drives `switch.*` marks and the
+   *  "still switching" copy after 10s. */
+  startedAt: number;
+}
+
+/** 021 D8 / T308: after this long the copy softens; nothing rolls back — a
+ *  slow pi is not a failed one. */
+export const SWITCH_LONG_MS = 10_000;
+
+export function isSwitchLong(startedAt: number, now: number): boolean {
+  return now - startedAt >= SWITCH_LONG_MS;
+}
 
 /**
  * Prefix reserved for commands registered by the plugin's own pi extensions
@@ -274,6 +298,9 @@ interface PiStore {
   items: ChatItem[];
   isStreaming: boolean;
   aborted: boolean;
+  /** 021: non-null from the click until the target session's content is on
+   *  screen (or the switch failed and rolled back). */
+  pendingSwitch: PendingSwitch | null;
   retryInfo: { attempt: number; maxAttempts: number; delayMs: number; errorMessage: string } | null;
   /**
    * Mirror of pi's queue (spec 005), pushed as full snapshots by the Kotlin
@@ -576,6 +603,13 @@ export const usePiStore = create<PiStore>((set, get) => {
   const sourceLoaders = new Map<SourceId, () => Promise<unknown>>();
 
   /**
+   * 021 D8: every `switchSession` / `runNewSession` bumps this. A response
+   * that comes back after a newer request owns the screen is dropped instead
+   * of painting the wrong transcript.
+   */
+  let switchSeq = 0;
+
+  /**
    * Runs a source read through the state machine (spec 003).
    *
    * In-flight dedupe lives here rather than in each caller: the composer's
@@ -709,32 +743,57 @@ export const usePiStore = create<PiStore>((set, get) => {
     });
   };
 
-  /** Creates the empty session. Callers own the confirmation decision. */
+  /**
+   * Creates the empty session (021 US2). The screen clears *before* the RPC:
+   * waiting for pi to answer kept the old transcript visible for a second or
+   * more with zero feedback. A failure restores the snapshot (D2).
+   */
   const runNewSession = async () => {
     if (!bridge) return;
+    // D8: a second "new" while one is in flight would spawn two sessions.
+    if (get().pendingSwitch) return;
     // FR-012 (spec 005): a non-empty queue would be silently dropped.
     if (get().queue.items.length > 0) {
       set({ queueDiscardConfirm: { count: get().queue.items.length, kind: "new" } });
       return;
     }
+    const b = bridge;
+    const startedAt = performance.now();
+    const seq = ++switchSeq;
+    const previousItems = get().items;
+
+    set({
+      pendingSwitch: { kind: "new", startedAt },
+      items: [],
+      stats: undefined,
+      aborted: false,
+      isStreaming: false,
+      sessionName: undefined,
+      editing: null,
+      manualTitle: false,
+      autoTitled: false,
+      llmTitled: false,
+      editingSessionTitle: null,
+    });
+    resetConversationLocalState();
+    requestRepaint();
+    perfMark("switch.pending", startedAt, { kind: "new" });
+
     try {
-      await rpc(bridge, { type: "new_session" });
-      set({
-        items: [],
-        stats: undefined,
-        aborted: false,
-        isStreaming: false,
-        sessionName: undefined,
-        editing: null,
-        manualTitle: false,
-        autoTitled: false,
-        llmTitled: false,
-        editingSessionTitle: null,
-      });
-      resetConversationLocalState();
-      await get().refreshStats();
-      await get().refreshSessions();
+      await rpc(b, { type: "new_session" });
+      if (seq !== switchSeq) return;
+      set({ pendingSwitch: null });
+      perfMark("switch.content", startedAt, { kind: "new" });
+      // D2: neither the stats read nor the session-list rescan belongs on the
+      // critical path; one tick later so they cannot race pi's first answer.
+      setTimeout(() => {
+        void get().refreshStats();
+        void get().refreshSessions();
+      }, 0);
+      perfMark("switch.ready", startedAt, { kind: "new" });
     } catch (e) {
+      if (seq !== switchSeq) return;
+      set({ pendingSwitch: null, items: previousItems });
       appendError(t("error.newSession.failed", { msg: (e as Error).message }));
     }
   };
@@ -1090,6 +1149,7 @@ export const usePiStore = create<PiStore>((set, get) => {
     items: [],
     isStreaming: false,
     aborted: false,
+    pendingSwitch: null,
     retryInfo: null,
     queue: { items: [], paused: false, pauseReason: null, drift: false },
     driftAck: false,
@@ -1715,41 +1775,71 @@ export const usePiStore = create<PiStore>((set, get) => {
         set({ queueDiscardConfirm: { count: get().queue.items.length, kind: "switch", file } });
         return;
       }
-      // A run still tied to the old session would keep streaming into the new
-      // one — abort it first so the UI settles before the switch.
-      if (get().isStreaming) await get().abort();
-      try {
-        await rpc(bridge, { type: "switch_session", sessionPath: file });
-        // T106: title flags are per-session — a switch starts clean, so pi
-        // events reach the list again and auto-titling gets one fresh attempt.
-        set({
-          items: [],
-          stats: undefined,
-          aborted: false,
-          isStreaming: false,
-          tab: "chat",
-          editing: null,
-          manualTitle: false,
-          autoTitled: false,
-          llmTitled: false,
-          editingSessionTitle: null,
-        });
+      const b = bridge;
+      const startedAt = performance.now();
+      const seq = ++switchSeq;
+      // Captured before the optimistic set below clears it — the abort must
+      // still happen for a run that was streaming at click time.
+      const wasStreaming = get().isStreaming;
+
+      // 021 D3: jump first, fill later. Everything the user can see switches
+      // to the target in this one synchronous set (+ repaint); the RPCs below
+      // only fill in content, so T1/T2 no longer depend on pi.
+      set({
+        pendingSwitch: { kind: "history", file, startedAt },
+        items: [],
+        stats: undefined,
+        aborted: false,
+        isStreaming: false,
+        tab: "chat",
+        editing: null,
+        manualTitle: false,
+        autoTitled: false,
+        llmTitled: false,
+        editingSessionTitle: null,
         // 006 FR-015: outline/search reset on session switch (no stale hits).
-        set({ outlineOpen: false, search: { open: false, query: "", index: 0 }, pendingSearchJump: null });
-        await get().replayMessages();
-        await get().refreshStats();
-        const state = await rpc<{ sessionName?: string; sessionId?: string; model?: ModelInfo; thinkingLevel?: string }>(
-          bridge,
-          { type: "get_state" },
-        );
-        set({ sessionName: state.sessionName, sessionId: state.sessionId, model: state.model, thinkingLevel: state.thinkingLevel ?? "medium" });
-      } catch (e) {
-        const item = emptyItem("system", [
-          { kind: "text", text: t("error.switchSession.failed", { msg: (e as Error).message }), done: true },
+        outlineOpen: false,
+        search: { open: false, query: "", index: 0 },
+        pendingSearchJump: null,
+      });
+      requestRepaint();
+      perfMark("switch.pending", startedAt, { kind: "history" });
+
+      try {
+        // A run still tied to the old session would keep streaming into the
+        // new one — but abort after the visible switch, so the user waits on
+        // the page they asked for instead of on the old run settling.
+        if (wasStreaming) await get().abort();
+        await rpc(b, { type: "switch_session", sessionPath: file });
+
+        // 021 D3: three independent reads in parallel, one set. Sequential
+        // awaits added ~330ms of pure latency; separate sets would flash.
+        const [messages, stats, state] = await Promise.all([
+          rpc<{ messages: unknown[] }>(b, { type: "get_messages" }).catch(() => ({ messages: [] as unknown[] })),
+          rpc<SessionStats>(b, { type: "get_session_stats" }).catch(() => undefined),
+          rpc<{ sessionName?: string; sessionId?: string; model?: ModelInfo; thinkingLevel?: string }>(b, {
+            type: "get_state",
+          }).catch(() => undefined),
         ]);
-        item.done = true;
-        item.isError = true;
-        set({ items: [...get().items, item] });
+        if (seq !== switchSeq) return; // D8: a newer target owns the screen
+
+        set({
+          items: itemsFromMessages(messages.messages ?? []).filter((i) => !i.ephemeral),
+          stats,
+          sessionName: state?.sessionName,
+          sessionId: state?.sessionId,
+          model: state?.model,
+          thinkingLevel: state?.thinkingLevel ?? "medium",
+          pendingSwitch: null,
+        });
+        perfMark("switch.content", startedAt, { kind: "history" });
+        requestRepaint();
+        perfMark("switch.ready", startedAt, { kind: "history" });
+      } catch (e) {
+        if (seq !== switchSeq) return;
+        // D3/Q3: land back on the list rather than on an empty transcript.
+        set({ pendingSwitch: null, tab: "sessions", items: [] });
+        appendError(t("error.switchSession.failed", { msg: (e as Error).message }));
       }
     },
 

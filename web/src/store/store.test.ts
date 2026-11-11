@@ -10,7 +10,7 @@ import { emptyItem } from "./types";
  * is where a wrong order silently corrupts the transcript.
  */
 
-type Call = { method: string; params: Record<string, unknown> };
+type Call = { method: string; params: Record<string, unknown>; at: number };
 
 const h = vi.hoisted(() => {
   const state = {
@@ -23,7 +23,7 @@ const h = vi.hoisted(() => {
   const bridge = {
     kind: "mock" as const,
     request<T>(method: string, params?: unknown): Promise<T> {
-      state.calls.push({ method, params: (params ?? {}) as Record<string, unknown> });
+      state.calls.push({ method, params: (params ?? {}) as Record<string, unknown>, at: Date.now() });
       if (method === "rpc.request") {
         const cmd = ((params as { command?: Record<string, unknown> })?.command ?? {}) as Record<
           string,
@@ -50,7 +50,7 @@ const h = vi.hoisted(() => {
 
 vi.mock("../bridge", () => ({ getBridge: () => Promise.resolve(h.bridge) }));
 
-import { usePiStore, branchTargetFor, userCountUpTo } from "./store";
+import { usePiStore, branchTargetFor, isSwitchLong, userCountUpTo } from "./store";
 
 /** Commands actually sent to pi, in order, flattened to their type. */
 function commandTypes(): string[] {
@@ -1086,5 +1086,199 @@ describe("session search bar toggle", () => {
     const { search } = usePiStore.getState();
     expect(search.open).toBe(true);
     expect(search.query).toBe("needle");
+  });
+});
+
+// -- 021: optimistic session switch / new session -----------------------------
+
+describe("session switching (021)", () => {
+  /** A promise the test resolves by hand — models a slow pi RPC. */
+  function deferred<T>() {
+    let resolve!: (v: T) => void;
+    let reject!: (e: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  }
+
+  beforeEach(async () => {
+    h.state.calls.length = 0;
+    h.state.rpc.clear();
+    h.state.methods.clear();
+    await usePiStore.getState().init();
+    h.state.calls.length = 0;
+    usePiStore.setState({
+      items: [],
+      isStreaming: false,
+      editing: null,
+      pendingSwitch: null,
+      tab: "chat",
+      sessionName: undefined,
+      stats: undefined,
+    });
+  });
+
+  it("starts with no pending switch and clears it after a new session lands", async () => {
+    expect(usePiStore.getState().pendingSwitch).toBeNull();
+
+    const gate = deferred<unknown>();
+    h.state.rpc.set("new_session", () => gate.promise);
+
+    const done = usePiStore.getState().newSession();
+    // Click → placeholder state, *before* pi answers.
+    expect(usePiStore.getState().pendingSwitch?.kind).toBe("new");
+    expect(usePiStore.getState().items).toEqual([]);
+
+    gate.resolve({});
+    await done;
+    expect(usePiStore.getState().pendingSwitch).toBeNull();
+  });
+
+  it("clears the transcript before the new_session RPC resolves, and restores it on failure", async () => {
+    const old = [userItem("keep me")];
+    usePiStore.setState({ items: old });
+
+    const gate = deferred<unknown>();
+    h.state.rpc.set("new_session", () => gate.promise);
+
+    // Content present → the store asks first; the snapshot is only taken once
+    // the user confirms, which is exactly what the dialog's handler does.
+    expect(usePiStore.getState().newSession()).toBeInstanceOf(Promise);
+    await vi.waitFor(() => expect(usePiStore.getState().confirm).not.toBeNull());
+    const confirmed = usePiStore.getState().confirm!.onConfirm();
+    expect(usePiStore.getState().items).toEqual([]);
+
+    gate.reject(new Error("pi exploded"));
+    await confirmed;
+
+    // The snapshot comes back, and the failure is visible as an error item
+    // appended after it (silently restoring would hide pi's refusal).
+    const restored = usePiStore.getState().items;
+    expect(restored[0].id).toBe(old[0].id);
+    expect(restored.some((i) => i.isError)).toBe(true);
+    expect(usePiStore.getState().pendingSwitch).toBeNull();
+  });
+
+  it("switches the visible tab to chat before switch_session resolves", async () => {
+    usePiStore.setState({ tab: "sessions" });
+    const gate = deferred<unknown>();
+    h.state.rpc.set("switch_session", () => gate.promise);
+    h.state.rpc.set("get_messages", () => ({ messages: [] }));
+    h.state.rpc.set("get_session_stats", () => ({ messages: 0 }));
+    h.state.rpc.set("get_state", () => ({ sessionName: "target" }));
+
+    const done = usePiStore.getState().switchSession("/sessions/target.jsonl");
+    expect(usePiStore.getState().tab).toBe("chat");
+    expect(usePiStore.getState().pendingSwitch).toMatchObject({ kind: "history", file: "/sessions/target.jsonl" });
+
+    gate.resolve({});
+    await done;
+    expect(usePiStore.getState().pendingSwitch).toBeNull();
+  });
+
+  it("aborts a running stream only after the view already switched", async () => {
+    const order: string[] = [];
+    usePiStore.setState({ isStreaming: true });
+    h.state.rpc.set("abort", () => {
+      order.push(`abort@${usePiStore.getState().tab}`);
+      return {};
+    });
+    h.state.rpc.set("switch_session", () => ({}));
+    h.state.rpc.set("get_messages", () => ({ messages: [] }));
+    h.state.rpc.set("get_session_stats", () => ({}));
+    h.state.rpc.set("get_state", () => ({}));
+
+    await usePiStore.getState().switchSession("/sessions/t.jsonl");
+
+    expect(order).toEqual(["abort@chat"]);
+  });
+
+  it("reads messages, stats and state in parallel and applies them in one set", async () => {
+    const gates = {
+      get_messages: deferred<unknown>(),
+      get_session_stats: deferred<unknown>(),
+      get_state: deferred<unknown>(),
+    };
+    h.state.rpc.set("switch_session", () => ({}));
+    for (const [type, gate] of Object.entries(gates)) h.state.rpc.set(type, () => gate.promise);
+
+    const snapshots: Array<{ items: number; name: string | undefined }> = [];
+    const unsub = usePiStore.subscribe((s) => snapshots.push({ items: s.items.length, name: s.sessionName }));
+
+    const done = usePiStore.getState().switchSession("/sessions/t.jsonl");
+    // All three reads are in flight before any of them answers — sequential
+    // awaits would leave get_session_stats/get_state unrequested here.
+    await vi.waitFor(() =>
+      expect(commandTypes()).toEqual(expect.arrayContaining(["get_messages", "get_session_stats", "get_state"])),
+    );
+
+    gates.get_messages.resolve({ messages: [{ role: "user", content: "hello" }] });
+    gates.get_session_stats.resolve({ messages: 1 });
+    gates.get_state.resolve({ sessionName: "Target session" });
+    await done;
+    unsub();
+
+    const state = usePiStore.getState();
+    expect(state.items).toHaveLength(1);
+    expect(state.sessionName).toBe("Target session");
+    // No frame had content without its title (that would flash the old name).
+    expect(snapshots.some((s) => s.items > 0 && s.name !== "Target session")).toBe(false);
+  });
+
+  it("drops a late response when a newer switch already owns the screen", async () => {
+    const first = deferred<unknown>();
+    const second = deferred<unknown>();
+    let call = 0;
+    h.state.rpc.set("switch_session", () => (++call === 1 ? first.promise : second.promise));
+    h.state.rpc.set("get_messages", () => ({ messages: [{ role: "user", content: "from target" }] }));
+    h.state.rpc.set("get_session_stats", () => ({}));
+    h.state.rpc.set("get_state", () => ({ sessionName: "B" }));
+
+    const pa = usePiStore.getState().switchSession("/sessions/a.jsonl");
+    const pb = usePiStore.getState().switchSession("/sessions/b.jsonl");
+    // The late A response must not paint over B.
+    first.resolve({});
+    await pa;
+    expect(usePiStore.getState().pendingSwitch).toMatchObject({ file: "/sessions/b.jsonl" });
+    second.resolve({});
+    await pb;
+    expect(usePiStore.getState().pendingSwitch).toBeNull();
+    expect(usePiStore.getState().sessionName).toBe("B");
+  });
+
+  it("returns to the session list when the switch fails", async () => {
+    h.state.rpc.set("switch_session", () => {
+      throw new Error("no such session");
+    });
+
+    await usePiStore.getState().switchSession("/sessions/gone.jsonl");
+
+    expect(usePiStore.getState().tab).toBe("sessions");
+    expect(usePiStore.getState().pendingSwitch).toBeNull();
+    expect(usePiStore.getState().items.some((i) => i.isError)).toBe(true);
+  });
+
+  it("ignores a second new-session request while one is in flight", async () => {
+    const gate = deferred<unknown>();
+    let calls = 0;
+    h.state.rpc.set("new_session", () => {
+      calls += 1;
+      return gate.promise;
+    });
+
+    const first = usePiStore.getState().newSession();
+    void usePiStore.getState().newSession();
+    gate.resolve({});
+    await first;
+
+    expect(calls).toBe(1);
+  });
+
+  it("softens the copy after ten seconds without rolling anything back", () => {
+    const started = 1_000;
+    expect(isSwitchLong(started, started + 9_999)).toBe(false);
+    expect(isSwitchLong(started, started + 10_000)).toBe(true);
   });
 });

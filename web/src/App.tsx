@@ -16,7 +16,7 @@ import SessionOutline from "./components/SessionOutline";
 import SessionSearch from "./components/SessionSearch";
 import Icon, { IconSprite } from "./components/Icon";
 import TooltipHost, { tip } from "./components/Tooltip";
-import { getBridge } from "./bridge";
+import { requestRepaint } from "./lib/repaint";
 import ProviderSetupCard from "./components/ProviderSetupCard";
 import ImagePreview from "./components/ImagePreview";
 
@@ -127,10 +127,9 @@ export default function App() {
                   setTab(tabId);
                   // OSR frame-lag workaround (0.5.4 real-machine find): a
                   // full view swap can leave the previous tab's paint on
-                  // screen for seconds — force a fresh JCEF frame.
-                  void getBridge()
-                    .then((b) => b.request("ide.repaint"))
-                    .catch(() => undefined);
+                  // screen for seconds — force a fresh JCEF frame. Debounced
+                  // since 021 so a switch that swaps the view twice paints once.
+                  requestRepaint();
                 }}
               >
                 {tabId === "chat" ? t("chat.tabs.chat") : tabId === "sessions" ? t("chat.tabs.sessions") : t("chat.tabs.manage")}

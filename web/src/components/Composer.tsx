@@ -141,6 +141,9 @@ export default function Composer() {
   const abort = usePiStore((s) => s.abort);
   const forkSession = usePiStore((s) => s.forkSession);
   const isStreaming = usePiStore((s) => s.isStreaming);
+  // 021 T304: a session switch owns the composer until the target lands —
+  // typing stays allowed (Q2), sending does not.
+  const pendingSwitch = usePiStore((s) => s.pendingSwitch);
   const commands = usePiStore((s) => s.commands);
   const files = usePiStore((s) => s.files);
   const filesSource = usePiStore((s) => s.sources.files);
@@ -436,6 +439,9 @@ export default function Composer() {
   }, [atOpen, loadFiles]);
 
   const doSend = () => {
+    // 021: the send path is gated on the switch, not just the button (a
+    // keyboard shortcut must not slip through a disabled button).
+    if (pendingSwitch != null) return;
     const body = text.trim();
     // Tokens live inline in the text (018 US1) — a message of only references
     // is non-empty text, so "text or images" is the whole sendability rule.
@@ -1015,8 +1021,9 @@ export default function Composer() {
               mode={mode}
               setMode={(m: SendMode) => setMode(m)}
               onMain={doSend}
-              disabled={!text.trim() && images.length === 0}
+              disabled={(!text.trim() && images.length === 0) || pendingSwitch != null}
               isStreaming={isStreaming}
+              blockedHint={pendingSwitch != null ? t("session.switching") : undefined}
             />
           </div>
         </div>

@@ -204,9 +204,17 @@ export class MockBridge implements Bridge {
   private readonly failPlan = parseFailPlan(query()?.get("fail"));
   /** How many failures each name has already served. */
   private failServed = new Map<string, number>();
-  /** `?slow=files:800` — first request for that name is held back (loading state). */
+  /** `?slow=files:800` — first request for that name is held back (loading state).
+   *  021 T315: the same knob also accepts rpc command names
+   *  (`?slow=switch_session:1200,get_messages:400`), so the switch timing
+   *  thresholds can be asserted without a slow machine. */
   private readonly slowPlan = parseFailPlan(query()?.get("slow"));
   private slowServed = new Map<string, number>();
+  private slowCommands = new Map<string, number>();
+  /** `?failcmd=switch_session` — fails the first call of that rpc command, so
+   *  the optimistic-switch rollback (021 US3) has a failure to roll back. */
+  private readonly failCmdPlan = parseFailPlan(query()?.get("failcmd"));
+  private failCmdServed = new Map<string, number>();
   /** `?unsupported=policy` — that source answers `not_implemented` (FR-009). */
   private readonly unsupported = new Set(
     (query()?.get("unsupported") ?? "")
@@ -377,6 +385,27 @@ export class MockBridge implements Bridge {
     if (ms <= 0 || served >= 1) return { wait: Promise.resolve() };
     this.slowServed.set(source, served + 1);
     return { wait: delay(ms) };
+  }
+
+  /**
+   * 021 T315: `?slow=<rpc command>:<ms>` — first call of that command only,
+   * same one-shot rule as `?fail=`. Kept separate from `gate()` so a command
+   * name that also exists as a source id cannot consume the wrong budget.
+   */
+  private shouldFailCommand(type: string): boolean {
+    const budget = this.failCmdPlan.get(type) ?? 0;
+    const used = this.failCmdServed.get(type) ?? 0;
+    if (used >= budget) return false;
+    this.failCmdServed.set(type, used + 1);
+    return true;
+  }
+
+  private commandDelay(type: string): Promise<void> {
+    const ms = this.slowPlan.get(type) ?? 0;
+    const served = this.slowCommands.get(type) ?? 0;
+    if (ms <= 0 || served >= 1) return Promise.resolve();
+    this.slowCommands.set(type, served + 1);
+    return delay(ms);
   }
 
   /**
@@ -622,12 +651,17 @@ export class MockBridge implements Bridge {
       return Promise.reject(new Error(`mock bridge: unsupported method ${method}`));
     }
     const command = (params as { command?: Record<string, unknown> })?.command ?? {};
-    const commandSource = COMMAND_SOURCE[String(command["type"] ?? "")];
+    const commandType = String(command["type"] ?? "");
+    const commandSource = COMMAND_SOURCE[commandType];
     if (commandSource) {
       const gate = this.gate(commandSource);
       if (gate.error) return { success: false, error: gate.error } as T;
       await gate.wait;
     }
+    if (this.shouldFailCommand(commandType)) {
+      return { success: false, error: `${commandType} failed: mock refusal` } as T;
+    }
+    await this.commandDelay(commandType);
     return this.handleCommand(command) as T;
   }
 

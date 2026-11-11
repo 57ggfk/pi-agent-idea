@@ -206,6 +206,8 @@ export const zh: Dict = {
   "sessions.renameLong": "过长 —— 最多 {{max}} 个字符",
   "sessions.renameFailed": "重命名失败，请重试",
   "session.forkSuffix": "（分支）",
+  "session.switching": "正在切换会话…",
+  "session.switchingLong": "仍在切换，pi 比平时慢一些。",
   "sessions.noMatches_one": "在 {{count}} 个会话中未找到匹配。",
   "sessions.noMatches_other": "在 {{count}} 个会话中未找到匹配。",
   "sessions.truncated": "扫描提前停止。",
