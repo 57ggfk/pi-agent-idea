@@ -14,7 +14,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const PORT = process.argv[2] || process.env.JCEF_PORT || "9222";
-const SESSION_ROW = Number(process.argv[3] ?? 4); // 4 = the 131-message session
+// Optional row index override; by default the session with the most messages
+// is used (see the picker below — row order changes as sessions come and go).
+const FORCED_ROW = process.argv[3] != null ? Number(process.argv[3]) : null;
 const OUT = join(dirname(fileURLToPath(import.meta.url)), "probe-scroll-jcef.json");
 const STEP_PX = 120; // one wheel notch
 const STEPS = 10; // -> 1200px, what the user calls "scroll up"
@@ -56,11 +58,28 @@ try {
   await page.waitForTimeout(1000);
   const rows = page.locator('[data-testid="session-row"]');
   const rowCount = await rows.count();
-  if (rowCount <= SESSION_ROW) throw new Error(`sessions list has ${rowCount} rows, wanted index ${SESSION_ROW}`);
-  const rowText = (await rows.nth(SESSION_ROW).innerText()).replace(/\n+/g, " | ").slice(0, 90);
-  note("opened session row", null, { index: SESSION_ROW, text: rowText });
-  await rows.nth(SESSION_ROW).click();
-  await page.waitForFunction(() => document.querySelectorAll('[data-testid^="item-"]').length > 40, null, { timeout: 90_000 });
+  if (rowCount === 0) throw new Error("sessions list is empty");
+
+  // Session order shifts whenever the user adds or removes one, so the row
+  // index must not be hard-coded (it used to point at "the 131-message
+  // session" and silently waited forever once the list changed). Pick by
+  // message count: the wheel probe needs the longest transcript on the machine.
+  const rowInfo = await rows.evaluateAll((els) =>
+    els.map((el, i) => {
+      const text = el.innerText || "";
+      const m = text.match(/(\d+)\s*(?:条消息|msgs?)/i);
+      return { i, count: m ? Number(m[1]) : 0, text: text.replace(/\n+/g, " | ").slice(0, 90) };
+    }),
+  );
+  const longest = rowInfo.reduce((best, cur) => (cur.count > best.count ? cur : best), rowInfo[0]);
+  const chosen = FORCED_ROW != null ? rowInfo[FORCED_ROW] ?? longest : longest;
+  if (!chosen) throw new Error(`sessions list has ${rowCount} rows, wanted index ${FORCED_ROW}`);
+  note("picked session", null, chosen);
+  await rows.nth(chosen.i).click();
+  // Any rendered transcript will do — the probe judges against each list's own
+  // reachable overflow, so item count is not the gate (43-entry sessions render
+  // ~25 items; tool results are not items of their own).
+  await page.waitForFunction(() => document.querySelectorAll('[data-testid^="item-"]').length > 10, null, { timeout: 90_000 });
   await page.waitForTimeout(1200); // let the first paint settle
 
   const env = await page.evaluate(() => {
