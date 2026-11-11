@@ -1,4 +1,5 @@
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
+import java.time.LocalDate
 
 plugins {
     id("java")
@@ -249,6 +250,117 @@ fun changeNotesHtml(changelog: File, version: String): String {
     }
     closeList()
     return out.toString().trim().ifEmpty { "Release $version" }
+}
+
+// ---------------------------------------------------------------------------
+// changelog.d: one release-note fragment per user-visible change
+// ---------------------------------------------------------------------------
+// Written when the change lands, not remembered at release time:
+//
+//     changelog.d/<slug>.<added|changed|fixed>.md
+//
+// Exactly two non-blank lines — Chinese first, English second. Fragments carry
+// no version number: the version is decided when the release branch is cut, so
+// nobody has to guess it while coding.
+//
+// `./gradlew collectChangelog` folds every fragment into one fresh
+// "## <version> — <date>" section at the top of CHANGELOG.md and deletes what
+// it consumed. CHANGELOG.md stays the single source of truth: changeNotesHtml()
+// above turns that section into the Marketplace "What's New", and the GitHub
+// release notes are cut from the same section — three destinations, one file.
+// ---------------------------------------------------------------------------
+val changelogFragmentDir = layout.projectDirectory.dir("changelog.d").asFile
+val changelogFile = layout.projectDirectory.file("CHANGELOG.md").asFile
+
+/** Fragment type → Chinese section heading. Section order follows this list. */
+val fragmentSections = listOf(
+    "added" to "新增",
+    "changed" to "变更",
+    "fixed" to "修复",
+)
+
+/** English headings for the second block — same order and count as the Chinese one. */
+val fragmentHeadingsEn = mapOf("added" to "Added", "changed" to "Changed", "fixed" to "Fixed")
+
+val pluginVersion = project.version.toString()
+val releaseDateProperty = providers.gradleProperty("releaseDate")
+val dryRunProperty = providers.gradleProperty("dryRun")
+val keepFragmentsProperty = providers.gradleProperty("keepFragments")
+
+tasks.register("collectChangelog") {
+    group = "release"
+    description = "Fold changelog.d fragments into a new ## <version> section at the top of CHANGELOG.md"
+
+    doLast {
+        val date = releaseDateProperty.getOrElse(LocalDate.now().toString())
+        val dryRun = dryRunProperty.getOrElse("false").toBoolean()
+        val keepFragments = keepFragmentsProperty.getOrElse("false").toBoolean()
+        val filenameRe = Regex("^([a-z0-9][a-z0-9-]*)\\.(added|changed|fixed)\\.md$")
+
+        val fragments = changelogFragmentDir.listFiles()
+            ?.filter { it.isFile && it.name != "README.md" && it.name.endsWith(".md") }
+            ?.sortedBy { it.name }
+            ?: emptyList()
+        check(fragments.isNotEmpty()) {
+            "changelog.d/ 里没有碎片（README.md 除外）。先写 <slug>.<added|changed|fixed>.md 再汇总。"
+        }
+
+        // (type, chinese, english) in file-name order; regrouped per section below.
+        val entries = fragments.map { file ->
+            val match = filenameRe.matchEntire(file.name)
+                ?: error("碎片文件名不合法：${file.name}——应为 <slug>.<added|changed|fixed>.md（slug 用小写字母、数字、连字符）")
+            val lines = file.readLines().map { it.trim() }.filter { it.isNotEmpty() }
+            check(lines.size == 2) {
+                "${file.name} 须正好两行非空（第 1 行中文，第 2 行英文），实际 ${lines.size} 行。"
+            }
+            Triple(match.groupValues[2], lines[0], lines[1])
+        }
+        val ordered = fragmentSections.flatMap { (type, _) -> entries.filter { it.first == type } }
+
+        // Chinese block, then English block — same order, same count, so the two
+        // halves of the Marketplace note stay 1:1 without a second hand edit.
+        val section = StringBuilder("## $pluginVersion — $date\n")
+        for ((type, headingZh) in fragmentSections) {
+            val items = ordered.filter { it.first == type }
+            if (items.isEmpty()) continue
+            section.append("\n**").append(headingZh).append("**\n")
+            items.forEach { section.append("- ").append(it.second).append('\n') }
+        }
+        for ((type, _) in fragmentSections) {
+            val items = ordered.filter { it.first == type }
+            if (items.isEmpty()) continue
+            section.append("\n**").append(fragmentHeadingsEn.getValue(type)).append("**\n")
+            items.forEach { section.append("- ").append(it.third).append('\n') }
+        }
+        val sectionText = section.toString().trimEnd()
+
+        if (dryRun) {
+            logger.lifecycle("dry run：以下内容会写入 CHANGELOG.md 顶部（${entries.size} 条、${fragments.size} 个碎片）")
+            logger.lifecycle(System.lineSeparator() + sectionText)
+        } else {
+            val current = changelogFile.readText()
+            val header = "# Changelog"
+            check(current.startsWith(header)) { "CHANGELOG.md 须以 `# Changelog` 开头。" }
+            check(!Regex("(?m)^## " + Regex.escape(pluginVersion) + "(\\s|$)").containsMatchIn(current)) {
+                "CHANGELOG.md 已有 ## $pluginVersion 段，本次汇总中止以免重复插入。删掉旧段或换版本号后再跑。"
+            }
+
+            val insertAt = header.length
+            val updated = buildString {
+                append(current, 0, insertAt)
+                append("\n\n").append(sectionText).append("\n\n")
+                append(current.substring(insertAt).trimStart())
+            }
+            changelogFile.writeText(updated)
+            if (!keepFragments) fragments.forEach { it.delete() }
+
+            logger.lifecycle(
+                "已汇总 ${entries.size} 条到 CHANGELOG.md 的 ## $pluginVersion 段" +
+                    if (keepFragments) "（碎片保留）" else "，并删除 ${fragments.size} 个碎片",
+            )
+            logger.lifecycle("下一步：审一遍文案 → ./gradlew verifyPlugin → ./gradlew publishPlugin")
+        }
+    }
 }
 
 intellijPlatform {
