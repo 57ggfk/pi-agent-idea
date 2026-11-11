@@ -49,6 +49,7 @@ export type BridgeMethod =
   | "manage.packageInstall"
   | "manage.packageRemove"
   | "manage.packageUpdate"
+  | "manage.packageUpdateAll"
   | "manage.envUpdate"
   | "manage.modelsReadProvider"
   | "manage.modelsOpenFile"

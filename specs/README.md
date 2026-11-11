@@ -268,3 +268,65 @@ Phase 7 收尾：i18n / 全基线 / MANUAL_TEST / 真机目视
 | [017 新认证后模型列表自动生效](./017-models-reload/spec.md) | 12 | 认证保存 / OAuth 完成 / 删除凭据后即时重读模型目录；models.json 新增 provider 由扩展在 pi 进程内 refresh；选择器打开时按 15s TTL 兜底；内部命令不进斜杠补全 | 已实现，待真机 |
 
 **017 关键实证**（2026-11-09，pi 1.5.0，临时 `PI_CODING_AGENT_DIR` 隔离）：pi 对 **auth.json 会自动重读**（空 auth 0 个模型 → 写入 deepseek key 后立即 2 个），对 **models.json 不会**（新增自定义 provider 后仍 0 个；扩展内 `ctx.modelRegistry.refresh()` 后变 1 个且 `set_model` 成功）。因此本 feature 不需要重启 pi 进程。
+
+---
+
+# 0.5.7 批次（2026-11-10 追加）
+
+> 版本分支：`release/0.5.7`（进行中）。**017（模型重载）归属从 0.5.6 挪入本批**；新增 018 / 019 / 020 / 021 / 022 / 023。
+
+| Feature | Tasks | 内容 | 状态 |
+|---|---|---|---|
+| [017 新认证后模型列表自动生效](./017-models-reload/spec.md) | 12 | （同上，归属改为 0.5.7） | 已实现，待真机 |
+| [018 composer 行内引用 chip + 图片缩略图卡 + 粘贴识别收紧 + 消息表格弱边框 + 模型组折叠 + 扩展包全部升级 + fork 标题后缀](./018-composer-inline-chips/spec.md) | 26 | 引用 chip 内联进编辑区文本流（**B 方案**：textarea 保留 + 镜像覆盖层，`@path` token 唯一事实源，refs 数组/首行拼装删除）；图片升级缩略图卡、点击复用 ImagePreview 模态；粘贴/拖拽 text 兜底收紧为「单行+无空白+像路径」，修复粘贴 markdown 误生成多个引用；消息 Markdown 表格加 `var(--border)` 弱色边框（现状零表格样式、浏览器默认无边框）；模型选择器分组可折叠（索引切到可见条目、~~搜索强制展开~~（已被 020 US3 推翻）、当前组打开自动展开、localStorage 记忆）；扩展包管理：新增「全部升级」（`pi update --extensions`，新 RPC 四处同步，降级方案为前端循环）、移除接确认框、补面板 i18n 漏网；fork 出的会话标题追加 `(fork)`/`（分支）`（pi clone 沿用父标题、列表不可辨） | ✅ 已实现（2026-11-10 凌晨，tasks 25/26；T20 真机全部升级待用户装扩展后目验；[执行记录](./0.5.7-run-report.md)） |
+| [019 工具窗多实例](./019-toolwindow-multi-instance/spec.md)（[plan](./019-toolwindow-multi-instance/plan.md)） | 暂不实施 | 一个 Pi Agent 工具窗内开多个 pi 实例（multi-Content 原生标签，每 Content 独立浏览器+独立 pi 进程，web 侧零改动）；核心是 `PiProcessManager` 按实例注册表重构 + `BridgeService` 事件按 instanceId 路由（缺省实例 1 兼容旧页面）；上限默认 4、关闭流式中实例走确认框、崩溃重建只倒一个 | spec + plan 已定稿（plan 补入 2026-11-10）；**暂不实施**（2026-11-10 用户决定），spec/plan 留库，重启时按 plan 的四阶段执行 |
+| [020 模型选择器供应商上限 + 每家动态截断 + 标题左对齐 + 搜索态折叠](./020-model-picker-group-cap/spec.md)（[plan](./020-model-picker-group-cap/plan.md)） | 13（✅ 已实现） | 供应商最多 50 组（当前组置顶 + pi 原序）；每家上限 `P = clamp(floor(1000/n), 5, 200)`（n≤5 → 每家 200，n=10 → 100，n=50 → 20），每家按实际条数截断、配额不跨组搬运；当前模型即使被组内截断也插到组首保证可定位；组标题计数改 `已显示/总数` + 组末「还有 N 个」+ 末尾「还有 N 个供应商」；修 `.model-group-title` 三段 flex 配 `space-between` 导致**名称居中**的视觉 Bug（改 flex-start + name flex:1 + count margin-left:auto）；搜索态不再强制全展开，改为默认展开且可手动折叠（临时态、不落盘），50 上限与每家上限在搜索态同样生效 | spec + plan + tasks 已定稿；**✅ 已实现（2026-11-11）**，见 [0.5.7 执行记录](./0.5.7-run-report.md) |
+| [021 会话切换与新建：点击后 1s+ 才有反应](./021-session-switch-latency/spec.md)（[plan](./021-session-switch-latency/plan.md)） | 17（✅ 已实现，真机 T317 待目视） | 两条延迟反馈（新建会话、点历史会话各等 1s+）合成一份规格：根因是**四段等待串联**——① 界面反馈被 `await` RPC 卡住（两处都是 RPC 回来才写 state）② 历史切换只有 RPC 成功后才 `tab:"chat"` ③ 跳转同一笔 `set` 清空 `items`，内容要再等一轮 `get_messages`，且 `get_messages`/`get_session_stats`/`get_state` 三段串行 ④ JCEF OSR 帧滞后——0.5.4 的 `ide.repaint` 修复**只接在页签点击上**，会话切换/新建是 store 内部改 view，从不重绘。修法：`pendingSwitch` 乐观反馈契约（点击即跳页+占位+禁发，失败回滚）、三段 RPC 并成 `Promise.all`、`refreshSessions` 移出关键路径、repaint 收敛为去抖入口、`PiSessionIndex` 两阶段读（先读首行判 cwd，不再为所有项目的每个文件解析 4000 行 JSON）+ `mtime/size` 缓存；阈值 T1≤150ms / T2≤300ms / T3≤600ms / T4≤1200ms，由 mock 注入 1.2s 延迟后断言（不靠真机手感） | spec + plan + tasks 已定稿；**✅ 已实现（2026-11-11）**，见 [0.5.7 执行记录](./0.5.7-run-report.md)；A 轨（新建）可单独交付，B 轨（历史切换）可随 0.5.8 走 |
+| [022 滚轮卡顿：长列表与下拉「滑到底再往上滑不动」](./022-scroll-jank/spec.md)（[plan](./022-scroll-jank/plan.md)） | 14（✅ 已实现，真机 T414 待目视） | 两条反馈（会话历史滚轮到底回不去、模型下拉同款）合成一份规格，病根有两条：**已证**——两个 picker（`ModelPicker.tsx:270`、`ProviderPicker.tsx:180,214`）在 `onMouseEnter` 里 `setHighlight`，于是每滚一格就整表重渲染（模型选择器每次还为每组 `filter` 全表，359 条重建）+ `ensureVisible` 的两次 `getBoundingClientRect` 强制布局，主线程占满 → 滚轮排队，指针移开就正常（用户观察完全吻合）；**一半已证**——`MessageList` 的贴底判定是「距底 <60px」这种**距离**阈值，与单次滚轮位移同量级，向上滚一格仍被判贴底，被下一次更新拽回。修法：悬停视觉交给 CSS（`data-active` 收窄为「键盘当前项」，悬停写 ref 零渲染，Enter 仍选鼠标所指）、行组件 memo + 分组桶装、`ensureVisible` 只服务键盘、贴底改**方向优先**状态机（向上滚立即脱离，4px 容差）、`ItemView` memo + `content-visibility` 压每帧成本；指标 `scroll.frame` / `hover.render` 落 `idea.log`。**实施顺序 020 → 021 → 022**（020 会改 `PickerModelData` 与分组渲染） | spec + plan + tasks 已定稿；**✅ 已实现（2026-11-11）**，见 [0.5.7 执行记录](./0.5.7-run-report.md) |
+| [023 Fork 以「整轮」为单位：只在每轮最后一条 pi 回复上露出](./023-fork-round-end/spec.md)（[plan](./023-fork-round-end/plan.md)） | 16（✅ 已实现，真机 T516 待目视） | 一轮 = 一次提问 + 该轮**全部** pi 回复（工具调用那条 + 总结那条，界面上是两条消息）。pi 的 `fork {entryId}` 只认用户消息为切点，所以同轮里点哪条 pi 回复，落到 pi 侧都是**同一个动作**（在下一条提问前切开）——于是现在的「每条 pi 回复都有 Fork」有三处错位：① 同轮多个入口、点哪条都一样（以为能从工具调用那条岔开）② 中间那条点下去**同轮后续回复照样带入**，与确认框「其后的内容不会带入」矛盾 ③ 单轮会话点中间那条会退化成**整条复制**，确认框却说「以这条回复结尾」；②直接违反 007 FR-003。修法：`ActionContext` 加 `isRoundEnd`（该回复之后、下一条用户消息之前没有其他 pi 回复），`canFork` 加该条件（中间回复**完全不渲染** Fork，复制/引用照旧）；store 侧再加一道结构性保证——`roundEndIndex()` 把点击下标推到本轮末尾，`forkAtItem` / `runForkAtItem` 与确认框文案分支都用规范化后的项，因此「从中间触发」与「从末尾触发」结果逐条一致，不出现半轮会话。末轮（无后续提问）行为与文案**保持不变**（clone + 「整条复制」）。**system 消息不结算轮次**，避免重试提示把该轮 Fork 顶掉。**实施顺序 020 → 021 → 022 → 023**（022 与 023 都改 `MessageList.tsx`） | spec + plan + tasks 已定稿；**✅ 已实现（2026-11-11）**，见 [0.5.7 执行记录](./0.5.7-run-report.md) |
+
+### 0.5.7 实现顺序（2026-11-10 定，2026-11-11 全部落地）
+
+串行执行，**不并行**（四条改的是同一批文件）。
+
+| 序 | 规格 | 一句话 | 形态 |
+|---|---|---|---|
+| 1 | [020 模型选择器供应商上限 + 每家动态截断 + 标题左对齐 + 搜索态折叠](./020-model-picker-group-cap/spec.md) | 先定分组与截断的形状 | 纯前端 · 13 task |
+| 2 | [021 会话切换与新建 1s+ 延迟](./021-session-switch-latency/spec.md) | 改 store 的入口时序 | A 轨可先发，B 轨可随 0.5.8 · 17 task |
+| 3 | [022 滚轮卡顿](./022-scroll-jank/spec.md) | 改 picker 悬停与消息列表吸底 | 纯前端 · 14 task |
+| 4 | [023 Fork 以「整轮」为单位](./023-fork-round-end/spec.md) | 改动最小，收尾 | 纯前端 · 16 task |
+
+**为什么是这个顺序**：
+
+- 020 会改 `PickerModelData` / `buildPickerData` 与分组渲染，022 的 picker 部分必须按 020 之后的形状写 → 020 在前。
+- 023 与 022 都改 `MessageList.tsx`，而 022 是结构级改动（吸底状态机 + `ItemView` memo），023 只加十几行判据 → 022 在前、023 收尾。
+
+**019（工具窗多实例）暂不实施**（2026-11-10 决定）：spec 与 plan 留库，重启时按 019 plan 的四阶段执行，不占用本批顺序位。
+
+**想先拿一个小成果**：023 可整体提前单独做（与 022 的冲突点只有 `MessageList.tsx` 里十来行），不影响其余三条。
+
+**023 对 007 的影响（2026-11-10）**：007 **FR-001**「**每条** pi 消息 MUST 提供 Fork」被本文修订为「**每轮最后一条** pi 回复」；
+007 **FR-003**（新会话 MUST NOT 包含该回复之后的消息）条款不变，但**从此无条件成立**——改动前它在同轮中间回复上是假的。
+007 的 US1 独立测试（四轮 U1/A1/U2/A2，悬停 A1）仍然成立，因为 A1 后面跟着 U2，属本轮末尾。
+007 FR-004（末轮 Fork 等价整条复制）与 023 FR-006 一致，未动。
+
+**021 的拆分判断（2026-11-10）**：**不拆两份规格**，用 tasks 双轨 + 允许分批交付吸收差异。理由：① 根因链重合（四段里重叠 ≥4/6），拆开要把同一套埋点与阈值写两遍；② 延迟的「可接受」标准是同一张 T1–T4 表，分开会出现无法自洽的口径；③ 体量差异用 A/B 双轨解决，而不是拉高 spec 粒度。**触发拆分的情况**（写死在此）：实测证明历史切换瓶颈主要在消息渲染且必须上虚拟滚动；或 pi 侧 `switch_session`/`new_session` 自身 ≥800ms；或两条要分属不同版本发布。
+
+**020 对既有条款的四处影响**（实现时逐条复核，不要按旧文档写）：
+
+1. **推翻 018 US5「搜索时忽略折叠」**：搜索态改为默认展开 + 可手动折叠，折叠不写 localStorage；该条已在上方 018 行加删除线。
+2. **改写 011 US2 的 200 上限语义**：从「全局 200 条」变为「每家 200 条」，`flattenGroups` 的 `cap` 参数与 `PickerModelData.hidden` 一并重构（见 020 plan 的接口契约）。
+3. **`ModelPicker` 的「标题居中」是回归而非新需求**：`.model-group-title` 在 018 加折叠 chevron 后由两段变三段 flex，`space-between` 把名称推到中线。
+4. **用户明确接受「搜索只在前 50 个供应商内检索」**（2026-11-10 选择）：第 51 名之后的供应商搜不到，靠末尾「还有 N 个供应商」提示兜底；后续若改口径，只需放开搜索态的 `providerLimit`。
+
+### plan 补齐（2026-11-10）
+
+015–018 四个规格当年只写了 spec + tasks，没有 plan —— 没有任何记录表明这是有意的决定，属于流程漂移。
+按宪法「开发流程」第 1 条（_spec 不含技术选型；技术方案进 `plan.md`_），本次补两份：
+
+| 规格 | plan 内容 | 备注 |
+|---|---|---|
+| 020 | 常量与公式、`buildPickerData` 新签名、数值表、七个场景剧本、触及文件 | 从 spec 搬入；spec 现只留用户价值与验收口径 |
+| 019 | 实例注册表结构、事件分桶、请求带实例号、生命周期与关闭确认、四阶段顺序 | **纠正 spec 初版两处偏差**：「web 侧零改动」不成立（需回传实例号）；关闭确认不能用 web 的 `ConfirmDialog`（改用 IDE 原生对话框） |
+
+015–018 已实现并发布，不再回头补 plan（属文档考古）；新规格一律重新走 spec → plan → tasks。

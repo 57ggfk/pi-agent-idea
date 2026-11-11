@@ -127,8 +127,8 @@ test("switching sessions resets the search state (FR-015)", async ({ page }) => 
   await page.getByTestId("search-input").fill("sanity");
   await expect(page.getByTestId("search-count")).toHaveText("1/1");
 
-  // Fork the session (007's confirm dialog) — landing in another conversation
-  // must not inherit the open search or its hits.
+  // Fork the session (007's confirm dialog, 023: the round's last reply) —
+  // landing in another conversation must not inherit the open search or its hits.
   const reply = page.getByTestId("item-assistant").last();
   await reply.hover();
   await reply.getByTestId("act-fork").click();

@@ -1,6 +1,8 @@
 package dev.pi.agent.process
 
 import java.io.File
+import org.junit.jupiter.api.condition.EnabledOnOs
+import org.junit.jupiter.api.condition.OS
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -80,8 +82,8 @@ class OsProcessTest {
     }
 
     @Test
+    @EnabledOnOs(OS.WINDOWS)
     fun `windows shell is an absolute path, never the bare name`() {
-        if (!OsProcess.isWindows) return
         val shell = OsProcess.windowsShell
         // A bare `cmd` is resolved against the IDE process's own search path;
         // when that lands on a non-executable file CreateProcess answers
@@ -92,6 +94,14 @@ class OsProcessTest {
 
     // -- child PATH assembly -------------------------------------------------
 
+    /**
+     * Runs the real [OsProcess.augmentPathEnv] round-trip (split → merge →
+     * join) and splits the child PATH back with the host separator. Values
+     * must therefore never contain the host's own separator — a Windows drive
+     * letter (`D:\node`) cannot survive a Unix `:` split — so the
+     * host-independent cases use separator-free paths and the drive-letter
+     * cases are gated to Windows.
+     */
     private fun childPath(extraDirs: List<String>, inherited: String): List<String> {
         val pb = ProcessBuilder("no-such-command")
         pb.environment()["PATH"] = inherited
@@ -104,14 +114,14 @@ class OsProcessTest {
 
     @Test
     fun `extra dirs come first so the injected node wins`() {
-        val dirs = childPath(listOf("D:\\node"), inherited = "C:\\existing")
-        assertEquals("D:\\node", dirs.first())
-        assertTrue(dirs.any { it.equals("C:\\existing", ignoreCase = true) }, "inherited PATH kept: $dirs")
+        val dirs = childPath(listOf("/opt/node"), inherited = "/opt/existing")
+        assertEquals("/opt/node", dirs.first())
+        assertTrue(dirs.any { it == "/opt/existing" }, "inherited PATH kept: $dirs")
     }
 
     @Test
+    @EnabledOnOs(OS.WINDOWS)
     fun `windows child PATH regains the system directories it was missing`() {
-        if (!OsProcess.isWindows) return
         val root = systemRoot()
         if (!File(root).isDirectory) return
 
@@ -128,8 +138,8 @@ class OsProcessTest {
     }
 
     @Test
+    @EnabledOnOs(OS.WINDOWS)
     fun `a system directory already on PATH is not duplicated`() {
-        if (!OsProcess.isWindows) return
         val root = systemRoot()
         if (!File(root).isDirectory) return
 
@@ -139,8 +149,8 @@ class OsProcessTest {
     }
 
     @Test
+    @EnabledOnOs(OS.WINDOWS)
     fun `store app aliases stay reachable so an installed pwsh is found`() {
-        if (!OsProcess.isWindows) return
         val localAppData = System.getenv("LOCALAPPDATA") ?: return
         val windowsApps = File(localAppData, "Microsoft${File.separator}WindowsApps")
         if (!windowsApps.isDirectory) return // host without the alias directory
@@ -154,13 +164,14 @@ class OsProcessTest {
 
     @Test
     fun `blank entries are dropped and the rest keep their order`() {
+        // Host separator + separator-free values: the round-trip is valid on
+        // every OS (a drive letter's `:` would not survive a Unix split).
         val dirs = childPath(
-            listOf("D:\\node", "  "),
-            // Built with the host separator so the case holds on Unix too.
-            inherited = listOf("C:\\b", "", "C:\\a").joinToString(File.pathSeparator),
+            listOf("/opt/node", "  "),
+            inherited = listOf("/opt/b", "", "/opt/a").joinToString(File.pathSeparator),
         )
-        assertEquals("D:\\node", dirs.first())
-        val tail = dirs.dropWhile { !it.equals("C:\\b", ignoreCase = true) }
+        assertEquals("/opt/node", dirs.first())
+        val tail = dirs.dropWhile { it != "/opt/b" }
         assertTrue(tail.size >= 2, "expected inherited order b,a; got $dirs")
         assertTrue(dirs.none { it.isBlank() }, "no blank entries: $dirs")
     }
@@ -180,8 +191,8 @@ class OsProcessTest {
     }
 
     @Test
+    @EnabledOnOs(OS.WINDOWS)
     fun `plain REG_SZ values parse too and unrelated rows are ignored`() {
-        if (!OsProcess.isWindows) return
         val out = "HKEY_CURRENT_USER\\Environment\n" +
             "    TEMP    REG_SZ    C:\\Temp\n" +
             "    Path    REG_SZ    D:\\tools;C:\\bin\n"
@@ -195,8 +206,8 @@ class OsProcessTest {
     }
 
     @Test
+    @EnabledOnOs(OS.WINDOWS)
     fun `expandEnvVars substitutes known names and keeps unknown ones`() {
-        if (!OsProcess.isWindows) return
         val root = System.getenv("SystemRoot") ?: return
         val expanded = OsProcess.expandEnvVars("%SystemRoot%\\system32;%NOT_A_REAL_VAR_XYZ%\\bin")
         assertEquals("$root\\system32;%NOT_A_REAL_VAR_XYZ%\\bin", expanded)
@@ -204,9 +215,14 @@ class OsProcessTest {
 
     @Test
     fun `an inherited entry is never duplicated by the merge`() {
-        val dirs = childPath(emptyList(), inherited = listOf("C:\\a", "C:\\b").joinToString(File.pathSeparator))
-        assertEquals(1, dirs.count { it.equals("C:\\a", ignoreCase = true) }, "got $dirs")
-        assertEquals(1, dirs.count { it.equals("C:\\b", ignoreCase = true) }, "got $dirs")
+        // A repeated entry collapses to its first occurrence; separator-free
+        // values keep the round-trip valid on every host.
+        val dirs = childPath(
+            emptyList(),
+            inherited = listOf("/opt/dup", "/opt/dup", "/opt/b").joinToString(File.pathSeparator),
+        )
+        assertEquals(1, dirs.count { it == "/opt/dup" }, "got $dirs")
+        assertEquals(1, dirs.count { it == "/opt/b" }, "got $dirs")
     }
 
     @Test

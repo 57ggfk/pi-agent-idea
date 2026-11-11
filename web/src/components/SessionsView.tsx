@@ -58,6 +58,7 @@ export default function SessionsView() {
   const requestSearchJump = usePiStore((s) => s.requestSearchJump);
   const editingSessionTitle = usePiStore((s) => s.editingSessionTitle);
   const beginEditSessionTitle = usePiStore((s) => s.beginEditSessionTitle);
+  const pendingSwitch = usePiStore((s) => s.pendingSwitch);
   const { t, language } = useT();
   const [filter, setFilter] = useState("");
   const debounceRef = useRef<number>(0);
@@ -160,12 +161,18 @@ export default function SessionsView() {
             {t("sessions.empty")}
           </div>
         ) : null}
-        {filtered.map((s) => (
+        {filtered.map((s) => {
+          // 021 T309: the clicked row gets the busy state instantly; every
+          // other row is disabled so a second click cannot race the first.
+          const pending = pendingSwitch?.kind === "history" && pendingSwitch.file === s.file;
+          const switching = pendingSwitch?.kind === "history";
+          return (
           <div
             key={s.file}
-            className={`session-row ${s.id && s.id === sessionId ? "session-current" : ""}`}
+            className={`session-row ${s.id && s.id === sessionId ? "session-current" : ""}${pending ? " session-pending" : ""}`}
             data-testid="session-row"
             title={s.file}
+            aria-busy={pending ? "true" : undefined}
           >
             {editingSessionTitle != null &&
             (editingSessionTitle === s.file ||
@@ -180,7 +187,11 @@ export default function SessionsView() {
                 </div>
               </div>
             ) : (
-              <button className="session-row-main" onClick={() => void switchSession(s.file)}>
+              <button
+                className="session-row-main"
+                disabled={switching}
+                onClick={() => void switchSession(s.file)}
+              >
                 <div className="session-row-top">
                   <span className="session-name">{s.name || s.preview?.slice(0, 60) || s.id || "Untitled"}</span>
                   <span className="session-time">{formatTime(s.modifiedAt)}</span>
@@ -232,7 +243,8 @@ export default function SessionsView() {
               </button>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

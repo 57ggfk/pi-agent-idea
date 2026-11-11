@@ -623,6 +623,15 @@ export interface ActionContext {
    * (spec 007 FR-001 / edge case「没有任何用户消息」).
    */
   hasPrecedingUser: boolean;
+  /**
+   * 023 FR-001: the last pi reply of its round — nothing but this reply sits
+   * between it and the next user message. `fork {entryId}` always cuts at a
+   * *user* entry, so every reply inside one round produces the same branch;
+   * offering Fork on each of them claimed a precision pi does not have (and
+   * the "content after this reply is dropped" copy was simply false for the
+   * middle ones). System notices do not end a round.
+   */
+  isRoundEnd: boolean;
   /** A run is in flight (or a history-rewriting action already started). */
   sessionBusy: boolean;
   /** An edit-and-resend is in progress; it owns the composer. */
@@ -702,9 +711,10 @@ export function actionsForItem(item: ChatItem, ctx: ActionContext): MessageActio
   if (item.role === "system") return item.isError && hasText ? ["copy"] : [];
 
   const idle = !ctx.sessionBusy && !ctx.editing;
-  // FR-001/FR-002: only pi replies get Fork, only while idle, and only when
-  // there is a user message above to branch at. Copy/quote stay untouched.
-  const canFork = item.role === "assistant" && idle && ctx.hasPrecedingUser;
+  // FR-001/FR-002: only pi replies get Fork, only while idle, only when there
+  // is a user message above to branch at, and only on the last reply of the
+  // round (023: "one round = one branch point"). Copy/quote stay untouched.
+  const canFork = item.role === "assistant" && idle && ctx.hasPrecedingUser && ctx.isRoundEnd;
 
   if (!hasText) {
     // Nothing to copy or quote, but the last answer can still be regenerated.

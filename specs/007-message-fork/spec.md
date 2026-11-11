@@ -110,7 +110,10 @@ Enter 确认执行；`window.confirm` 在 Chat 与 Sessions 页都不再出现�
 
 ### Functional Requirements
 
-- **FR-001**: 每条 pi（assistant）消息的悬停工具条 MUST 提供 Fork 动作；user / system 消息 MUST NOT 提供。
+- **FR-001**: ~~每条 pi（assistant）消息的悬停工具条 MUST 提供 Fork 动作~~；user / system 消息 MUST NOT 提供。
+  **（2026-11-10 由 [023](../023-fork-round-end/spec.md) 修订）**：只在该轮**最后一条** pi 回复上提供 ——
+  一轮 = 一次提问 + 该轮全部 pi 回复，同轮其余回复点 Fork 与末尾那条结果完全相同（pi 只认用户消息为切点），
+  且中间那条会把同轮后续回复也带入，与本条下方的 FR-003 冲突。实现以 023 为准。
 - **FR-002**: Fork 动作 MUST 仅在会话空闲时可用（流式中不可触发），且 MUST NOT 影响该消息的复制/引用可用性。
 - **FR-003**: 基于某条 pi 回复 Fork 产生的新会话 MUST 包含该回复及其之前的全部上下文，
   MUST NOT 包含该回复之后的消息。

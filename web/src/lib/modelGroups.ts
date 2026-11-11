@@ -1,22 +1,64 @@
 import type { ModelInfo } from "../store/types";
 
 /**
- * Model-picker grouping helpers (011 US1/US2, T004).
+ * Model-picker grouping helpers (011 US1/US2, T004; 020 US1–US5).
  *
  * pi returns one flat list; the picker groups it by provider with the current
  * model's group pinned first, an optional fallback group for entries without a
- * provider, and a render cap that keeps the DOM bounded (~360 models from the
- * real catalog). Deliberately NOT a virtual list — specs/011-0.5.4-defects
- * locks in a 200-entry cap instead.
+ * provider, and two orthogonal caps that keep the DOM bounded (~360 models from
+ * the real catalog, distribution wildly uneven: 355 + 4):
+ *
+ * - `PROVIDER_LIMIT` — at most 50 provider groups are rendered at all;
+ * - `groupCap(n)` — each rendered group shows at most `clamp(1000/n, 5, 200)`
+ *   entries. Every group is truncated on its own; quotas are never moved
+ *   between groups, so a huge provider cannot squeeze a small one out
+ *   (specs/020-model-picker-group-cap, D1–D3).
+ *
+ * Deliberately NOT a virtual list — 011 locks that in.
  */
 
-export const MODEL_RENDER_CAP = 200;
+/** Provider groups rendered at most (020 US1). Applies to search too (D1). */
+export const PROVIDER_LIMIT = 50;
+/** Per-group budget base: total rendered entries land near this (D2). */
+export const GROUP_BASE_BUDGET = 1000;
+/** Per-group cap ceiling — also the value for n <= 5 and for n <= 0. */
+export const GROUP_CAP_MAX = 200;
+/** Per-group cap floor: a group never shows fewer than this (D2). */
+export const GROUP_CAP_MIN = 5;
 
-export interface ModelGroup {
+/**
+ * Per-group display cap for `providerCount` rendered groups: `n <= 5 → 200`,
+ * `n = 10 → 100`, `n = 50 → 20`. The 1000 base (not 200) keeps the threshold
+ * continuous — with a 200 base, going from 4 to 5 providers would drop every
+ * group from 200 to 40 at once. `n <= 0` returns the ceiling (no division).
+ */
+export function groupCap(
+  providerCount: number,
+  baseBudget: number = GROUP_BASE_BUDGET,
+  capMax: number = GROUP_CAP_MAX,
+  capMin: number = GROUP_CAP_MIN,
+): number {
+  if (!Number.isFinite(providerCount) || providerCount <= 0) return capMax;
+  const raw = Math.floor(baseBudget / providerCount);
+  return Math.min(capMax, Math.max(capMin, raw));
+}
+
+/** A group as produced by `buildModelGroups` — untruncated. */
+export interface GroupInput {
   /** Provider name; "" is the fallback group for entries without one. */
   provider: string;
   /** Filtered models in pi's original order. */
   models: ModelInfo[];
+}
+
+/** A group as rendered: truncated, with the numbers the UI has to show. */
+export interface ModelGroup extends GroupInput {
+  /** Entries this provider actually has after filtering (020 US5). */
+  total: number;
+  /** Entries rendered (<= `groupCap`). */
+  shown: number;
+  /** `total - shown`, surfaced as "…N more" at the group's end. */
+  hidden: number;
 }
 
 export interface FlatModelEntry {
@@ -29,7 +71,7 @@ export interface FlatModelEntry {
 
 export interface GroupedModels {
   /** Groups in render order: current group pinned first, fallback last. */
-  groups: ModelGroup[];
+  groups: GroupInput[];
   /** Index of the group containing the current model, or null. */
   activeGroupIndex: number | null;
   /** Filtered count across all groups (uncapped). */
@@ -37,18 +79,34 @@ export interface GroupedModels {
 }
 
 export interface FlattenedGroups {
-  /** Groups that have at least one rendered entry, in render order. */
+  /** Rendered groups (per-group truncated), in render order. */
   groups: ModelGroup[];
   flat: FlatModelEntry[];
-  /** Entries beyond the cap: surfaced as "…and N more". */
-  hidden: number;
+  /** Providers dropped by `PROVIDER_LIMIT`: "…N more providers" at the end.
+   *  Their entries are counted here only, never in a group's `hidden`. */
+  hiddenProviders: number;
 }
 
 export interface PickerModelData extends FlattenedGroups {
   /** Filtered count across all groups (uncapped). */
   total: number;
-  /** Flat index of the current model among rendered entries, or null. */
+  /** Flat index of the current model among VISIBLE rendered entries, or null. */
   activeFlatIndex: number | null;
+  /** Entries whose group is not collapsed, in render order — the DOM order
+   *  of `[data-model-key]` rows and the one index space for highlight /
+   *  keyboard / locate (018 US5). Equals `flat` when nothing is collapsed. */
+  visibleFlat: FlatModelEntry[];
+}
+
+/** Overrides for one picker build (020 D8 / D11). All optional: omitting them
+ *  reproduces the shipped defaults, and `baseBudget` is the single knob a
+ * 真机 downgrade needs (Q1: 1000 → 500). */
+export interface PickerOptions {
+  collapsed?: ReadonlySet<string> | null;
+  providerLimit?: number;
+  baseBudget?: number;
+  capMax?: number;
+  capMin?: number;
 }
 
 /** Space-separated keywords, each required somewhere in `provider id name`. */
@@ -85,7 +143,7 @@ export function buildModelGroups(
     list.push(mo);
   }
 
-  const groups: ModelGroup[] = order.map((provider) => ({ provider, models: byProvider.get(provider)! }));
+  const groups: GroupInput[] = order.map((provider) => ({ provider, models: byProvider.get(provider)! }));
 
   // Empty-provider fallback group goes last; the pinned current group first.
   const fallbackIndex = order.indexOf("");
@@ -109,52 +167,94 @@ export function buildModelGroups(
   return { groups, activeGroupIndex, total: filtered.length };
 }
 
-/** Walk groups in render order, stopping at `cap` entries; groups with no
- *  rendered entry are dropped so headers never sit over an empty slice. */
-export function flattenGroups(groups: ModelGroup[], cap: number): FlattenedGroups {
+/**
+ * Truncate every group on its own (`020` D2/D5) and drop providers beyond
+ * `providerLimit` (D1). Never moves quota between groups, and never looks at
+ * the collapse state: expanding a group must not shrink its neighbours.
+ *
+ * D4: the current model is exempt — if its group truncates it away it is
+ * moved to that group's head (deduped, still `cap` entries), because 011 US1
+ * promises "opening the picker locates the current model".
+ */
+export function flattenGroups(
+  groups: GroupInput[],
+  perGroupCap: number,
+  opts: { providerLimit?: number; current?: { provider: string; id: string } | null } = {},
+): FlattenedGroups {
+  const providerLimit = opts.providerLimit ?? PROVIDER_LIMIT;
+  const limit = Number.isFinite(providerLimit) ? Math.max(0, Math.floor(providerLimit)) : PROVIDER_LIMIT;
   const flat: FlatModelEntry[] = [];
   const rendered: ModelGroup[] = [];
-  let hidden = 0;
+  let hiddenProviders = 0;
 
-  for (const group of groups) {
-    const remaining = cap - flat.length;
-    if (remaining <= 0) {
-      hidden += group.models.length;
-      continue;
+  groups.forEach((group, order) => {
+    if (order >= limit) {
+      hiddenProviders += 1;
+      return;
     }
-    const slice = group.models.slice(0, remaining);
-    if (slice.length === 0) continue;
+    if (group.models.length === 0) return;
+
+    let slice = group.models.slice(0, Math.max(0, perGroupCap));
+    const current = opts.current;
+    if (
+      current &&
+      group.models.some((mo) => mo.provider === current.provider && mo.id === current.id) &&
+      !slice.some((mo) => mo.provider === current.provider && mo.id === current.id)
+    ) {
+      const exempt = group.models.find((mo) => mo.provider === current.provider && mo.id === current.id)!;
+      slice = [exempt, ...slice.slice(0, Math.max(0, perGroupCap - 1))];
+    }
+
     const groupIndex = rendered.length;
-    rendered.push({ provider: group.provider, models: slice });
+    const total = group.models.length;
+    rendered.push({ provider: group.provider, models: slice, total, shown: slice.length, hidden: total - slice.length });
     for (const model of slice) {
       flat.push({ model, groupIndex, flatIndex: flat.length });
     }
-    hidden += group.models.length - slice.length;
-  }
+  });
 
-  return { groups: rendered, flat, hidden };
+  return { groups: rendered, flat, hiddenProviders };
 }
 
-/** Current model's flat index among rendered entries, or null when filtered
- *  out / beyond the cap / not present (custom model, load failure). */
+/** Current model's flat index among VISIBLE rendered entries, or null when
+ *  filtered out / truncated away / not present / inside a collapsed group.
+ *  `collapsed` maps provider → folded (018 US5); null/undefined keeps every
+ *  group open. Since 020 the caller passes the *effective* set (search state
+ *  included) and the "a keyword force-expands everything" rule is gone (D6). */
 export function buildPickerData(
   models: ModelInfo[],
   current: { provider: string; id: string } | null,
   keywords: string[],
-  cap: number = MODEL_RENDER_CAP,
+  opts: PickerOptions = {},
 ): PickerModelData {
   const { groups, activeGroupIndex, total } = buildModelGroups(models, current, keywords);
-  const { groups: renderedGroups, flat, hidden } = flattenGroups(groups, cap);
+
+  // D3: the cap is derived from the number of groups actually rendered, not
+  // from the raw provider count — otherwise 200 providers would squeeze every
+  // group down to the floor while only 50 are shown.
+  const providerLimit = opts.providerLimit ?? PROVIDER_LIMIT;
+  const renderedCount = Math.min(groups.length, Math.max(0, providerLimit));
+  const perGroupCap = groupCap(renderedCount, opts.baseBudget, opts.capMax, opts.capMin);
+
+  const { groups: renderedGroups, flat, hiddenProviders } = flattenGroups(groups, perGroupCap, {
+    providerLimit,
+    current,
+  });
+
+  const collapsed = opts.collapsed ?? null;
+  const visibleFlat = collapsed
+    ? flat.filter((f) => !collapsed.has(renderedGroups[f.groupIndex].provider))
+    : flat;
 
   let activeFlatIndex: number | null = null;
   if (current) {
     activeFlatIndex =
-      flat.find((f) => f.model.provider === current.provider && f.model.id === current.id)
+      visibleFlat.find((f) => f.model.provider === current.provider && f.model.id === current.id)
         ?.flatIndex ?? null;
   }
   void activeGroupIndex;
 
-  return { groups: renderedGroups, flat, hidden, total, activeFlatIndex };
+  return { groups: renderedGroups, flat, hiddenProviders, total, activeFlatIndex, visibleFlat };
 }
 
 /**

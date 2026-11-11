@@ -167,6 +167,7 @@ class BridgeService(private val project: Project) : Disposable {
                 "manage.packageInstall" -> dev.pi.agent.manage.PiManage.packageInstall(params)
                 "manage.packageRemove" -> dev.pi.agent.manage.PiManage.packageRemove(params)
                 "manage.packageUpdate" -> dev.pi.agent.manage.PiManage.packageUpdate(params)
+                "manage.packageUpdateAll" -> dev.pi.agent.manage.PiManage.packageUpdateAll()
                 "manage.envUpdate" -> dev.pi.agent.manage.PiManage.envUpdate()
                 "manage.modelsReadProvider" -> dev.pi.agent.manage.PiManage.modelsReadProvider(params)
                 "manage.modelsOpenFile" -> modelsOpenFile(params)
@@ -1075,8 +1076,12 @@ class BridgeService(private val project: Project) : Disposable {
      * where they become removable chips. Only the path ever travels — pi
      * resolves `@path` references itself at send time. Pushed as an `ide`
      * event with kind "refs"; [refs] pairs are (project-relative path, isDirectory).
+     *
+     * [fromDrop] marks the spec-016 fallback: the page never received an HTML5
+     * drop, so the IDE pushed the batch itself. The composer uses that flag to
+     * suppress its DataTransfer fallback and avoid a duplicate chip.
      */
-    fun pushIdeRefs(refs: List<Pair<String, Boolean>>) {
+    fun pushIdeRefs(refs: List<Pair<String, Boolean>>, fromDrop: Boolean = false) {
         if (refs.isEmpty()) return
         wirePiEvents()
         PiProcessManager.getInstance(project).client()
@@ -1086,6 +1091,7 @@ class BridgeService(private val project: Project) : Disposable {
             put("data", buildJsonObject {
                 put("kind", "refs")
                 put("files", ideRefArray(refs))
+                if (fromDrop) put("fromDrop", true)
             })
         })
     }
@@ -1118,6 +1124,8 @@ class BridgeService(private val project: Project) : Disposable {
     private fun filesTakeDrop(): JsonObject {
         val paths = ideFileDrop.take()
         val refs = if (paths.isEmpty()) emptyList() else DropRefs.resolve(projectRoot(), paths.map { it to false })
+        // 真机诊断：一次都没出现这条，说明页面根本没派发 HTML5 drop。
+        LOG.info("Pi Agent takeDrop: ${paths.size} path(s) -> ${refs.size} ref(s)")
         return buildJsonObject { put("refs", refsJson(refs)) }
     }
 

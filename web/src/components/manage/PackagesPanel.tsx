@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
 import { useT } from "../../i18n/useT";
+import { usePiStore } from "../../store/store";
 import { OutcomeBanner } from "../ManageView";
 import type { CliOutcome, manageApi, PackagesListResult } from "../../manage";
 
+/**
+ * Package management (001 US2/US3, 018 US6). Install / per-row update+remove
+ * came with 001; 018 adds "update all" (one `pi update --extensions` call),
+ * a confirmation on remove, and pulls the panel's last hardcoded strings
+ * into the dictionaries.
+ */
 export default function PackagesPanel({ api }: { api: ReturnType<typeof manageApi> }) {
   const { t } = useT();
+  const askConfirm = usePiStore((s) => s.askConfirm);
   const [result, setResult] = useState<PackagesListResult | null>(null);
   const [outcome, setOutcome] = useState<{ ok: boolean; error?: string; output?: string } | null>(null);
   const [updateResult, setUpdateResult] = useState<CliOutcome | null>(null);
@@ -65,6 +73,22 @@ export default function PackagesPanel({ api }: { api: ReturnType<typeof manageAp
     }
   };
 
+  /** `pi update --extensions` — one call, pi reports per-package lines. */
+  const updateAll = async () => {
+    setBusy(true);
+    setOutcome(null);
+    setUpdateResult(null);
+    try {
+      const res = await api.packageUpdateAll();
+      setUpdateResult(res);
+      await refresh();
+    } catch (e) {
+      setUpdateResult({ ok: false, error: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div data-testid="packages-panel">
       <OutcomeBanner outcome={outcome} />
@@ -76,15 +100,13 @@ export default function PackagesPanel({ api }: { api: ReturnType<typeof manageAp
           {updateResult.ok ? "✓ " : "✗ "}
           {updateResult.exitCode !== undefined ? `exit code ${updateResult.exitCode} · ` : ""}
           {updateResult.output || updateResult.error}
-          {!updateResult.ok ? (
-            <div>The installed version may still be the old one.</div>
-          ) : null}
+          {!updateResult.ok ? <div>{t("package.updateNote")}</div> : null}
         </div>
       ) : null}
       <div className="panel-toolbar">
         <input
           className="select packages-input"
-          placeholder="npm:@scope/pkg · git:github.com/user/repo · ./local/path"
+          placeholder={t("package.placeholder")}
           value={source}
           onChange={(e) => setSource(e.target.value)}
         />
@@ -99,6 +121,9 @@ export default function PackagesPanel({ api }: { api: ReturnType<typeof manageAp
         >
           {t("package.install")}
         </button>
+        <button className="btn" data-testid="packages-update-all" disabled={busy || installed.length === 0} onClick={() => void updateAll()}>
+          {t("package.updateAll")}
+        </button>
         <button className="btn" data-testid="packages-refresh" onClick={() => void refresh()} disabled={busy}>
           {t("package.refresh")}
         </button>
@@ -106,7 +131,7 @@ export default function PackagesPanel({ api }: { api: ReturnType<typeof manageAp
 
       {installed.length === 0 ? (
         <div className="panel-empty" data-testid="packages-empty">
-          {lines.length > 0 ? lines.join("\n") : "No packages installed."}
+          {lines.length > 0 ? lines.join("\n") : t("package.empty")}
         </div>
       ) : (
         installed.map((line, i) => {
@@ -125,7 +150,22 @@ export default function PackagesPanel({ api }: { api: ReturnType<typeof manageAp
                 >
                   {t("package.update")}
                 </button>
-                <button className="btn btn-abort" onClick={() => void act(api.packageRemove({ source: pkg }))}>
+                <button
+                  className="btn btn-abort"
+                  data-testid={`package-remove-${i}`}
+                  disabled={busy}
+                  onClick={() =>
+                    askConfirm({
+                      title: t("package.removeTitle"),
+                      message: t("package.removeMessage", { pkg }),
+                      confirmLabel: t("package.remove"),
+                      danger: true,
+                      onConfirm: () => {
+                        void act(api.packageRemove({ source: pkg }));
+                      },
+                    })
+                  }
+                >
                   {t("package.remove")}
                 </button>
               </div>

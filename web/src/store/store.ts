@@ -53,10 +53,34 @@ import {
   type Sources,
 } from "./sources";
 import { hitsFromItems, type SearchHit } from "../lib/search";
+import { requestRepaint } from "../lib/repaint";
+import { perfMark } from "../lib/perf";
 import { i18n, initI18n, isRegistered } from "../i18n";
 
 /** Shorthand for store-side (non-React) copy; English falls out of the base bundle. */
 const t = i18n.t.bind(i18n);
+
+/**
+ * 021 D1: the single "a session switch is in flight" fact. The placeholder,
+ * the send gate, the row highlight and the double-click guards all read this
+ * one object instead of keeping their own booleans in sync.
+ */
+export interface PendingSwitch {
+  kind: "new" | "history";
+  /** Target session file for `kind: "history"`. */
+  file?: string;
+  /** `performance.now()` at the click — drives `switch.*` marks and the
+   *  "still switching" copy after 10s. */
+  startedAt: number;
+}
+
+/** 021 D8 / T308: after this long the copy softens; nothing rolls back — a
+ *  slow pi is not a failed one. */
+export const SWITCH_LONG_MS = 10_000;
+
+export function isSwitchLong(startedAt: number, now: number): boolean {
+  return now - startedAt >= SWITCH_LONG_MS;
+}
 
 /**
  * Prefix reserved for commands registered by the plugin's own pi extensions
@@ -129,6 +153,29 @@ export interface EditTarget {
 // — is duplicated with `clone`.
 
 export type BranchTarget = { kind: "entry"; index: number } | { kind: "clone" };
+
+/**
+ * 023 D3 — the last pi reply of the round that `index` belongs to.
+ *
+ * `fork {entryId}` only cuts at user entries, so every reply inside one round
+ * lands on the same branch point. Normalising the click to the round's end
+ * gives the UI one entry point and makes "triggered from the middle" behave
+ * exactly like "triggered from the end" — no half-round session can be created
+ * even if a future entry point forgets the `isRoundEnd` guard.
+ *
+ * Returns -1 when `index` is not an assistant item (caller reports
+ * `error.fork.notReply`, as before).
+ */
+export function roundEndIndex(items: ChatItem[], index: number): number {
+  if (index < 0 || index >= items.length) return -1;
+  if (items[index].role !== "assistant") return -1;
+  let end = index;
+  for (let i = index + 1; i < items.length; i++) {
+    if (items[i].role === "user") break;
+    if (items[i].role === "assistant") end = i;
+  }
+  return end;
+}
 
 /** How many user messages sit at or above `index` in the transcript. */
 export function userCountUpTo(items: ChatItem[], index: number): number {
@@ -274,6 +321,9 @@ interface PiStore {
   items: ChatItem[];
   isStreaming: boolean;
   aborted: boolean;
+  /** 021: non-null from the click until the target session's content is on
+   *  screen (or the switch failed and rolled back). */
+  pendingSwitch: PendingSwitch | null;
   retryInfo: { attempt: number; maxAttempts: number; delayMs: number; errorMessage: string } | null;
   /**
    * Mirror of pi's queue (spec 005), pushed as full snapshots by the Kotlin
@@ -294,6 +344,12 @@ interface PiStore {
   resetAuthLogin(): void;
   /** Editor-initiated prompt ("ide" event) waiting for the Composer to pick up. */
   pendingPrompt: PendingPrompt | null;
+  /**
+   * spec 016 兜底：页面没收到 HTML5 drop 时由 IDE 主动推送引用（ide 事件带
+   * fromDrop）。记下时间，Composer 在随后的一次 drop 里据此跳过 DataTransfer
+   * 兜底，避免同一批文件插出两个 chip。
+   */
+  lastIdeDropAt: number;
   /**
    * Edit-and-resend target while the composer owns it. Null when idle; the
    * action matrix hides regenerate/edit whenever this is set (FR-010).
@@ -405,6 +461,9 @@ interface PiStore {
   providerStep: "hidden" | "offered";
   /** Open image preview request (012 US7, T139): which block to show. */
   imagePreview: { itemId: number; blockIndex: number } | null;
+  /** Composer-side preview request (018 US2): the images live in the
+   *  composer's local state, so a click hands the modal the list itself. */
+  composerPreview: { images: Array<{ src: string; label: string }>; index: number } | null;
   /** Manage sub-tab, persisted across ManageView mounts (0.5.4 real-machine
    *  UX: leaving Manage and returning no longer resets to MCP). */
   manageTab: "mcp" | "packages" | "skills" | "agents" | "auth" | "settings" | "diagnostics";
@@ -494,6 +553,9 @@ interface PiStore {
   /** Image preview (012 US7). */
   openImagePreview(itemId: number, blockIndex: number): void;
   closeImagePreview(): void;
+  /** Composer image preview (018 US2). */
+  openComposerPreview(images: Array<{ src: string; label: string }>, index: number): void;
+  closeComposerPreview(): void;
   /** Inline title editing shared by the status bar and session list (T107/T108).
    *  Without a file the editor targets the current session; with one, that row. */
   beginEditSessionTitle(file?: string): void;
@@ -562,6 +624,13 @@ export const usePiStore = create<PiStore>((set, get) => {
    * without every caller having to re-supply its own closure.
    */
   const sourceLoaders = new Map<SourceId, () => Promise<unknown>>();
+
+  /**
+   * 021 D8: every `switchSession` / `runNewSession` bumps this. A response
+   * that comes back after a newer request owns the screen is dropped instead
+   * of painting the wrong transcript.
+   */
+  let switchSeq = 0;
 
   /**
    * Runs a source read through the state machine (spec 003).
@@ -697,34 +766,74 @@ export const usePiStore = create<PiStore>((set, get) => {
     });
   };
 
-  /** Creates the empty session. Callers own the confirmation decision. */
+  /**
+   * Creates the empty session (021 US2). The screen clears *before* the RPC:
+   * waiting for pi to answer kept the old transcript visible for a second or
+   * more with zero feedback. A failure restores the snapshot (D2).
+   */
   const runNewSession = async () => {
     if (!bridge) return;
+    // D8: a second "new" while one is in flight would spawn two sessions.
+    if (get().pendingSwitch) return;
     // FR-012 (spec 005): a non-empty queue would be silently dropped.
     if (get().queue.items.length > 0) {
       set({ queueDiscardConfirm: { count: get().queue.items.length, kind: "new" } });
       return;
     }
+    const b = bridge;
+    const startedAt = performance.now();
+    const seq = ++switchSeq;
+    const previousItems = get().items;
+
+    set({
+      pendingSwitch: { kind: "new", startedAt },
+      items: [],
+      stats: undefined,
+      aborted: false,
+      isStreaming: false,
+      sessionName: undefined,
+      editing: null,
+      manualTitle: false,
+      autoTitled: false,
+      llmTitled: false,
+      editingSessionTitle: null,
+    });
+    resetConversationLocalState();
+    requestRepaint();
+    perfMark("switch.pending", startedAt, { kind: "new" });
+
     try {
-      await rpc(bridge, { type: "new_session" });
-      set({
-        items: [],
-        stats: undefined,
-        aborted: false,
-        isStreaming: false,
-        sessionName: undefined,
-        editing: null,
-        manualTitle: false,
-        autoTitled: false,
-        llmTitled: false,
-        editingSessionTitle: null,
-      });
-      resetConversationLocalState();
-      await get().refreshStats();
-      await get().refreshSessions();
+      await rpc(b, { type: "new_session" });
+      if (seq !== switchSeq) return;
+      set({ pendingSwitch: null });
+      perfMark("switch.content", startedAt, { kind: "new" });
+      // D2: neither the stats read nor the session-list rescan belongs on the
+      // critical path; one tick later so they cannot race pi's first answer.
+      setTimeout(() => {
+        void get().refreshStats();
+        void get().refreshSessions();
+      }, 0);
+      perfMark("switch.ready", startedAt, { kind: "new" });
     } catch (e) {
+      if (seq !== switchSeq) return;
+      set({ pendingSwitch: null, items: previousItems });
       appendError(t("error.newSession.failed", { msg: (e as Error).message }));
     }
+  };
+
+  /**
+   * 018 US7: a fork clones the parent's title, so the list would show two
+   * indistinguishable rows. Append the localized suffix once — forking a
+   * fork must not stack suffixes, and an unnamed parent stays unnamed (the
+   * auto-titler owns that case). `renameSession(name, false)` keeps the
+   * manual flag off, so neither auto-title path fires over the suffix; if pi
+   * renames the session itself later, pi's name wins (documented boundary).
+   */
+  const applyForkSuffix = async () => {
+    const name = get().sessionName;
+    const suffix = t("session.forkSuffix");
+    if (!name || name.endsWith(suffix)) return;
+    await get().renameSession(`${name}${suffix}`, false);
   };
 
   /** Branches at one pi reply; the caller has already confirmed. */
@@ -740,9 +849,11 @@ export const usePiStore = create<PiStore>((set, get) => {
       return;
     }
     const items = get().items;
-    const index = items.findIndex((item) => item.id === itemId);
-    const item = index >= 0 ? items[index] : undefined;
-    if (!item || item.role !== "assistant") {
+    const clicked = items.findIndex((item) => item.id === itemId);
+    // 023 D3: normalise to the round's last reply before computing the branch
+    // point, so a click on a tool-call reply cannot cut the round in half.
+    const index = roundEndIndex(items, clicked);
+    if (index < 0) {
       appendError(t("error.fork.notReply"));
       return;
     }
@@ -778,6 +889,7 @@ export const usePiStore = create<PiStore>((set, get) => {
       }
       await syncAfterBranch();
       resetConversationLocalState();
+      await applyForkSuffix();
     } catch (e) {
       appendError(t("error.fork.failed", { msg: (e as Error).message }));
     }
@@ -803,6 +915,7 @@ export const usePiStore = create<PiStore>((set, get) => {
       }
       await syncAfterBranch();
       resetConversationLocalState();
+      await applyForkSuffix();
     } catch (e) {
       appendError(t("error.fork.failed", { msg: (e as Error).message }));
     }
@@ -1061,12 +1174,14 @@ export const usePiStore = create<PiStore>((set, get) => {
     items: [],
     isStreaming: false,
     aborted: false,
+    pendingSwitch: null,
     retryInfo: null,
     queue: { items: [], paused: false, pauseReason: null, drift: false },
     driftAck: false,
     queueDiscardConfirm: null,
     authLogin: { phase: "idle", provider: null, events: [], browserOpened: false, prompt: null, done: null },
     pendingPrompt: null,
+    lastIdeDropAt: 0,
     editing: null,
     confirm: null,
     composerResetSeq: 0,
@@ -1099,6 +1214,7 @@ export const usePiStore = create<PiStore>((set, get) => {
     setupGate: { needsSetup: false, state: "loading" },
     providerStep: "hidden",
     imagePreview: null,
+    composerPreview: null,
     manageTab: "mcp",
     sources: emptySources(),
 
@@ -1219,7 +1335,8 @@ export const usePiStore = create<PiStore>((set, get) => {
         } else if (name === "ide") {
           // Editor action (e.g. "Explain with Pi"): pre-fill the composer and
           // switch to chat. The Composer consumes pendingPrompt and focuses.
-          const d = (data ?? {}) as { kind?: string; text?: string; files?: unknown };
+          const d = (data ?? {}) as { kind?: string; text?: string; files?: unknown; fromDrop?: boolean };
+          const dropStamp = d.fromDrop ? Date.now() : get().lastIdeDropAt;
           if (d.kind === "prompt") {
             const refs = toPendingRefs(d.files);
             set({
@@ -1243,9 +1360,14 @@ export const usePiStore = create<PiStore>((set, get) => {
               set({
                 tab: "chat",
                 pendingPrompt: { ...cur, refs: [...(cur.refs ?? []), ...incoming], id: ++promptSeq },
+                lastIdeDropAt: dropStamp,
               });
             } else {
-              set({ tab: "chat", pendingPrompt: { text: "", id: ++promptSeq, mode: "replace", refs: incoming } });
+              set({
+                tab: "chat",
+                pendingPrompt: { text: "", id: ++promptSeq, mode: "replace", refs: incoming },
+                lastIdeDropAt: dropStamp,
+              });
             }
           }
         } else if (name === "theme") {
@@ -1678,41 +1800,71 @@ export const usePiStore = create<PiStore>((set, get) => {
         set({ queueDiscardConfirm: { count: get().queue.items.length, kind: "switch", file } });
         return;
       }
-      // A run still tied to the old session would keep streaming into the new
-      // one — abort it first so the UI settles before the switch.
-      if (get().isStreaming) await get().abort();
-      try {
-        await rpc(bridge, { type: "switch_session", sessionPath: file });
-        // T106: title flags are per-session — a switch starts clean, so pi
-        // events reach the list again and auto-titling gets one fresh attempt.
-        set({
-          items: [],
-          stats: undefined,
-          aborted: false,
-          isStreaming: false,
-          tab: "chat",
-          editing: null,
-          manualTitle: false,
-          autoTitled: false,
-          llmTitled: false,
-          editingSessionTitle: null,
-        });
+      const b = bridge;
+      const startedAt = performance.now();
+      const seq = ++switchSeq;
+      // Captured before the optimistic set below clears it — the abort must
+      // still happen for a run that was streaming at click time.
+      const wasStreaming = get().isStreaming;
+
+      // 021 D3: jump first, fill later. Everything the user can see switches
+      // to the target in this one synchronous set (+ repaint); the RPCs below
+      // only fill in content, so T1/T2 no longer depend on pi.
+      set({
+        pendingSwitch: { kind: "history", file, startedAt },
+        items: [],
+        stats: undefined,
+        aborted: false,
+        isStreaming: false,
+        tab: "chat",
+        editing: null,
+        manualTitle: false,
+        autoTitled: false,
+        llmTitled: false,
+        editingSessionTitle: null,
         // 006 FR-015: outline/search reset on session switch (no stale hits).
-        set({ outlineOpen: false, search: { open: false, query: "", index: 0 }, pendingSearchJump: null });
-        await get().replayMessages();
-        await get().refreshStats();
-        const state = await rpc<{ sessionName?: string; sessionId?: string; model?: ModelInfo; thinkingLevel?: string }>(
-          bridge,
-          { type: "get_state" },
-        );
-        set({ sessionName: state.sessionName, sessionId: state.sessionId, model: state.model, thinkingLevel: state.thinkingLevel ?? "medium" });
-      } catch (e) {
-        const item = emptyItem("system", [
-          { kind: "text", text: t("error.switchSession.failed", { msg: (e as Error).message }), done: true },
+        outlineOpen: false,
+        search: { open: false, query: "", index: 0 },
+        pendingSearchJump: null,
+      });
+      requestRepaint();
+      perfMark("switch.pending", startedAt, { kind: "history" });
+
+      try {
+        // A run still tied to the old session would keep streaming into the
+        // new one — but abort after the visible switch, so the user waits on
+        // the page they asked for instead of on the old run settling.
+        if (wasStreaming) await get().abort();
+        await rpc(b, { type: "switch_session", sessionPath: file });
+
+        // 021 D3: three independent reads in parallel, one set. Sequential
+        // awaits added ~330ms of pure latency; separate sets would flash.
+        const [messages, stats, state] = await Promise.all([
+          rpc<{ messages: unknown[] }>(b, { type: "get_messages" }).catch(() => ({ messages: [] as unknown[] })),
+          rpc<SessionStats>(b, { type: "get_session_stats" }).catch(() => undefined),
+          rpc<{ sessionName?: string; sessionId?: string; model?: ModelInfo; thinkingLevel?: string }>(b, {
+            type: "get_state",
+          }).catch(() => undefined),
         ]);
-        item.done = true;
-        item.isError = true;
-        set({ items: [...get().items, item] });
+        if (seq !== switchSeq) return; // D8: a newer target owns the screen
+
+        set({
+          items: itemsFromMessages(messages.messages ?? []).filter((i) => !i.ephemeral),
+          stats,
+          sessionName: state?.sessionName,
+          sessionId: state?.sessionId,
+          model: state?.model,
+          thinkingLevel: state?.thinkingLevel ?? "medium",
+          pendingSwitch: null,
+        });
+        perfMark("switch.content", startedAt, { kind: "history" });
+        requestRepaint();
+        perfMark("switch.ready", startedAt, { kind: "history" });
+      } catch (e) {
+        if (seq !== switchSeq) return;
+        // D3/Q3: land back on the list rather than on an empty transcript.
+        set({ pendingSwitch: null, tab: "sessions", items: [] });
+        appendError(t("error.switchSession.failed", { msg: (e as Error).message }));
       }
     },
 
@@ -1768,6 +1920,14 @@ export const usePiStore = create<PiStore>((set, get) => {
 
     closeImagePreview() {
       set({ imagePreview: null });
+    },
+
+    openComposerPreview(images: Array<{ src: string; label: string }>, index: number) {
+      set({ composerPreview: { images, index } });
+    },
+
+    closeComposerPreview() {
+      set({ composerPreview: null });
     },
 
     offerProviderStep() {
@@ -1882,14 +2042,19 @@ export const usePiStore = create<PiStore>((set, get) => {
         appendError(t("error.fork.busy"));
         return;
       }
-      const item = get().items.find((i) => i.id === itemId);
-      if (!item || item.role !== "assistant") {
+      const items = get().items;
+      const end = roundEndIndex(items, items.findIndex((i) => i.id === itemId));
+      if (end < 0) {
         appendError(t("error.fork.notReply"));
         return;
       }
+      // 023 D3: the copy is derived from the same normalised item the branch
+      // point uses — otherwise a mid-round click would show "content after it
+      // is dropped" while the branch actually keeps the whole round.
+      const item = items[end];
       // "Last reply" is asked per role, like the action matrix does: a trailing
       // system notice must not turn the last answer into a middle one.
-      const lastReply = [...get().items].reverse().find((i) => i.role === "assistant");
+      const lastReply = [...items].reverse().find((i) => i.role === "assistant");
       const isLast = lastReply?.id === item.id;
       // i18n: confirm.forkReply.title / .message / .last / .fork / .cancel
       get().askConfirm({

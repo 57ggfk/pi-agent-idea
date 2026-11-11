@@ -1,6 +1,8 @@
 package dev.pi.agent.process
 
 import org.junit.jupiter.api.Assumptions.assumeTrue
+import org.junit.jupiter.api.condition.EnabledOnOs
+import org.junit.jupiter.api.condition.OS
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -75,8 +77,8 @@ class PiLocatorTest {
     }
 
     @Test
+    @EnabledOnOs(OS.WINDOWS)
     fun `cmd shims are wrapped in cmd c on windows`() {
-        assumeTrue(isWindows, "Windows-only behaviour")
         val shim = "C:\\Users\\dev\\AppData\\Roaming\\npm\\pi.cmd"
         assertTrue(OsProcess.isCmdLike(shim))
         assertEquals(
@@ -100,8 +102,8 @@ class PiLocatorTest {
     }
 
     @Test
+    @EnabledOnOs(OS.WINDOWS)
     fun `windows script detection is by extension`() {
-        assumeTrue(isWindows, "Windows-only behaviour")
         val dir = tempDir()
         assertTrue(
             PiLocator.isNodeScript(File(dir, "mock.mjs").apply { writeText("export {}") }.absolutePath),

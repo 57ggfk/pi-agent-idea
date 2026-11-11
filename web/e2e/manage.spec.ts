@@ -318,3 +318,50 @@ test.describe("project trust (MockBridge)", () => {
   });
 
 });
+
+// -- 018 US6: update all + remove confirmation --------------------------------
+
+test.describe("packages panel 018", () => {
+  test("update all calls the bulk RPC and every row version moves", async ({ page }) => {
+    await openManage(page, "pkgs=2");
+    await page.getByTestId("manage-tab-packages").click();
+    await expect(page.getByTestId("package-row")).toHaveCount(2);
+    await expect(page.getByTestId("package-row").first()).toContainText("1.0.0");
+
+    await page.getByTestId("packages-update-all").click();
+    await expect(page.getByTestId("update-result")).toContainText("✓");
+    // pi-style per-package lines, verbatim
+    await expect(page.getByTestId("update-result")).toContainText("updated npm:@example/pi-tools@1.0.0 -> npm:@example/pi-tools@1.1.0");
+    await expect(page.getByTestId("update-result")).toContainText("updated git:github.com/example/pi-git-pkg@0.3.0 -> git:github.com/example/pi-git-pkg@0.4.0");
+    // the list refreshed: both rows show the bumped versions
+    await expect(page.getByTestId("package-row").first()).toContainText("1.1.0");
+    await expect(page.getByTestId("package-row").nth(1)).toContainText("0.4.0");
+  });
+
+  test("update all is disabled with nothing installed", async ({ page }) => {
+    await openManage(page, "pkgs=0");
+    await page.getByTestId("manage-tab-packages").click();
+    await expect(page.getByTestId("packages-empty")).toBeVisible();
+    await expect(page.getByTestId("packages-update-all")).toBeDisabled();
+  });
+
+  test("remove asks for confirmation and only removes on confirm", async ({ page }) => {
+    await openManage(page, "");
+    await page.getByTestId("manage-tab-packages").click();
+    await expect(page.getByTestId("package-row")).toHaveCount(1);
+
+    await page.getByTestId("package-remove-0").click();
+    await expect(page.getByTestId("confirm-dialog")).toBeVisible();
+    await expect(page.getByTestId("confirm-message")).toContainText("@example/pi-tools");
+    // cancel keeps the row
+    await page.getByTestId("confirm-cancel").click();
+    await expect(page.getByTestId("confirm-dialog")).toHaveCount(0);
+    await expect(page.getByTestId("package-row")).toHaveCount(1);
+
+    // confirm removes it (the mock's remove is a no-op ok, but the flow ran)
+    await page.getByTestId("package-remove-0").click();
+    await page.getByTestId("confirm-ok").click();
+    await expect(page.getByTestId("confirm-dialog")).toHaveCount(0);
+    await expect(page.getByTestId("outcome-banner")).toContainText("✓");
+  });
+});

@@ -331,6 +331,27 @@ button {
   margin-bottom: 0;
 }
 
+/* Message tables (018 US4): the browser default is borderless, which reads as
+   broken columns inside a bubble. Weak theme borders — the same var(--border)
+   family as bubbles and cards; the header divider is one step stronger. */
+.markdown table {
+  border-collapse: collapse;
+  margin: 0 0 8px;
+  font-size: var(--fs-sm);
+}
+
+.markdown th,
+.markdown td {
+  border: 1px solid var(--border);
+  padding: 3px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.markdown thead th {
+  border-bottom: 1px solid var(--border-strong);
+}
+
 .markdown pre {
   position: relative;
   background: var(--code-bg);
@@ -1185,12 +1206,18 @@ button {
 }
 
 /* Provider group header (011 US2): label + entry count, visually distinct
-   from options but never wider than the popover (360px windows included). */
+   from options but never wider than the popover (360px windows included).
+   018 US5: the header is a <button> that folds the group — reset the form
+   control so it reads exactly like the old div.
+   020 US2: three children (caret / name / count) — `space-between` from the
+   two-child era pushed the name to the midline. Start from the left and let
+   the name take the slack, with the count pushed to the right edge. */
 .model-group-title {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 8px;
+  width: 100%;
   padding: 6px 10px 2px;
   font-size: 11px;
   font-weight: 600;
@@ -1198,12 +1225,48 @@ button {
   text-transform: uppercase;
   color: var(--text-secondary);
   user-select: none;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.model-group-title:hover {
+  color: var(--text);
+}
+
+.model-group-caret {
+  flex-shrink: 0;
+  transition: transform var(--dur, 120ms) ease;
+}
+
+.model-group-caret-open {
+  transform: rotate(90deg);
+}
+
+.model-group-name {
+  /* Slack goes to the name so the count lands on the right edge; a long
+     provider name truncates instead of pushing the count out of the popover. */
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .model-group-count {
   flex-shrink: 0;
+  margin-left: auto;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
+}
+
+.model-group-more {
+  padding-top: 2px;
+  padding-bottom: 4px;
+  font-size: 11px;
 }
 
 .model-option {
@@ -1215,7 +1278,15 @@ button {
   font-size: 12px;
 }
 
-.model-option-active {
+/* 022 US1: hover is pure CSS now — the pointer never enters React state, so
+   scrolling the list no longer re-renders every row. Hover stays weak, the
+   keyboard item keeps the strong colour (both visible at once is expected). */
+.model-option:hover {
+  background: var(--bg-subtle);
+}
+
+.model-option-active,
+.model-option-active:hover {
   background: var(--user-bubble);
 }
 
@@ -1993,6 +2064,28 @@ button {
   max-width: 92%;
 }
 
+/* 022 D6 tried `content-visibility: auto; contain-intrinsic-size: auto 120px`
+   here and it is deliberately *not* coming back (measured 2026-11-11).
+
+   Two separate failures, both real-machine visible:
+   1. paint containment clipped the action toolbar hanging above the message's
+      top edge, so its buttons were half-painted and unclickable;
+   2. worse, it broke "scroll up from the bottom" — the bug 022 exists to fix.
+      A freshly loaded transcript has never measured the messages above the
+      viewport, so they are laid out at the 120px hint while real messages are
+      3–6× that. Wheeling up renders them, their heights explode, and scroll
+      anchoring pushes `scrollTop` back down to keep the picture stable: ten
+      120px notches moved the view 3234px **downwards** instead of 1200px up.
+      Stop wheeling, let the layout settle, and it works again — exactly the
+      "滑不动，停一下才能滑动" complaint.
+
+   The list also carries hundreds of messages in practice, so no static hint is
+   close enough. `React.memo` on the item (the other half of 022) is where the
+   repaint saving came from; it does not touch geometry. */
+.item-body {
+  content-visibility: visible;
+}
+
 .item-user {
   align-self: flex-end;
   max-width: 82%;
@@ -2378,6 +2471,43 @@ button {
   color: var(--text-tertiary);
 }
 
+/* Inline reference tokens (018 US1). The mirror overlays the textarea and
+   paints a pill over each `@path` token; the textarea keeps the caret,
+   selection and IME. Wrapping must stay byte-identical between the two:
+   same font metrics, same padding, same width, pre-wrap — and the pill's
+   horizontal padding is cancelled by negative margins so the token's flow
+   width equals the raw text's (line-break decisions never move). */
+.composer-input-wrap {
+  position: relative;
+  min-width: 0;
+}
+
+.composer-mirror {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+  padding: 4px 5px 6px;
+  font-size: var(--fs-base);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  color: transparent;
+  user-select: none;
+}
+
+.ref-token {
+  pointer-events: auto;
+  cursor: pointer;
+  border-radius: 5px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  box-shadow: 0 0 0 1px var(--accent-ring);
+  padding: 0 3px;
+  margin: 0 -3px;
+}
+
 .composer-controls {
   display: flex;
   align-items: center;
@@ -2450,6 +2580,56 @@ button {
 
 .chip-remove:hover {
   color: var(--text);
+}
+
+/* Composer image cards (018 US2): a 64px thumbnail instead of a name-only
+   chip. Clicking the thumb opens the shared preview modal; the × removes. */
+.image-card {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-subtle);
+}
+
+.image-card-thumb {
+  width: 64px;
+  height: 64px;
+  object-fit: cover;
+  border-radius: 4px;
+  cursor: zoom-in;
+  display: block;
+  background: var(--bg-input);
+}
+
+.image-card-name {
+  max-width: 64px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+}
+
+.image-card .chip-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  align-items: center;
+  justify-content: center;
+}
+
+.image-card .chip-remove .ic-sm {
+  width: 10px;
+  height: 10px;
 }
 
 /* Icon buttons */
@@ -2726,6 +2906,38 @@ button {
 }
 
 /* Empty state */
+/* 021 T307: stand-in for a transcript that is being fetched — deliberately
+   not the empty state, which would read as "this session is blank". */
+.session-switching {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 32px 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.session-switching-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: session-switching-pulse 900ms ease-in-out infinite;
+}
+
+@keyframes session-switching-pulse {
+  0%, 100% { opacity: 0.25; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-switching-dot {
+    animation: none;
+    opacity: 1;
+  }
+}
+
 .empty-state {
   /* Full width so the icon and text center on the message column's axis,
      instead of on the shrink-to-fit box of a plain text block. */
@@ -2859,6 +3071,17 @@ button {
 .session-current {
   border-color: var(--accent);
   background: var(--accent-soft);
+}
+
+/* 021 T309: the row the user just clicked. It cannot be "disabled grey" like
+   its neighbours — it is the one thing that is happening. */
+.session-pending {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.session-row-main:disabled {
+  cursor: default;
 }
 
 .session-row-main {
@@ -3125,7 +3348,7 @@ button {
   font-size: var(--fs-xs);
 }
 
-/* select：选项按钮换行排布，长选项不挤压卡片 */
+/* select / 多选：选项按钮换行排布，长选项不挤压卡片 */
 .approval-options {
   display: flex;
   flex-wrap: wrap;
@@ -3133,9 +3356,17 @@ button {
   margin: 2px 0 8px;
 }
 
+/* `.btn` 是元素级控件：固定 28px 高。这里允许换行，高度就必须跟着内容长——
+   否则第二行文字顶出按钮上下边界，压在下一条选项上（长标签叠字）。
+   `overflow-wrap: anywhere` 顺带让没有空格的超长 token（URL、类名）也能断行，
+   不把按钮撑得比卡片还宽。 */
 .approval-option {
+  height: auto;
+  min-height: 28px;
+  padding: 4px 10px;
   text-align: left;
   white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 /* 多选：扩展把编号写在标题里时的可点条目，点中即写回编号 */
@@ -3149,6 +3380,8 @@ button {
   display: inline-block;
   min-width: 14px;
   margin-right: 5px;
+  /* 条目换行时编号留在第一行，不被竖直居中到两行之间 */
+  align-self: flex-start;
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
 }

@@ -446,6 +446,7 @@ const IDLE: ActionContext = {
   isLastUser: false,
   isLastAssistant: false,
   hasPrecedingUser: true,
+  isRoundEnd: true,
   sessionBusy: false,
   editing: false,
 };
@@ -606,11 +607,26 @@ describe("actionsForItem", () => {
     ]);
   });
 
-  // -- 007 US1: Fork on pi replies ------------------------------------------
+  // -- 007 US1 / 023: Fork on pi replies, one per round ----------------------
 
-  it("offers Fork on a middle pi reply (007 FR-001)", () => {
+  it("offers Fork on a round-end pi reply in the middle of the conversation (023 FR-001)", () => {
     const item = assistantItem([{ kind: "text", text: "answer", done: true }]);
     expect(actionsForItem(item, IDLE)).toContain("fork");
+  });
+
+  it("hides Fork on a mid-round pi reply — only the round end forks (023 FR-001)", () => {
+    const item = assistantItem([{ kind: "text", text: "answer", done: true }]);
+    const actions = actionsForItem(item, { ...IDLE, isRoundEnd: false });
+    expect(actions).not.toContain("fork");
+    // The other actions stay available — 023 only narrows Fork.
+    expect(actions).toContain("copy");
+    expect(actions).toContain("quote");
+  });
+
+  it("renders no toolbar at all on a mid-round pure-image reply (023 US3)", () => {
+    // No text to copy, no Fork, not the last reply: the bar would be empty.
+    const item = assistantItem([{ kind: "image", data: "AAAA", mimeType: "image/png" }]);
+    expect(actionsForItem(item, { ...IDLE, isRoundEnd: false })).toEqual([]);
   });
 
   it("offers Fork on the last pi reply too — the clone case (007 FR-004)", () => {

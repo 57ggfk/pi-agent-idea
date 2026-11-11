@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { usePiStore } from "../store/store";
 import { getBridge } from "../bridge";
+import { requestRepaint } from "../lib/repaint";
 import type { Bridge } from "../bridge/types";
 import { manageApi, type TrustState, type TrustWriteResult } from "../manage";
 import { useT } from "../i18n/useT";
@@ -37,8 +38,9 @@ export function useManageApi() {
   const [bridge, setBridge] = useState<Bridge | null>(null);
   // Entering Manage swaps a full panel under the tabs — force the JCEF frame
   // so the screen never keeps the previous tab's paint (OSR frame lag).
+  // 021 T301: goes through the debounced entry point.
   useEffect(() => {
-    if (api) void api.repaint().catch(() => undefined);
+    if (api) requestRepaint();
   }, [api]);
   useEffect(() => {
     let cancelled = false;
@@ -254,7 +256,7 @@ export default function ManageView() {
               setTab(tabItem.id);
               // OSR frame-lag workaround: force a full JCEF frame after the
               // panel swap, or the screen keeps the previous sub-tab's paint.
-              void api?.repaint?.().catch(() => undefined);
+              requestRepaint();
             }}
           >
             {t(tabItem.labelKey)}

@@ -270,6 +270,7 @@ export function manageApi(bridge: Bridge) {
     packageInstall: (p: { source: string }) => call<CliOutcome>("manage.packageInstall", p),
     packageRemove: (p: { source: string }) => call<CliOutcome>("manage.packageRemove", p),
     packageUpdate: (p: { source: string }) => call<CliOutcome>("manage.packageUpdate", p),
+    packageUpdateAll: () => call<CliOutcome>("manage.packageUpdateAll"),
     envUpdate: () => call<EnvUpdateResult>("manage.envUpdate"),
     modelsReadProvider: (p: { name: string }) => call<ProviderInfoResult>("manage.modelsReadProvider", p),
     modelsOpenFile: (p: { provider: string }) => call<ModelsOpenResult>("manage.modelsOpenFile", p),

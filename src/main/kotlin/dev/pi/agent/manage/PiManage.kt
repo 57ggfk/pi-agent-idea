@@ -155,6 +155,18 @@ object PiManage {
         return cliToElement(runner(packageUpdateArgs(source), UPDATE_TIMEOUT_SECONDS))
     }
 
+    /**
+     * `pi update --extensions` — one CLI call updates every installed package
+     * (spec 018 US6; the flag is native, see spec 001 调研). Same
+     * verbatim-output contract as [packageUpdate]: pi reports the per-package
+     * outcomes in its own output, so the plugin never diffs install state.
+     */
+    fun packageUpdateAll(
+        runner: (List<String>, Long) -> CliResult = ::defaultRunner,
+    ): JsonObject {
+        return cliToElement(runner(packageUpdateAllArgs(), UPDATE_TIMEOUT_SECONDS))
+    }
+
     // -- Skills --------------------------------------------------------------
 
     /**
@@ -519,6 +531,8 @@ object PiManage {
     internal const val UPDATE_TIMEOUT_SECONDS = 300L
 
     internal fun packageUpdateArgs(source: String): List<String> = listOf("update", source)
+
+    internal fun packageUpdateAllArgs(): List<String> = listOf("update", "--extensions")
 
     internal fun envUpdateArgs(): List<String> = listOf("update", "--self")
 

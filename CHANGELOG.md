@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.5.7 — 2026-11-11
+
+**新增**
+- 输入框引用内联化（018 US1）：引用不再单占一行，而是像 Cursor 的 @-mention 以胶囊嵌在文本里；补全、拖拽、右键注入、粘贴都落在光标处，引用即 `@相对路径` 文本，退格一次删整枚。
+- 图片附件缩略图（018 US2）：输入框图片改为 64px 缩略图卡，点击复用消息区预览——缩放、左右切换、另存、复制都可用。
+- 扩展包一键升级（018 US6）：包面板新增「全部升级」，一条命令升级所有扩展并原样回显逐包结果；移除扩展包前先确认。
+- fork 出的会话带标题后缀（018 US7）：英文 `(fork)`、中文 `（分支）`，与父会话一眼可分；fork 的 fork 不叠加后缀。
+
+**变更**
+- 模型选择器（018 US5 / 020）：点供应商标题折叠/展开，状态重启后保持；超大目录不再全量渲染（最多 50 家，每家截断到 5–200 条），标题显示「已显示/总数」；键盘导航只走可见条目。
+
+**修复**
+- 粘贴多行 markdown 不再生成假引用，消息表格补上边框（018 US3 / US4）：纯文本仅当整段是无空白单行路径时才成为引用；表格单元格 1px 主题弱边框、表头分隔线加重一档。
+- 消息区交互打磨（021 / 022）：切换或新建会话点击即清屏并显示「正在切换」，随后并行读取一次渲染；滚轮不再被模型下拉抢走，向上翻看不被抢回底部。
+- Fork 只在本轮最后一条 pi 回复上出现（023），其余回复保留复制与引用；扩展提问的长选项不再叠字。
+
+**Added**
+- Inline reference chips in the composer (018 US1): references embed in the text flow like Cursor's @-mentions instead of taking their own row; `@` completion, drag & drop, right-click injection and pastes land at the caret, and one Backspace removes a whole chip.
+- Composer image thumbnails (018 US2): pending images become 64px cards that open the shared preview on click — zoom, ←/→, save and copy all work.
+- One-click "Update all" for packages (018 US6): the packages panel updates every extension in one go and relays pi's per-package output verbatim; removing a package asks first.
+- Forked sessions get a title suffix (018 US7): `(fork)` in English, `（分支）` in Chinese, so a clone is easy to tell from its parent; forking a fork does not stack suffixes.
+
+**Changed**
+- Model picker (018 US5 / 020): provider headers fold on click and the collapsed set survives a restart. Huge catalogs render at most 50 providers, truncated to 5–200 entries each with a shown/total count; keyboard navigation only walks visible entries.
+
+**Fixed**
+- Multi-line markdown no longer becomes reference chips, and message tables have borders (018 US3 / US4): plain text is a reference only when the whole paste is one whitespace-free path; table cells get a 1px theme border and a heavier header divider.
+- Message-area polish (021 / 022): switching or creating a session clears the view at once with a "switching" placeholder, then paints in one go; the wheel is no longer stolen by the model dropdown and reading up is no longer yanked back to the bottom.
+- Fork appears only on the last pi reply of a round (023), the rest keep copy and quote; long options in extension questions no longer overflow their buttons.
+
 ## 0.5.6 — 2026-11-09
 
 **新增**

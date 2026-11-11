@@ -183,6 +183,10 @@ export class MockBridge implements Bridge {
   private entrySeq = 0;
   /** `?cancelfork=1` — a pi extension cancels the branch (007 US1-7). */
   private readonly cancelFork = query()?.get("cancelfork") === "1";
+  /** `?sessname=` — get_state reports this session name (018 US7 e2e). */
+  private readonly sessNameKnob = query()?.get("sessname");
+  /** `?md=table` — the mock reply is a markdown table (018 US4 e2e). */
+  private readonly mdKnob = query()?.get("md");
   /** The session file the live transcript belongs to (fork / switch target). */
   private currentFile: string | null = null;
   /** Saved transcripts per session file, so switching back restores them. */
@@ -200,9 +204,17 @@ export class MockBridge implements Bridge {
   private readonly failPlan = parseFailPlan(query()?.get("fail"));
   /** How many failures each name has already served. */
   private failServed = new Map<string, number>();
-  /** `?slow=files:800` — first request for that name is held back (loading state). */
+  /** `?slow=files:800` — first request for that name is held back (loading state).
+   *  021 T315: the same knob also accepts rpc command names
+   *  (`?slow=switch_session:1200,get_messages:400`), so the switch timing
+   *  thresholds can be asserted without a slow machine. */
   private readonly slowPlan = parseFailPlan(query()?.get("slow"));
   private slowServed = new Map<string, number>();
+  private slowCommands = new Map<string, number>();
+  /** `?failcmd=switch_session` — fails the first call of that rpc command, so
+   *  the optimistic-switch rollback (021 US3) has a failure to roll back. */
+  private readonly failCmdPlan = parseFailPlan(query()?.get("failcmd"));
+  private failCmdServed = new Map<string, number>();
   /** `?unsupported=policy` — that source answers `not_implemented` (FR-009). */
   private readonly unsupported = new Set(
     (query()?.get("unsupported") ?? "")
@@ -233,9 +245,18 @@ export class MockBridge implements Bridge {
   private readonly mcpOverride = query()?.get("mcpoverride") === "1";
   /** Reported by manage.env; bumped by a successful manage.envUpdate. */
   private piVersion = "1.4.0-mock";
-  /** Installed packages as `pi list` lines; packageUpdate bumps the version. */
-  private packages = ["npm:@example/pi-tools@1.0.0"];
-  /** `?models=broken|missing` — the models.json world the Auth panel must explain. */
+  /** Installed packages as `pi list` lines; packageUpdate bumps the version.
+   *  `?pkgs=2` adds a second package and `?pkgs=0` empties the list, so the
+   *  update-all flow (018 US6) has both an "all" of two rows and the empty
+   *  state its button must refuse. */
+  private packages = [
+    ...(query()?.get("pkgs") === "0" ? [] : ["npm:@example/pi-tools@1.0.0"]),
+    ...(query()?.get("pkgs") === "2" ? ["git:github.com/example/pi-git-pkg@0.3.0"] : []),
+  ];
+  /** `?models=broken|missing` — the models.json world the Auth panel must explain.
+   *  `?models=now|many20|providers55` — 020 model-scale fixtures (see
+   *  `pickerModels`); they only change the catalog size, the auth panels ignore
+   *  any value other than broken/missing. */
   private readonly modelsKnob = query()?.get("models");
   /**
    * `?picker=g12|ep|long` — model-picker group fixtures (011 T005): g12 = 3
@@ -364,6 +385,27 @@ export class MockBridge implements Bridge {
     if (ms <= 0 || served >= 1) return { wait: Promise.resolve() };
     this.slowServed.set(source, served + 1);
     return { wait: delay(ms) };
+  }
+
+  /**
+   * 021 T315: `?slow=<rpc command>:<ms>` — first call of that command only,
+   * same one-shot rule as `?fail=`. Kept separate from `gate()` so a command
+   * name that also exists as a source id cannot consume the wrong budget.
+   */
+  private shouldFailCommand(type: string): boolean {
+    const budget = this.failCmdPlan.get(type) ?? 0;
+    const used = this.failCmdServed.get(type) ?? 0;
+    if (used >= budget) return false;
+    this.failCmdServed.set(type, used + 1);
+    return true;
+  }
+
+  private commandDelay(type: string): Promise<void> {
+    const ms = this.slowPlan.get(type) ?? 0;
+    const served = this.slowCommands.get(type) ?? 0;
+    if (ms <= 0 || served >= 1) return Promise.resolve();
+    this.slowCommands.set(type, served + 1);
+    return delay(ms);
   }
 
   /**
@@ -609,12 +651,17 @@ export class MockBridge implements Bridge {
       return Promise.reject(new Error(`mock bridge: unsupported method ${method}`));
     }
     const command = (params as { command?: Record<string, unknown> })?.command ?? {};
-    const commandSource = COMMAND_SOURCE[String(command["type"] ?? "")];
+    const commandType = String(command["type"] ?? "");
+    const commandSource = COMMAND_SOURCE[commandType];
     if (commandSource) {
       const gate = this.gate(commandSource);
       if (gate.error) return { success: false, error: gate.error } as T;
       await gate.wait;
     }
+    if (this.shouldFailCommand(commandType)) {
+      return { success: false, error: `${commandType} failed: mock refusal` } as T;
+    }
+    await this.commandDelay(commandType);
     return this.handleCommand(command) as T;
   }
 
@@ -785,6 +832,30 @@ export class MockBridge implements Bridge {
         );
         this.packages[idx] = bumped;
         return { ok: true, exitCode: 0, output: `updated ${p.source} -> ${bumped}` };
+      }
+      case "manage.packageUpdateAll": {
+        // Mirrors `pi update --extensions`: pi reports one line per package in
+        // its own output, and every version in the list moves (018 US6).
+        if (this.packages.length === 0) {
+          return { ok: true, exitCode: 0, output: "no extensions installed" };
+        }
+        if (this.shouldFail("update")) {
+          return {
+            ok: false,
+            exitCode: 1,
+            output:
+              "npm error code E404\nnpm error update failed for @example/pi-extra@latest",
+          };
+        }
+        const lines = this.packages.map((l, i) => {
+          const bumped = l.replace(
+            /(\d+)\.(\d+)\.(\d+)/,
+            (_m, a: string, b: string, c: string) => `${a}.${Number(b) + 1}.${c}`,
+          );
+          this.packages[i] = bumped;
+          return `updated ${l} -> ${bumped}`;
+        });
+        return { ok: true, exitCode: 0, output: lines.join("\n") };
       }
       case "manage.envUpdate": {
         if (this.updateKnob === "garbled") {
@@ -1362,7 +1433,7 @@ export class MockBridge implements Bridge {
    * its own, no refresh needed).
    */
   private availableModels(afterReload: boolean): MockModel[] {
-    const merged = pickerModels(this.pickerKnob).slice();
+    const merged = pickerModels(this.pickerKnob, this.modelsKnob).slice();
     if (this.reloadStrict && !afterReload) return merged;
     for (const m of this.dynamicModels) {
       if (!merged.some((e) => e.provider === m.provider && e.id === m.id)) merged.push(m);
@@ -1381,6 +1452,10 @@ export class MockBridge implements Bridge {
             thinkingLevel: this.thinkingLevel,
             isStreaming: this.isStreaming,
             sessionId: "session-aaa", // matches mockSessions[0]: the live session row (012 title editing)
+            // Normally pi reports a name only after a rename, so boot state
+            // stays nameless (the auto-titler owns it). The knob exists for
+            // the 018 US7 fork-suffix e2e, which needs a named session.
+            sessionName: this.sessNameKnob ?? undefined,
             sessionFile: "/tmp/mock-project/session.jsonl",
             autoCompactionEnabled: this.autoCompactionEnabled,
             messageCount: this.messageCount,
@@ -1768,10 +1843,12 @@ export class MockBridge implements Bridge {
 
     // text block
     const text =
-      `Here is my plan for **${prompt.slice(0, 60)}**:\n\n` +
-      "1. Inspect the repository layout\n" +
-      "2. Run a quick sanity check\n\n" +
-      "Let me start with a shell command.";
+      this.mdKnob === "table"
+        ? "| Column A | Column B |\n| --- | --- |\n| one | two |\n| three | four |"
+        : `Here is my plan for **${prompt.slice(0, 60)}**:\n\n` +
+          "1. Inspect the repository layout\n" +
+          "2. Run a quick sanity check\n\n" +
+          "Let me start with a shell command.";
     await sleep(30);
     emit({ type: "message_update", usage: {}, assistantMessageEvent: { type: "text_start", contentIndex: 1 } });
     for (const chunk of chunkWords(text)) {
@@ -2070,7 +2147,12 @@ function expandSkillCommand(message: string): string {
   return args ? `${block}\n\n${args}` : block;
 }
 
-function pickerModels(knob: string | null | undefined): MockModel[] {
+/** 020 model-scale fixtures reachable through `?models=` as well (`?picker=`
+ *  stays the 011 knob; both are accepted so the two vocabularies never clash). */
+const MODEL_SCALE_KNOBS = new Set(["now", "many20", "providers55"]);
+
+function pickerModels(knob: string | null | undefined, scaleKnob?: string | null): MockModel[] {
+  if (scaleKnob && MODEL_SCALE_KNOBS.has(scaleKnob)) knob = scaleKnob;
   if (!knob || knob === "default") return MOCK_MODELS;
   const mk = (provider: string, id: string, name: string): MockModel => ({
     id,
@@ -2110,7 +2192,7 @@ function pickerModels(knob: string | null | undefined): MockModel[] {
 
   if (knob === "long") {
     // 205 entries with the current model buried at index 180: open-locate and
-    // cap behavior ("…and 5 more") both need a list larger than the cap.
+    // per-group truncation both need a list larger than the cap.
     const models: MockModel[] = [];
     for (let i = 0; i < 205; i++) {
       if (i === 180) {
@@ -2118,6 +2200,44 @@ function pickerModels(knob: string | null | undefined): MockModel[] {
       } else {
         const n = String(i).padStart(3, "0");
         models.push(mk("bulk", `bulk-${n}`, `Bulk Model ${n}`));
+      }
+    }
+    return models;
+  }
+
+  // -- 020 US1/US4 scale fixtures (real catalog shape: 355 + 4) --------------
+  if (knob === "now") {
+    // 2 providers / 359 models — the machine's real openrouter(355)+custom(4)
+    // shape. The current model sits at #300 of the big group so the
+    // "truncated but still located" exemption (US4) is exercised.
+    const models: MockModel[] = [];
+    for (let i = 0; i < 355; i++) {
+      if (i === 300) models.push(mk("mock", "mock-model-pro", "Mock Model Pro"));
+      else models.push(mk("mock", `mock-${String(i).padStart(3, "0")}`, `Mock ${String(i).padStart(3, "0")}`));
+    }
+    for (let i = 0; i < 4; i++) models.push(mk("xiami", `xiami-${i}`, `Xiami ${i}`));
+    return models;
+  }
+  if (knob === "many20") {
+    // 20 providers × 100 models → groupCap(20) = 50, every group 50/100.
+    const models: MockModel[] = [];
+    for (let p = 0; p < 20; p++) {
+      const provider = p === 0 ? "mock" : `prov-${String(p).padStart(2, "0")}`;
+      for (let i = 0; i < 100; i++) {
+        if (p === 0 && i === 0) models.push(mk("mock", "mock-model-pro", "Mock Model Pro"));
+        else models.push(mk(provider, `${provider}-${String(i).padStart(3, "0")}`, `${provider} ${i}`));
+      }
+    }
+    return models;
+  }
+  if (knob === "providers55") {
+    // 55 providers × 3 models → 50 headers rendered, 5 providers dropped.
+    const models: MockModel[] = [];
+    for (let p = 0; p < 55; p++) {
+      const provider = p === 0 ? "mock" : `vend-${String(p).padStart(2, "0")}`;
+      for (let i = 0; i < 3; i++) {
+        if (p === 0 && i === 0) models.push(mk("mock", "mock-model-pro", "Mock Model Pro"));
+        else models.push(mk(provider, `${provider}-${i}`, `${provider} ${i}`));
       }
     }
     return models;

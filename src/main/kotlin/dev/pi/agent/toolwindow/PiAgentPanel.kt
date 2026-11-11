@@ -8,6 +8,9 @@ import com.intellij.openapi.project.Project
 import com.intellij.ui.jcef.JBCefApp
 import com.intellij.ui.jcef.JBCefBrowser
 import dev.pi.agent.bridge.BridgeService
+import dev.pi.agent.bridge.DropPaths
+import dev.pi.agent.bridge.DropRefs
+import dev.pi.agent.bridge.DropSource
 import dev.pi.agent.ui.LocalUiServer
 import dev.pi.agent.ui.PiUiErrorPanel
 import org.cef.CefSettings
@@ -21,7 +24,14 @@ import org.cef.handler.CefLoadHandlerAdapter
 import org.cef.handler.CefRequestHandlerAdapter
 import org.cef.network.CefRequest
 import java.awt.BorderLayout
+import java.awt.datatransfer.Transferable
+import java.awt.dnd.DropTarget
+import java.awt.dnd.DropTargetAdapter
+import java.awt.dnd.DropTargetDragEvent
+import java.awt.dnd.DropTargetDropEvent
+import java.awt.dnd.DropTargetEvent
 import javax.swing.BorderFactory
+import javax.swing.JComponent
 import javax.swing.JPanel
 import javax.swing.SwingUtilities
 import javax.swing.Timer
@@ -151,8 +161,8 @@ class PiAgentPanel(private val project: Project) : JPanel(), Disposable {
      */
     private val dragHandler = object : CefDragHandler {
         override fun onDragEnter(browser: CefBrowser?, dragData: CefDragData?, mask: Int): Boolean {
-            // Always record — an empty list is meaningful: this drag carries no
-            // files, so a file batch recorded moments ago must not leak into it.
+            // CEF 的 CF_HDROP 通道：桌面文件拖入时最准。IDEA 项目树拖拽不一定
+            // 填 dragData，那时靠下面的 AWT 旁听补齐；空记录只清 CEF 自己的槽。
             val files = runCatching {
                 val names = java.util.Vector<String>()
                 if (dragData != null && dragData.isFile && dragData.getFileNames(names)) {
@@ -162,10 +172,92 @@ class PiAgentPanel(private val project: Project) : JPanel(), Disposable {
                 }
             }.getOrElse { emptyList() }
             if (disposed) return false
-            BridgeService.getInstance(project).ideFileDrop.record(files)
-            if (files.isNotEmpty()) log.debug("Pi Agent drop: ${files.size} path(s) entered the browser")
+            BridgeService.getInstance(project).ideFileDrop.record(files, DropSource.CEF)
+            // INFO 而非 DEBUG：真机默认日志级别下也要能一眼看清这次拖拽走了哪条通道。
+            log.info("Pi Agent CEF drag: isFile=${dragData?.isFile == true} paths=${files.size} mask=$mask")
             return false
         }
+    }
+
+    /** 组件原本没有 DropTarget 时由我们新建，dispose 时一并摘掉。 */
+    private var ownedDropTarget: DropTarget? = null
+
+    /**
+     * AWT 旁听（spec 016 真机修复）：IDEA 项目树 / 编辑器标签的内部拖拽不一定
+     * 走 CF_HDROP，但一定会在 JCEF 组件的 DropTarget 上留下 Transferable。
+     * 这里只读数据，不调用 acceptDrop / dropComplete —— CEF 自己仍是 drop 的
+     * 处理者，页面若收到 HTML5 drop 就照旧来取缓冲；收不到则由下面的兜底推送。
+     */
+    private val awtDropListener = object : DropTargetAdapter() {
+        override fun dragEnter(e: DropTargetDragEvent) {
+            // Java 9+ 允许在拖拽期间读 Transferable，早于页面 drop，避免竞态。
+            val t = runCatching { e.transferable }.getOrNull() ?: return
+            recordAwt(t, "dragEnter", clearOnEmpty = true)
+        }
+
+        override fun dragExit(e: DropTargetEvent) {
+            // 拖进来又拖走（没松手）：不能让这批文件挂到下一次无关的 drop 上。
+            if (!disposed) BridgeService.getInstance(project).ideFileDrop.record(emptyList(), DropSource.AWT)
+        }
+
+        override fun drop(e: DropTargetDropEvent) {
+            val t = runCatching { e.transferable }.getOrNull()
+            // drop 阶段 AWT 有可能已经把 Transferable 消费掉；读不到时保留
+            // dragEnter 记下的路径，不要用空列表覆盖它。
+            if (t != null) recordAwt(t, "drop", clearOnEmpty = false)
+            scheduleUnclaimedPush()
+        }
+    }
+
+    private fun recordAwt(t: Transferable, phase: String, clearOnEmpty: Boolean) {
+        val paths = runCatching { DropPaths.from(t) }.getOrElse { return }
+        if (disposed) return
+        // dragEnter 的空记录是有效信息（拖的是文字），drop 阶段的空结果则可能
+        // 只是读不到数据，不能把前面记下的真路径抹掉。
+        if (paths.isNotEmpty() || clearOnEmpty) {
+            BridgeService.getInstance(project).ideFileDrop.record(paths, DropSource.AWT)
+        }
+        if (paths.isNotEmpty()) log.info("Pi Agent AWT drop: $phase ${paths.size} path(s), first=${paths.first()}")
+    }
+
+    private fun installAwtDropListener(component: JComponent) {
+        runCatching {
+            val existing = component.dropTarget
+            if (existing != null) {
+                existing.addDropTargetListener(awtDropListener)
+                ownedDropTarget = null
+                log.info("Pi Agent AWT drop listener attached to the JCEF drop target")
+            } else {
+                val created = DropTarget(component, awtDropListener)
+                component.dropTarget = created
+                ownedDropTarget = created
+                log.info("Pi Agent AWT drop listener installed as the JCEF drop target")
+            }
+        }.onFailure { log.warn("Pi Agent AWT drop listener could not be installed", it) }
+    }
+
+    /**
+     * 页面没来取缓冲就主动注入：IDE 内部拖拽常常根本不会派发 HTML5 drop，
+     * 这时 `files.takeDrop` 永远没人调用。600ms 后再看一眼，若还在就说明页面
+     * 收不到 drop，直接走已验证可用的 `ide` refs 推送通道把 chip 交给输入框。
+     * 页面已经取走时缓冲为空，这里自然不会重复插入。
+     */
+    private fun scheduleUnclaimedPush() {
+        if (disposed) return
+        val service = BridgeService.getInstance(project)
+        val timer = Timer(UNCLAIMED_DROP_DELAY_MS) {
+            val pending = service.ideFileDrop.take()
+            if (pending.isEmpty() || disposed) {
+                // 页面已经取走（或这次拖拽没有文件）：什么都不用做。
+            } else {
+                val root = project.basePath?.let { runCatching { java.nio.file.Path.of(it) }.getOrNull() }
+                val refs = DropRefs.resolve(root, pending.map { it to false })
+                service.pushIdeRefs(refs.map { it.path to it.dir }, fromDrop = true)
+                log.info("Pi Agent AWT drop: page did not claim the drop, pushed ${refs.size} ref(s)")
+            }
+        }
+        timer.isRepeats = false
+        timer.start()
     }
 
     init {
@@ -238,6 +330,7 @@ class PiAgentPanel(private val project: Project) : JPanel(), Disposable {
             created.jbCefClient.addLoadHandler(loadHandler, created.cefBrowser)
             created.jbCefClient.addDisplayHandler(consoleHandler, created.cefBrowser)
             created.jbCefClient.addDragHandler(dragHandler, created.cefBrowser)
+            installAwtDropListener(created.component)
             add(created.component, BorderLayout.CENTER)
             created.loadURL(url)
         } catch (t: Throwable) {
@@ -393,6 +486,8 @@ class PiAgentPanel(private val project: Project) : JPanel(), Disposable {
         runCatching { current.jbCefClient.removeLoadHandler(loadHandler, current.cefBrowser) }
         runCatching { current.jbCefClient.removeDisplayHandler(consoleHandler, current.cefBrowser) }
         runCatching { current.jbCefClient.removeDragHandler(dragHandler, current.cefBrowser) }
+        runCatching { current.component.dropTarget?.removeDropTargetListener(awtDropListener) }
+        ownedDropTarget = null
         runCatching { current.dispose() }
     }
 
@@ -405,6 +500,12 @@ class PiAgentPanel(private val project: Project) : JPanel(), Disposable {
     private companion object {
         /** How often the panel checks that the frontend still polls. */
         const val HEALTH_CHECK_INTERVAL_MS = 30_000
+
+        /**
+         * 页面 drop 正常时会在几十毫秒内调 `files.takeDrop`；超过这个时间还
+         * 留在缓冲里，就认定页面收不到 HTML5 drop，改由 IDE 主动推送引用。
+         */
+        const val UNCLAIMED_DROP_DELAY_MS = 600
 
         /**
          * Silence tolerated before rebuilding. The frontend polls every 20s, so

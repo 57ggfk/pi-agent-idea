@@ -167,7 +167,8 @@ test("no native window.confirm survives in Chat or Sessions", async ({ page }) =
   await page.getByTestId("new-session").click();
   await page.keyboard.press("Escape");
 
-  const reply = page.getByTestId("item-assistant").first();
+  // 023: Fork sits on the round's last reply, not on every pi reply.
+  const reply = page.getByTestId("item-assistant").last();
   await reply.hover();
   await reply.getByTestId("act-fork").click();
   await page.keyboard.press("Escape");

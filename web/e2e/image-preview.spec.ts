@@ -193,3 +193,50 @@ test("a text-only session never opens a preview (T140 zero regression)", async (
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("image-preview")).toHaveCount(0);
 });
+
+// -- 018 US2: composer thumbnails open the same modal -------------------------
+
+test.describe("composer image cards", () => {
+  test("thumbnails render at ~64px and open the preview modal with the composer list", async ({ page }) => {
+    await page.setInputFiles('input[type="file"]', [
+      { name: "pic-1.png", mimeType: "image/png", buffer: PNG },
+      { name: "pic-2.png", mimeType: "image/png", buffer: PNG },
+    ]);
+    const cards = page.getByTestId("image-card");
+    await expect(cards).toHaveCount(2);
+    await expect(page.getByTestId("image-chips")).toContainText("pic-1.png");
+
+    const size = await cards.first().locator("img").evaluate((el) => el.getBoundingClientRect().width);
+    expect(Math.abs(size - 64)).toBeLessThanOrEqual(2);
+
+    // click the first thumb → modal shows 1/2 with the file name
+    await cards.first().locator("img").click();
+    await expect(page.getByTestId("image-preview-dialog")).toBeVisible();
+    await expect(page.getByTestId("image-preview-count")).toContainText("1/2");
+    await expect(page.getByTestId("image-preview-count")).toContainText("pic-1.png");
+
+    // ←/→ walk the COMPOSER list (not the transcript's, which is empty here)
+    await page.keyboard.press("ArrowRight");
+    await expect(page.getByTestId("image-preview-count")).toContainText("2/2");
+
+    // close → composer state untouched, both cards still pending
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("image-preview-dialog")).toHaveCount(0);
+    await expect(cards).toHaveCount(2);
+  });
+
+  test("removing a card drops the image from the pending list", async ({ page }) => {
+    await page.setInputFiles('input[type="file"]', [
+      { name: "pic-1.png", mimeType: "image/png", buffer: PNG },
+      { name: "pic-2.png", mimeType: "image/png", buffer: PNG },
+    ]);
+    await expect(page.getByTestId("image-card")).toHaveCount(2);
+    await page
+      .getByTestId("image-card")
+      .first()
+      .getByRole("button", { name: /pic-1\.png/ })
+      .click();
+    await expect(page.getByTestId("image-card")).toHaveCount(1);
+    await expect(page.getByTestId("image-chips")).toContainText("pic-2.png");
+  });
+});
