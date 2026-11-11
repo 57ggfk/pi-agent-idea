@@ -7,7 +7,7 @@
   — 验证：`fork-probe.json` 存在且含 P1–P6 六项答案；方案 A 成立（探针 P2 显示 rpc+EOF 自退），
   不降级方案 B。
 
-- [ ] **T602** Kotlin：`PiSessionIndex.findNewFork(sourceFile, before)` + `forkArgs(file)` 纯函数 +
+- [x] **T602** Kotlin：`PiSessionIndex.findNewFork(sourceFile, before)` + `forkArgs(file)` 纯函数 +
   路径在 root 内的校验；`BridgeService.dispatch` 增 `sessions.fork` 路由与 `sessionsFork`
   （30s 超时、stdinText=""、workingDir=project.basePath、响应 `{ok,file}`）。
   — 验证：`src/test/...` 新增 forkArgs 参数断言与 findNewFork 临时目录夹具两条，`./gradlew test --tests

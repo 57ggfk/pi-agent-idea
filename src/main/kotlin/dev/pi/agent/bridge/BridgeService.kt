@@ -126,6 +126,7 @@ class BridgeService(private val project: Project) : Disposable {
                 "sessions.search" -> sessionsSearch(params)
                 "sessions.delete" -> sessionsDelete(params)
                 "sessions.rename" -> sessionsRename(params)
+                "sessions.fork" -> sessionsFork(params)
                 "sessions.exportHtml" -> sessionsExportHtml(params)
                 "title.generate" -> titleGenerate(params)
                 "files.list" -> filesList(params)
@@ -509,6 +510,22 @@ class BridgeService(private val project: Project) : Disposable {
             ?: throw IllegalArgumentException("sessions.rename requires name")
         dev.pi.agent.session.PiSessionIndex.renameSessionFile(file, name)
         return buildJsonObject { put("ok", true) }
+    }
+
+    /**
+     * 024: full-copy fork of a non-live session — a one-shot
+     * `pi --mode rpc --fork <file>` process (see PiSessionFork for the probe
+     * backing this shape). The response is the new file path only; the
+     * caller applies the (fork) title suffix offline via sessions.rename.
+     */
+    private fun sessionsFork(params: JsonObject): JsonObject {
+        val file = params["file"]?.let { it as? JsonPrimitive }?.content
+            ?: throw IllegalArgumentException("sessions.fork requires file")
+        val forked = dev.pi.agent.session.PiSessionFork.forkSession(project.basePath, file)
+        return buildJsonObject {
+            put("ok", true)
+            put("file", forked.file)
+        }
     }
 
     /**
