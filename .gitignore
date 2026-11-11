@@ -18,6 +18,8 @@ playwright-report/
 test-results/
 # Screenshots written by web/probe-*.mjs (dev-server geometry probes).
 web/probe-*.png
+# JSON verdicts written by web/probe-*.mjs (per-run evidence, not source).
+web/probe-*.json
 
 # Logs
 *.log
