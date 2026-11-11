@@ -171,6 +171,10 @@ class BridgeService(private val project: Project) : Disposable {
                 "manage.packageUpdateAll" -> dev.pi.agent.manage.PiManage.packageUpdateAll()
                 "manage.envUpdate" -> dev.pi.agent.manage.PiManage.envUpdate()
                 "manage.modelsReadProvider" -> dev.pi.agent.manage.PiManage.modelsReadProvider(params)
+                "manage.providerGet" -> dev.pi.agent.manage.PiModels.providerGet(params)
+                "manage.providerSave" -> providerSaveWithReload(params)
+                "manage.providerDelete" -> dev.pi.agent.manage.PiModels.providerDelete(params)
+                "manage.providerTest" -> dev.pi.agent.manage.PiModels.providerTest(params)
                 "manage.modelsOpenFile" -> modelsOpenFile(params)
                 "ide.saveImage" -> IdeImageActions.saveImage(project, params)
                 "ide.copyImage" -> IdeImageActions.copyImage(params)
@@ -470,6 +474,33 @@ class BridgeService(private val project: Project) : Disposable {
             ?: emptyList()
         dev.pi.agent.process.PiApprovalSupport.writePolicy(mode, allow)
         return buildJsonObject { put("ok", true) }
+    }
+
+    /**
+     * 027 FR-006: after a successful provider write, refresh the running pi's
+     * model catalog through the 017 in-process path. A failed reload must not
+     * roll the file back — the response carries `reloaded:false` plus the
+     * error, and the UI says "saved; takes effect after the tool window
+     * restarts".
+     */
+    private suspend fun providerSaveWithReload(params: JsonObject): JsonObject {
+        val saved = dev.pi.agent.manage.PiModels.providerSave(params)
+        val ok = (saved["ok"] as? JsonPrimitive)?.booleanOrNull == true
+        if (!ok) return saved
+        return try {
+            val reload = reloadModels()
+            buildJsonObject {
+                saved.forEach { (k, v) -> put(k, v) }
+                put("reloaded", true)
+                put("models", reload["models"] ?: JsonArray(emptyList()))
+            }
+        } catch (e: Exception) {
+            buildJsonObject {
+                saved.forEach { (k, v) -> put(k, v) }
+                put("reloaded", false)
+                put("reloadError", e.message ?: e.javaClass.simpleName)
+            }
+        }
     }
 
     private fun sessionsList(): JsonObject {
