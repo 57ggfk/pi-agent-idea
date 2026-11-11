@@ -88,6 +88,9 @@ function delay(ms: number): Promise<void> {
 const METHOD_SOURCE: Record<string, string> = {
   "files.list": "files",
   "sessions.list": "sessions",
+  // 024: a dedicated source id so `?slow=sessionsFork:…` can hold ONLY the
+  // fork (sessions.list shares the "sessions" source and must stay fast).
+  "sessions.fork": "sessionsFork",
   "approval.getPolicy": "policy",
   "config.getPrefs": "prefs",
 };

@@ -1704,3 +1704,125 @@ describe("session list copy (024 US1)", () => {
     expect(usePiStore.getState().sessionsNotice).toBeNull();
   });
 });
+
+// -- 024: session list fork (US2/US3) -----------------------------------------
+
+describe("session list fork (024 US2/US3)", () => {
+  const rows = [
+    { file: "/s/live.jsonl", id: "id-live", timestamp: "", name: "Live session", preview: "", modifiedAt: 1 },
+    { file: "/s/other.jsonl", id: "id-other", timestamp: "", name: "Other session", preview: "", modifiedAt: 2 },
+    { file: "/s/unnamed.jsonl", id: "id-unnamed", timestamp: "", name: "", preview: "", modifiedAt: 3 },
+  ];
+
+  beforeEach(async () => {
+    h.state.calls.length = 0;
+    h.state.rpc.clear();
+    h.state.methods.clear();
+    h.state.copied.length = 0;
+    await usePiStore.getState().init();
+    h.state.calls.length = 0;
+    usePiStore.setState({
+      sessions: rows,
+      sessionId: "id-live",
+      items: [userItem("live content")],
+      forkingFile: null,
+      sessionsNotice: null,
+      tab: "sessions",
+    });
+    h.state.methods.set("sessions.fork", () => ({ ok: true, file: "/s/forked.jsonl" }));
+    h.state.methods.set("sessions.list", () => ({
+      sessions: [...rows, { file: "/s/forked.jsonl", id: "id-forked", timestamp: "", name: "Other session (fork)", preview: "", modifiedAt: 4 }],
+    }));
+  });
+
+  it("forks a NON-live row through sessions.fork + offline rename, never switching away (US2)", async () => {
+    await usePiStore.getState().forkSessionFromList("/s/other.jsonl");
+
+    // The one-shot fork got the row's file; the live session was untouched.
+    expect(h.state.methods.has("sessions.fork")).toBe(true);
+    const forkCalls = h.state.calls.filter((c) => c.method === "sessions.fork");
+    expect(forkCalls).toHaveLength(1);
+    expect(forkCalls[0].params["file"]).toBe("/s/other.jsonl");
+
+    // 018 suffix rule: the inherited name gains " (fork)" offline.
+    const renames = h.state.calls.filter((c) => c.method === "sessions.rename");
+    expect(renames).toHaveLength(1);
+    expect(renames[0].params["file"]).toBe("/s/forked.jsonl");
+    expect(renames[0].params["name"]).toBe("Other session (fork)");
+
+    // No switch, no clone RPC, transcript intact.
+    expect(commandTypes()).not.toContain("switch_session");
+    expect(commandTypes()).not.toContain("clone");
+    expect(usePiStore.getState().items.some((i) => i.blocks?.some((b) => b.kind === "text" && b.text === "live content"))).toBe(true);
+    expect(usePiStore.getState().forkingFile).toBeNull();
+    const notice = usePiStore.getState().sessionsNotice;
+    expect(notice?.kind).toBe("info");
+  });
+
+  it("an unnamed parent stays unnamed (auto-titler owns it)", async () => {
+    h.state.methods.set("sessions.list", () => ({ sessions: rows }));
+    await usePiStore.getState().forkSessionFromList("/s/unnamed.jsonl");
+
+    const renames = h.state.calls.filter((c) => c.method === "sessions.rename");
+    expect(renames).toHaveLength(0);
+    expect(h.state.calls.filter((c) => c.method === "sessions.fork")).toHaveLength(1);
+  });
+
+  it("forks the LIVE row through the clone RPC without the bogus sessionPath (FR-004)", async () => {
+    h.state.rpc.set("clone", () => ({}));
+
+    await usePiStore.getState().forkSessionFromList("/s/live.jsonl");
+
+    const clones = commandTypes().filter((t) => t === "clone");
+    expect(clones).toEqual(["clone"]);
+    const cloneCmd = h.state.calls.filter((c) => c.method === "rpc.request").map((c) => c.params["command"] as Record<string, unknown>).find((c) => c["type"] === "clone");
+    expect(cloneCmd && "sessionPath" in cloneCmd).toBe(false);
+    // No one-shot process for the live row.
+    expect(h.state.calls.filter((c) => c.method === "sessions.fork")).toHaveLength(0);
+  });
+
+  it("single-flight: a second row click during a fork is refused with a notice (FR-007)", async () => {
+    let releaseFork: (v: unknown) => void = () => {};
+    h.state.methods.set("sessions.fork", () => new Promise((res) => (releaseFork = res)));
+
+    const first = usePiStore.getState().forkSessionFromList("/s/other.jsonl");
+    expect(usePiStore.getState().forkingFile).toBe("/s/other.jsonl");
+
+    await usePiStore.getState().forkSessionFromList("/s/unnamed.jsonl");
+
+    expect(h.state.calls.filter((c) => c.method === "sessions.fork")).toHaveLength(1);
+    expect(usePiStore.getState().sessionsNotice?.kind).toBe("error");
+
+    releaseFork({ ok: true, file: "/s/forked.jsonl" });
+    await first;
+    expect(usePiStore.getState().forkingFile).toBeNull();
+  });
+
+  it("triple-clicking the same busy row issues exactly one fork", async () => {
+    let releaseFork: (v: unknown) => void = () => {};
+    h.state.methods.set("sessions.fork", () => new Promise((res) => (releaseFork = res)));
+
+    const first = usePiStore.getState().forkSessionFromList("/s/other.jsonl");
+    await usePiStore.getState().forkSessionFromList("/s/other.jsonl");
+    await usePiStore.getState().forkSessionFromList("/s/other.jsonl");
+
+    expect(h.state.calls.filter((c) => c.method === "sessions.fork")).toHaveLength(1);
+
+    releaseFork({ ok: true, file: "/s/forked.jsonl" });
+    await first;
+  });
+
+  it("a failed fork is visible, resets the busy state and keeps the list honest (US3)", async () => {
+    h.state.methods.set("sessions.fork", () => Promise.reject(new Error("process died")));
+    h.state.methods.set("sessions.list", () => ({ sessions: rows }));
+
+    await usePiStore.getState().forkSessionFromList("/s/other.jsonl");
+
+    const notice = usePiStore.getState().sessionsNotice;
+    expect(notice?.kind).toBe("error");
+    expect(notice?.text).toContain("process died");
+    expect(usePiStore.getState().forkingFile).toBeNull();
+    // No ghost row: the refresh after failure reports the unchanged list.
+    expect(usePiStore.getState().sessions.some((s) => s.file === "/s/forked.jsonl")).toBe(false);
+  });
+});

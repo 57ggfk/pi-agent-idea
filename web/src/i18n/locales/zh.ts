@@ -216,7 +216,6 @@ export const zh: Dict = {
   "sessions.hits_other": "{{count}} 处命中",
   "sessions.msgCount_one": "{{count}} 条消息",
   "sessions.msgCount_other": "{{count}} 条消息",
-  "sessions.cloneTitle": "克隆此会话",
   "sessions.exportTitle": "导出为 HTML",
   "sessions.deleteTitle": "删除此会话",
 
@@ -282,6 +281,12 @@ export const zh: Dict = {
   "sessions.copied": "已复制标题和 ID",
   "sessions.copyNoId": "该会话没有 ID，只复制了标题",
   "sessions.copyFailed": "复制失败",
+  "sessions.forkDone": "已复制整条分支",
+  "sessions.forkFailed": "Fork 失败：{{msg}}",
+  "sessions.forkBusyOther": "另一个 Fork 正在进行，请稍候",
+  "sessions.copyTitle": "复制标题和 ID",
+  "sessions.forkTitle": "复制整条分支（Fork）",
+  "sessions.forkBusyThis": "正在 Fork…",
 
   // -- manage shell (header, tabs, trust) --------------------------------------
   "manage.tab.mcp": "MCP 服务器",

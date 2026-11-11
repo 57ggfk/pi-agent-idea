@@ -17,23 +17,23 @@
   名、`?forkfail=1` 失败旋钮）；`METHOD_SOURCE` 记账。
   — 验证：`npx vitest run mock.test.ts` 增一条「sessions.fork 生成新行且名字继承」绿；typecheck 0 错。
 
-- [ ] **T604** store：`copySessionInfo`（FR-001/002）+ `sessionsNotice` state（4s 自动清）。
+- [x] **T604** store：`copySessionInfo`（FR-001/002）+ `sessionsNotice` state（4s 自动清）。
   — 验证：store.test.ts 三行逐行 copy 断言 `copyText` 实收 `标题N\nIDN` 且互不相同；缺 id 用例只复制
   标题并出 notice；复制失败出 error notice。`npx vitest run store.test.ts` 绿。
 
-- [ ] **T605** store：`forkSessionFromList` 替换 `cloneSession`——当前会话走 `clone`（无 sessionPath）+
+- [x] **T605** store：`forkSessionFromList` 替换 `cloneSession`——当前会话走 `clone`（无 sessionPath）+
   `applyForkSuffix`；非当前会话走 `sessions.fork`（30s 超时）+ `sessions.rename` 后缀 + 刷新；单飞闸
   `forkingFile`；失败可见、busy 复位（FR-004/005/006/007）。
   — 验证：store.test.ts 四条绿——非当前行 fork 发出的命令序列（fork/rename，无 switch_session/clone）、
   当前行 fork 发 `clone` 且 params 无 sessionPath、单飞（跨行第二次出提示、同行连点只发一次）、
   失败路径（busy 复位、列表不变）；旧 clone 用例删除/改写后全绿。
 
-- [ ] **T606** UI：SessionsView 行内动作重排（session-copy / session-fork 两按钮 + busy spinner +
+- [x] **T606** UI：SessionsView 行内动作重排（session-copy / session-fork 两按钮 + busy spinner +
   其余行 busy 提示 title）+ `sessions-notice` 横条 + styles + i18n（zh/en：copyTitle/forkTitle/
   forkBusyOther/notice 文案）。
   — 验证：`npm run typecheck` 0 错；`npx vitest run` 全绿；组件行为由 T607 e2e 锁。
 
-- [ ] **T607** e2e：新增 `web/e2e/session-list-actions.spec.ts`（剪贴板 stub 收三段互异文本、行 fork
+- [x] **T607** e2e：新增 `web/e2e/session-list-actions.spec.ts`（剪贴板 stub 收三段互异文本、行 fork
   后新行出现且当前会话未切走、fork 失败 notice、忙碌态与单飞提示）；改写 `sessions.spec.ts` 里所有
   `session-clone` 引用为 `session-fork`。
   — 验证：`npx playwright test session-list-actions sessions` 全绿；grep 全仓无残留 `session-clone`。

@@ -3201,6 +3201,34 @@ button {
   color: var(--text);
 }
 
+/* 024: list-level fork in progress on a row — a slow one-shot pi process,
+   so the icon pulses instead of the row just sitting there. */
+.session-action.session-action-busy {
+  color: var(--accent, var(--text));
+  animation: session-fork-pulse 1s ease-in-out infinite;
+}
+
+@keyframes session-fork-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* 024: transient copy/fork outcome on the session list (auto-clears). */
+.sessions-notice {
+  padding: 6px 12px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sessions-notice-info {
+  background: color-mix(in srgb, #3fb950 12%, transparent);
+}
+
+.sessions-notice-error {
+  background: color-mix(in srgb, #f0883e 14%, transparent);
+}
+
 /* Options menu — the only definition (the older one at the top of the file
    left a stray `left: 0` behind and silently overrode this width). Width and
    position are measured in OptionsPopover.tsx; the fallbacks below keep the

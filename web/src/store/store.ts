@@ -615,7 +615,6 @@ interface PiStore {
   /** Renames a session that is not the live one (bridge sessions.rename). */
   renameSessionFile(file: string, name: string): Promise<boolean>;
   deleteSession(file: string): Promise<void>;
-  cloneSession(file: string): Promise<void>;
   forkSession(): Promise<void>;
   /** Branches the session at a specific pi reply (spec 007 US1). */
   forkAtItem(itemId: number): Promise<void>;
@@ -2139,6 +2138,63 @@ export const usePiStore = create<PiStore>((set, get) => {
       showSessionsNotice(t("sessions.copied"), "info");
     },
 
+    /**
+     * 024 US2/US3: full-copy fork from the session list, replacing the old
+     * clone button. pi's `clone` RPC only works on the live session (its
+     * sessionPath argument is silently ignored — the "always copies the top
+     * row" bug), so:
+     * - the live session goes through the `clone` RPC, no sessionPath;
+     * - any other row goes through the `sessions.fork` bridge (a one-shot
+     *   `pi --mode rpc --fork` process) and must not disturb what's on screen.
+     * Single-flight (FR-007): one list-level fork at a time; other rows get a
+     * notice instead of a disabled button.
+     */
+    async forkSessionFromList(file: string) {
+      const b = bridge;
+      if (!b) return;
+      if (get().forkingFile) {
+        if (get().forkingFile === file) return; // already running for this row
+        showSessionsNotice(t("sessions.forkBusyOther"), "error");
+        return;
+      }
+      const currentFile = get().sessions.find((s) => s.id === get().sessionId)?.file;
+      const isLive = file === currentFile;
+      set({ forkingFile: file });
+      try {
+        if (isLive) {
+          // FR-004: same semantics as today's clone — minus the bogus
+          // sessionPath argument — plus the 018 (fork) title suffix.
+          const result = await rpc<{ cancelled?: boolean }>(b, { type: "clone" });
+          if (result?.cancelled) {
+            showSessionsNotice(t("error.clone.cancelled"), "error");
+            return;
+          }
+          await syncAfterBranch();
+          await applyForkSuffix();
+        } else {
+          // FR-005: a one-shot process on disk; the live session, the draft
+          // and any stream are untouched. 30s deadline (FR-006) — pi exits by
+          // itself right after forking, so this is only a stuck-process guard.
+          const forked = await b.request<{ ok: boolean; file: string }>("sessions.fork", { file }, 30_000);
+          // 018's suffix rule: an inherited name gets " (fork)" appended, an
+          // unnamed parent stays unnamed for the auto-titler.
+          const source = get().sessions.find((s) => s.file === file);
+          const inherited = source?.name || "";
+          if (inherited && !inherited.endsWith(t("session.forkSuffix"))) {
+            await b.request("sessions.rename", { file: forked.file, name: `${inherited}${t("session.forkSuffix")}` });
+          }
+          await get().refreshSessions();
+          showSessionsNotice(t("sessions.forkDone"), "info");
+        }
+      } catch (e) {
+        showSessionsNotice(t("sessions.forkFailed", { msg: (e as Error).message }), "error");
+        // US3: no ghost row — drop anything the failed run might have half-registered.
+        await get().refreshSessions();
+      } finally {
+        set({ forkingFile: null });
+      }
+    },
+
     async deleteSession(file: string) {
       if (!bridge) return;
       const name = get().sessions.find((s) => s.file === file)?.name;
@@ -2151,25 +2207,6 @@ export const usePiStore = create<PiStore>((set, get) => {
         // one on screen, so the chat never points at a dead file.
         onConfirm: () => runDeleteSession(file),
       });
-    },
-
-    async cloneSession(file: string) {
-      if (!bridge) return;
-      try {
-        const result = await rpc<{ cancelled?: boolean }>(bridge, { type: "clone", sessionPath: file });
-        if (result?.cancelled) {
-          appendError(t("error.clone.cancelled"));
-          return;
-        }
-        await syncAfterBranch();
-      } catch (e) {
-        const item = emptyItem("system", [
-          { kind: "text", text: `clone failed: ${(e as Error).message}`, done: true },
-        ]);
-        item.done = true;
-        item.isError = true;
-        set({ items: [...get().items, item] });
-      }
     },
 
     async forkSession() {

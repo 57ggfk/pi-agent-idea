@@ -217,7 +217,6 @@ export const en = {
   "sessions.hits_other": "{{count}} hits",
   "sessions.msgCount_one": "{{count}} msg",
   "sessions.msgCount_other": "{{count}} msgs",
-  "sessions.cloneTitle": "Clone this session",
   "sessions.exportTitle": "Export as HTML",
   "sessions.deleteTitle": "Delete this session",
 
@@ -289,6 +288,12 @@ export const en = {
   "sessions.copied": "Copied the session title and ID",
   "sessions.copyNoId": "This session has no ID — copied the title only",
   "sessions.copyFailed": "Copy failed",
+  "sessions.forkDone": "Forked the whole branch",
+  "sessions.forkFailed": "Fork failed: {{msg}}",
+  "sessions.forkBusyOther": "Another fork is already running — try again when it finishes",
+  "sessions.copyTitle": "Copy title and ID",
+  "sessions.forkTitle": "Fork the whole branch",
+  "sessions.forkBusyThis": "Forking…",
 
   // -- manage shell (header, tabs, trust) --------------------------------------
   "manage.tab.mcp": "MCP Servers",
