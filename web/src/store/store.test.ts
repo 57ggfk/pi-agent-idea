@@ -1578,4 +1578,31 @@ describe("switch stuck & convergence (026)", () => {
     expect(JSON.stringify(s.items)).toContain("from B");
     expect(JSON.stringify(s.items)).not.toContain("from A");
   });
+
+  it("FR-004: newSession takes over a history switch instead of dying silently", async () => {
+    usePiStore.setState({ pendingSwitch: { kind: "history", file: "/sessions/x.jsonl", startedAt: 123 } });
+    const gate = deferred<unknown>();
+    h.state.rpc.set("new_session", () => gate.promise);
+
+    const done = usePiStore.getState().newSession();
+
+    // Takeover: the pending is now a "new" one and pi was asked for a session.
+    expect(usePiStore.getState().pendingSwitch?.kind).toBe("new");
+    expect(commandTypes()).toContain("new_session");
+
+    gate.resolve({});
+    await done;
+    expect(usePiStore.getState().pendingSwitch).toBeNull();
+  });
+
+  it("FR-004/D8: newSession still dedupes while a new session is already in flight", async () => {
+    usePiStore.setState({ pendingSwitch: { kind: "new", startedAt: 456 } });
+
+    await usePiStore.getState().newSession();
+
+    // No second new_session (an orphan empty session in pi), and the visible
+    // placeholder is the feedback — never a silent dead button.
+    expect(commandTypes()).not.toContain("new_session");
+    expect(usePiStore.getState().pendingSwitch?.startedAt).toBe(456);
+  });
 });

@@ -808,8 +808,13 @@ export const usePiStore = create<PiStore>((set, get) => {
    */
   const runNewSession = async () => {
     if (!bridge) return;
-    // D8: a second "new" while one is in flight would spawn two sessions.
-    if (get().pendingSwitch) return;
+    // 026 FR-004: a pending switch must never silently block a new session.
+    // kind:"new" → the identical action is already in flight; firing another
+    // new_session would leave an orphan empty session in pi, and the visible
+    // switching placeholder is the "in progress" feedback (D8 dedupe stays).
+    // kind:"history" → take over: the seq bump below invalidates the older
+    // switch, whose early return cleans up its own pending by identity.
+    if (get().pendingSwitch?.kind === "new") return;
     // FR-012 (spec 005): a non-empty queue would be silently dropped.
     if (get().queue.items.length > 0) {
       set({ queueDiscardConfirm: { count: get().queue.items.length, kind: "new" } });

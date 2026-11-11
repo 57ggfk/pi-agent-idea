@@ -24,7 +24,7 @@
   — 验证：`store.test.ts` 新增 U4（A 迟到 reject 不清 B 的 pending、retrySwitch 不被 A 污染）、
   U5（A 的 get_messages 迟到 resolve，内容仍是 B 的）两条绿；既有「drops a late response」仍绿。
 
-- [ ] **T805** `store.ts` FR-004：`runNewSession` 改判定——`pending?.kind === "new"` 才早退（D8
+- [x] **T805** `store.ts` FR-004：`runNewSession` 改判定——`pending?.kind === "new"` 才早退（D8
   防双开保留，屏上占位即提示）；`kind:"history"` 接管（落到 seq bump + 新 pending，旧切换由 T804
   的 identity 清理自行作废）。
   — 验证：`store.test.ts` 新增 U6（history pending 时点新建 → 接管为 kind:"new" 且 new_session
