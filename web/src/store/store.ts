@@ -56,6 +56,7 @@ import { hitsFromItems, type SearchHit } from "../lib/search";
 import { requestRepaint } from "../lib/repaint";
 import { perfMark } from "../lib/perf";
 import { withTimeout } from "../lib/timeout";
+import { copyText } from "../lib/clipboard";
 import { i18n, initI18n, isRegistered } from "../i18n";
 
 /** Shorthand for store-side (non-React) copy; English falls out of the base bundle. */
@@ -73,6 +74,16 @@ export interface PendingSwitch {
   /** `performance.now()` at the click — drives `switch.*` marks and the
    *  "still switching" copy after 10s. */
   startedAt: number;
+}
+
+/**
+ * 024: a transient notice on the session list. Chat-side error items are
+ * invisible while the sessions tab is open (the 026 lesson), so copy/fork
+ * feedback gets this small banner instead of the transcript.
+ */
+export interface SessionsNotice {
+  text: string;
+  kind: "info" | "error";
 }
 
 /** 021 D8 / T308: after this long the copy softens; nothing rolls back — a
@@ -352,6 +363,10 @@ interface PiStore {
    *  retry bar can re-fire it without the user re-finding the row. Cleared on
    *  any successful switch/new session and by the bar's dismiss button. */
   retrySwitch: string | null;
+  /** 024: transient copy/fork feedback on the session list (auto-clears). */
+  sessionsNotice: SessionsNotice | null;
+  /** 024 FR-007: the row a list-level fork is running for (single-flight). */
+  forkingFile: string | null;
   retryInfo: { attempt: number; maxAttempts: number; delayMs: number; errorMessage: string } | null;
   /**
    * Mirror of pi's queue (spec 005), pushed as full snapshots by the Kotlin
@@ -570,6 +585,10 @@ interface PiStore {
   retryLastSwitch(): Promise<void>;
   /** 026: the retry bar's dismiss — forget the failed target. */
   clearRetrySwitch(): void;
+  /** 024 US1: copies `${title}\n${id}` for one list row into the clipboard. */
+  copySessionInfo(file: string): Promise<void>;
+  /** 024 US2/US3: list-level full-copy fork (replaces cloneSession). */
+  forkSessionFromList(file: string): Promise<void>;
   /** Renames the current session; [manual] = user-typed (beats pi name
    *  events). Returns false when the RPC failed (error already surfaced). */
   renameSession(name: string, manual?: boolean): Promise<boolean>;
@@ -673,6 +692,18 @@ export const usePiStore = create<PiStore>((set, get) => {
    */
   const clearOwnPending = (startedAt: number) => {
     if (get().pendingSwitch?.startedAt === startedAt) set({ pendingSwitch: null });
+  };
+
+  /**
+   * 024: transient session-list feedback. The transcript's error items are
+   * invisible while the sessions tab is open, so copy/fork outcomes surface
+   * here and self-clear — long enough to read, short enough to not stack up.
+   */
+  let noticeTimer: ReturnType<typeof setTimeout> | undefined;
+  const showSessionsNotice = (text: string, kind: SessionsNotice["kind"]) => {
+    clearTimeout(noticeTimer);
+    set({ sessionsNotice: { text, kind } });
+    noticeTimer = setTimeout(() => set({ sessionsNotice: null }), 4_000);
   };
 
   /**
@@ -1233,6 +1264,8 @@ export const usePiStore = create<PiStore>((set, get) => {
     aborted: false,
     pendingSwitch: null,
     retrySwitch: null,
+    sessionsNotice: null,
+    forkingFile: null,
     retryInfo: null,
     queue: { items: [], paused: false, pauseReason: null, drift: false },
     driftAck: false,
@@ -2082,6 +2115,28 @@ export const usePiStore = create<PiStore>((set, get) => {
         // is untouched on disk, so a retry is always safe.
         return false;
       }
+    },
+
+    /**
+     * 024 US1: the clipboard gets two lines — title, then ID — straight from
+     * the same fields the row renders. A missing id is rare (half-written
+     * file) but must not fake success: the title alone lands, with a visible
+     * note (FR-001/FR-002).
+     */
+    async copySessionInfo(file: string) {
+      const s = get().sessions.find((x) => x.file === file);
+      const title = s?.name || s?.preview?.slice(0, 60) || s?.id || "Untitled";
+      const id = s?.id;
+      const ok = await copyText(id ? `${title}\n${id}` : title);
+      if (!ok) {
+        showSessionsNotice(t("sessions.copyFailed"), "error");
+        return;
+      }
+      if (!id) {
+        showSessionsNotice(t("sessions.copyNoId"), "error");
+        return;
+      }
+      showSessionsNotice(t("sessions.copied"), "info");
     },
 
     async deleteSession(file: string) {

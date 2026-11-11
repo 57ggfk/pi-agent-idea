@@ -285,6 +285,10 @@ export const en = {
   // session list where transcript error items would be invisible).
   "switch.retryBar": "Session switch failed — target: {{file}}",
   "switch.retryDismiss": "Dismiss",
+  // 024: per-row copy / fork actions on the session list.
+  "sessions.copied": "Copied the session title and ID",
+  "sessions.copyNoId": "This session has no ID — copied the title only",
+  "sessions.copyFailed": "Copy failed",
 
   // -- manage shell (header, tabs, trust) --------------------------------------
   "manage.tab.mcp": "MCP Servers",

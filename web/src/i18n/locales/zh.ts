@@ -278,6 +278,10 @@ export const zh: Dict = {
   // 026：重试横条（所有页签可见——失败落在会话列表页，聊天区的错误条目看不见）。
   "switch.retryBar": "会话切换失败，目标：{{file}}",
   "switch.retryDismiss": "忽略",
+  // 024：会话列表行内复制 / Fork。
+  "sessions.copied": "已复制标题和 ID",
+  "sessions.copyNoId": "该会话没有 ID，只复制了标题",
+  "sessions.copyFailed": "复制失败",
 
   // -- manage shell (header, tabs, trust) --------------------------------------
   "manage.tab.mcp": "MCP 服务器",

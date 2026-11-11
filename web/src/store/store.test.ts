@@ -19,6 +19,9 @@ const h = vi.hoisted(() => {
     methods: new Map<string, (params: unknown) => unknown>(),
     /** Registered by init(); tests dispatch pi events through it. */
     piHandler: null as ((name: string, data: unknown) => void) | null,
+    /** 024: records copyText payloads; tests assert the exact clipboard text. */
+    copied: [] as string[],
+    copyResult: true as boolean,
   };
   const bridge = {
     kind: "mock" as const,
@@ -49,6 +52,12 @@ const h = vi.hoisted(() => {
 });
 
 vi.mock("../bridge", () => ({ getBridge: () => Promise.resolve(h.bridge) }));
+vi.mock("../lib/clipboard", () => ({
+  copyText: (text: string) => {
+    h.state.copied.push(text);
+    return Promise.resolve(h.state.copyResult);
+  },
+}));
 
 import {
   usePiStore,
@@ -1631,5 +1640,67 @@ describe("switch stuck & convergence (026)", () => {
     expect(s.pendingSwitch).toBeNull();
     expect(s.tab).toBe("chat");
     expect(s.sessionName).toBe("Retry target");
+  });
+});
+
+// -- 024: session list copy (US1) --------------------------------------------
+
+describe("session list copy (024 US1)", () => {
+  beforeEach(async () => {
+    h.state.calls.length = 0;
+    h.state.rpc.clear();
+    h.state.methods.clear();
+    h.state.copied.length = 0;
+    h.state.copyResult = true;
+    await usePiStore.getState().init();
+    usePiStore.setState({
+      sessions: [
+        { file: "/s/alpha.jsonl", id: "id-alpha", timestamp: "", name: "Alpha", preview: "", modifiedAt: 1 },
+        { file: "/s/beta.jsonl", id: "id-beta", timestamp: "", name: "", preview: "Beta preview text", modifiedAt: 2 },
+        { file: "/s/gamma.jsonl", id: "", timestamp: "", name: "Gamma", preview: "", modifiedAt: 3 },
+      ],
+      sessionsNotice: null,
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("copies title then ID per row — never the first row's (US1)", async () => {
+    await usePiStore.getState().copySessionInfo("/s/beta.jsonl");
+    await usePiStore.getState().copySessionInfo("/s/alpha.jsonl");
+    await usePiStore.getState().copySessionInfo("/s/beta.jsonl");
+
+    expect(h.state.copied).toEqual([
+      "Beta preview text\nid-beta", // unnamed row: preview drives the title, same as the row shows
+      "Alpha\nid-alpha",
+      "Beta preview text\nid-beta",
+    ]);
+    const notice = usePiStore.getState().sessionsNotice;
+    expect(notice?.kind).toBe("info");
+  });
+
+  it("a missing id copies only the title and says so (FR-001)", async () => {
+    await usePiStore.getState().copySessionInfo("/s/gamma.jsonl");
+    expect(h.state.copied).toEqual(["Gamma"]);
+    const notice = usePiStore.getState().sessionsNotice;
+    expect(notice?.kind).toBe("error");
+    expect(notice?.text.length).toBeGreaterThan(0);
+  });
+
+  it("a clipboard failure is visible, never a fake success (FR-002)", async () => {
+    h.state.copyResult = false;
+    await usePiStore.getState().copySessionInfo("/s/alpha.jsonl");
+    const notice = usePiStore.getState().sessionsNotice;
+    expect(notice?.kind).toBe("error");
+  });
+
+  it("the notice clears itself after four seconds", async () => {
+    vi.useFakeTimers();
+    await usePiStore.getState().copySessionInfo("/s/alpha.jsonl");
+    expect(usePiStore.getState().sessionsNotice).not.toBeNull();
+    await vi.advanceTimersByTimeAsync(4_001);
+    expect(usePiStore.getState().sessionsNotice).toBeNull();
   });
 });
