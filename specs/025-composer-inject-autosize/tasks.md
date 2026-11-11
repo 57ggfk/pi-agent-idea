@@ -13,7 +13,7 @@
   其余重测路径保持裸 autosize（FR-005/006，不加任何 scroll 跟随）。
   — 验证：typecheck 0 错；`npx vitest run` 全绿（store 层无回归）；行为由 T703 e2e 锁。
 
-- [ ] **T703** e2e：新增 `web/e2e/composer-inject-autosize.spec.ts` 四条——US1 30 行注入滚到尾且
+- [x] **T703** e2e：新增 `web/e2e/composer-inject-autosize.spec.ts` 四条——US1 30 行注入滚到尾且
   caret 在末尾；US2 display:none 注入→恢复→2 帧后高度>34 且滚到底；US3 3 行高度恰等于内容高度 + 草稿
   引用拼接保留且滚到底；US4 手动上滚后 viewport 变化不拽回。
   — 验证：`npx playwright test composer-inject-autosize` 4 条绿；`npx playwright test ui-polish
