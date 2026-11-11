@@ -180,26 +180,51 @@ object PiLocator {
      * Node runtime reachable from the IDE, or null. Same discovery rules as
      * pi's own interpreter search, but standalone: the first-run check has to
      * answer "is node installed at all" before any pi path exists.
+     * 028 FR-004: an explicit `dev.pi.agent.nodePath` wins over every guess —
+     * GUI-spawned IDEs inherit a minimal PATH, so this is the only
+     * deterministic answer on nvm/fnm/multi-node machines.
      */
-    fun locateNode(): String? = if (OsProcess.isWindows) {
-        windowsNode()
-    } else {
-        loginShellPath()
-            .map { File(it, "node") }
-            .firstOrNull { isLaunchable(it) }
-            ?.absolutePath
+    fun locateNode(): String? {
+        runCatching {
+            dev.pi.agent.settings.PiAgentSettings.getInstance().nodePath()
+        }.getOrNull()?.let { explicit ->
+            if (isLaunchable(File(explicit))) return explicit
+        }
+        return if (OsProcess.isWindows) {
+            windowsNode()
+        } else {
+            loginShellPath()
+                .map { File(it, "node") }
+                .firstOrNull { isLaunchable(it) }
+                ?.absolutePath
+        }
     }
 
-    /** npm client (the install vehicle offered on first run), or null. */
-    fun locateNpm(): String? = if (OsProcess.isWindows) {
-        windowsWhere("npm")
-            ?.firstOrNull { it.lowercase().endsWith(".cmd") || it.lowercase().endsWith(".exe") }
-            ?: windowsWhere("npm")?.firstOrNull()
-    } else {
-        loginShellPath()
-            .map { File(it, "npm") }
-            .firstOrNull { isLaunchable(it) }
-            ?.absolutePath
+    /**
+     * npm client (the install vehicle offered on first run), or null.
+     * 028 FR-005: when the user pointed us at a Node, the npm beside it wins —
+     * installing with a random other npm would target the wrong prefix.
+     */
+    fun locateNpm(): String? {
+        runCatching {
+            dev.pi.agent.settings.PiAgentSettings.getInstance().nodePath()
+        }.getOrNull()?.let { explicit ->
+            val dir = File(explicit).parentFile
+            val candidates = if (OsProcess.isWindows) listOf("npm.cmd", "npm.exe", "npm") else listOf("npm")
+            candidates.firstNotNullOfOrNull { name ->
+                File(dir, name).takeIf { isLaunchable(it) }?.absolutePath
+            }?.let { return it }
+        }
+        return if (OsProcess.isWindows) {
+            windowsWhere("npm")
+                ?.firstOrNull { it.lowercase().endsWith(".cmd") || it.lowercase().endsWith(".exe") }
+                ?: windowsWhere("npm")?.firstOrNull()
+        } else {
+            loginShellPath()
+                .map { File(it, "npm") }
+                .firstOrNull { isLaunchable(it) }
+                ?.absolutePath
+        }
     }
 
     /**

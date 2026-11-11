@@ -152,12 +152,19 @@ class BridgeService(private val project: Project) : Disposable {
                 "models.reload" -> reloadModels()
                 "manage.env" -> dev.pi.agent.manage.PiManage.environment()
                 "manage.envDetect" -> dev.pi.agent.manage.PiEnvironment.detect()
-                "manage.envInstall" -> dev.pi.agent.manage.PiEnvironment.install(
-                    source = (params["source"] as? kotlinx.serialization.json.JsonPrimitive)?.content,
-                    customRegistry = (params["registry"] as? kotlinx.serialization.json.JsonPrimitive)?.content,
-                )
+                "manage.envInstall" ->
+                    if ((params["method"] as? kotlinx.serialization.json.JsonPrimitive)?.content == dev.pi.agent.manage.PiEnvironment.SOURCE_SCRIPT) {
+                        dev.pi.agent.manage.PiEnvironment.installScript()
+                    } else {
+                        dev.pi.agent.manage.PiEnvironment.install(
+                            source = (params["source"] as? kotlinx.serialization.json.JsonPrimitive)?.content,
+                            customRegistry = (params["registry"] as? kotlinx.serialization.json.JsonPrimitive)?.content,
+                        )
+                    }
                 "manage.envCancelInstall" -> dev.pi.agent.manage.PiEnvironment.cancelInstall()
                 "manage.envSetPath" -> dev.pi.agent.manage.PiEnvironment.setPiPath(params)
+                // 028: the vendor script install + the explicit Node path.
+                "manage.envSetNodePath" -> dev.pi.agent.manage.PiEnvironment.setNodePath(params)
                 "manage.mcpList" -> dev.pi.agent.manage.PiManage.mcpList(project.basePath)
                 "manage.mcpAdd" -> dev.pi.agent.manage.PiManage.mcpAdd(withProjectPath(params))
                 "manage.mcpRemove" -> dev.pi.agent.manage.PiManage.mcpRemove(withProjectPath(params))

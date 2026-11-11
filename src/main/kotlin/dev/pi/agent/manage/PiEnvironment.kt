@@ -56,8 +56,29 @@ object PiEnvironment {
 
     const val DEFAULT_SOURCE = SOURCE_DEFAULT
 
-    /** pi is published as ESM and needs a modern node; older ones install but do not run. */
-    const val MIN_NODE_MAJOR = 18
+    /** The install method the bridge was asked to run ("registry" = npm). */
+    const val SOURCE_SCRIPT = "script"
+
+    /**
+     * pi 1.5.0 requires Node ≥ 22.19 (its release notes; the bundled README
+     * agrees). The old `MIN_NODE_MAJOR = 18` let node 18/20 machines install
+     * pi that then failed to start with a wall of syntax errors — comparing
+     * major.minor against 22.19 is the corrected gate (028 FR-003).
+     */
+    const val MIN_NODE = "22.19"
+
+    /**
+     * major.minor comparison against [MIN_NODE]. `v` prefix tolerated, patch
+     * ignored, anything unparseable is NOT ok (a broken -v output must not
+     * read as a working node).
+     */
+    fun nodeMeetsMin(version: String): Boolean {
+        val m = Regex("""v?(\d+)\.(\d+)""").find(version.trim()) ?: return false
+        val major = m.groupValues[1].toIntOrNull() ?: return false
+        val minor = m.groupValues[2].toIntOrNull() ?: return false
+        val min = MIN_NODE.split(".").map { it.toInt() }
+        return major > min[0] || (major == min[0] && minor >= min[1])
+    }
 
     private const val VERSION_TIMEOUT_SECONDS = 15L
 
@@ -190,6 +211,15 @@ object PiEnvironment {
         val npmVersion = npm?.let { versionOf(it, listOf(it, "-v")) } ?: ""
         val nodeMajor = nodeMajorOf(nodeVersion)
         val npmRegistry = npm?.let { configuredRegistry(it) }.orEmpty()
+        val nodeOk = nodeMeetsMin(nodeVersion)
+        // FR-009: WHY the automatic install cannot run — three distinct
+        // states instead of one misleading "npm not found".
+        val blocker = when {
+            node == null -> "no-node"
+            !nodeOk -> "node-version"
+            npm == null -> "no-npm"
+            else -> null
+        }
 
         return buildJsonObject {
             put("ok", true)
@@ -197,12 +227,15 @@ object PiEnvironment {
             put("npm", tool(npm, npmVersion))
             put("pi", tool(install?.path, install?.version ?: ""))
             put("nodeMajor", nodeMajor)
-            put("nodeOk", nodeMajor != null && nodeMajor >= MIN_NODE_MAJOR)
-            put("minNodeMajor", MIN_NODE_MAJOR)
+            put("nodeVersion", nodeVersion)
+            put("nodeOk", nodeOk)
+            put("minNode", MIN_NODE)
+            put("installBlocker", blocker ?: "")
+            put("scriptSupported", true)
             // npm is the install vehicle; without it the only option is a
             // manual path, which the UI must say instead of offering a button
             // that cannot work.
-            put("canInstall", npm != null && node != null)
+            put("canInstall", npm != null && nodeOk)
             put("piPackage", PI_PACKAGE)
             put("agentDir", PiCliRunner.agentDir().absolutePath)
             put("customPath", customPiPath() ?: "")
@@ -317,6 +350,84 @@ object PiEnvironment {
     }
 
     /**
+     * 028: the vendor install script — `irm https://pi.dev/install.ps1 | iex`
+     * on Windows, `curl -fsSL https://pi.dev/install.sh | sh` elsewhere. The
+     * script installs its own Node, which is the whole point: this is the only
+     * automatic path on a machine without one. It shares the npm channel's
+     * single-flight/stop/output contract ([beginInstall]/[cancelInstall]/the
+     * same runner) so the UI treats both identically (FR-007).
+     */
+    fun installScriptArgs(isWindows: Boolean): List<String> =
+        if (isWindows) {
+            listOf(
+                "powershell",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                "irm https://pi.dev/install.ps1 | iex",
+            )
+        } else {
+            listOf("sh", "-c", "curl -fsSL https://pi.dev/install.sh | sh")
+        }
+
+    fun installScript(
+        runner: (ProcessBuilder) -> CliResult = { pb ->
+            PiCliRunner.runProcessUntilExit(pb) { proc -> installProcess = proc }
+        },
+        refresh: () -> dev.pi.agent.process.PiInstallation? = { PiLocator.locate(forceRefresh = true) },
+    ): JsonObject {
+        if (!beginInstall()) {
+            return error("an install is already running — stop it first")
+        }
+        try {
+            val args = installScriptArgs(OsProcess.isWindows)
+            val pb = ProcessBuilder(args)
+            LOG.info("installing $PI_PACKAGE via the official script")
+            val result = runner(pb)
+            val output = (result.stdout + "\n" + result.stderr).trim()
+            if (installCancelled) {
+                LOG.info("pi script install stopped by the user")
+                return buildJsonObject {
+                    put("ok", false)
+                    put("cancelled", true)
+                    put("method", SOURCE_SCRIPT)
+                    put("output", output.take(4000))
+                    put("error", "Install stopped. Nothing was uninstalled — re-run it or set pi's path manually.")
+                }
+            }
+            if (!result.success) {
+                LOG.warn("pi script install failed (exit ${result.exitCode})")
+                return buildJsonObject {
+                    put("ok", false)
+                    put("exitCode", result.exitCode)
+                    put("method", SOURCE_SCRIPT)
+                    put("output", output.take(4000))
+                    put("error", installFailureHint(result.exitCode, output))
+                }
+            }
+            val installed = refresh()
+            return buildJsonObject {
+                put("ok", installed != null)
+                put("exitCode", result.exitCode)
+                put("method", SOURCE_SCRIPT)
+                put("output", output.take(4000))
+                put("found", installed != null)
+                put("path", installed?.path ?: "")
+                put("version", installed?.version ?: "")
+                if (installed == null) {
+                    put(
+                        "error",
+                        "the script finished but pi is still not on PATH — re-detect or set its path manually below",
+                    )
+                }
+            }
+        } finally {
+            endInstall()
+        }
+    }
+
+    /**
      * Manual path (Settings → Tools → Pi Agent has the same effect, this is the
      * in-flow shortcut). Rejects anything that is not an existing file so a
      * typo cannot turn into "pi process is not running" later.
@@ -340,6 +451,29 @@ object PiEnvironment {
             put("path", install?.path ?: file.absolutePath)
             put("version", install?.version ?: "")
             if (install == null) put("error", "pi could not be started from $raw")
+        }
+    }
+
+    /**
+     * 028 FR-004/FR-006: store the explicit Node interpreter (empty clears it
+     * back to "discover") and restart pi everywhere, same contract as
+     * [setPiPath]. The value is re-checked by [PiLocator.locateNode] on use.
+     */
+    fun setNodePath(params: JsonObject, onChanged: () -> Unit = { PiAgentSettings.restartPiEverywhere() }): JsonObject {
+        val raw = (params["path"] as? kotlinx.serialization.json.JsonPrimitive)?.content?.trim()
+        if (raw.isNullOrEmpty()) {
+            settings()?.setNodePath(null, onChanged)
+            return buildJsonObject { put("ok", true); put("cleared", true) }
+        }
+        val file = File(raw)
+        if (!file.isFile) {
+            return error("not a file: $raw")
+        }
+        settings()?.setNodePath(file.absolutePath, onChanged)
+        return buildJsonObject {
+            put("ok", true)
+            put("path", file.absolutePath)
+            put("version", toolVersion(file.absolutePath, listOf(file.absolutePath, "-v")) ?: "")
         }
     }
 

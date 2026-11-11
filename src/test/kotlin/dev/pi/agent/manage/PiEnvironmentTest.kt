@@ -221,8 +221,13 @@ class PiEnvironmentTest {
             configuredRegistry = { "https://registry.corp.example.com" },
         )
         assertEquals(20, env["nodeMajor"]!!.jsonPrimitive.intOrNull)
-        assertTrue(env["nodeOk"]!!.jsonPrimitive.boolean)
-        assertTrue(env["canInstall"]!!.jsonPrimitive.boolean)
+        // 028 FR-003: the corrected gate — 20.11 is BELOW 22.19 now (it used
+        // to read as fine under the old major>=18 rule, which is exactly the
+        // bug this spec fixes).
+        assertFalse(env["nodeOk"]!!.jsonPrimitive.boolean)
+        assertFalse(env["canInstall"]!!.jsonPrimitive.boolean)
+        assertEquals("node-version", env["installBlocker"]!!.jsonPrimitive.content)
+        assertEquals("22.19", env["minNode"]!!.jsonPrimitive.content)
         // The UI labels the "npm default" option with this URL.
         assertEquals(
             "https://registry.corp.example.com",
@@ -242,5 +247,54 @@ class PiEnvironmentTest {
         )
         assertEquals(16, env["nodeMajor"]!!.jsonPrimitive.intOrNull)
         assertFalse(env["nodeOk"]!!.jsonPrimitive.boolean)
+    }
+
+    @Test
+    fun `nodeMeetsMin compares major-minor against 22_19 (028 FR-003)`() {
+        // The spec's table: false for anything below, true from 22.19 on.
+        mapOf(
+            "v18.20.0" to false,
+            "v20.11.0" to false,
+            "v22.18.9" to false,
+            "v22.19.0" to true,
+            "v23.0.0" to true,
+            "v24.1.0" to true,
+            // boundary + robustness
+            "22.19.3" to true,
+            "" to false,
+            "garbage" to false,
+        ).forEach { (version, expected) ->
+            assertEquals(expected, PiEnvironment.nodeMeetsMin(version), "node $version")
+        }
+    }
+
+    @Test
+    fun `installScriptArgs spells the vendor command per platform (028 FR-002)`() {
+        val win = PiEnvironment.installScriptArgs(true)
+        assertEquals("powershell", win.first())
+        assertTrue(win.last().contains("irm https://pi.dev/install.ps1 | iex"))
+        val unix = PiEnvironment.installScriptArgs(false)
+        assertEquals("sh", unix.first())
+        assertTrue(unix.last().contains("curl -fsSL https://pi.dev/install.sh | sh"))
+    }
+
+    @Test
+    fun `detect names the install blocker (028 FR-009)`() {
+        val noNode = PiEnvironment.detect(
+            locate = { null }, nodePath = { null }, npmPath = { null },
+            versionOf = { _, _ -> null }, configuredRegistry = { null },
+        )
+        assertEquals("no-node", noNode["installBlocker"]!!.jsonPrimitive.content)
+        val noNpm = PiEnvironment.detect(
+            locate = { null }, nodePath = { "/usr/bin/node" }, npmPath = { null },
+            versionOf = { _, c -> if (c.contains("-v")) "v22.19.0" else null }, configuredRegistry = { null },
+        )
+        assertEquals("no-npm", noNpm["installBlocker"]!!.jsonPrimitive.content)
+        val fine = PiEnvironment.detect(
+            locate = { null }, nodePath = { "/usr/bin/node" }, npmPath = { "/usr/bin/npm" },
+            versionOf = { _, c -> if (c.contains("-v")) "v24.1.0" else null }, configuredRegistry = { null },
+        )
+        assertEquals("", fine["installBlocker"]!!.jsonPrimitive.content)
+        assertTrue(fine["canInstall"]!!.jsonPrimitive.boolean)
     }
 }

@@ -35,6 +35,20 @@ class PiAgentSettings private constructor() {
         }
     }
 
+    /** 028: explicit Node interpreter, or null = discover (FR-004). */
+    fun nodePath(): String? =
+        properties.getValue(NODE_PATH_KEY)?.takeIf { it.isNotBlank() }
+
+    /** 028 FR-006: same "restart pi everywhere" semantics as the pi path. */
+    fun setNodePath(path: String?, onChanged: () -> Unit = { restartPiEverywhere() }) {
+        if (path.isNullOrBlank()) {
+            properties.unsetValue(NODE_PATH_KEY)
+        } else {
+            properties.setValue(NODE_PATH_KEY, path.trim())
+        }
+        onChanged()
+    }
+
     fun autoOpen(): Boolean = properties.getBoolean(AUTO_OPEN_KEY, false)
 
     fun setAutoOpen(value: Boolean) {
@@ -43,6 +57,7 @@ class PiAgentSettings private constructor() {
 
     companion object {
         private const val PI_PATH_KEY = "dev.pi.agent.piPath"
+        private const val NODE_PATH_KEY = "dev.pi.agent.nodePath"
         private const val AUTO_OPEN_KEY = "dev.pi.agent.autoOpen"
 
         @JvmStatic
