@@ -154,6 +154,29 @@ export interface EditTarget {
 
 export type BranchTarget = { kind: "entry"; index: number } | { kind: "clone" };
 
+/**
+ * 023 D3 — the last pi reply of the round that `index` belongs to.
+ *
+ * `fork {entryId}` only cuts at user entries, so every reply inside one round
+ * lands on the same branch point. Normalising the click to the round's end
+ * gives the UI one entry point and makes "triggered from the middle" behave
+ * exactly like "triggered from the end" — no half-round session can be created
+ * even if a future entry point forgets the `isRoundEnd` guard.
+ *
+ * Returns -1 when `index` is not an assistant item (caller reports
+ * `error.fork.notReply`, as before).
+ */
+export function roundEndIndex(items: ChatItem[], index: number): number {
+  if (index < 0 || index >= items.length) return -1;
+  if (items[index].role !== "assistant") return -1;
+  let end = index;
+  for (let i = index + 1; i < items.length; i++) {
+    if (items[i].role === "user") break;
+    if (items[i].role === "assistant") end = i;
+  }
+  return end;
+}
+
 /** How many user messages sit at or above `index` in the transcript. */
 export function userCountUpTo(items: ChatItem[], index: number): number {
   let count = 0;
@@ -826,9 +849,11 @@ export const usePiStore = create<PiStore>((set, get) => {
       return;
     }
     const items = get().items;
-    const index = items.findIndex((item) => item.id === itemId);
-    const item = index >= 0 ? items[index] : undefined;
-    if (!item || item.role !== "assistant") {
+    const clicked = items.findIndex((item) => item.id === itemId);
+    // 023 D3: normalise to the round's last reply before computing the branch
+    // point, so a click on a tool-call reply cannot cut the round in half.
+    const index = roundEndIndex(items, clicked);
+    if (index < 0) {
       appendError(t("error.fork.notReply"));
       return;
     }
@@ -2017,14 +2042,19 @@ export const usePiStore = create<PiStore>((set, get) => {
         appendError(t("error.fork.busy"));
         return;
       }
-      const item = get().items.find((i) => i.id === itemId);
-      if (!item || item.role !== "assistant") {
+      const items = get().items;
+      const end = roundEndIndex(items, items.findIndex((i) => i.id === itemId));
+      if (end < 0) {
         appendError(t("error.fork.notReply"));
         return;
       }
+      // 023 D3: the copy is derived from the same normalised item the branch
+      // point uses — otherwise a mid-round click would show "content after it
+      // is dropped" while the branch actually keeps the whole round.
+      const item = items[end];
       // "Last reply" is asked per role, like the action matrix does: a trailing
       // system notice must not turn the last answer into a middle one.
-      const lastReply = [...get().items].reverse().find((i) => i.role === "assistant");
+      const lastReply = [...items].reverse().find((i) => i.role === "assistant");
       const isLast = lastReply?.id === item.id;
       // i18n: confirm.forkReply.title / .message / .last / .fork / .cancel
       get().askConfirm({

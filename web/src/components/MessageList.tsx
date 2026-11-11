@@ -186,6 +186,23 @@ export default function MessageList() {
     userAbove[i] = seenUser;
     if (item.role === "user") seenUser = true;
   });
+  // 023 D2: one round = one question + *all* of its pi replies (a tool-call
+  // reply and the summary are two items). Fork belongs to the round's last
+  // reply only — `fork` cuts at user entries, so every other position would
+  // branch to the very same place while promising something else.
+  // System notices deliberately do not close a round: a retry banner or a
+  // compaction hint must not cost the round its Fork.
+  const roundEnd: boolean[] = items.map(() => false);
+  let pendingRoundEnd = -1;
+  items.forEach((item, i) => {
+    if (item.role === "user") {
+      if (pendingRoundEnd >= 0) roundEnd[pendingRoundEnd] = true;
+      pendingRoundEnd = -1;
+    } else if (item.role === "assistant") {
+      pendingRoundEnd = i;
+    }
+  });
+  if (pendingRoundEnd >= 0) roundEnd[pendingRoundEnd] = true;
   const ctx = { sessionBusy: isStreaming, editing: editing != null };
 
   useEffect(() => {
@@ -249,6 +266,7 @@ export default function MessageList() {
               isLastUser: i === lastUser,
               isLastAssistant: i === lastAssistant,
               hasPrecedingUser: userAbove[i] ?? false,
+              isRoundEnd: roundEnd[i] ?? false,
             })}
           />
         ))}

@@ -24,7 +24,7 @@
 - [x] **T307** [US3] `MessageList.tsx`：`items.length === 0 && pendingSwitch?.kind === "history"` 时渲染 `data-testid="session-switching"` 占位（文案 `session.switching`），**不渲染** `empty-state` — 验证：e2e 注入 `?slow=switch_session:1200`，点击行后 ≤150ms `tab-chat` 激活、≤300ms `session-switching` 可见，且 `empty-state` 计数为 0
 - [x] **T308** [US3] 失败与竞态：`switch_session` 抛错 → `set({tab:"sessions", items: []})` + `appendError(session.switchFailed)` + 清 `pendingSwitch`（Q3 默认）；响应回来时 `seq !== current` 直接丢弃；`pendingSwitch` 超 10s 把提示换成 `session.switchingLong` — 验证：单测覆盖失败回列表、A→B 连点时 A 的迟到响应被丢弃（最终 `switchSession` 目标为 B）、10s 文案切换（fake timers）
 - [x] **T309** [US3] `SessionsView.tsx`：行按钮读 `pendingSwitch`，命中的行加 `aria-busy` + `session-pending` 类，其他行 `disabled`（防连点）— 验证：e2e 断言点击后目标行有 `aria-busy="true"`、其余行 `disabled`
-- [ ] **T310** [US3] i18n：`session.switching` / `session.switchingLong` / `session.switchFailed` 进 `en.ts` + `zh.ts` — 验证：`npm run typecheck` 0 错误；字典键对齐测试通过；界面切换语言后备两处文案都在
+- [x] **T310** [US3] i18n：`session.switching` / `session.switchingLong` / `session.switchFailed` 进 `en.ts` + `zh.ts` — 验证：`npm run typecheck` 0 错误；字典键对齐测试通过；界面切换语言后备两处文案都在
 
 ## C. 会话索引（Kotlin）
 

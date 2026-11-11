@@ -2062,10 +2062,18 @@ button {
   position: relative;
   min-width: 0;
   max-width: 92%;
-  /* 022 D6: a long transcript used to paint every message on every frame.
-     `auto` keeps the last measured height, so the scrollbar does not jump;
-     the intrinsic-size hint is only the first-paint estimate. Rollback is
-     this one declaration if a real machine disagrees. */
+}
+
+/* 022 D6: a long transcript used to paint every message on every frame.
+   `auto` keeps the last measured height, so the scrollbar does not jump;
+   the intrinsic-size hint is only the first-paint estimate. Rollback is
+   this one rule if a real machine disagrees.
+
+   It sits on the body, *not* on `.item`: `content-visibility` comes with paint
+   containment, which clipped the action toolbar hanging above the message's
+   top edge and left its buttons half-painted and unclickable. The body is also
+   where the cost is — the header is two short spans. */
+.item-body {
   content-visibility: auto;
   contain-intrinsic-size: auto 120px;
 }

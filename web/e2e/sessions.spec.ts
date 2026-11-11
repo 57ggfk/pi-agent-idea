@@ -46,10 +46,11 @@ test("forking a middle reply branches the conversation into a new session", asyn
   }
   await expect(page.getByTestId("item-user")).toHaveCount(2);
 
-  // Hovering the *first* pi reply exposes Fork on the message toolbar.
-  const firstReply = page.getByTestId("item-assistant").first();
-  await firstReply.hover();
-  await firstReply.getByTestId("act-fork").click();
+  // 023: Fork sits on the last pi reply of the round — the mock answers a
+  // question with two replies, so the first round ends on the second one.
+  const roundOneEnd = page.getByTestId("item-assistant").nth(1);
+  await roundOneEnd.hover();
+  await roundOneEnd.getByTestId("act-fork").click();
 
   await expect(page.getByTestId("confirm-dialog")).toBeVisible();
   await expect(page.getByTestId("confirm-message")).toContainText(/current session stays/i);

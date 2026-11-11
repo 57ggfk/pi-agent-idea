@@ -167,7 +167,6 @@ test.describe("transcript scrolling", () => {
     await expect
       .poll(() => scrollTop(page, '[data-testid="message-list"]'), { timeout: 1000 })
       .toBeLessThan(before.max - 100);
-    const parked = await scrollTop(page, '[data-testid="message-list"]');
 
     await sendAndWait(page, "new content while scrolled up");
 
