@@ -102,6 +102,66 @@ test("a numbered multi-select question lists its options and fills the numbers",
   });
 });
 
+// 选项文字换行时按钮必须跟着长高：`.btn` 是 28px 固定高，一旦允许换行而高度不
+// 跟着内容走，第二行就顶出按钮上下边界、压在下一条条目上（真机里 rpiv 的选项
+// 说明经常两行）。几何断言才抓得住——`toBeVisible()` 对溢出的文字照样通过。
+test("a wrapped option grows its button instead of overlapping the next one", async ({ page }) => {
+  await page.setViewportSize({ width: 430, height: 760 });
+  await page.goto("/?dialog=multi");
+  await expect(page.getByTestId("empty-state")).toBeVisible();
+  await send(page, "which ones first?");
+  await expect(page.getByTestId("approval-pick")).toHaveCount(3);
+
+  // 把第二条换成一个必然折行的长标签，复现真机身位
+  await page.evaluate(() => {
+    const pick = document.querySelectorAll('[data-testid="approval-pick"]')[1];
+    const label = pick?.lastElementChild as HTMLElement | null;
+    if (label) label.textContent = "唯一索引冲突 → 业务异常应被翻译成可读的 DuplicateKeyException，而不是一个 500";
+  });
+
+  const rows = await page.evaluate(() => {
+    const rect = (el: Element) => {
+      const b = el.getBoundingClientRect();
+      return { top: b.top, bottom: b.bottom, left: b.left, right: b.right, height: b.height };
+    };
+    return [...document.querySelectorAll('[data-testid="approval-pick"]')].map((el) => {
+      const box = rect(el);
+      const label = rect(el.lastElementChild as Element);
+      return {
+        box,
+        label,
+        // 负值=留白，正值=文字跑到按钮外面去了
+        overflowBelow: label.bottom - box.bottom,
+        overflowAbove: box.top - label.top,
+        // 编号应当在第一行，而不是被竖直居中到两行之间
+        numberTop: rect(el.firstElementChild as Element).top,
+      };
+    });
+  });
+
+  const long = rows[1];
+  expect(long.box.height, "wrapped option did not grow").toBeGreaterThan(28);
+  expect(long.label.height).toBeGreaterThan(18 * 1.5);
+  expect(long.overflowBelow, "label spills below its button").toBeLessThanOrEqual(0);
+  expect(long.overflowAbove, "label spills above its button").toBeLessThanOrEqual(0);
+  expect(long.numberTop, "the number drifted off the first line").toBeLessThan(long.label.top + 8);
+
+  // 相邻条目之间不能有重叠：同一排左右相邻是正常的，两轴都压上才是叠字
+  for (let i = 0; i < rows.length; i++) {
+    for (let j = i + 1; j < rows.length; j++) {
+      const a = rows[i].box;
+      const b = rows[j].box;
+      const overlapY = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+      const overlapX = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+      expect(overlapX > 1 && overlapY > 1, `options ${i + 1} and ${j + 1} overlap`).toBe(false);
+    }
+  }
+
+  // 点击仍然可用，且点的是这一条
+  await page.getByTestId("approval-pick").nth(1).click();
+  await expect(page.getByTestId("approval-input")).toHaveValue("2");
+});
+
 test("a picked option plus custom text are sent as one string", async ({ page }) => {
   await page.goto("/?dialog=multi");
   await expect(page.getByTestId("empty-state")).toBeVisible();

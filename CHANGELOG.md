@@ -17,6 +17,7 @@
 - 切换会话要等 pi 回完才换画面（021）：点历史会话或新建时，进程要读几百条消息，期间界面停在旧会话上一动不动。现在点击即清屏并显示「正在切换」，随后并行读取消息、统计与会话状态，一笔渲染完成；期间发送按钮禁用、目标行标忙，失败退回会话列表并提示。
 - 滚轮被下拉框抢走、消息列表自己往上弹（022）：模型下拉里有几百条时，悬停会让高亮条跟着鼠标跑并顺手改滚动位置，滚轮也常常滚不动列表；消息列表则会把向上翻看的视图拽回底部。现在悬停不再改高亮（回车仍选悬停项），滚轮只滚列表；只有真正滚到底部才重新吸底，向上滚动后新消息不会抢回视图。
 - 一条提问的多条 pi 回复每条都有 Fork（023）：pi 的 fork 以用户消息为切点，同一轮里的每条回复其实岔到同一个地方，却都显示「其后的内容不会带入」。现在只有本轮最后一条回复提供 Fork，其余回复保留复制与引用。
+- 扩展提问的长选项叠字：选项按钮是 28px 固定高却又允许换行，标签一旦折成两行就顶出按钮上下边界、压到相邻选项上（多选条目与 `select` 选项都中）。现在按钮高度跟着内容走、编号留在第一行，没有空格的超长 token 也能断行。
 
 **Added**
 - Inline reference chips in the composer (spec 018 US1): file/directory references no longer sit in a separate row above the input — they render as pills embedded in the text flow, Cursor/@-mention style. `@` completion, drag & drop, IDE right-click injection and file pastes all land at the caret (injections append at the tail). A reference IS the `@path` text: sending is the raw text (pi resolves `@` itself, no first-line assembly), duplicates are allowed, one Backspace removes a whole pill, and clicking one selects the token. Built as a mirror overlay over the textarea — the text stays the single source of truth, so the IME and autosize pipelines are untouched.
@@ -33,6 +34,7 @@
 - Switching sessions froze the old transcript on screen (021): clicking a history row or New made pi read hundreds of messages while the UI sat still. The click now clears the view at once and shows a "switching" placeholder, then reads messages, stats and state in parallel and paints them in one go; sending stays disabled, the target row is marked busy, and a failure lands back on the session list with the error visible.
 - The wheel was stolen by the model dropdown and the transcript kept snapping back (022): with hundreds of entries, hovering moved the highlight under the cursor and dragged the scroll position with it, and the wheel often did not move the list at all; the transcript likewise pulled a scrolled-up view back to the bottom. Hovering no longer changes the highlight (Enter still picks the hovered entry) and the wheel only scrolls the list; the view re-pins to the bottom only once it is genuinely at the bottom, so new output cannot grab it back while you read.
 - Every pi reply of a round offered Fork (023): pi forks at **user** entries, so all replies of one round branched to the same place while each claimed "everything after this reply is left behind". Only the round's last reply offers Fork now; the others keep copy and quote.
+- Long options in extension questions collided with the next row: the option buttons were a fixed 28px tall yet allowed to wrap, so a two-line label spilled above and below its own box and pressed on the neighbouring option (both the multi-select picks and `select` options). The button height now follows its content, the number stays on the first line, and unbreakable tokens wrap too.
 
 
 ## 0.5.6 — 2026-11-09

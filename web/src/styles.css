@@ -3340,7 +3340,7 @@ button {
   font-size: var(--fs-xs);
 }
 
-/* select：选项按钮换行排布，长选项不挤压卡片 */
+/* select / 多选：选项按钮换行排布，长选项不挤压卡片 */
 .approval-options {
   display: flex;
   flex-wrap: wrap;
@@ -3348,9 +3348,17 @@ button {
   margin: 2px 0 8px;
 }
 
+/* `.btn` 是元素级控件：固定 28px 高。这里允许换行，高度就必须跟着内容长——
+   否则第二行文字顶出按钮上下边界，压在下一条选项上（长标签叠字）。
+   `overflow-wrap: anywhere` 顺带让没有空格的超长 token（URL、类名）也能断行，
+   不把按钮撑得比卡片还宽。 */
 .approval-option {
+  height: auto;
+  min-height: 28px;
+  padding: 4px 10px;
   text-align: left;
   white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 /* 多选：扩展把编号写在标题里时的可点条目，点中即写回编号 */
@@ -3364,6 +3372,8 @@ button {
   display: inline-block;
   min-width: 14px;
   margin-right: 5px;
+  /* 条目换行时编号留在第一行，不被竖直居中到两行之间 */
+  align-self: flex-start;
   color: var(--text-tertiary);
   font-variant-numeric: tabular-nums;
 }
