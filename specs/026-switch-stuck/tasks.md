@@ -48,13 +48,13 @@
   — 验证：`npm run typecheck` 0 错误；`npx vitest run` 全绿（store 层断言已覆盖状态机）；
   bar 的可见性/点击行为由 T809 的 e2e 锁。
 
-- [ ] **T809** e2e：新增 `web/e2e/switch-stuck.spec.ts` 四条——E1 吞响应 8s 内收敛到 retry bar
+- [x] **T809** e2e：新增 `web/e2e/switch-stuck.spec.ts` 四条——E1 吞响应 8s 内收敛到 retry bar
   并回 sessions；E2 失败 → 点重试 → 落 chat 且 bar 消失；E3 history pending 时点新建 → empty-state
   快速出现（接管非静默）、5s 后无旧内容回灌；E4 A 读迟到 1s → 最终 title/items 是 B、A 内容永不渲染。
   — 验证：`npx playwright test switch-stuck` 4 条全绿；`npx playwright test sessions`（021 阈值）
   零回归。
 
-- [ ] **T810** 收尾：全量三件套（`npm run typecheck` + `npx vitest run` + `npx playwright test`）；
+- [x] **T810** 收尾：全量三件套（`npm run typecheck` + `npx vitest run` + `npx playwright test`）；
   写 `changelog.d/026-switch-timeout.fixed.md`（两行：中文/英文，只写用户可见变化）；更新
   `specs/0.5.8-run-report.md` 第 2 节（勾 task、记基线变化）。
   — 验证：三件套全绿；changelog 两行格式通过既有 `collectChangelog`/CI 校验；run-report 第 2 节

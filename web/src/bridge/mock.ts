@@ -211,6 +211,26 @@ export class MockBridge implements Bridge {
   private readonly slowPlan = parseFailPlan(query()?.get("slow"));
   private slowServed = new Map<string, number>();
   private slowCommands = new Map<string, number>();
+  /**
+   * `?slowN=get_messages#2:1000` delays the *Nth* call of a command (026 US2).
+   * The boot replay already spends the one-shot `?slow=` on `get_messages` /
+   * `get_state` (init replays the transcript), so a scenario that needs the
+   * switch's own read to land late must address it by call number.
+   */
+  private readonly slowNPlan = (() => {
+    const plan = new Map<string, number>();
+    for (const entry of (query()?.get("slowN") ?? "").split(",")) {
+      const [name, nth, ms] = entry.split(":");
+      if (!name || !nth || !ms) continue;
+      const n = Number(nth);
+      const delay = Number(ms);
+      if (Number.isFinite(n) && n >= 1 && Number.isFinite(delay) && delay > 0) {
+        plan.set(`${name.trim()}#${n}`, delay);
+      }
+    }
+    return plan;
+  })();
+  private commandCalls = new Map<string, number>();
   /** `?failcmd=switch_session` — fails the first call of that rpc command, so
    *  the optimistic-switch rollback (021 US3) has a failure to roll back. */
   private readonly failCmdPlan = parseFailPlan(query()?.get("failcmd"));
@@ -415,6 +435,11 @@ export class MockBridge implements Bridge {
   }
 
   private commandDelay(type: string): Promise<void> {
+    // ?slowN=<cmd>#<n>:<ms> — the Nth call of this command is held back.
+    const callNo = (this.commandCalls.get(type) ?? 0) + 1;
+    this.commandCalls.set(type, callNo);
+    const nthMs = this.slowNPlan.get(`${type}#${callNo}`);
+    if (nthMs) return delay(nthMs);
     const ms = this.slowPlan.get(type) ?? 0;
     const served = this.slowCommands.get(type) ?? 0;
     if (ms <= 0 || served >= 1) return Promise.resolve();
