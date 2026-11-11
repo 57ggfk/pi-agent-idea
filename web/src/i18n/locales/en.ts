@@ -85,6 +85,7 @@ export const en = {
 
   // -- message list & actions -------------------------------------------------
   "chat.retryBanner": "Retrying ({{attempt}}/{{max}}) in {{seconds}}s — {{error}}",
+  "chat.jumpToBottom": "Scroll to bottom",
   "chat.empty.noModel": "No model selected",
   "chat.empty.mock": "mock mode",
   "chat.actions.copy": "Copy message",

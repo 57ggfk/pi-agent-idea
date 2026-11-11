@@ -2052,6 +2052,18 @@ button {
 }
 
 /* Message list - prototype style */
+/* 029: positioning wrapper around the scroll container — same box the
+   .message-list used to occupy alone (the flex slots moved up one level, the
+   scroller keeps its own flex:1 inside). The jump button anchors here so it
+   can never join the scrollable overflow. */
+.message-list-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+}
+
 .message-list {
   flex: 1;
   min-height: 0;
@@ -4770,4 +4782,30 @@ button {
   color: inherit;
   border-radius: 2px;
   padding: 0 1px;
+}
+
+/* 029: "scroll to bottom" pill — a sibling of the scroll container (never
+   inside it: it would join the scrollable overflow), bottom-right of the
+   transcript, above the composer's visual edge but below nothing else. */
+.jump-bottom {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 5;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  box-shadow: 0 1px 4px rgba(16, 24, 40, 0.18);
+  cursor: pointer;
+}
+
+.jump-bottom:hover {
+  color: var(--text);
+  background: var(--surface-hover);
 }

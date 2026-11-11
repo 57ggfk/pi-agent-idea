@@ -86,6 +86,7 @@ export const zh: Dict = {
 
   // -- message list & actions -------------------------------------------------
   "chat.retryBanner": "{{seconds}} 秒后重试（{{attempt}}/{{max}}）— {{error}}",
+  "chat.jumpToBottom": "回到底部",
   "chat.empty.noModel": "未选择模型",
   "chat.empty.mock": "mock 模式",
   "chat.actions.copy": "复制消息",
