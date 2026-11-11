@@ -1278,7 +1278,15 @@ button {
   font-size: 12px;
 }
 
-.model-option-active {
+/* 022 US1: hover is pure CSS now — the pointer never enters React state, so
+   scrolling the list no longer re-renders every row. Hover stays weak, the
+   keyboard item keeps the strong colour (both visible at once is expected). */
+.model-option:hover {
+  background: var(--bg-subtle);
+}
+
+.model-option-active,
+.model-option-active:hover {
   background: var(--user-bubble);
 }
 
@@ -2054,6 +2062,12 @@ button {
   position: relative;
   min-width: 0;
   max-width: 92%;
+  /* 022 D6: a long transcript used to paint every message on every frame.
+     `auto` keeps the last measured height, so the scrollbar does not jump;
+     the intrinsic-size hint is only the first-paint estimate. Rollback is
+     this one declaration if a real machine disagrees. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 120px;
 }
 
 .item-user {

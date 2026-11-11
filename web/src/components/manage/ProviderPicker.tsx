@@ -58,6 +58,14 @@ export default function ProviderPicker({
     requestAnimationFrame(() => inputRef.current?.focus());
   }, [open]);
 
+  /**
+   * 022 D1/D3: hovering must not scroll and must not re-render. The pointer
+   * position is a ref; only keyboard navigation moves `highlight`, and only
+   * keyboard navigation is allowed to call `ensureVisible`.
+   */
+  const hoverIndexRef = useRef<number | null>(null);
+  const scrollOnChangeRef = useRef(false);
+
   // Locate the current selection once per open and scroll it into view only
   // when out of sight (same single-rAF guard as ModelPicker).
   useEffect(() => {
@@ -65,6 +73,7 @@ export default function ProviderPicker({
     locatedRef.current = true;
     const raf = requestAnimationFrame(() => {
       const idx = flat.findIndex((e) => (e === "custom" ? value === PROVIDER_CUSTOM : e.id === value));
+      scrollOnChangeRef.current = true;
       setHighlight(idx >= 0 ? idx : 0);
       const list = listRef.current;
       const target = idx >= 0 ? idx : 0;
@@ -81,6 +90,9 @@ export default function ProviderPicker({
   useEffect(() => {
     const list = listRef.current;
     if (!open || !list) return;
+    // Hover never sets this flag, so the wheel owns the scroll position.
+    if (!scrollOnChangeRef.current) return;
+    scrollOnChangeRef.current = false;
     const el = list.querySelectorAll("[data-provider-index]")[highlight];
     if (el) ensureVisible(list, el as HTMLElement);
   }, [highlight, open]);
@@ -148,17 +160,28 @@ export default function ProviderPicker({
             onKeyDown={(e) => {
               if (e.key === "ArrowDown") {
                 e.preventDefault();
+                scrollOnChangeRef.current = true;
                 setHighlight((i) => Math.min(i + 1, flat.length - 1));
               } else if (e.key === "ArrowUp") {
                 e.preventDefault();
+                scrollOnChangeRef.current = true;
                 setHighlight((i) => Math.max(i - 1, 0));
               } else if (e.key === "Enter") {
                 e.preventDefault();
-                pick(highlight);
+                // Enter still takes the row under the mouse when there is one
+                // — it just no longer costs a render to know where that is.
+                pick(hoverIndexRef.current ?? highlight);
               }
             }}
           />
-          <div className="model-list" role="listbox" ref={listRef}>
+          <div
+            className="model-list"
+            role="listbox"
+            ref={listRef}
+            onMouseLeave={() => {
+              hoverIndexRef.current = null;
+            }}
+          >
             {filtered.length === 0 ? (
               <div className="panel-empty" data-testid={`${testPrefix}-no-match`}>
                 {t("provider.noMatch", { query })}
@@ -177,7 +200,9 @@ export default function ProviderPicker({
                   data-provider-index={index}
                   data-value={o.id}
                   data-active={active}
-                  onMouseEnter={() => setHighlight(index)}
+                  onMouseEnter={() => {
+                    hoverIndexRef.current = index;
+                  }}
                   onMouseDown={(e) => {
                     e.preventDefault();
                     pick(index);
@@ -211,7 +236,9 @@ export default function ProviderPicker({
                   data-provider-index={index}
                   data-value={PROVIDER_CUSTOM}
                   data-active={active}
-                  onMouseEnter={() => setHighlight(index)}
+                  onMouseEnter={() => {
+                    hoverIndexRef.current = index;
+                  }}
                   onMouseDown={(e) => {
                     e.preventDefault();
                     pick(index);

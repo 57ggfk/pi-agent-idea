@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { SWITCH_LONG_MS, isSwitchLong, usePiStore } from "../store/store";
 import { actionsForItem, type ChatItem, type ContentBlock, type MessageAction } from "../store/types";
 import { hitsFromItems } from "../lib/search";
 import { displaySkillText } from "../lib/skillDisplay";
 import { imageSrc } from "../lib/imagePreview";
+import { sameActionIds } from "../lib/messageActions";
+import { initialPin, nextPin, type PinState } from "../lib/pin";
+import { perfMark } from "../lib/perf";
 import { useT } from "../i18n/useT";
 import Markdown from "./Markdown";
 import MessageActions from "./MessageActions";
@@ -62,7 +65,7 @@ function BlockView({
   return <ToolCard block={block} forceOpen={forceOpenOutput} />;
 }
 
-function ItemView({
+function ItemViewImpl({
   item,
   actions,
   activeHitBlockIndex,
@@ -116,6 +119,21 @@ function ItemView({
 }
 
 /**
+ * 022 D5: every store change (stats, queue, language, streaming ticks) used to
+ * repaint the whole transcript. The comparator only accepts a changed item
+ * reference, a changed highlight block, or a changed action set — note
+ * `actionsForItem()` allocates a new array each render, so the action ids are
+ * compared by content.
+ */
+const ItemView = memo(
+  ItemViewImpl,
+  (a, b) =>
+    a.item === b.item &&
+    a.activeHitBlockIndex === b.activeHitBlockIndex &&
+    sameActionIds(a.actions, b.actions),
+);
+
+/**
  * Presentation blocks (011 US4, T015): skill-expanded user messages show the
  * `/skill:<name>` marker + question, never the SKILL.md body. The store keeps
  * pi's raw text — search (006) and the HTML export operate on the store list,
@@ -139,7 +157,10 @@ export default function MessageList() {
   const pendingSwitch = usePiStore((s) => s.pendingSwitch);
   const { t } = useT();
   const scrollRef = useRef<HTMLDivElement>(null);
-  const stickToBottom = useRef(true);
+  /** 022 D4: "follow new content?" as explicit state — see lib/pin.ts. */
+  const pinRef = useRef<PinState>(initialPin());
+  /** Set by an upward wheel/arrow gesture; consumed by the next scroll event. */
+  const userUpRef = useRef(false);
 
   // The hit the search bar currently points at (spec 006 US2): its tool card
   // must auto-expand (T011) and its block gets the paint anchor.
@@ -169,16 +190,43 @@ export default function MessageList() {
 
   useEffect(() => {
     const el = scrollRef.current;
-    if (el && stickToBottom.current) {
-      el.scrollTop = el.scrollHeight;
-    }
+    if (!el || !pinRef.current.pinned) return;
+    el.scrollTop = el.scrollHeight;
+    // Record where the programmatic scroll landed, or the next `onScroll`
+    // would read it as an upward move.
+    pinRef.current = { pinned: true, lastTop: el.scrollTop, lastHeight: el.scrollHeight };
   }, [items, retryInfo]);
 
   const onScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
-    stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+    const userUp = userUpRef.current;
+    userUpRef.current = false;
+    pinRef.current = nextPin(pinRef.current, el.scrollTop, el.scrollHeight, el.clientHeight, userUp);
   };
+
+  /**
+   * 022 D7 / T411 — `scroll.frame`: how long the first frame after a wheel
+   * event took. Only a *dropped* frame (>50ms) is logged, so a normal scroll
+   * writes nothing to idea.log; the numbers that matter are the outliers.
+   */
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (event: WheelEvent) => {
+      // The gesture itself is the most reliable "the user wants to go up"
+      // signal — geometry can be distorted by content-visibility re-measuring.
+      if (event.deltaY < 0) userUpRef.current = true;
+      const startedAt = performance.now();
+      const before = el.scrollTop;
+      requestAnimationFrame(() => {
+        const spent = performance.now() - startedAt;
+        if (spent > 50) perfMark("scroll.frame", startedAt, { dy: Math.round(el.scrollTop - before) });
+      });
+    };
+    el.addEventListener("wheel", onWheel, { passive: true });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
 
   return (
     <div className="message-list" ref={scrollRef} onScroll={onScroll} data-testid="message-list">

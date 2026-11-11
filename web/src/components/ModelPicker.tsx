@@ -1,8 +1,9 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePiStore } from "../store/store";
 import { MODELS_TTL_MS, needsRefresh } from "../store/sources";
 import { useT } from "../i18n/useT";
 import { buildPickerData, ensureVisible, type PickerModelData } from "../lib/modelGroups";
+import { bumpHoverRender } from "../lib/perf";
 import { tip } from "./Tooltip";
 import Icon from "./Icon";
 
@@ -53,6 +54,58 @@ function saveCollapsed(set: Set<string>) {
   }
 }
 
+interface ModelOptionProps {
+  modelKey: string;
+  id: string;
+  name: string;
+  provider: string;
+  current: boolean;
+  /** Keyboard current item — the only thing `data-active` means since 022. */
+  active: boolean;
+  index: number;
+  onPick: (index: number) => void;
+  onHover: (index: number) => void;
+}
+
+/**
+ * One row (022 D2). Props are primitives plus two stable callbacks, so a wheel
+ * step — which now only writes a ref — re-renders nothing. `bumpHoverRender`
+ * is the counter behind the `hover.render` measurement.
+ */
+const ModelOption = memo(function ModelOption({
+  modelKey,
+  id,
+  name,
+  provider,
+  current,
+  active,
+  index,
+  onPick,
+  onHover,
+}: ModelOptionProps) {
+  bumpHoverRender();
+  return (
+    <div
+      className={`model-option ${active ? "model-option-active" : ""}`}
+      data-testid="model-option"
+      data-model-key={modelKey}
+      data-active={active}
+      onMouseEnter={() => onHover(index)}
+      onMouseDown={(e) => {
+        e.preventDefault();
+        onPick(index);
+      }}
+    >
+      <span className="model-option-check">{current ? "✓" : ""}</span>
+      <span className="model-option-main">
+        <span className="model-option-name">{name}</span>
+        <span className="model-option-sub">{id}</span>
+      </span>
+      {provider !== "" ? <span className="model-option-provider">{provider}</span> : null}
+    </div>
+  );
+});
+
 export default function ModelPicker() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -71,6 +124,14 @@ export default function ModelPicker() {
   const rootRef = useRef<HTMLDivElement>(null);
   /** Open-locate must run once per open, even if `models` lands late. */
   const locatedRef = useRef(false);
+  /**
+   * 022 D1/D3: the row under the pointer is a ref, not state. Writing state on
+   * `mouseenter` re-rendered the whole list on every wheel notch (and then
+   * forced a layout in `ensureVisible`) — the wheel queue was the "停一下才动"
+   * the user reported. Only keyboard navigation moves `highlight`.
+   */
+  const hoverIndexRef = useRef<number | null>(null);
+  const scrollOnChangeRef = useRef(false);
 
   const keywords = useMemo(
     () => query.toLowerCase().split(/\s+/).filter(Boolean),
@@ -151,6 +212,7 @@ export default function ModelPicker() {
     const raf = requestAnimationFrame(() => {
       inputRef.current?.focus();
       const idx = data.activeFlatIndex;
+      scrollOnChangeRef.current = true;
       setHighlight(idx ?? 0);
       const list = listRef.current;
       if (list && idx != null) {
@@ -163,10 +225,13 @@ export default function ModelPicker() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, models, data, effectiveCollapsed]);
 
-  // US1: navigation scrolls only when the highlighted entry leaves the view.
+  // US1: keyboard navigation scrolls only when the highlighted entry leaves
+  // the view — and only *because* of keyboard navigation (022 D3).
   useEffect(() => {
     const list = listRef.current;
     if (!open || !list) return;
+    if (!scrollOnChangeRef.current) return;
+    scrollOnChangeRef.current = false;
     const el = list.querySelectorAll("[data-model-key]")[highlight];
     if (el) ensureVisible(list, el as HTMLElement);
   }, [highlight, open]);
@@ -194,12 +259,24 @@ export default function ModelPicker() {
     };
   }, [open]);
 
-  const pick = (index: number) => {
-    const entry = data.visibleFlat[index];
-    if (!entry) return;
-    void setModel(entry.model.provider, entry.model.id);
-    setOpen(false);
-  };
+  // `data` in a ref keeps `pick` (and therefore every row's `onPick`) stable —
+  // a new callback per render would defeat the row memo below (D2).
+  const dataRef = useRef(data);
+  dataRef.current = data;
+  const pick = useCallback(
+    (index: number) => {
+      const entry = dataRef.current.visibleFlat[index];
+      if (!entry) return;
+      void setModel(entry.model.provider, entry.model.id);
+      setOpen(false);
+    },
+    [setModel],
+  );
+
+  /** Stable across renders: hovering only records a number (022 D1). */
+  const onHover = useCallback((index: number) => {
+    hoverIndexRef.current = index;
+  }, []);
 
   const { t } = useT();
   const label = model ? model.name ?? model.id : t("model.select");
@@ -242,17 +319,27 @@ export default function ModelPicker() {
             onKeyDown={(e) => {
               if (e.key === "ArrowDown") {
                 e.preventDefault();
+                scrollOnChangeRef.current = true;
                 setHighlight((i) => Math.min(i + 1, data.visibleFlat.length - 1));
               } else if (e.key === "ArrowUp") {
                 e.preventDefault();
+                scrollOnChangeRef.current = true;
                 setHighlight((i) => Math.max(i - 1, 0));
               } else if (e.key === "Enter") {
                 e.preventDefault();
-                pick(highlight);
+                // Enter keeps the "pick what the mouse points at" feel without
+                // paying a render for hover (US1 ③).
+                pick(hoverIndexRef.current ?? highlight);
               }
             }}
           />
-          <div className="model-list" ref={listRef}>
+          <div
+            className="model-list"
+            ref={listRef}
+            onMouseLeave={() => {
+              hoverIndexRef.current = null;
+            }}
+          >
             {data.visibleFlat.length === 0 ? (
               <div className="panel-empty" data-testid="model-empty">
                 {t("model.noMatch", { query })}
@@ -284,30 +371,19 @@ export default function ModelPicker() {
                       {group.models.map((entry) => {
                         const key = `${entry.provider}/${entry.id}`;
                         const vi = visibleIndexOf.get(key) ?? 0;
-                        const active = vi === highlight;
-                        const current = currentKey !== null && key === currentKey;
                         return (
-                          <div
+                          <ModelOption
                             key={key}
-                            className={`model-option ${active ? "model-option-active" : ""}`}
-                            data-testid="model-option"
-                            data-model-key={key}
-                            data-active={active}
-                            onMouseEnter={() => setHighlight(vi)}
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              pick(vi);
-                            }}
-                          >
-                            <span className="model-option-check">{current ? "✓" : ""}</span>
-                            <span className="model-option-main">
-                              <span className="model-option-name">{entry.name ?? entry.id}</span>
-                              <span className="model-option-sub">{entry.id}</span>
-                            </span>
-                            {entry.provider !== "" ? (
-                              <span className="model-option-provider">{entry.provider}</span>
-                            ) : null}
-                          </div>
+                            modelKey={key}
+                            id={entry.id}
+                            name={entry.name ?? entry.id}
+                            provider={entry.provider}
+                            current={currentKey !== null && key === currentKey}
+                            active={vi === highlight}
+                            index={vi}
+                            onPick={pick}
+                            onHover={onHover}
+                          />
                         );
                       })}
                       {group.hidden > 0 ? (

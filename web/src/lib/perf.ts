@@ -42,3 +42,29 @@ export function perfMark(
   const now = typeof performance !== "undefined" ? performance.now() : Date.now();
   console.log(formatPerfLine(event, now - startedAt, extra));
 }
+
+/**
+ * 022 D7 / T404/T411 — `hover.render`: how many model-option rows rendered.
+ * Hovering is supposed to render *nothing*, so the real-machine target is 0
+ * for N wheel steps. Exposed on `window.__piPerf` in dev builds only (the
+ * Playwright suite runs against the Vite dev server), and never logged on its
+ * own — a counter, not a log line.
+ */
+let hoverRenders = 0;
+
+export function bumpHoverRender(): void {
+  hoverRenders += 1;
+}
+
+export function readHoverRenders(): number {
+  return hoverRenders;
+}
+
+export function resetHoverRenders(): void {
+  hoverRenders = 0;
+}
+
+const isDev = (import.meta as { env?: { DEV?: boolean } }).env?.DEV === true;
+if (isDev && typeof window !== "undefined") {
+  (window as unknown as { __piPerf?: unknown }).__piPerf = { hoverRenders: readHoverRenders, resetHoverRenders };
+}
