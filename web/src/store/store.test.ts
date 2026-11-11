@@ -1518,4 +1518,64 @@ describe("switch stuck & convergence (026)", () => {
     // The switch never reached pi — the abort hop failed first.
     expect(commandTypes()).not.toContain("switch_session");
   });
+
+  it("FR-003: a late rejected switch cleans only itself — the newer pending survives", async () => {
+    const gateA = deferred<unknown>();
+    const gateB = deferred<unknown>();
+    let call = 0;
+    h.state.rpc.set("switch_session", () => (++call === 1 ? gateA.promise : gateB.promise));
+    h.state.rpc.set("get_messages", () => ({ messages: [] }));
+    h.state.rpc.set("get_session_stats", () => ({}));
+    h.state.rpc.set("get_state", () => ({ sessionName: "B" }));
+
+    const pa = usePiStore.getState().switchSession("/sessions/a.jsonl");
+    const pb = usePiStore.getState().switchSession("/sessions/b.jsonl");
+    const pendingBefore = usePiStore.getState().pendingSwitch;
+    expect(pendingBefore).toMatchObject({ file: "/sessions/b.jsonl" });
+
+    // A's RPC refuses after B already owns the screen: the early return must
+    // not clear B's placeholder (pre-026 it could not clear anything; the
+    // guard makes the intent explicit and testable).
+    gateA.reject(new Error("late refusal"));
+    await pa;
+
+    const s = usePiStore.getState();
+    expect(s.pendingSwitch).toMatchObject({ file: "/sessions/b.jsonl" });
+    expect(s.pendingSwitch?.startedAt).toBe(pendingBefore?.startedAt);
+
+    gateB.resolve({});
+    await pb;
+    expect(usePiStore.getState().pendingSwitch).toBeNull();
+    expect(usePiStore.getState().sessionName).toBe("B");
+  });
+
+  it("US2: a late content read never drags the screen back to the older target", async () => {
+    const gateMsgA = deferred<{ messages: unknown[] }>();
+    let msgCall = 0;
+    h.state.rpc.set("switch_session", () => ({}));
+    h.state.rpc.set("get_messages", () =>
+      ++msgCall === 1 ? gateMsgA.promise : { messages: [{ role: "user", content: "from B" }] },
+    );
+    h.state.rpc.set("get_session_stats", () => ({}));
+    h.state.rpc.set("get_state", () => ({ sessionName: "B" }));
+
+    const pa = usePiStore.getState().switchSession("/sessions/a.jsonl");
+    // A's reads (its get_messages is call #1) must be in flight before B clicks.
+    await vi.waitFor(() => expect(commandTypes()).toContain("get_messages"));
+
+    const pb = usePiStore.getState().switchSession("/sessions/b.jsonl");
+    await pb;
+    expect(usePiStore.getState().pendingSwitch).toBeNull();
+
+    // A's transcript arrives one second late (US2 scenario): D8 drops it —
+    // the screen keeps B's content and no placeholder can come back.
+    gateMsgA.resolve({ messages: [{ role: "user", content: "from A" }] });
+    await pa;
+
+    const s = usePiStore.getState();
+    expect(s.pendingSwitch).toBeNull();
+    expect(s.sessionName).toBe("B");
+    expect(JSON.stringify(s.items)).toContain("from B");
+    expect(JSON.stringify(s.items)).not.toContain("from A");
+  });
 });

@@ -18,7 +18,7 @@
   — 验证：`store.test.ts` 新增 U1（吞 switch_session → 5s 后 pending 清空+回列表+错误条目+埋点）、
   U2（读超时降级不算失败）、U3（abort 超时走失败，reason=abort_timeout）三条绿；既有 021 断言全绿。
 
-- [ ] **T804** `store.ts` FR-003 identity 清理：`clearOwnPending(startedAt)` 助手，接线
+- [x] **T804** `store.ts` FR-003 identity 清理：`clearOwnPending(startedAt)` 助手，接线
   `switchSession` try/catch 两处 seq 早退与 `runNewSession` try/catch 两处 seq 早退；不得清掉
   更新一次留下的 pending。
   — 验证：`store.test.ts` 新增 U4（A 迟到 reject 不清 B 的 pending、retrySwitch 不被 A 污染）、

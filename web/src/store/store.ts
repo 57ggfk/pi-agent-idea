@@ -657,6 +657,17 @@ export const usePiStore = create<PiStore>((set, get) => {
   let switchSeq = 0;
 
   /**
+   * 026 FR-003: a switch that leaves scope (early return on a newer seq, a
+   * late catch, success) clears only the pendingSwitch it *owns* — ownership
+   * is the `startedAt` captured at click time. Clearing unconditionally would
+   * either erase a newer switch's placeholder or resurrect nothing; before
+   * this guard the newest switch's own failure left the screen stuck.
+   */
+  const clearOwnPending = (startedAt: number) => {
+    if (get().pendingSwitch?.startedAt === startedAt) set({ pendingSwitch: null });
+  };
+
+  /**
    * Runs a source read through the state machine (spec 003).
    *
    * In-flight dedupe lives here rather than in each caller: the composer's
@@ -828,7 +839,10 @@ export const usePiStore = create<PiStore>((set, get) => {
 
     try {
       await withTimeout(rpc(b, { type: "new_session" }), SWITCH_RPC_TIMEOUT_MS, "new_session");
-      if (seq !== switchSeq) return;
+      if (seq !== switchSeq) {
+        clearOwnPending(startedAt); // 026 FR-003
+        return;
+      }
       set({ pendingSwitch: null });
       perfMark("switch.content", startedAt, { kind: "new" });
       // D2: neither the stats read nor the session-list rescan belongs on the
@@ -839,7 +853,10 @@ export const usePiStore = create<PiStore>((set, get) => {
       }, 0);
       perfMark("switch.ready", startedAt, { kind: "new" });
     } catch (e) {
-      if (seq !== switchSeq) return;
+      if (seq !== switchSeq) {
+        clearOwnPending(startedAt); // 026 FR-003
+        return;
+      }
       // 026 FR-007: a visible failure mark — "pending without ready" stops
       // being the only stuck signature in idea.log.
       perfMark("switch.failed", startedAt, { reason: switchFailReason(e) });
@@ -1888,7 +1905,10 @@ export const usePiStore = create<PiStore>((set, get) => {
             "get_state",
           ).catch(() => undefined),
         ]);
-        if (seq !== switchSeq) return; // D8: a newer target owns the screen
+        if (seq !== switchSeq) {
+          clearOwnPending(startedAt); // 026 FR-003: D8 drop still cleans itself
+          return; // D8: a newer target owns the screen
+        }
 
         set({
           items: itemsFromMessages(messages.messages ?? []).filter((i) => !i.ephemeral),
@@ -1903,7 +1923,10 @@ export const usePiStore = create<PiStore>((set, get) => {
         requestRepaint();
         perfMark("switch.ready", startedAt, { kind: "history" });
       } catch (e) {
-        if (seq !== switchSeq) return;
+        if (seq !== switchSeq) {
+          clearOwnPending(startedAt); // 026 FR-003: a stale failure still cleans itself
+          return;
+        }
         // 026 FR-007: timeout and RPC refusal are the same failure to the
         // user, but the log keeps them apart for real-machine attribution.
         perfMark("switch.failed", startedAt, { reason: switchFailReason(e) });
