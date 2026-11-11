@@ -12,7 +12,7 @@
   `reloaded:false, reloadError`，不回滚文件）。
   — 验证：`./gradlew test` 全量绿；typecheck（web）在 T903 后一并绿。
 
-- [ ] **T903** 桥接四处同步：`types.ts` 4 方法、`manage.ts` 函数与类型、`mock.ts` 实现
+- [x] **T903** 桥接四处同步：`types.ts` 4 方法、`manage.ts` 函数与类型、`mock.ts` 实现
   （`?providertest=401|timeout` 旋钮、save/delete 改内存表并注入 picker 模型、掩码口径）。
   — 验证：`mock.test.ts` 新增（save→get_available_models 出现新模型；test 两形态；响应无明文 key）
   绿；typecheck 0 错。

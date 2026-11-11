@@ -1,4 +1,5 @@
 import type { Bridge, BridgeEventName } from "./types";
+import { KNOWN_PROVIDERS } from "../lib/knownProviders";
 
 type Listener = (name: BridgeEventName, data: unknown) => void;
 
@@ -321,7 +322,9 @@ export class MockBridge implements Bridge {
    * synthetic model. They model the real behaviour that a fresh credential
    * adds models to the catalog.
    */
-  private readonly dynamicModels: MockModel[] = [];
+  private dynamicModels: MockModel[] = [];
+  /** 027: providers defined through the Auth panel form (keyed by name). */
+  private customProviders = new Map<string, CustomProviderRecord>();
   /**
    * `?reload=strict` hides [dynamicModels] from plain `get_available_models`
    * until `models.reload` runs — that is the models.json case, where only an
@@ -1019,6 +1022,95 @@ export class MockBridge implements Bridge {
           };
         }
         return { ...base, modelsState: "ok", modelsPath: "/tmp/mock-home/.pi/agent/models.json" };
+      }
+      // -- 027: custom provider definition (models.json form) ----------------
+      case "manage.providerGet": {
+        const name = String((params as { name?: string } | undefined)?.name ?? "");
+        const rec = this.customProviders.get(name);
+        if (!rec) {
+          return { ok: true, exists: false, name };
+        }
+        return {
+          ok: true,
+          exists: true,
+          name,
+          provider: {
+            name,
+            displayName: rec.displayName,
+            baseUrl: rec.baseUrl,
+            api: rec.api,
+            models: rec.models.map((m) => ({
+              id: m.id,
+              name: m.name,
+              reasoning: m.reasoning,
+              inputImage: m.inputImage,
+              thinkingLevels: m.thinkingLevels,
+              contextWindow: m.contextWindow,
+              maxTokens: m.maxTokens,
+            })),
+            hasKey: rec.apiKey != null,
+            keyMasked: rec.apiKey ? maskMockKey(rec.apiKey) : null,
+          },
+        }
+      }
+      case "manage.providerSave": {
+        const p = (params ?? {}) as { provider?: CustomProviderFormPayload; overwrite?: boolean };
+        const form = p.provider;
+        const name = form?.name ?? "";
+        if (KNOWN_PROVIDERS.some((k) => k.id === name) && !p.overwrite) {
+          return { ok: false, code: "builtin", error: `"${name}" is a bundled pi provider` }
+        }
+        if (this.customProviders.has(name) && !p.overwrite) {
+          return { ok: false, code: "exists", error: `a custom provider named "${name}" already exists` }
+        }
+        const previous = this.customProviders.get(name);
+        const apiKey =
+          form?.apiKey?.trim() || (previous?.apiKey ?? null);
+        const record: CustomProviderRecord = {
+          displayName: form?.displayName?.trim() || undefined,
+          baseUrl: form?.baseUrl ?? "",
+          api: form?.api ?? "",
+          apiKey,
+          models: (form?.models ?? []).map((m: CustomProviderModelPayload) => ({
+            ...m,
+            contextWindow: m.contextWindow ?? undefined,
+            maxTokens: m.maxTokens ?? undefined,
+          })),
+        };
+        this.customProviders.set(name, record);
+        // The picker sees the new models once the flow reloads (017 mock).
+        this.dynamicModels = this.dynamicModels.filter((m) => m.provider !== name);
+        for (const m of record.models) {
+          this.dynamicModels.push({
+            id: m.id,
+            name: m.name || m.id,
+            provider: name,
+            contextWindow: m.contextWindow ?? 128000,
+            reasoning: m.reasoning,
+          });
+        }
+        return { ok: true, name, reloaded: true }
+      }
+      case "manage.providerDelete": {
+        const name = String((params as { name?: string } | undefined)?.name ?? "");
+        if (KNOWN_PROVIDERS.some((k) => k.id === name)) {
+          return { ok: false, code: "builtin", error: `"${name}" is a bundled pi provider` }
+        }
+        if (!this.customProviders.delete(name)) {
+          return { ok: false, error: `no provider named "${name}"` }
+        }
+        this.dynamicModels = this.dynamicModels.filter((m) => m.provider !== name);
+        return { ok: true, name }
+      }
+      case "manage.providerTest": {
+        const knob = query()?.get("providertest");
+        if (knob === "401") {
+          return { ok: false, status: 401, ms: 120, error: "HTTP 401: Unauthorized" }
+        }
+        if (knob === "timeout") {
+          return { ok: false, ms: 10_000, error: "request timed out after 10s" }
+        }
+        return { ok: true, status: 200, ms: 140 }
       }
       case "manage.modelsReadProvider": {
         if (this.modelsKnob === "broken") {
@@ -2318,6 +2410,41 @@ function pickerModels(knob: string | null | undefined, scaleKnob?: string | null
   }
 
   return MOCK_MODELS;
+}
+
+// -- 027: custom provider form payloads (manage.providerSave/Get) ------------
+
+export interface CustomProviderModelPayload {
+  id: string;
+  name?: string;
+  reasoning: boolean;
+  inputImage: boolean;
+  thinkingLevels: string[];
+  contextWindow?: number;
+  maxTokens?: number;
+}
+
+export interface CustomProviderFormPayload {
+  name: string;
+  displayName?: string;
+  api: string;
+  baseUrl: string;
+  apiKey?: string;
+  thinkingFormat?: string;
+  models: CustomProviderModelPayload[];
+}
+
+interface CustomProviderRecord {
+  displayName?: string;
+  baseUrl: string;
+  api: string;
+  apiKey: string | null;
+  models: Array<Required<Pick<CustomProviderModelPayload, "id" | "reasoning" | "inputImage" | "thinkingLevels">> &
+    Partial<CustomProviderModelPayload>>;
+}
+
+function maskMockKey(key: string): string {
+  return key.length <= 6 ? "•••" : `${key.slice(0, 3)}…${key.slice(-2)}`;
 }
 
 // Sample project-relative paths served for the `files.list` bridge method

@@ -296,3 +296,81 @@ describe("MockBridge sessions.fork (024)", () => {
     }
   });
 });
+
+describe("MockBridge custom provider (027)", () => {
+  const FORM = {
+    name: "my-relay",
+    displayName: "My Relay",
+    api: "openai-completions",
+    baseUrl: "https://relay.example.com",
+    apiKey: "sk-relay-secret-9",
+    models: [
+      { id: "relay-large", name: "Relay Large", reasoning: true, inputImage: false, thinkingLevels: ["low", "medium", "high"] },
+      { id: "relay-vision", reasoning: false, inputImage: true, thinkingLevels: [] },
+    ],
+  };
+
+  it("save registers the provider and the picker sees its models after reload", async () => {
+    const bridge = new MockBridge();
+    const saved = await bridge.request<{ ok: boolean; reloaded: boolean }>("manage.providerSave", {
+      provider: FORM,
+    });
+    expect(saved.ok).toBe(true);
+    expect(saved.reloaded).toBe(true);
+
+    const after = await bridge.request<{ models: Array<{ provider: string; id: string }> }>("models.reload");
+    expect(after.models.some((m) => m.provider === "my-relay" && m.id === "relay-large")).toBe(true);
+    expect(after.models.some((m) => m.provider === "my-relay" && m.id === "relay-vision")).toBe(true);
+
+    // The key never comes back: masked only.
+    const got = await bridge.request<{ exists: boolean; provider: { hasKey: boolean; keyMasked: string } }>(
+      "manage.providerGet",
+      { name: "my-relay" },
+    );
+    expect(got.exists).toBe(true);
+    expect(got.provider.hasKey).toBe(true);
+    expect(JSON.stringify(got)).not.toContain("sk-relay-secret-9");
+    expect(got.provider.keyMasked).toContain("…");
+  });
+
+  it("refuses builtin names without overwrite", async () => {
+    const bridge = new MockBridge();
+    const res = await bridge.request<{ ok: boolean; code?: string }>("manage.providerSave", {
+      provider: { ...FORM, name: "openai" },
+    });
+    expect(res.ok).toBe(false);
+    expect(res.code).toBe("builtin");
+  });
+
+  it("delete removes the provider and its models", async () => {
+    const bridge = new MockBridge();
+    await bridge.request("manage.providerSave", { provider: FORM });
+    const del = await bridge.request<{ ok: boolean }>("manage.providerDelete", { name: "my-relay" });
+    expect(del.ok).toBe(true);
+    const after = await bridge.request<{ models: Array<{ provider: string }> }>("models.reload");
+    expect(after.models.some((m) => m.provider === "my-relay")).toBe(false);
+  });
+
+  it("providerTest answers both failure shapes via ?providertest", async () => {
+    vi.stubGlobal("location", { search: "?providertest=401" });
+    let bridge = new MockBridge();
+    const denied = await bridge.request<{ ok: boolean; status?: number; error?: string }>("manage.providerTest", {
+      baseUrl: "https://relay",
+      api: "openai-completions",
+    });
+    expect(denied.ok).toBe(false);
+    expect(denied.status).toBe(401);
+    expect(denied.error).toMatch(/401/);
+    vi.unstubAllGlobals();
+
+    vi.stubGlobal("location", { search: "?providertest=timeout" });
+    bridge = new MockBridge();
+    const slow = await bridge.request<{ ok: boolean; error?: string }>("manage.providerTest", {
+      baseUrl: "https://relay",
+      api: "anthropic-messages",
+    });
+    expect(slow.ok).toBe(false);
+    expect(slow.error).toMatch(/timed out/);
+    vi.unstubAllGlobals();
+  });
+});
