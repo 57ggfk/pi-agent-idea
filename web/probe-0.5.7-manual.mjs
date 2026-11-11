@@ -296,7 +296,72 @@ async function stageFork(page) {
 }
 
 // ---------------------------------------------------------------------------
+// 022 T414 (last item) — the hover toolbar must be fully painted and hittable.
+// `content-visibility: auto` shipped on `.item` in 0.5.7 cut the toolbar in
+// half (it floats ABOVE the item's top edge), and counts/visibility assertions
+// still passed: only a real hit test catches it. Ask the browser what is
+// actually under the button's centre point.
+// ---------------------------------------------------------------------------
+async function stageHover(page) {
+  const s = { checks: [], rows: [] };
+  const push = (n, ok, d) => {
+    s.checks.push({ n, ok, d });
+    log(`${ok === true ? "PASS" : ok === false ? "FAIL" : "INFO"}  [hover] ${n} :: ${JSON.stringify(d)}`);
+  };
 
+  await page.getByTestId("tab-chat").click().catch(() => {});
+  await page.waitForTimeout(400);
+  const items = page.locator('[data-testid="item-user"],[data-testid="item-assistant"]');
+  const total = await items.count();
+  const sample = Math.min(total, 12);
+  if (sample === 0) {
+    push("有消息可测", false, { total });
+    result.stages.hover = s;
+    return;
+  }
+
+  for (let i = 0; i < sample; i++) {
+    const it = items.nth(i);
+    await it.scrollIntoViewIfNeeded().catch(() => {});
+    await it.hover().catch(() => {});
+    await page.waitForTimeout(150);
+    const row = await page.evaluate((idx) => {
+      const els = [...document.querySelectorAll('[data-testid="item-user"],[data-testid="item-assistant"]')];
+      const el = els[idx];
+      if (!el) return null;
+      const btn = el.querySelector('[data-testid="act-copy"],[data-testid="act-fork"]');
+      if (!btn) return { idx, hasButton: false };
+      const r = btn.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) return { idx, hasButton: true, zeroSize: true };
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return {
+        idx,
+        hasButton: true,
+        testid: btn.dataset.testid,
+        rect: { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) },
+        topAboveItem: r.top < el.getBoundingClientRect().top,
+        hitIsButton: !!hit && (hit === btn || btn.contains(hit)),
+        hitClass: hit ? String(hit.className).slice(0, 40) : null,
+        inViewport: r.top >= 0 && r.bottom <= window.innerHeight,
+      };
+    }, i);
+    s.rows.push(row);
+  }
+
+  const withButton = s.rows.filter((r) => r && r.hasButton && !r.zeroSize && r.inViewport !== false);
+  const missed = withButton.filter((r) => !r.hitIsButton);
+  const zero = s.rows.filter((r) => r && r.zeroSize);
+  push("悬停后工具条按钮有实际尺寸", zero.length === 0, { zero: zero.length, checked: withButton.length });
+  push("按钮中心命中自身（未被裁切/遮挡）", missed.length === 0, {
+    checked: withButton.length,
+    missed: missed.map((m) => ({ idx: m.idx, testid: m.testid, hit: m.hitClass })),
+    note: "`content-visibility: auto` 时代这里会命中 .message-col",
+  });
+  s.screenshot = await shot(page, "hover");
+  result.stages.hover = s;
+}
+
+// ---------------------------------------------------------------------------
 let browser;
 try {
   browser = await chromium.connectOverCDP(`http://127.0.0.1:${PORT}`, { noDefaults: true });
@@ -311,6 +376,7 @@ try {
   const want = (name) => STAGE === "all" || STAGE === name;
   if (want("picker")) await stagePicker(page);
   if (want("fork")) await stageFork(page);
+  if (want("hover")) await stageHover(page);
   if (want("switch")) await stageSwitch(page);
 
   await page.getByTestId("tab-chat").click().catch(() => {});
