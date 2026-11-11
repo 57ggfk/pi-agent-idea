@@ -381,10 +381,10 @@
       （`web/probe-scroll-hitch.mjs` 连做 4 个来回、每个来回采样 6 点：`scrollHeight` 恒为 10379、
       滚动条比例恒为 0.0719，一个值都没变）
 - [ ] 长会话向上翻看时**手感顺、无逐帧卡顿**
-      （2026-11-11 人眼：偶发「卡一下」，不是每次都复现。探针测不到它——见
-      `specs/0.5.7-run-report.md`「滚动手感的 30fps 天花板」一节：真实滚轮 60 格滚动事件间隔
-      p50 34ms / p95 35ms、程序化滚轮 31 次扫动无一次 ≥50ms 掉帧，但 JCEF OSR 整体被钉在 30fps，
-      所以「更顺」不能靠改列表，得先改绘制节奏）
+      （2026-11-11 人眼第一次：偶发「卡一下」。当晚查明不是列表的问题：整个 webview 被
+      `ide.browser.jcef.osr.framerate`（默认 30）钉在 30fps。**本机已把它改成 60**（16.67ms/帧、
+      `maxGap` 由 35ms 降到 19ms），需要重新目验一次：这一条只有在 60fps 下还卡，才算真的手感问题。
+      A/B 数据与配置见 `specs/0.5.7-run-report.md`「30fps 天花板的真实原因」一节）
 - [x] 悬停任意消息 → 工具条（复制/引用/Fork）**完整显示且可点击**（不能被消息上边缘裁掉）
       （已由 `web/probe-0.5.7-manual.mjs` 的 hover 段用 `elementFromPoint` 验：11 条消息的按钮中心
       全部命中自身，无一条落到 `.message-col`——这正是 `content-visibility: auto` 时代的失败签名）
