@@ -301,6 +301,8 @@ export default function AuthPanel({ api }: { api: ReturnType<typeof manageApi> }
                               setOpenNote((e as Error).message);
                             }
                             await refresh();
+                            // 027: the picker must drop the deleted models too.
+                            await reloadModels();
                           })();
                         },
                       });

@@ -30,6 +30,6 @@
   重名二次确认→编辑不改 key→删除→测试连通两形态→无明文 key）。
   — 验证：`npx playwright test custom-provider` 全绿；`npx playwright test provider setup` 零回归。
 
-- [ ] **T907** 收尾：全量三件套 + `./gradlew test`；`changelog.d/027-custom-provider.added.md`（两行）；
+- [x] **T907** 收尾：全量三件套 + `./gradlew test`；`changelog.d/027-custom-provider.added.md`（两行）；
   run-report 更新。
   — 验证：全部绿；run-report 027 全 ✅。

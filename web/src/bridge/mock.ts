@@ -997,9 +997,12 @@ export class MockBridge implements Bridge {
           ],
         };
       case "manage.authOverview": {
+        // 027: models.json customs join the provider list (no credentials —
+        // their key lives in models.json and never crosses the bridge).
+        const names = [...new Set([...this.authProviders, ...this.customProviders.keys()])];
         const base = {
           ok: true,
-          providers: [...this.authProviders],
+          providers: names,
           withCredentials: [...this.authProviders],
           // Mock rows read as stored API keys (PiManage derives the same
           // shape from auth.json's per-entry `type`; never secret material).
