@@ -25,3 +25,14 @@ describe("formatPerfLine", () => {
     );
   });
 });
+
+describe("switch.failed (026 FR-007)", () => {
+  it("renders the failure mark with its reason key", () => {
+    expect(formatPerfLine("switch.failed", 5_012, { reason: "timeout" })).toBe(
+      "[pi-agent] perf switch.failed 5012 reason=timeout",
+    );
+    expect(formatPerfLine("switch.failed", 3_004, { reason: "abort_timeout" })).toBe(
+      "[pi-agent] perf switch.failed 3004 reason=abort_timeout",
+    );
+  });
+});
