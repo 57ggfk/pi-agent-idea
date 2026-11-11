@@ -74,3 +74,49 @@ jobs:
       - name: E2E tests (Playwright, MockBridge)
         working-directory: web
         run: npx playwright test
+
+  # Release-note fragments are written while a change lands and folded into
+  # CHANGELOG.md by `./gradlew collectChangelog` at release time. A malformed
+  # fragment would only bite on release day, so validate it on every push.
+  changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate changelog.d fragments
+        shell: bash
+        run: |
+          set -uo pipefail
+          fail=0
+          count=0
+          for f in changelog.d/*.md; do
+            [ -e "$f" ] || continue
+            base=$(basename "$f")
+            [ "$base" = "README.md" ] && continue
+            count=$((count + 1))
+
+            if [[ ! "$base" =~ ^[a-z0-9][a-z0-9-]*\.(added|changed|fixed)\.md$ ]]; then
+              echo "::error file=$f::文件名须为 <slug>.<added|changed|fixed>.md（slug 只用小写字母、数字、连字符）"
+              fail=1
+              continue
+            fi
+
+            mapfile -t lines < <(grep -v '^[[:space:]]*$' "$f" || true)
+            if [ "${#lines[@]}" -ne 2 ]; then
+              echo "::error file=$f::须正好两行非空（第 1 行中文，第 2 行英文），实际 ${#lines[@]} 行"
+              fail=1
+              continue
+            fi
+
+            if ! printf '%s\n' "${lines[0]}" | grep -qP '[\x{4e00}-\x{9fff}]'; then
+              echo "::error file=$f,line=1::第 1 行须为中文"
+              fail=1
+            fi
+            if printf '%s\n' "${lines[1]}" | grep -qP '[\x{4e00}-\x{9fff}]'; then
+              echo "::error file=$f,line=2::第 2 行须为英文，不得含中文"
+              fail=1
+            fi
+          done
+          echo "changelog.d：校验 $count 个碎片"
+          exit $fail
+
