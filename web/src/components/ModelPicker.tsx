@@ -21,9 +21,14 @@ import Icon from "./Icon";
  * Spec 018 US5: provider groups collapse. Every index the picker reasons
  * about (highlight, keyboard, Enter, locate, DOM rows) lives in the VISIBLE
  * entry sequence — a collapsed group's entries leave that sequence entirely.
- * A non-empty search force-expands everything; opening auto-expands the
- * current model's group so the locate target is visible; the collapsed set
- * survives restarts in localStorage (degrading to in-memory when denied).
+ * Opening auto-expands the current model's group so the locate target is
+ * visible; the collapsed set survives restarts in localStorage (degrading to
+ * in-memory when denied).
+ *
+ * Spec 020: at most 50 provider groups and at most `groupCap(n)` entries per
+ * group (see lib/modelGroups). Search results keep the grouping and are
+ * foldable too — the fold is a separate, transient set that starts empty on
+ * each search so "matched but collapsed away" can't happen (US3).
  */
 
 const COLLAPSED_STORAGE_KEY = "pi-agent.model-collapsed";
@@ -53,6 +58,9 @@ export default function ModelPicker() {
   const [query, setQuery] = useState("");
   const [highlight, setHighlight] = useState(0);
   const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed);
+  /** 020 D6: fold state while a search is active — transient, starts empty
+   *  (everything matched is visible), never written to localStorage. */
+  const [searchCollapsed, setSearchCollapsed] = useState<Set<string>>(() => new Set());
   const models = usePiStore((s) => s.models);
   const modelsSource = usePiStore((s) => s.sources.models);
   const reloadModels = usePiStore((s) => s.reloadModels);
@@ -68,24 +76,40 @@ export default function ModelPicker() {
     () => query.toLowerCase().split(/\s+/).filter(Boolean),
     [query],
   );
+  const searching = keywords.length > 0;
+  /** The fold set in force right now: transient during a search (020 D6). */
+  const effectiveCollapsed = searching ? searchCollapsed : collapsed;
 
   const data = useMemo<PickerModelData>(
-    // A non-empty search force-expands every group: "matched but invisible"
-    // is exactly the confusion collapsing must never create.
-    () => buildPickerData(models, model ?? null, keywords, undefined, keywords.length > 0 ? null : collapsed),
-    [models, model, keywords, collapsed],
+    () => buildPickerData(models, model ?? null, keywords, { collapsed: effectiveCollapsed }),
+    [models, model, keywords, effectiveCollapsed],
   );
 
   const toggleCollapsed = (provider: string) => {
-    setCollapsed((prev) => {
+    const write = (prev: Set<string>) => {
       const next = new Set(prev);
       if (next.has(provider)) next.delete(provider);
       else next.add(provider);
-      saveCollapsed(next);
       return next;
-    });
+    };
+    if (searching) {
+      // Transient: folding while searching never touches the stored preference.
+      setSearchCollapsed(write);
+    } else {
+      setCollapsed((prev) => {
+        const next = write(prev);
+        saveCollapsed(next);
+        return next;
+      });
+    }
     setHighlight(0);
   };
+
+  // 020 D6: a fresh search starts fully expanded; clearing it restores the
+  // stored preference untouched.
+  useEffect(() => {
+    setSearchCollapsed(new Set());
+  }, [searching]);
 
   useEffect(() => {
     if (open) {
@@ -118,7 +142,7 @@ export default function ModelPicker() {
       const group = data.groups.find((g) =>
         g.models.some((mo) => mo.provider === model.provider && mo.id === model.id),
       );
-      if (group && collapsed.has(group.provider)) {
+      if (group && effectiveCollapsed.has(group.provider)) {
         toggleCollapsed(group.provider);
         return;
       }
@@ -137,7 +161,7 @@ export default function ModelPicker() {
     return () => cancelAnimationFrame(raf);
     // `data` is captured at effect time; the locatedRef guard makes re-runs no-ops.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, models, data, collapsed]);
+  }, [open, models, data, effectiveCollapsed]);
 
   // US1: navigation scrolls only when the highlighted entry leaves the view.
   useEffect(() => {
@@ -235,7 +259,7 @@ export default function ModelPicker() {
               </div>
             ) : null}
             {data.groups.map((group) => {
-              const isCollapsed = keywords.length === 0 && collapsed.has(group.provider);
+              const isCollapsed = effectiveCollapsed.has(group.provider);
               return (
                 <Fragment key={group.provider || "__other__"}>
                   <button
@@ -249,47 +273,57 @@ export default function ModelPicker() {
                     <span className="model-group-name">
                       {group.provider === "" ? t("model.group.other") : group.provider}
                     </span>
-                    <span className="model-group-count">{group.models.length}</span>
+                    <span className="model-group-count" data-testid="model-group-count">
+                      {group.hidden > 0
+                        ? t("model.group.count", { shown: group.shown, total: group.total })
+                        : String(group.total)}
+                    </span>
                   </button>
-                  {!isCollapsed
-                    ? data.visibleFlat
-                        .filter((entry) => data.groups[entry.groupIndex] === group)
-                        .map((entry) => {
-                          const vi = visibleIndexOf.get(`${entry.model.provider}/${entry.model.id}`) ?? 0;
-                          const active = vi === highlight;
-                          const current =
-                            currentKey !== null &&
-                            `${entry.model.provider}/${entry.model.id}` === currentKey;
-                          return (
-                            <div
-                              key={`${entry.model.provider}/${entry.model.id}`}
-                              className={`model-option ${active ? "model-option-active" : ""}`}
-                              data-testid="model-option"
-                              data-model-key={`${entry.model.provider}/${entry.model.id}`}
-                              data-active={active}
-                              onMouseEnter={() => setHighlight(vi)}
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                pick(vi);
-                              }}
-                            >
-                              <span className="model-option-check">{current ? "✓" : ""}</span>
-                              <span className="model-option-main">
-                                <span className="model-option-name">{entry.model.name ?? entry.model.id}</span>
-                                <span className="model-option-sub">{entry.model.id}</span>
-                              </span>
-                              {entry.model.provider !== "" ? (
-                                <span className="model-option-provider">{entry.model.provider}</span>
-                              ) : null}
-                            </div>
-                          );
-                        })
-                    : null}
+                  {!isCollapsed ? (
+                    <>
+                      {group.models.map((entry) => {
+                        const key = `${entry.provider}/${entry.id}`;
+                        const vi = visibleIndexOf.get(key) ?? 0;
+                        const active = vi === highlight;
+                        const current = currentKey !== null && key === currentKey;
+                        return (
+                          <div
+                            key={key}
+                            className={`model-option ${active ? "model-option-active" : ""}`}
+                            data-testid="model-option"
+                            data-model-key={key}
+                            data-active={active}
+                            onMouseEnter={() => setHighlight(vi)}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              pick(vi);
+                            }}
+                          >
+                            <span className="model-option-check">{current ? "✓" : ""}</span>
+                            <span className="model-option-main">
+                              <span className="model-option-name">{entry.name ?? entry.id}</span>
+                              <span className="model-option-sub">{entry.id}</span>
+                            </span>
+                            {entry.provider !== "" ? (
+                              <span className="model-option-provider">{entry.provider}</span>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                      {group.hidden > 0 ? (
+                        <div className="panel-empty model-group-more" data-testid="model-group-more">
+                          {t("model.group.more", { count: group.hidden })}
+                        </div>
+                      ) : null}
+                    </>
+                  ) : null}
                 </Fragment>
               );
             })}
-            {data.hidden > 0 ? (
-              <div className="panel-empty">{t("model.more", { count: data.hidden })}</div>
+            {data.hiddenProviders > 0 ? (
+              <div className="panel-empty" data-testid="model-providers-more">
+                {t("model.providers.more", { count: data.hiddenProviders })}
+              </div>
             ) : null}
           </div>
         </div>

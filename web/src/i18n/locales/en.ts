@@ -177,8 +177,10 @@ export const en = {
   "model.aria": "Model: {{name}}",
   "model.filterPlaceholder": "Filter models… (space = AND, e.g. openrouter free)",
   "model.noMatch": "No models match “{{query}}”.",
-  "model.more": "…and {{count}} more — refine the filter",
   "model.group.other": "Other providers",
+  "model.group.count": "{{shown}}/{{total}}",
+  "model.group.more": "…and {{count}} more in this provider — use the filter to reach them",
+  "model.providers.more": "…and {{count}} more providers — use the filter to reach them",
 
   // -- options popover ----------------------------------------------------------
   "theme.label": "Theme",

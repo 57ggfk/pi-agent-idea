@@ -1208,11 +1208,14 @@ button {
 /* Provider group header (011 US2): label + entry count, visually distinct
    from options but never wider than the popover (360px windows included).
    018 US5: the header is a <button> that folds the group — reset the form
-   control so it reads exactly like the old div. */
+   control so it reads exactly like the old div.
+   020 US2: three children (caret / name / count) — `space-between` from the
+   two-child era pushed the name to the midline. Start from the left and let
+   the name take the slack, with the count pushed to the right edge. */
 .model-group-title {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 8px;
   width: 100%;
   padding: 6px 10px 2px;
@@ -1242,10 +1245,28 @@ button {
   transform: rotate(90deg);
 }
 
+.model-group-name {
+  /* Slack goes to the name so the count lands on the right edge; a long
+     provider name truncates instead of pushing the count out of the popover. */
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .model-group-count {
   flex-shrink: 0;
+  margin-left: auto;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
+}
+
+.model-group-more {
+  padding-top: 2px;
+  padding-bottom: 4px;
+  font-size: 11px;
 }
 
 .model-option {

@@ -176,8 +176,10 @@ export const zh: Dict = {
   "model.aria": "模型：{{name}}",
   "model.filterPlaceholder": "筛选模型…（空格 = 与，例如 openrouter free）",
   "model.noMatch": "没有匹配“{{query}}”的模型。",
-  "model.more": "…还有 {{count}} 个 —— 请缩小筛选范围",
   "model.group.other": "其他供应商",
+  "model.group.count": "{{shown}}/{{total}}",
+  "model.group.more": "…该供应商还有 {{count}} 个 —— 请用筛选查找",
+  "model.providers.more": "…还有 {{count}} 个供应商 —— 请用筛选查找",
 
   // -- options popover ----------------------------------------------------------
   "theme.label": "主题",

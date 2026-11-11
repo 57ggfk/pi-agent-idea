@@ -1,11 +1,15 @@
 import { test, expect, type Page } from "@playwright/test";
 
 /**
- * Model picker regression (011 US1/US2/US3, tasks T006–T013).
- * Fixtures come from the mock's `?picker=` knob:
+ * Model picker regression (011 US1/US2/US3, tasks T006–T013; 020 US1–US5).
+ * Fixtures come from the mock's `?picker=` / `?models=` knobs:
  * - g12: 3 providers × 12 models, current model inside the "mock" group
  * - ep:  includes one empty-provider entry (fallback group)
- * - long: 205 models, current model at flat index 180 (over the render cap)
+ * - long: 205 models, current model at flat index 180 (over the per-group cap)
+ * - now (`?models=now`): 2 providers / 359 models, current at #300 of the big
+ *   group — the real catalog's shape
+ * - many20 (`?models=many20`): 20 providers × 100 models → 50 per group
+ * - providers55 (`?models=providers55`): 55 providers × 3 models → 50 headers
  */
 
 async function openPicker(page: Page) {
@@ -88,14 +92,96 @@ test.describe("model picker grouping", () => {
     await expect(page.getByTestId("model-option")).toHaveCount(0);
   });
 
-  test("cap truncates at 200 entries and surfaces the remainder (T007)", async ({ page }) => {
+  test("cap truncates each provider at 200 entries and surfaces the remainder (T007)", async ({ page }) => {
     await page.goto("/?picker=long");
     await expect(page.getByTestId("empty-state")).toBeVisible();
     await openPicker(page);
 
-    await expect(page.getByTestId("model-option")).toHaveCount(200);
-    const more = page.locator(".model-list > .panel-empty");
-    await expect(more).toContainText("5");
+    // 020 US1: `long` is mock(1) + bulk(204) → n=2 → 200 per group, so the
+    // rendered list is 1 + 200 (was: one global 200 that dropped the mock group)
+    await expect(page.getByTestId("model-group")).toHaveCount(2);
+    await expect(page.getByTestId("model-option")).toHaveCount(201);
+    const bulk = page.getByTestId("model-group").nth(1);
+    await expect(bulk).toContainText("200/204");
+    await expect(page.getByTestId("model-group-more")).toContainText("4");
+  });
+
+  test("each provider keeps its own quota — a 355-model group cannot evict a 4-model one (020 US1)", async ({ page }) => {
+    await page.goto("/?models=now");
+    await expect(page.getByTestId("empty-state")).toBeVisible();
+    await openPicker(page);
+
+    const groups = page.getByTestId("model-group");
+    await expect(groups).toHaveCount(2);
+    // big group truncates at 200/355, small group shows all 4
+    await expect(groups.nth(0)).toContainText("200/355");
+    await expect(groups.nth(1)).toContainText("4");
+    await expect(page.getByTestId("model-option")).toHaveCount(204);
+    await expect(page.getByTestId("model-group-more")).toContainText("155");
+    await expect(page.locator('[data-model-key="xiami/xiami-3"]')).toBeVisible();
+  });
+
+  test("a current model truncated out of its group is still pinned and located (020 US4)", async ({ page }) => {
+    await page.goto("/?models=now");
+    await expect(page.getByTestId("empty-state")).toBeVisible();
+    await openPicker(page);
+
+    // current sits at #300 of the 355-entry group → exempted to the group head
+    const active = page.locator('[data-model-key="mock/mock-model-pro"]');
+    await expect(active).toBeVisible();
+    await expect(active).toHaveAttribute("data-active", "true");
+    const firstKey = await page.evaluate(() => document.querySelector("[data-model-key]")?.getAttribute("data-model-key"));
+    expect(firstKey).toBe("mock/mock-model-pro");
+    // it is not rendered twice
+    await expect(page.locator('[data-model-key="mock/mock-model-pro"]')).toHaveCount(1);
+  });
+
+  test("more than 50 providers → 50 groups plus a total-provider notice (020 US1/US5)", async ({ page }) => {
+    await page.goto("/?models=providers55");
+    await expect(page.getByTestId("empty-state")).toBeVisible();
+    await openPicker(page);
+
+    await expect(page.getByTestId("model-group")).toHaveCount(50);
+    await expect(page.getByTestId("model-option")).toHaveCount(150); // 50 × 3, cap 20 not reached
+    await expect(page.getByTestId("model-providers-more")).toContainText("5");
+    // dropped providers contribute to the provider notice only
+    await expect(page.getByTestId("model-group-more")).toHaveCount(0);
+  });
+
+  test("20 providers × 100 → 50 per group, 1000 rows, no provider notice (020 US1)", async ({ page }) => {
+    await page.goto("/?models=many20");
+    await expect(page.getByTestId("empty-state")).toBeVisible();
+    await openPicker(page);
+
+    await expect(page.getByTestId("model-group")).toHaveCount(20);
+    await expect(page.getByTestId("model-group").nth(0)).toContainText("50/100");
+    await expect(page.getByTestId("model-option")).toHaveCount(1000);
+    await expect(page.getByTestId("model-providers-more")).toHaveCount(0);
+  });
+
+  test("group headers are left aligned: name at the left, count at the right (020 US2)", async ({ page }) => {
+    await page.goto("/?picker=g12");
+    await expect(page.getByTestId("empty-state")).toBeVisible();
+    await openPicker(page);
+
+    const geom = await page.evaluate(() => {
+      const title = document.querySelector('[data-testid="model-group"]') as HTMLElement;
+      const name = title.querySelector(".model-group-name") as HTMLElement;
+      const count = title.querySelector(".model-group-count") as HTMLElement;
+      const tr = title.getBoundingClientRect();
+      const cs = getComputedStyle(title);
+      return {
+        nameLeft: name.getBoundingClientRect().left - tr.left,
+        countRightGap: tr.right - count.getBoundingClientRect().right,
+        paddingLeft: parseFloat(cs.paddingLeft),
+        paddingRight: parseFloat(cs.paddingRight),
+        overflow: count.getBoundingClientRect().right - tr.right,
+      };
+    });
+    // name starts right after the caret + padding (was pushed to the midline)
+    expect(geom.nameLeft).toBeLessThanOrEqual(geom.paddingLeft + 60);
+    expect(geom.countRightGap).toBeLessThanOrEqual(geom.paddingRight + 16);
+    expect(geom.overflow).toBeLessThanOrEqual(0);
   });
 
   test("empty provider lands in the fallback group, last (T004/T013)", async ({ page }) => {
@@ -311,18 +397,30 @@ test.describe("model picker collapse", () => {
     await expect(page.getByTestId("model-option")).toHaveCount(12);
   });
 
-  test("a non-empty search force-expands collapsed groups", async ({ page }) => {
+  test("search starts fully expanded and stays foldable (020 US3)", async ({ page }) => {
     await page.goto("/?picker=g12");
     await expect(page.getByTestId("empty-state")).toBeVisible();
     await openPicker(page);
+    // fold alpha with no search → persists (018 US5)
     await page.getByTestId("model-group").nth(1).click();
     await expect(page.getByTestId("model-option")).toHaveCount(8);
 
+    // a fresh search ignores the stored fold: everything matched is visible
     await page.getByTestId("model-search").fill("alpha");
-    // alpha models match the filter and must be visible despite the fold
     await expect(page.getByTestId("model-option")).toHaveCount(4);
+
+    // …but the result is foldable, which 018 forbade
+    await page.getByTestId("model-group").click();
+    await expect(page.getByTestId("model-option")).toHaveCount(0);
+
+    // clearing the search restores the stored fold (alpha still folded)
     await page.getByTestId("model-search").fill("");
     await expect(page.getByTestId("model-option")).toHaveCount(8);
+    await expect(page.getByTestId("model-group").nth(1)).toHaveAttribute("aria-expanded", "false");
+
+    // and the search-time fold never persisted: next search is expanded again
+    await page.getByTestId("model-search").fill("alpha");
+    await expect(page.getByTestId("model-option")).toHaveCount(4);
   });
 
   test("the collapsed set survives a reload via localStorage", async ({ page }) => {

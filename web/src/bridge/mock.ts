@@ -245,7 +245,10 @@ export class MockBridge implements Bridge {
     ...(query()?.get("pkgs") === "0" ? [] : ["npm:@example/pi-tools@1.0.0"]),
     ...(query()?.get("pkgs") === "2" ? ["git:github.com/example/pi-git-pkg@0.3.0"] : []),
   ];
-  /** `?models=broken|missing` — the models.json world the Auth panel must explain. */
+  /** `?models=broken|missing` — the models.json world the Auth panel must explain.
+   *  `?models=now|many20|providers55` — 020 model-scale fixtures (see
+   *  `pickerModels`); they only change the catalog size, the auth panels ignore
+   *  any value other than broken/missing. */
   private readonly modelsKnob = query()?.get("models");
   /**
    * `?picker=g12|ep|long` — model-picker group fixtures (011 T005): g12 = 3
@@ -1396,7 +1399,7 @@ export class MockBridge implements Bridge {
    * its own, no refresh needed).
    */
   private availableModels(afterReload: boolean): MockModel[] {
-    const merged = pickerModels(this.pickerKnob).slice();
+    const merged = pickerModels(this.pickerKnob, this.modelsKnob).slice();
     if (this.reloadStrict && !afterReload) return merged;
     for (const m of this.dynamicModels) {
       if (!merged.some((e) => e.provider === m.provider && e.id === m.id)) merged.push(m);
@@ -2110,7 +2113,12 @@ function expandSkillCommand(message: string): string {
   return args ? `${block}\n\n${args}` : block;
 }
 
-function pickerModels(knob: string | null | undefined): MockModel[] {
+/** 020 model-scale fixtures reachable through `?models=` as well (`?picker=`
+ *  stays the 011 knob; both are accepted so the two vocabularies never clash). */
+const MODEL_SCALE_KNOBS = new Set(["now", "many20", "providers55"]);
+
+function pickerModels(knob: string | null | undefined, scaleKnob?: string | null): MockModel[] {
+  if (scaleKnob && MODEL_SCALE_KNOBS.has(scaleKnob)) knob = scaleKnob;
   if (!knob || knob === "default") return MOCK_MODELS;
   const mk = (provider: string, id: string, name: string): MockModel => ({
     id,
@@ -2150,7 +2158,7 @@ function pickerModels(knob: string | null | undefined): MockModel[] {
 
   if (knob === "long") {
     // 205 entries with the current model buried at index 180: open-locate and
-    // cap behavior ("…and 5 more") both need a list larger than the cap.
+    // per-group truncation both need a list larger than the cap.
     const models: MockModel[] = [];
     for (let i = 0; i < 205; i++) {
       if (i === 180) {
@@ -2158,6 +2166,44 @@ function pickerModels(knob: string | null | undefined): MockModel[] {
       } else {
         const n = String(i).padStart(3, "0");
         models.push(mk("bulk", `bulk-${n}`, `Bulk Model ${n}`));
+      }
+    }
+    return models;
+  }
+
+  // -- 020 US1/US4 scale fixtures (real catalog shape: 355 + 4) --------------
+  if (knob === "now") {
+    // 2 providers / 359 models — the machine's real openrouter(355)+custom(4)
+    // shape. The current model sits at #300 of the big group so the
+    // "truncated but still located" exemption (US4) is exercised.
+    const models: MockModel[] = [];
+    for (let i = 0; i < 355; i++) {
+      if (i === 300) models.push(mk("mock", "mock-model-pro", "Mock Model Pro"));
+      else models.push(mk("mock", `mock-${String(i).padStart(3, "0")}`, `Mock ${String(i).padStart(3, "0")}`));
+    }
+    for (let i = 0; i < 4; i++) models.push(mk("xiami", `xiami-${i}`, `Xiami ${i}`));
+    return models;
+  }
+  if (knob === "many20") {
+    // 20 providers × 100 models → groupCap(20) = 50, every group 50/100.
+    const models: MockModel[] = [];
+    for (let p = 0; p < 20; p++) {
+      const provider = p === 0 ? "mock" : `prov-${String(p).padStart(2, "0")}`;
+      for (let i = 0; i < 100; i++) {
+        if (p === 0 && i === 0) models.push(mk("mock", "mock-model-pro", "Mock Model Pro"));
+        else models.push(mk(provider, `${provider}-${String(i).padStart(3, "0")}`, `${provider} ${i}`));
+      }
+    }
+    return models;
+  }
+  if (knob === "providers55") {
+    // 55 providers × 3 models → 50 headers rendered, 5 providers dropped.
+    const models: MockModel[] = [];
+    for (let p = 0; p < 55; p++) {
+      const provider = p === 0 ? "mock" : `vend-${String(p).padStart(2, "0")}`;
+      for (let i = 0; i < 3; i++) {
+        if (p === 0 && i === 0) models.push(mk("mock", "mock-model-pro", "Mock Model Pro"));
+        else models.push(mk(provider, `${provider}-${i}`, `${provider} ${i}`));
       }
     }
     return models;
