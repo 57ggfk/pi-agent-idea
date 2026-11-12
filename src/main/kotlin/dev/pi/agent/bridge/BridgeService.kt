@@ -152,6 +152,8 @@ class BridgeService(private val project: Project) : Disposable {
                 "models.reload" -> reloadModels()
                 "manage.env" -> dev.pi.agent.manage.PiManage.environment()
                 "manage.envDetect" -> dev.pi.agent.manage.PiEnvironment.detect()
+                // 032 Q6-b: the read-only "what would be injected" viewer.
+                "manage.envSnapshot" -> dev.pi.agent.manage.PiIdeEnv.refreshSnapshot(project)
                 "manage.envInstall" ->
                     if ((params["method"] as? kotlinx.serialization.json.JsonPrimitive)?.content == dev.pi.agent.manage.PiEnvironment.SOURCE_SCRIPT) {
                         dev.pi.agent.manage.PiEnvironment.installScript()
@@ -258,6 +260,15 @@ class BridgeService(private val project: Project) : Disposable {
     private suspend fun rpcRequest(params: JsonObject): JsonObject {
         val command = params["command"] as? JsonObject
             ?: throw IllegalArgumentException("rpc.request requires command object")
+        // 032 US4: every user turn refreshes the env snapshot BEFORE the prompt
+        // reaches pi, so the extension (which re-reads the file on each
+        // before_agent_start) injects facts collected seconds ago — an SDK
+        // change applies without restarting pi. Collection is ReadAction-only
+        // plus cached values (FR-009), and must never break the send.
+        if (command["type"]?.jsonPrimitive?.contentOrNull == "prompt") {
+            runCatching { dev.pi.agent.manage.PiIdeEnv.refreshSnapshot(project) }
+                .onFailure { LOG.warn("env snapshot refresh failed (prompt continues): ${it.message}") }
+        }
         // extension_ui_response is a sub-protocol NOTIFICATION: pi resolves the
         // pending dialog by the id inside and never replies. Sending it through
         // the correlated send() wraps it in a request id and pi never resolves

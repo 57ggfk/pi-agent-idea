@@ -55,10 +55,22 @@ class PiAgentSettings private constructor() {
         properties.setValue(AUTO_OPEN_KEY, value, false)
     }
 
+    /**
+     * 032 FR-010: master switch for the IDE environment context. Default ON;
+     * when off, the snapshot file is flagged disabled and pi receives exactly
+     * the prompt it would receive without the plugin's env extension.
+     */
+    fun envContextEnabled(): Boolean = properties.getBoolean(ENV_CONTEXT_KEY, true)
+
+    fun setEnvContextEnabled(value: Boolean) {
+        properties.setValue(ENV_CONTEXT_KEY, value, true)
+    }
+
     companion object {
         private const val PI_PATH_KEY = "dev.pi.agent.piPath"
         private const val NODE_PATH_KEY = "dev.pi.agent.nodePath"
         private const val AUTO_OPEN_KEY = "dev.pi.agent.autoOpen"
+        private const val ENV_CONTEXT_KEY = "dev.pi.agent.envContext"
 
         @JvmStatic
         fun getInstance(): PiAgentSettings = ApplicationManager.getApplication()

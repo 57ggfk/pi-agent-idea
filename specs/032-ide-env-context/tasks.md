@@ -7,13 +7,13 @@
       `filterEnvVars`（白名单+黑名单双闸、值截断）+ `PiEnvSnapshotTest`
       （假档位渲染固定文本、GITHUB_TOKEN/DB_PASSWORD 不出现而 JAVA_HOME 保留、
       三档全空输出未检测到不抛异常）— `gradlew test --tests "*PiEnvSnapshot*"` 绿
-- [ ] T1303 采集与编排：`PiIdeEnv.collectSections`（A 档 projectSdk+语言级别、B 档
+- [x] T1303 采集与编排：`PiIdeEnv.collectTiers`（A 档 projectSdk+语言级别反射、B 档
       System.getenv、Node 反射档降级、PyCharm 由 A 档覆盖）+ `refreshSnapshot` 写盘 +
       `BridgeService.rpcRequest` prompt 拦截 + pi start 后台首采 —
-      `gradlew test --tests "*PiIdeEnv*"`（编排逻辑以注入的假采集器驱动）
-- [ ] T1304 env 差量补齐：`applyWhitelistedEnv`（只增不改、PI_IDE_ENV_SNAPSHOT）+
-      `PiProcessManager.start()` 接线 — `PiIdeEnvWhitelistTest`（已有 PATH 不覆盖、
-      缺的补上、黑名单剔除）
+      `gradlew test` 全量绿（PiIdeEnvTiersTest 10 用例）
+- [x] T1304 env 差量补齐：`applyToProcess`（只增不改、PI_IDE_ENV_SNAPSHOT）+
+      `PiProcessManager.start()` 接线 — `PiIdeEnvTiersTest` 覆盖（不覆盖已有值、
+      黑名单剔除、PI_IDE_ 前缀断言）
 - [ ] T1305 扩展：`resources/pi-env/pi-env.js`（before_agent_start 追加、enabled/缺文件
       降级、string/array 两形状兼容）+ `PiIdeEnvExtension.ensureExtensionInstalled` +
       `PiStartArgs` 扩展列表接线 + web vitest import 资源断言行为 —

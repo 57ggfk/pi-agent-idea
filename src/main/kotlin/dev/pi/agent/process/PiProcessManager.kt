@@ -137,6 +137,13 @@ class PiProcessManager(private val project: Project) : Disposable {    private v
         pb.environment()["PI_APPROVE_POLICY"] = PiApprovalSupport.policyFile().absolutePath
         // pi-approve 在 pi 进程里跑，只有插件知道 IDE 是中文还是英文。
         pb.environment()["PI_APPROVE_LANG"] = PiApprovalSupport.languageTag()
+        // 032 FR-005: 差量补齐构建相关环境变量（只增不改），并把快照路径交给
+        // pi-env 扩展——扩展每轮 before_agent_start 读它注入系统提示词。
+        dev.pi.agent.manage.PiIdeEnv.applyToProcess(
+            pb.environment(),
+            System.getenv(),
+            dev.pi.agent.manage.PiIdeEnv.snapshotFile().absolutePath,
+        )
 
         val process: Process = try {
             pb.start()
@@ -176,6 +183,11 @@ class PiProcessManager(private val project: Project) : Disposable {    private v
         })
         clientRef.set(client)
         setState(PiConnectionState.Running(installation))
+        // 032: 首次采集放后台线程（FR-009 不占 EDT），让第一轮对话就有环境事实；
+        // 之后每轮 prompt 转发前都会刷新，无需这里再管。
+        com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
+            runCatching { dev.pi.agent.manage.PiIdeEnv.refreshSnapshot(project) }
+        }
         return client
     }
 
