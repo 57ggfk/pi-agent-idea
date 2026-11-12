@@ -93,7 +93,15 @@ def cmd_windows():
         return True
 
     user32.EnumWindows(cb, 0)
-    frames = [f for f in frames if f["rect"]["w"] > 300 and f["rect"]["h"] > 200]
+    # A minimized window still answers WM_MOUSEWHEEL once it is restored, but
+    # its rect is (-32000, -32000, …) so the size filter below used to drop it
+    # and the probes reported "no IDE frame" for a perfectly healthy IDE.
+    frames = [
+        f for f in frames
+        if (f["rect"]["w"] > 300 and f["rect"]["h"] > 200) or user32.IsIconic(f["hwnd"])
+    ]
+    for f in frames:
+        f["iconic"] = bool(user32.IsIconic(f["hwnd"]))
     result = {"frames": frames, "chrome_children": []}
     for f in frames:
         if "idea" in f["class"].lower() or "awt" in f["class"].lower() or "WebStorm" in f["title"]:
