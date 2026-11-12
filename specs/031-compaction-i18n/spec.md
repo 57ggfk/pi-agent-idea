@@ -179,5 +179,5 @@ handoff:"handoff", soft:"context-full", shake:"shake"}`，故 `action` 的取值
 | 单测 | token 千分位 | `12000 → 12,000`（zh 与 en 各自格式） | ✅ types/store 断言 `12,000 → 3,400` 双语；非数字回落 `?` |
 | 单测 | 自动压缩事件（Q6-a） | `auto_compaction_*` 产出开始/结束/中断提示，旧名不命中 | ✅ types.test 5 条 |
 | e2e | 中文点压缩 | 消息流系统通知为中文 | ✅ compaction-i18n 3/3（zh 成功 + zh 失败 + en 逐字），全量 331/331 |
-| 真机 | 中文 → 压缩 → 切英文 → 再压缩 | 各自语言正确，旧提示不重译 | ⬜ 留待下轮真机（单测已按生成时刻取词锁定语义） |
-| 真机 | （若 Q6-a）填满上下文触发自动压缩 | 出现中文开始/结束提示，而非静默 | ⬜ 留待下轮真机（需足够长的会话） |
+| 真机 | 中文 → 压缩 → 切英文 → 再压缩 | 各自语言正确，旧提示不重译 | ✅ 2026-11-13 `probe-031-compaction-fill.mjs` 9/9（zh 83,016 → 23,687 / en 逐字 / 不重译；证据 evidence/probe-031-compaction-fill.json） |
+| 真机 | （若 Q6-a）填满上下文触发自动压缩 | 出现中文开始/结束提示，而非静默 | ◐ 部分：手动压缩的 `compaction_start` 事件通知真机出现（同一事件通道，`probe-031-compaction-fill.mjs`）；auto 真触发需 ~112k token（窗口 128k − reserve 16384）超预算，留人工。⚠️ runtime 是 @earendil-works 1.5.0，事件名 `compaction_*` 与取证包 @oh-my-pi 18.0.7 的 `auto_compaction_*` 不同——reducer 已双名兼容（run-report 第 13 节） |
