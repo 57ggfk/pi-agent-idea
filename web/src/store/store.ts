@@ -55,6 +55,8 @@ import {
 import { hitsFromItems, type SearchHit } from "../lib/search";
 import { requestRepaint } from "../lib/repaint";
 import { perfMark } from "../lib/perf";
+import { withTimeout } from "../lib/timeout";
+import { copyText } from "../lib/clipboard";
 import { i18n, initI18n, isRegistered } from "../i18n";
 
 /** Shorthand for store-side (non-React) copy; English falls out of the base bundle. */
@@ -74,9 +76,80 @@ export interface PendingSwitch {
   startedAt: number;
 }
 
+/**
+ * 024: a transient notice on the session list. Chat-side error items are
+ * invisible while the sessions tab is open (the 026 lesson), so copy/fork
+ * feedback gets this small banner instead of the transcript.
+ */
+export interface SessionsNotice {
+  text: string;
+  kind: "info" | "error";
+}
+
 /** 021 D8 / T308: after this long the copy softens; nothing rolls back — a
  *  slow pi is not a failed one. */
 export const SWITCH_LONG_MS = 10_000;
+
+/**
+ * 026: the switch flow bounds every pi round-trip locally (spec plan §0) — the
+ * bridge's 360s default stays for installs; a switch that outlives these is a
+ * failure with a retry, never an infinite placeholder. abort is 3s so the
+ * sequential worst case (abort + switch) stays inside the 8s US1 budget.
+ */
+export const SWITCH_RPC_TIMEOUT_MS = 5_000;
+export const SWITCH_ABORT_TIMEOUT_MS = 3_000;
+export const SWITCH_READ_TIMEOUT_MS = 3_000;
+
+/**
+ * 030: at most one `switch_session` on the wire.
+ *
+ * The list disables its rows while a switch is pending (021 T309), but the other
+ * entry points do not — a search hit, a fork's "go to", a message link — and a
+ * stuttering IDE can also deliver two taps before React repaints the disabled
+ * state. Every one of those taps used to call pi for real, and pi answers in
+ * strict arrival order: measured on a real machine, seven overlapping taps
+ * queued seven commands, and `switch.failed reason=timeout` at 5012ms was the
+ * *last* one burning its deadline behind the other six — while the switch it was
+ * waiting for would have succeeded.
+ *
+ * Only the newest target is ever displayed (the seq check drops the rest), so
+ * the extra queue entries are pure waste. This gate runs one switch and keeps
+ * just the last target asked for meanwhile; the runner relays there when it
+ * finishes. N taps now cost at most 2 RPCs, not N.
+ *
+ * Module-level rather than inside the store closure: both fields describe the
+ * *in-flight* attempt, which a store reset cannot resurrect or cancel.
+ */
+type QueuedSwitch = { file: string; settle: (ok: boolean) => void };
+
+let switchBusy = false;
+let switchQueued: QueuedSwitch | null = null;
+
+/**
+ * 030: clears the relay gate. A store reset wipes state but not this, and a test
+ * that parks a switch on a never-resolving gate would otherwise leave `busy`
+ * set for every test after it — every later `switchSession` would return early.
+ * A queued tap is settled with `false` so its caller never hangs on a switch
+ * that will not happen.
+ */
+export function resetSwitchGate(): void {
+  switchBusy = false;
+  switchQueued?.settle(false);
+  switchQueued = null;
+}
+
+/**
+ * 026 FR-007: the `reason=` value for `switch.failed`. `withTimeout` rejections
+ * carry "<label> timeout"; the abort hop is named so its signature is distinct
+ * from a hung `switch_session` (the real-machine attribution question spec §0
+ * leaves open).
+ */
+function switchFailReason(e: unknown): "timeout" | "rpc" | "abort_timeout" {
+  const msg = (e as Error | undefined)?.message ?? "";
+  if (msg.includes("abort timeout")) return "abort_timeout";
+  if (msg.includes("timeout")) return "timeout";
+  return "rpc";
+}
 
 export function isSwitchLong(startedAt: number, now: number): boolean {
   return now - startedAt >= SWITCH_LONG_MS;
@@ -324,6 +397,14 @@ interface PiStore {
   /** 021: non-null from the click until the target session's content is on
    *  screen (or the switch failed and rolled back). */
   pendingSwitch: PendingSwitch | null;
+  /** 026 FR-005: the session file a failed switch was aiming at, so the
+   *  retry bar can re-fire it without the user re-finding the row. Cleared on
+   *  any successful switch/new session and by the bar's dismiss button. */
+  retrySwitch: string | null;
+  /** 024: transient copy/fork feedback on the session list (auto-clears). */
+  sessionsNotice: SessionsNotice | null;
+  /** 024 FR-007: the row a list-level fork is running for (single-flight). */
+  forkingFile: string | null;
   retryInfo: { attempt: number; maxAttempts: number; delayMs: number; errorMessage: string } | null;
   /**
    * Mirror of pi's queue (spec 005), pushed as full snapshots by the Kotlin
@@ -537,7 +618,21 @@ interface PiStore {
    *  the slash menu permanently empty. */
   refreshCommands(): Promise<void>;
   refreshSessions(): Promise<void>;
-  switchSession(file: string): Promise<void>;
+  /**
+   * 030: resolves `true` only when this exact file became the visible session.
+   * A tap that got superseded by a newer one resolves `false` — callers that do
+   * something *to* the transcript afterwards (the search-hit jump) must not act
+   * on a session they no longer own.
+   */
+  switchSession(file: string): Promise<boolean>;
+  /** 026 FR-005: re-fires the failed switch's target (no-op when none kept). */
+  retryLastSwitch(): Promise<void>;
+  /** 026: the retry bar's dismiss — forget the failed target. */
+  clearRetrySwitch(): void;
+  /** 024 US1: copies `${title}\n${id}` for one list row into the clipboard. */
+  copySessionInfo(file: string): Promise<void>;
+  /** 024 US2/US3: list-level full-copy fork (replaces cloneSession). */
+  forkSessionFromList(file: string): Promise<void>;
   /** Renames the current session; [manual] = user-typed (beats pi name
    *  events). Returns false when the RPC failed (error already surfaced). */
   renameSession(name: string, manual?: boolean): Promise<boolean>;
@@ -564,7 +659,6 @@ interface PiStore {
   /** Renames a session that is not the live one (bridge sessions.rename). */
   renameSessionFile(file: string, name: string): Promise<boolean>;
   deleteSession(file: string): Promise<void>;
-  cloneSession(file: string): Promise<void>;
   forkSession(): Promise<void>;
   /** Branches the session at a specific pi reply (spec 007 US1). */
   forkAtItem(itemId: number): Promise<void>;
@@ -631,6 +725,29 @@ export const usePiStore = create<PiStore>((set, get) => {
    * of painting the wrong transcript.
    */
   let switchSeq = 0;
+
+  /**
+   * 026 FR-003: a switch that leaves scope (early return on a newer seq, a
+   * late catch, success) clears only the pendingSwitch it *owns* — ownership
+   * is the `startedAt` captured at click time. Clearing unconditionally would
+   * either erase a newer switch's placeholder or resurrect nothing; before
+   * this guard the newest switch's own failure left the screen stuck.
+   */
+  const clearOwnPending = (startedAt: number) => {
+    if (get().pendingSwitch?.startedAt === startedAt) set({ pendingSwitch: null });
+  };
+
+  /**
+   * 024: transient session-list feedback. The transcript's error items are
+   * invisible while the sessions tab is open, so copy/fork outcomes surface
+   * here and self-clear — long enough to read, short enough to not stack up.
+   */
+  let noticeTimer: ReturnType<typeof setTimeout> | undefined;
+  const showSessionsNotice = (text: string, kind: SessionsNotice["kind"]) => {
+    clearTimeout(noticeTimer);
+    set({ sessionsNotice: { text, kind } });
+    noticeTimer = setTimeout(() => set({ sessionsNotice: null }), 4_000);
+  };
 
   /**
    * Runs a source read through the state machine (spec 003).
@@ -773,8 +890,13 @@ export const usePiStore = create<PiStore>((set, get) => {
    */
   const runNewSession = async () => {
     if (!bridge) return;
-    // D8: a second "new" while one is in flight would spawn two sessions.
-    if (get().pendingSwitch) return;
+    // 026 FR-004: a pending switch must never silently block a new session.
+    // kind:"new" → the identical action is already in flight; firing another
+    // new_session would leave an orphan empty session in pi, and the visible
+    // switching placeholder is the "in progress" feedback (D8 dedupe stays).
+    // kind:"history" → take over: the seq bump below invalidates the older
+    // switch, whose early return cleans up its own pending by identity.
+    if (get().pendingSwitch?.kind === "new") return;
     // FR-012 (spec 005): a non-empty queue would be silently dropped.
     if (get().queue.items.length > 0) {
       set({ queueDiscardConfirm: { count: get().queue.items.length, kind: "new" } });
@@ -803,9 +925,12 @@ export const usePiStore = create<PiStore>((set, get) => {
     perfMark("switch.pending", startedAt, { kind: "new" });
 
     try {
-      await rpc(b, { type: "new_session" });
-      if (seq !== switchSeq) return;
-      set({ pendingSwitch: null });
+      await withTimeout(rpc(b, { type: "new_session" }), SWITCH_RPC_TIMEOUT_MS, "new_session");
+      if (seq !== switchSeq) {
+        clearOwnPending(startedAt); // 026 FR-003
+        return;
+      }
+      set({ pendingSwitch: null, retrySwitch: null });
       perfMark("switch.content", startedAt, { kind: "new" });
       // D2: neither the stats read nor the session-list rescan belongs on the
       // critical path; one tick later so they cannot race pi's first answer.
@@ -815,8 +940,14 @@ export const usePiStore = create<PiStore>((set, get) => {
       }, 0);
       perfMark("switch.ready", startedAt, { kind: "new" });
     } catch (e) {
-      if (seq !== switchSeq) return;
-      set({ pendingSwitch: null, items: previousItems });
+      if (seq !== switchSeq) {
+        clearOwnPending(startedAt); // 026 FR-003
+        return;
+      }
+      // 026 FR-007: a visible failure mark — "pending without ready" stops
+      // being the only stuck signature in idea.log.
+      perfMark("switch.failed", startedAt, { reason: switchFailReason(e) });
+      set({ pendingSwitch: null, items: previousItems, retrySwitch: null });
       appendError(t("error.newSession.failed", { msg: (e as Error).message }));
     }
   };
@@ -1175,6 +1306,9 @@ export const usePiStore = create<PiStore>((set, get) => {
     isStreaming: false,
     aborted: false,
     pendingSwitch: null,
+    retrySwitch: null,
+    sessionsNotice: null,
+    forkingFile: null,
     retryInfo: null,
     queue: { items: [], paused: false, pauseReason: null, drift: false },
     driftAck: false,
@@ -1793,16 +1927,18 @@ export const usePiStore = create<PiStore>((set, get) => {
       });
     },
 
-    async switchSession(file: string) {
-      if (!bridge) return;
+    async switchSession(file: string): Promise<boolean> {
+      if (!bridge) return false;
       // FR-012: confirm before a session change discards queued entries.
       if (get().queue.items.length > 0) {
         set({ queueDiscardConfirm: { count: get().queue.items.length, kind: "switch", file } });
-        return;
+        return false;
       }
       const b = bridge;
       const startedAt = performance.now();
-      const seq = ++switchSeq;
+      // 030: bumping the generation is what makes this click "the newest one";
+      // the runner below re-reads it per round instead of capturing it here.
+      ++switchSeq;
       // Captured before the optimistic set below clears it — the abort must
       // still happen for a run that was streaming at click time.
       const wasStreaming = get().isStreaming;
@@ -1830,42 +1966,141 @@ export const usePiStore = create<PiStore>((set, get) => {
       requestRepaint();
       perfMark("switch.pending", startedAt, { kind: "history" });
 
-      try {
-        // A run still tied to the old session would keep streaming into the
-        // new one — but abort after the visible switch, so the user waits on
-        // the page they asked for instead of on the old run settling.
-        if (wasStreaming) await get().abort();
-        await rpc(b, { type: "switch_session", sessionPath: file });
-
-        // 021 D3: three independent reads in parallel, one set. Sequential
-        // awaits added ~330ms of pure latency; separate sets would flash.
-        const [messages, stats, state] = await Promise.all([
-          rpc<{ messages: unknown[] }>(b, { type: "get_messages" }).catch(() => ({ messages: [] as unknown[] })),
-          rpc<SessionStats>(b, { type: "get_session_stats" }).catch(() => undefined),
-          rpc<{ sessionName?: string; sessionId?: string; model?: ModelInfo; thinkingLevel?: string }>(b, {
-            type: "get_state",
-          }).catch(() => undefined),
-        ]);
-        if (seq !== switchSeq) return; // D8: a newer target owns the screen
-
-        set({
-          items: itemsFromMessages(messages.messages ?? []).filter((i) => !i.ephemeral),
-          stats,
-          sessionName: state?.sessionName,
-          sessionId: state?.sessionId,
-          model: state?.model,
-          thinkingLevel: state?.thinkingLevel ?? "medium",
-          pendingSwitch: null,
+      // 030: single-flight. The view has already jumped to this target above,
+      // so a switch that is still on the wire only has to be told where to go
+      // next — it relays there when it finishes (see the loop below). The tap
+      // that gets queued stays pending until its own round runs, so callers can
+      // still await "did my session become the visible one".
+      if (switchBusy) {
+        switchQueued?.settle(false); // superseded before it ever got a round
+        return new Promise<boolean>((resolve) => {
+          switchQueued = { file, settle: resolve };
         });
-        perfMark("switch.content", startedAt, { kind: "history" });
-        requestRepaint();
-        perfMark("switch.ready", startedAt, { kind: "history" });
-      } catch (e) {
-        if (seq !== switchSeq) return;
-        // D3/Q3: land back on the list rather than on an empty transcript.
-        set({ pendingSwitch: null, tab: "sessions", items: [] });
-        appendError(t("error.switchSession.failed", { msg: (e as Error).message }));
       }
+
+      /** One switch: RPC, three reads, paint. Resolves `true` only when this
+       *  target is what the screen ends up showing; its seq check decides that,
+       *  so a relay round that gets overtaken again drops its content instead
+       *  of flashing it and reports `false` to whoever awaited it. */
+      const runSwitch = async (target: string, at: number, seqAt: number, doAbort: boolean): Promise<boolean> => {
+        try {
+          // A run still tied to the old session would keep streaming into the
+          // new one — but abort after the visible switch, so the user waits on
+          // the page they asked for instead of on the old run settling. 026: a
+          // hung abort is the suspected stuck-switch trigger, so it gets its own
+          // deadline and a hung one fails the switch (reason=abort_timeout)
+          // instead of parking the placeholder forever. Only the first round can
+          // owe an abort — the optimistic set cleared isStreaming.
+          if (doAbort) {
+            await withTimeout(get().abort(), SWITCH_ABORT_TIMEOUT_MS, "abort");
+          }
+          await withTimeout(rpc(b, { type: "switch_session", sessionPath: target }), SWITCH_RPC_TIMEOUT_MS, "switch_session");
+
+          // 021 D3: three independent reads in parallel, one set. Sequential
+          // awaits added ~330ms of pure latency; separate sets would flash.
+          // 026: each read is bounded, but a read timeout only degrades to empty
+          // content (the catch below) — it must not fail the switch (FR-006).
+          const [messages, stats, state] = await Promise.all([
+            withTimeout(rpc<{ messages: unknown[] }>(b, { type: "get_messages" }), SWITCH_READ_TIMEOUT_MS, "get_messages").catch(
+              () => ({ messages: [] as unknown[] }),
+            ),
+            withTimeout(rpc<SessionStats>(b, { type: "get_session_stats" }), SWITCH_READ_TIMEOUT_MS, "get_session_stats").catch(
+              () => undefined,
+            ),
+            withTimeout(
+              rpc<{ sessionName?: string; sessionId?: string; model?: ModelInfo; thinkingLevel?: string }>(b, {
+                type: "get_state",
+              }),
+              SWITCH_READ_TIMEOUT_MS,
+              "get_state",
+            ).catch(() => undefined),
+          ]);
+          if (seqAt !== switchSeq) {
+            clearOwnPending(at); // 026 FR-003: D8 drop still cleans itself
+            return false; // D8: a newer target owns the screen
+          }
+
+          set({
+            items: itemsFromMessages(messages.messages ?? []).filter((i) => !i.ephemeral),
+            stats,
+            sessionName: state?.sessionName,
+            sessionId: state?.sessionId,
+            model: state?.model,
+            thinkingLevel: state?.thinkingLevel ?? "medium",
+            pendingSwitch: null,
+            // 026 FR-005: also covers late-success-after-timeout — the target
+            // came through after all, so the retry bar must go.
+            retrySwitch: null,
+          });
+          perfMark("switch.content", at, { kind: "history" });
+          requestRepaint();
+          perfMark("switch.ready", at, { kind: "history" });
+          return true;
+        } catch (e) {
+          if (seqAt !== switchSeq) {
+            clearOwnPending(at); // 026 FR-003: a stale failure still cleans itself
+            return false;
+          }
+          // 026 FR-007: timeout and RPC refusal are the same failure to the
+          // user, but the log keeps them apart for real-machine attribution.
+          perfMark("switch.failed", at, { reason: switchFailReason(e) });
+          // D3/Q3: land back on the list rather than on an empty transcript.
+          // 026 FR-005: remember the target so the retry bar can re-fire it.
+          set({ pendingSwitch: null, tab: "sessions", items: [], retrySwitch: target });
+          appendError(t("error.switchSession.failed", { msg: (e as Error).message }));
+          return false;
+        }
+      };
+
+      switchBusy = true;
+      try {
+        let target = file;
+        let at = startedAt;
+        let doAbort = wasStreaming;
+        /** Settles the tap that queued this round (the first round's caller is
+         *  the runner itself and gets `result` instead). */
+        let settleRound: ((ok: boolean) => void) | null = null;
+        let result = false;
+        let first = true;
+        // Relay to whatever was asked for while this switch was in flight. Each
+        // round re-reads the newest target, so it converges even while taps keep
+        // arriving; a target re-picked after being queued runs again rather than
+        // being skipped, because its own seq is what the paint is gated on.
+        for (;;) {
+          const seqAt = switchSeq;
+          const ok = await runSwitch(target, at, seqAt, doAbort);
+          if (first) {
+            result = ok;
+            first = false;
+          }
+          settleRound?.(ok);
+          const next = switchQueued;
+          switchQueued = null;
+          if (next == null) break;
+          target = next.file;
+          settleRound = next.settle;
+          at = performance.now();
+          doAbort = false;
+        }
+        return result;
+      } finally {
+        switchBusy = false;
+        // A tap that arrived in the last sync window (between the queue read and
+        // here) would otherwise wait forever; it never got a round, so it failed.
+        const leftover = switchQueued;
+        switchQueued = null;
+        leftover?.settle(false);
+      }
+    },
+
+    async retryLastSwitch() {
+      const file = get().retrySwitch;
+      if (!file) return;
+      await get().switchSession(file);
+    },
+
+    clearRetrySwitch() {
+      set({ retrySwitch: null });
     },
 
     async renameSession(name: string, manual = true) {
@@ -1988,6 +2223,85 @@ export const usePiStore = create<PiStore>((set, get) => {
       }
     },
 
+    /**
+     * 024 US1: the clipboard gets two lines — title, then ID — straight from
+     * the same fields the row renders. A missing id is rare (half-written
+     * file) but must not fake success: the title alone lands, with a visible
+     * note (FR-001/FR-002).
+     */
+    async copySessionInfo(file: string) {
+      const s = get().sessions.find((x) => x.file === file);
+      const title = s?.name || s?.preview?.slice(0, 60) || s?.id || "Untitled";
+      const id = s?.id;
+      const ok = await copyText(id ? `${title}\n${id}` : title);
+      if (!ok) {
+        showSessionsNotice(t("sessions.copyFailed"), "error");
+        return;
+      }
+      if (!id) {
+        showSessionsNotice(t("sessions.copyNoId"), "error");
+        return;
+      }
+      showSessionsNotice(t("sessions.copied"), "info");
+    },
+
+    /**
+     * 024 US2/US3: full-copy fork from the session list, replacing the old
+     * clone button. pi's `clone` RPC only works on the live session (its
+     * sessionPath argument is silently ignored — the "always copies the top
+     * row" bug), so:
+     * - the live session goes through the `clone` RPC, no sessionPath;
+     * - any other row goes through the `sessions.fork` bridge (a one-shot
+     *   `pi --mode rpc --fork` process) and must not disturb what's on screen.
+     * Single-flight (FR-007): one list-level fork at a time; other rows get a
+     * notice instead of a disabled button.
+     */
+    async forkSessionFromList(file: string) {
+      const b = bridge;
+      if (!b) return;
+      if (get().forkingFile) {
+        if (get().forkingFile === file) return; // already running for this row
+        showSessionsNotice(t("sessions.forkBusyOther"), "error");
+        return;
+      }
+      const currentFile = get().sessions.find((s) => s.id === get().sessionId)?.file;
+      const isLive = file === currentFile;
+      set({ forkingFile: file });
+      try {
+        if (isLive) {
+          // FR-004: same semantics as today's clone — minus the bogus
+          // sessionPath argument — plus the 018 (fork) title suffix.
+          const result = await rpc<{ cancelled?: boolean }>(b, { type: "clone" });
+          if (result?.cancelled) {
+            showSessionsNotice(t("error.clone.cancelled"), "error");
+            return;
+          }
+          await syncAfterBranch();
+          await applyForkSuffix();
+        } else {
+          // FR-005: a one-shot process on disk; the live session, the draft
+          // and any stream are untouched. 30s deadline (FR-006) — pi exits by
+          // itself right after forking, so this is only a stuck-process guard.
+          const forked = await b.request<{ ok: boolean; file: string }>("sessions.fork", { file }, 30_000);
+          // 018's suffix rule: an inherited name gets " (fork)" appended, an
+          // unnamed parent stays unnamed for the auto-titler.
+          const source = get().sessions.find((s) => s.file === file);
+          const inherited = source?.name || "";
+          if (inherited && !inherited.endsWith(t("session.forkSuffix"))) {
+            await b.request("sessions.rename", { file: forked.file, name: `${inherited}${t("session.forkSuffix")}` });
+          }
+          await get().refreshSessions();
+          showSessionsNotice(t("sessions.forkDone"), "info");
+        }
+      } catch (e) {
+        showSessionsNotice(t("sessions.forkFailed", { msg: (e as Error).message }), "error");
+        // US3: no ghost row — drop anything the failed run might have half-registered.
+        await get().refreshSessions();
+      } finally {
+        set({ forkingFile: null });
+      }
+    },
+
     async deleteSession(file: string) {
       if (!bridge) return;
       const name = get().sessions.find((s) => s.file === file)?.name;
@@ -2000,25 +2314,6 @@ export const usePiStore = create<PiStore>((set, get) => {
         // one on screen, so the chat never points at a dead file.
         onConfirm: () => runDeleteSession(file),
       });
-    },
-
-    async cloneSession(file: string) {
-      if (!bridge) return;
-      try {
-        const result = await rpc<{ cancelled?: boolean }>(bridge, { type: "clone", sessionPath: file });
-        if (result?.cancelled) {
-          appendError(t("error.clone.cancelled"));
-          return;
-        }
-        await syncAfterBranch();
-      } catch (e) {
-        const item = emptyItem("system", [
-          { kind: "text", text: `clone failed: ${(e as Error).message}`, done: true },
-        ]);
-        item.done = true;
-        item.isError = true;
-        set({ items: [...get().items, item] });
-      }
     },
 
     async forkSession() {

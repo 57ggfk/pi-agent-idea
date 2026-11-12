@@ -66,3 +66,16 @@ export function resetComposerHeight(ta: HTMLTextAreaElement, appEl?: HTMLElement
   ta.style.height = "";
   autosize(ta, appEl);
 }
+
+/**
+ * 025 FR-001: grows the textarea AND reveals the tail. The caret sitting at
+ * `value.length` does not scroll by itself (spec problem statement #1) — an
+ * injected 30-line block would grow to the cap with its visible window stuck
+ * at the first line. The assignment happens right after the height lands, in
+ * the same frame; when the content fits, the browser clamps scrollTop to 0
+ * and the call is a no-op. Idempotent.
+ */
+export function autosizeAndReveal(ta: HTMLTextAreaElement, appEl?: HTMLElement | null): void {
+  autosize(ta, appEl);
+  ta.scrollTop = ta.scrollHeight;
+}

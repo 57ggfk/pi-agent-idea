@@ -1,4 +1,5 @@
 import type { Bridge, BridgeEventName } from "./types";
+import { KNOWN_PROVIDERS } from "../lib/knownProviders";
 
 type Listener = (name: BridgeEventName, data: unknown) => void;
 
@@ -38,20 +39,28 @@ function mockSources() {
  * corporate `npm config get registry`.
  */
 function mockSetup(state: string, npmRegistry: string) {
-  const hasNode = state !== "nonode";
+  // 028: `nonode` = neither node nor npm (the vendor-script target); `nodeold`
+  // = a Node below the corrected 22.19 gate; everything else = current node.
+  const nodeless = state === "nonode";
+  const nodeold = state === "nodeold";
+  const nodeVersion = nodeless ? "" : nodeold ? "v20.11.0" : "v22.19.0";
+  const nodeOk = !nodeless && !nodeold;
   return {
     ok: true,
-    node: hasNode
-      ? { found: true, path: "/usr/local/bin/node", version: "v22.0.0" }
-      : { found: false, path: "", version: "" },
-    npm: hasNode
-      ? { found: true, path: "/usr/local/bin/npm", version: "10.0.0" }
-      : { found: false, path: "", version: "" },
+    node: nodeless
+      ? { found: false, path: "", version: "" }
+      : { found: true, path: "/usr/local/bin/node", version: nodeVersion },
+    npm: nodeless
+      ? { found: false, path: "", version: "" }
+      : { found: true, path: "/usr/local/bin/npm", version: "10.0.0" },
     pi: { found: false, path: "", version: "" },
-    nodeMajor: hasNode ? 22 : null,
-    nodeOk: hasNode,
-    minNodeMajor: 18,
-    canInstall: hasNode,
+    nodeMajor: nodeless ? null : nodeold ? 20 : 22,
+    nodeVersion,
+    nodeOk,
+    minNode: "22.19",
+    installBlocker: nodeless ? "no-node" : nodeold ? "node-version" : "",
+    scriptSupported: true,
+    canInstall: nodeOk,
     piPackage: "@earendil-works/pi-coding-agent",
     agentDir: "/tmp/mock-home/.pi/agent",
     customPath: "",
@@ -88,6 +97,9 @@ function delay(ms: number): Promise<void> {
 const METHOD_SOURCE: Record<string, string> = {
   "files.list": "files",
   "sessions.list": "sessions",
+  // 024: a dedicated source id so `?slow=sessionsFork:…` can hold ONLY the
+  // fork (sessions.list shares the "sessions" source and must stay fast).
+  "sessions.fork": "sessionsFork",
   "approval.getPolicy": "policy",
   "config.getPrefs": "prefs",
 };
@@ -127,6 +139,8 @@ export class MockBridge implements Bridge {
   readonly kind = "mock" as const;
 
   private seq = 0;
+  /** 024: monotonic counter for list-level fork file names. */
+  private forkSeq = 0;
   private listeners: Listener[] = [];
   private timers: ReturnType<typeof setTimeout>[] = [];
 
@@ -211,10 +225,35 @@ export class MockBridge implements Bridge {
   private readonly slowPlan = parseFailPlan(query()?.get("slow"));
   private slowServed = new Map<string, number>();
   private slowCommands = new Map<string, number>();
+  /**
+   * `?slowN=get_messages#2:1000` delays the *Nth* call of a command (026 US2).
+   * The boot replay already spends the one-shot `?slow=` on `get_messages` /
+   * `get_state` (init replays the transcript), so a scenario that needs the
+   * switch's own read to land late must address it by call number.
+   */
+  private readonly slowNPlan = (() => {
+    const plan = new Map<string, number>();
+    for (const entry of (query()?.get("slowN") ?? "").split(",")) {
+      const [name, nth, ms] = entry.split(":");
+      if (!name || !nth || !ms) continue;
+      const n = Number(nth);
+      const delay = Number(ms);
+      if (Number.isFinite(n) && n >= 1 && Number.isFinite(delay) && delay > 0) {
+        plan.set(`${name.trim()}#${n}`, delay);
+      }
+    }
+    return plan;
+  })();
+  private commandCalls = new Map<string, number>();
   /** `?failcmd=switch_session` — fails the first call of that rpc command, so
    *  the optimistic-switch rollback (021 US3) has a failure to roll back. */
   private readonly failCmdPlan = parseFailPlan(query()?.get("failcmd"));
   private failCmdServed = new Map<string, number>();
+  /** `?hang=switch_session` — the first call(s) of that rpc command never
+   *  answer at all (026 US1): not an error, not a delay, a swallowed response.
+   *  Only a local deadline can converge a page in this state. */
+  private readonly hangPlan = parseFailPlan(query()?.get("hang"));
+  private hangServed = new Map<string, number>();
   /** `?unsupported=policy` — that source answers `not_implemented` (FR-009). */
   private readonly unsupported = new Set(
     (query()?.get("unsupported") ?? "")
@@ -277,6 +316,8 @@ export class MockBridge implements Bridge {
   private readonly agentsKnob = query()?.get("agents");
   /** Set by a successful envInstall / envSetPath: releases the setup gate
    *  on the next envDetect (012 T124). */
+  /** 028: the explicit Node path from envSetNodePath (echoed by detect). */
+  private nodePathSet = "";
   private setupInstalled = false;
   /** `?setup=error1` fails the first envDetect only (retry path, T122). */
   private setupErrorShown = false;
@@ -291,7 +332,9 @@ export class MockBridge implements Bridge {
    * synthetic model. They model the real behaviour that a fresh credential
    * adds models to the catalog.
    */
-  private readonly dynamicModels: MockModel[] = [];
+  private dynamicModels: MockModel[] = [];
+  /** 027: providers defined through the Auth panel form (keyed by name). */
+  private customProviders = new Map<string, CustomProviderRecord>();
   /**
    * `?reload=strict` hides [dynamicModels] from plain `get_available_models`
    * until `models.reload` runs — that is the models.json case, where only an
@@ -400,7 +443,21 @@ export class MockBridge implements Bridge {
     return true;
   }
 
+  /** 026: same one-shot budget rule as `?failcmd=`, but the call never settles. */
+  private shouldHangCommand(type: string): boolean {
+    const budget = this.hangPlan.get(type) ?? 0;
+    const used = this.hangServed.get(type) ?? 0;
+    if (used >= budget) return false;
+    this.hangServed.set(type, used + 1);
+    return true;
+  }
+
   private commandDelay(type: string): Promise<void> {
+    // ?slowN=<cmd>#<n>:<ms> — the Nth call of this command is held back.
+    const callNo = (this.commandCalls.get(type) ?? 0) + 1;
+    this.commandCalls.set(type, callNo);
+    const nthMs = this.slowNPlan.get(`${type}#${callNo}`);
+    if (nthMs) return delay(nthMs);
     const ms = this.slowPlan.get(type) ?? 0;
     const served = this.slowCommands.get(type) ?? 0;
     if (ms <= 0 || served >= 1) return Promise.resolve();
@@ -571,6 +628,31 @@ export class MockBridge implements Bridge {
       this.mockSessions = this.mockSessions.map((s) => (s.file === p.file ? { ...s, name } : s));
       return Promise.resolve({ ok: true } as T);
     }
+    if (method === "sessions.fork") {
+      // 024: full-copy fork of a list row — mirrors the real bridge's one-shot
+      // `pi --mode rpc --fork` process: a NEW file (new id) whose name is
+      // inherited from the source (the plugin appends the (fork) suffix
+      // offline via sessions.rename). `?forkfail=1` exercises US3's failure
+      // path (process could not be spawned / timed out).
+      const p = params as { file?: string };
+      if (query()?.get("forkfail") === "1") {
+        return Promise.reject(new Error("pi --fork produced no session (exit=1): mock refusal"));
+      }
+      const row = this.mockSessions.find((s) => s.file === p.file);
+      if (!row) return Promise.reject(new Error("not a session file: " + p.file));
+      this.forkSeq += 1;
+      const forked = {
+        file: `/tmp/mock-sessions/fork-${this.forkSeq}-${row.id}.jsonl`,
+        id: `session-fork-${this.forkSeq}`,
+        timestamp: new Date().toISOString(),
+        name: row.name,
+        preview: row.preview,
+        modifiedAt: Date.now(),
+        messageCount: row.messageCount,
+      };
+      this.mockSessions = [forked, ...this.mockSessions];
+      return Promise.resolve({ ok: true, file: forked.file } as T);
+    }
     if (method === "title.generate") {
       // B-stage title refinement: the real bridge spawns a one-shot pi
       // process; the mock answers from the excerpt so the full A→B→
@@ -661,6 +743,11 @@ export class MockBridge implements Bridge {
     if (this.shouldFailCommand(commandType)) {
       return { success: false, error: `${commandType} failed: mock refusal` } as T;
     }
+    if (this.shouldHangCommand(commandType)) {
+      // 026 US1: the response is swallowed, not delayed — the promise neither
+      // resolves nor rejects, so only the caller's own deadline can move on.
+      return new Promise<never>(() => {}) as T;
+    }
     await this.commandDelay(commandType);
     return this.handleCommand(command) as T;
   }
@@ -696,6 +783,13 @@ export class MockBridge implements Bridge {
         }
         if (setup) {
           const detected = mockSetup(setup, query()?.get("npmregistry") ?? "");
+          // 028 FR-004: an explicit Node path wins over the fixture.
+          if (this.nodePathSet) {
+            detected.node = { found: true, path: this.nodePathSet, version: "v22.19.0" };
+            detected.nodeOk = true;
+            detected.installBlocker = "";
+            detected.canInstall = true;
+          }
           if (this.setupInstalled) {
             // A completed install / manual path releases the gate (T124).
             detected.needsSetup = false;
@@ -709,8 +803,11 @@ export class MockBridge implements Bridge {
           npm: { found: true, path: "/usr/local/bin/npm", version: "10.0.0" },
           pi: { found: true, path: "/usr/local/bin/pi", version: this.piVersion },
           nodeMajor: 22,
+          nodeVersion: "v22.0.0",
           nodeOk: true,
-          minNodeMajor: 18,
+          minNode: "22.19",
+          installBlocker: "",
+          scriptSupported: true,
           canInstall: true,
           piPackage: "@earendil-works/pi-coding-agent",
           agentDir: "/tmp/mock-home/.pi/agent",
@@ -723,6 +820,22 @@ export class MockBridge implements Bridge {
         };
       }
       case "manage.envInstall": {
+        // 028: the vendor script shares the npm install's contract (same
+        // success/fail/hang knobs, same stop channel).
+        if ((params as { method?: string } | undefined)?.method === "script") {
+          const scriptLine = "mock: irm https://pi.dev/install.ps1 | iex  (or the .sh twin)";
+          this.setupInstalled = true;
+          if (query()?.get("install") === "fail") {
+            return {
+              ok: false,
+              exitCode: 1,
+              method: "script",
+              output: `${scriptLine}\nboom: the script exploded`,
+              error: "The script failed. boom",
+            };
+          }
+          return { ok: true, found: true, exitCode: 0, method: "script", output: scriptLine, version: this.piVersion };
+        }
         // Echo the registry back so e2e can prove which value left the UI:
         // "npm default" means no --registry flag was passed at all.
         const payload = params as { source?: string; registry?: string } | undefined;
@@ -772,6 +885,11 @@ export class MockBridge implements Bridge {
       case "manage.envSetPath": {
         this.setupInstalled = true;
         return { ok: true, found: true, path: "/usr/local/bin/pi", version: this.piVersion };
+      }
+      // 028 FR-004: the explicit Node path — detect reports it verbatim.
+      case "manage.envSetNodePath": {
+        this.nodePathSet = String((params as { path?: string } | undefined)?.path ?? "");
+        return { ok: true, found: this.nodePathSet !== "", path: this.nodePathSet, version: "v22.19.0" };
       }
       case "manage.mcpList":
         return {
@@ -920,9 +1038,12 @@ export class MockBridge implements Bridge {
           ],
         };
       case "manage.authOverview": {
+        // 027: models.json customs join the provider list (no credentials —
+        // their key lives in models.json and never crosses the bridge).
+        const names = [...new Set([...this.authProviders, ...this.customProviders.keys()])];
         const base = {
           ok: true,
-          providers: [...this.authProviders],
+          providers: names,
           withCredentials: [...this.authProviders],
           // Mock rows read as stored API keys (PiManage derives the same
           // shape from auth.json's per-entry `type`; never secret material).
@@ -945,6 +1066,95 @@ export class MockBridge implements Bridge {
           };
         }
         return { ...base, modelsState: "ok", modelsPath: "/tmp/mock-home/.pi/agent/models.json" };
+      }
+      // -- 027: custom provider definition (models.json form) ----------------
+      case "manage.providerGet": {
+        const name = String((params as { name?: string } | undefined)?.name ?? "");
+        const rec = this.customProviders.get(name);
+        if (!rec) {
+          return { ok: true, exists: false, name };
+        }
+        return {
+          ok: true,
+          exists: true,
+          name,
+          provider: {
+            name,
+            displayName: rec.displayName,
+            baseUrl: rec.baseUrl,
+            api: rec.api,
+            models: rec.models.map((m) => ({
+              id: m.id,
+              name: m.name,
+              reasoning: m.reasoning,
+              inputImage: m.inputImage,
+              thinkingLevels: m.thinkingLevels,
+              contextWindow: m.contextWindow,
+              maxTokens: m.maxTokens,
+            })),
+            hasKey: rec.apiKey != null,
+            keyMasked: rec.apiKey ? maskMockKey(rec.apiKey) : null,
+          },
+        }
+      }
+      case "manage.providerSave": {
+        const p = (params ?? {}) as { provider?: CustomProviderFormPayload; overwrite?: boolean };
+        const form = p.provider;
+        const name = form?.name ?? "";
+        if (KNOWN_PROVIDERS.some((k) => k.id === name) && !p.overwrite) {
+          return { ok: false, code: "builtin", error: `"${name}" is a bundled pi provider` }
+        }
+        if (this.customProviders.has(name) && !p.overwrite) {
+          return { ok: false, code: "exists", error: `a custom provider named "${name}" already exists` }
+        }
+        const previous = this.customProviders.get(name);
+        const apiKey =
+          form?.apiKey?.trim() || (previous?.apiKey ?? null);
+        const record: CustomProviderRecord = {
+          displayName: form?.displayName?.trim() || undefined,
+          baseUrl: form?.baseUrl ?? "",
+          api: form?.api ?? "",
+          apiKey,
+          models: (form?.models ?? []).map((m: CustomProviderModelPayload) => ({
+            ...m,
+            contextWindow: m.contextWindow ?? undefined,
+            maxTokens: m.maxTokens ?? undefined,
+          })),
+        };
+        this.customProviders.set(name, record);
+        // The picker sees the new models once the flow reloads (017 mock).
+        this.dynamicModels = this.dynamicModels.filter((m) => m.provider !== name);
+        for (const m of record.models) {
+          this.dynamicModels.push({
+            id: m.id,
+            name: m.name || m.id,
+            provider: name,
+            contextWindow: m.contextWindow ?? 128000,
+            reasoning: m.reasoning,
+          });
+        }
+        return { ok: true, name, reloaded: true }
+      }
+      case "manage.providerDelete": {
+        const name = String((params as { name?: string } | undefined)?.name ?? "");
+        if (KNOWN_PROVIDERS.some((k) => k.id === name)) {
+          return { ok: false, code: "builtin", error: `"${name}" is a bundled pi provider` }
+        }
+        if (!this.customProviders.delete(name)) {
+          return { ok: false, error: `no provider named "${name}"` }
+        }
+        this.dynamicModels = this.dynamicModels.filter((m) => m.provider !== name);
+        return { ok: true, name }
+      }
+      case "manage.providerTest": {
+        const knob = query()?.get("providertest");
+        if (knob === "401") {
+          return { ok: false, status: 401, ms: 120, error: "HTTP 401: Unauthorized" }
+        }
+        if (knob === "timeout") {
+          return { ok: false, ms: 10_000, error: "request timed out after 10s" }
+        }
+        return { ok: true, status: 200, ms: 140 }
       }
       case "manage.modelsReadProvider": {
         if (this.modelsKnob === "broken") {
@@ -2244,6 +2454,41 @@ function pickerModels(knob: string | null | undefined, scaleKnob?: string | null
   }
 
   return MOCK_MODELS;
+}
+
+// -- 027: custom provider form payloads (manage.providerSave/Get) ------------
+
+export interface CustomProviderModelPayload {
+  id: string;
+  name?: string;
+  reasoning: boolean;
+  inputImage: boolean;
+  thinkingLevels: string[];
+  contextWindow?: number;
+  maxTokens?: number;
+}
+
+export interface CustomProviderFormPayload {
+  name: string;
+  displayName?: string;
+  api: string;
+  baseUrl: string;
+  apiKey?: string;
+  thinkingFormat?: string;
+  models: CustomProviderModelPayload[];
+}
+
+interface CustomProviderRecord {
+  displayName?: string;
+  baseUrl: string;
+  api: string;
+  apiKey: string | null;
+  models: Array<Required<Pick<CustomProviderModelPayload, "id" | "reasoning" | "inputImage" | "thinkingLevels">> &
+    Partial<CustomProviderModelPayload>>;
+}
+
+function maskMockKey(key: string): string {
+  return key.length <= 6 ? "•••" : `${key.slice(0, 3)}…${key.slice(-2)}`;
 }
 
 // Sample project-relative paths served for the `files.list` bridge method

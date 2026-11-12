@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MockBridge } from "./mock";
 import { rpc } from "./types";
 
@@ -229,5 +229,148 @@ describe("MockBridge model catalog reload (spec 017)", () => {
     const after = await bridge.request<{ models: Array<{ provider: string }> }>("models.reload");
 
     expect(after.models.some((m) => m.provider === "deepseek")).toBe(false);
+  });
+});
+
+describe("MockBridge ?hang= knob (026 US1)", () => {
+  it("swallows the first matching rpc command and answers the next one", async () => {
+    vi.stubGlobal("location", { search: "?hang=switch_session" });
+    try {
+      const bridge = new MockBridge();
+
+      const hung = bridge.request("rpc.request", {
+        command: { type: "switch_session", sessionPath: "/s/a.jsonl" },
+      });
+      let settled = false;
+      void hung.then(
+        () => (settled = true),
+        () => (settled = true),
+      );
+      // Not an error, not a delay: nothing settles on its own.
+      await new Promise((r) => setTimeout(r, 25));
+      expect(settled).toBe(false);
+
+      const second = await bridge.request<{ success?: boolean }>("rpc.request", {
+        command: { type: "switch_session", sessionPath: "/s/b.jsonl" },
+      });
+      expect(second.success).not.toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe("MockBridge sessions.fork (024)", () => {
+  it("creates a new row that inherits the source name, without touching the live session", async () => {
+    const bridge = new MockBridge();
+    const before = await bridge.request<{ sessions: Array<{ file: string; id: string; name: string }> }>(
+      "sessions.list",
+    );
+    const src = before.sessions[0];
+    expect(src.name).toBe("Refactor auth module");
+
+    const forked = await bridge.request<{ ok: boolean; file: string }>("sessions.fork", { file: src.file });
+    expect(forked.ok).toBe(true);
+    expect(forked.file).not.toBe(src.file);
+
+    const after = await bridge.request<{ sessions: Array<{ file: string; id: string; name: string }> }>(
+      "sessions.list",
+    );
+    expect(after.sessions.length).toBe(before.sessions.length + 1);
+    const row = after.sessions.find((s) => s.file === forked.file);
+    expect(row?.name).toBe("Refactor auth module");
+    expect(row?.id).not.toBe(src.id);
+    // The live session row is untouched.
+    expect(after.sessions.find((s) => s.file === src.file)).toBeTruthy();
+  });
+
+  it("rejects when ?forkfail=1 is set (US3 failure path)", async () => {
+    vi.stubGlobal("location", { search: "?forkfail=1" });
+    try {
+      const bridge = new MockBridge();
+      await expect(bridge.request("sessions.fork", { file: "/tmp/mock-sessions/x.jsonl" })).rejects.toThrow(
+        /mock refusal/,
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe("MockBridge custom provider (027)", () => {
+  const FORM = {
+    name: "my-relay",
+    displayName: "My Relay",
+    api: "openai-completions",
+    baseUrl: "https://relay.example.com",
+    apiKey: "sk-relay-secret-9",
+    models: [
+      { id: "relay-large", name: "Relay Large", reasoning: true, inputImage: false, thinkingLevels: ["low", "medium", "high"] },
+      { id: "relay-vision", reasoning: false, inputImage: true, thinkingLevels: [] },
+    ],
+  };
+
+  it("save registers the provider and the picker sees its models after reload", async () => {
+    const bridge = new MockBridge();
+    const saved = await bridge.request<{ ok: boolean; reloaded: boolean }>("manage.providerSave", {
+      provider: FORM,
+    });
+    expect(saved.ok).toBe(true);
+    expect(saved.reloaded).toBe(true);
+
+    const after = await bridge.request<{ models: Array<{ provider: string; id: string }> }>("models.reload");
+    expect(after.models.some((m) => m.provider === "my-relay" && m.id === "relay-large")).toBe(true);
+    expect(after.models.some((m) => m.provider === "my-relay" && m.id === "relay-vision")).toBe(true);
+
+    // The key never comes back: masked only.
+    const got = await bridge.request<{ exists: boolean; provider: { hasKey: boolean; keyMasked: string } }>(
+      "manage.providerGet",
+      { name: "my-relay" },
+    );
+    expect(got.exists).toBe(true);
+    expect(got.provider.hasKey).toBe(true);
+    expect(JSON.stringify(got)).not.toContain("sk-relay-secret-9");
+    expect(got.provider.keyMasked).toContain("…");
+  });
+
+  it("refuses builtin names without overwrite", async () => {
+    const bridge = new MockBridge();
+    const res = await bridge.request<{ ok: boolean; code?: string }>("manage.providerSave", {
+      provider: { ...FORM, name: "openai" },
+    });
+    expect(res.ok).toBe(false);
+    expect(res.code).toBe("builtin");
+  });
+
+  it("delete removes the provider and its models", async () => {
+    const bridge = new MockBridge();
+    await bridge.request("manage.providerSave", { provider: FORM });
+    const del = await bridge.request<{ ok: boolean }>("manage.providerDelete", { name: "my-relay" });
+    expect(del.ok).toBe(true);
+    const after = await bridge.request<{ models: Array<{ provider: string }> }>("models.reload");
+    expect(after.models.some((m) => m.provider === "my-relay")).toBe(false);
+  });
+
+  it("providerTest answers both failure shapes via ?providertest", async () => {
+    vi.stubGlobal("location", { search: "?providertest=401" });
+    let bridge = new MockBridge();
+    const denied = await bridge.request<{ ok: boolean; status?: number; error?: string }>("manage.providerTest", {
+      baseUrl: "https://relay",
+      api: "openai-completions",
+    });
+    expect(denied.ok).toBe(false);
+    expect(denied.status).toBe(401);
+    expect(denied.error).toMatch(/401/);
+    vi.unstubAllGlobals();
+
+    vi.stubGlobal("location", { search: "?providertest=timeout" });
+    bridge = new MockBridge();
+    const slow = await bridge.request<{ ok: boolean; error?: string }>("manage.providerTest", {
+      baseUrl: "https://relay",
+      api: "anthropic-messages",
+    });
+    expect(slow.ok).toBe(false);
+    expect(slow.error).toMatch(/timed out/);
+    vi.unstubAllGlobals();
   });
 });

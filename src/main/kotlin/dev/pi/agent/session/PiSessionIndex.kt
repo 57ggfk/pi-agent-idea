@@ -44,7 +44,7 @@ object PiSessionIndex {
     private val json = Json { ignoreUnknownKeys = true }
 
     /** Header facts, phase 1. */
-    private data class Header(val id: String?, val timestamp: String?, val cwd: String?)
+    private data class Header(val id: String?, val timestamp: String?, val cwd: String?, val parentSession: String? = null)
 
     /** Cache key: everything that can change a file's parsed result. */
     private data class Stamp(val lastModified: Long, val length: Long)
@@ -63,7 +63,7 @@ object PiSessionIndex {
 
     private fun stampOf(file: File): Stamp = Stamp(file.lastModified(), file.length())
 
-    private fun sessionsRoot(): File {
+    internal fun sessionsRoot(): File {
         System.getenv("PI_CODING_AGENT_SESSION_DIR")?.let { return File(it) }
         return File(System.getProperty("user.home"), ".pi/agent/sessions")
     }
@@ -104,6 +104,9 @@ object PiSessionIndex {
                     id = obj["id"]?.jsonPrimitive?.content,
                     timestamp = obj["timestamp"]?.jsonPrimitive?.content,
                     cwd = obj["cwd"]?.jsonPrimitive?.content,
+                    // 024: `pi --fork` writes the source file path here — the
+                    // marker findNewFork() matches on.
+                    parentSession = obj["parentSession"]?.jsonPrimitive?.content,
                 )
             }
         }.getOrNull()
@@ -274,6 +277,43 @@ object PiSessionIndex {
         val rootPath = runCatching { root.canonicalFile.path }.getOrNull() ?: return false
         val candidatePath = runCatching { candidate.canonicalFile.path }.getOrNull() ?: return false
         return candidatePath == rootPath || candidatePath.startsWith(rootPath + File.separator)
+    }
+
+    /**
+     * 024: canonical paths of every session file currently under [root] — the
+     * "before" snapshot `findNewFork` diffs against.
+     */
+    fun snapshotSessionFiles(rootOverride: File? = null): Set<String> {
+        val root = rootOverride ?: sessionsRoot()
+        if (!root.isDirectory) return emptySet()
+        return root.walkTopDown()
+            .filter { it.isFile && it.extension == "jsonl" }
+            .mapTo(HashSet()) { it.canonicalFile.path }
+    }
+
+    /**
+     * 024: the session file `pi --fork <sourceFile>` just created — a jsonl
+     * under [root] that was not in [before] and whose header names the source
+     * as its `parentSession`. pi writes the parent path canonicalised
+     * (probe A/B), so both sides go through canonicalFile before comparing.
+     * Returns the newest match, or null when nothing qualifies.
+     */
+    fun findNewFork(sourceFile: String, before: Set<String>, rootOverride: File? = null): File? {
+        val root = rootOverride ?: sessionsRoot()
+        if (!root.isDirectory) return null
+        val source = runCatching { File(sourceFile).canonicalFile.path }.getOrNull() ?: return null
+        var latest: File? = null
+        root.walkTopDown()
+            .filter { it.isFile && it.extension == "jsonl" && it.canonicalFile.path !in before }
+            .forEach { file ->
+                val header = header(file) ?: return@forEach
+                val parent = header.parentSession ?: return@forEach
+                val parentPath = runCatching { File(parent).canonicalFile.path }.getOrNull()
+                if (parentPath == source) {
+                    if (latest == null || file.lastModified() > latest!!.lastModified()) latest = file
+                }
+            }
+        return latest
     }
 
     private fun firstUserText(content: kotlinx.serialization.json.JsonElement?): String {

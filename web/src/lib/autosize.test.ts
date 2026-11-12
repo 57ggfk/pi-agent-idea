@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { clampComposerHeight, composerMaxHeight, MIN_COMPOSER_HEIGHT } from "./autosize";
+import { autosizeAndReveal, clampComposerHeight, composerMaxHeight, MIN_COMPOSER_HEIGHT } from "./autosize";
 
 /** T002: the height policy has exactly one implementation. Cases from
  *  specs/010-ui-polish tasks.md T002 — appHeight 300/600/1200 → cap
@@ -60,5 +60,33 @@ describe("clampComposerHeight", () => {
   test("a small but real app height keeps its own cap (only unknown falls back)", () => {
     expect(clampComposerHeight(400, 100)).toBe(45);
     expect(clampComposerHeight(400, 1)).toBe(MIN_COMPOSER_HEIGHT);
+  });
+});
+
+// 025 FR-001: grow, then reveal the tail — in that order, same frame.
+describe("autosizeAndReveal (025)", () => {
+  /** Plain-object textarea: the real DOM never exists under the node test
+   *  runner, and the contract is only the assignment order. */
+  function fakeTa(scrollHeight: number) {
+    return {
+      style: {} as Record<string, string>,
+      closest: () => null,
+      scrollHeight,
+      scrollTop: 0,
+    } as unknown as HTMLTextAreaElement;
+  }
+
+  test("long content grows to the cap and pushes the viewport to the tail", () => {
+    const ta = fakeTa(480); // appHeight 0 → not laid out → absolute cap 320
+    autosizeAndReveal(ta, null);
+    expect(ta.style.height).toBe("320px");
+    expect(ta.scrollTop).toBe(480);
+  });
+
+  test("content that fits assigns the clamped-to-0 scrollTop (no-op by contract)", () => {
+    const ta = fakeTa(60);
+    autosizeAndReveal(ta, null);
+    expect(ta.style.height).toBe("60px");
+    expect(ta.scrollTop).toBe(60);
   });
 });

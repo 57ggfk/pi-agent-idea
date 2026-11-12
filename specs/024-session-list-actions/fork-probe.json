@@ -1,0 +1,49 @@
+{
+  "_note": "024 T001 探针（2026-11-12 凌晨，pi 1.5.0，本机 Windows）。源会话=旧探针目录的一条 6 行 jsonl；输出走隔离目录；auth.json 以 md5 前后对比。",
+  "piVersion": "1.5.0",
+  "probes": {
+    "A_tui_direct": {
+      "command": "pi --fork <src> --session-dir <out>",
+      "cwd": "D:\\code\\github\\pi-agent-idea",
+      "result": {
+        "forkedFileCreated": true,
+        "forkedHeader": {
+          "type": "session",
+          "version": 3,
+          "newId": "01a1cbbe-f96e-75dd-bbff-cf3d7459942b",
+          "cwd": "D:\\code\\github\\pi-agent-idea",
+          "parentSession": "<src>"
+        },
+        "entriesCopied": "6 行 → 6 行逐条复制（session,model_change,thinking_level_change,message×3），无新增条目",
+        "processExit": "不自行退出——进入 TUI；stdin=/dev/null 时触发一次模型调用（openrouter 402 无余额），错误不写入文件；exit=1",
+        "authJsonMd5": "UNCHANGED"
+      }
+    },
+    "B_rpc_mode": {
+      "command": "pi --mode rpc --fork <src>  (PI_CODING_AGENT_SESSION_DIR=<out>, cwd=临时目录)",
+      "result": {
+        "forkedFileCreated": true,
+        "forkedHeader": { "cwd": "<进程 cwd>", "parentSession": "<src>" },
+        "processExit": "stdin EOF 后自行退出，exit=0，stdout/stderr 全空，无模型调用、无 TUI",
+        "authJsonMd5": "UNCHANGED"
+      }
+    },
+    "C_named_parent": {
+      "command": "pi --mode rpc --fork <named-src>（源文件末尾手工追加 session_info{name:'Probe Parent Name'}）",
+      "result": {
+        "nameInherited": true,
+        "forkedTypes": "session,model_change,thinking_level_change,message×3,session_info,model_change,thinking_level_change",
+        "sessionInfoName": "Probe Parent Name"
+      }
+    }
+  },
+  "answers": {
+    "P1_产出": "完整复制源条目 + 新 id + 首行 session{parentSession 指回源文件, cwd=进程 cwd}",
+    "P2_退出行为": "--mode rpc + stdin EOF → fork 后自行退出（exit 0，无模型调用）；直接 TUI 形态不退出（方案据此固定 spawn 形态）",
+    "P3_落盘目录": "尊重 PI_CODING_AGENT_SESSION_DIR / --session-dir（精确目录）；不给则按进程 cwd 编码目录",
+    "P4_auth锁": "不碰（md5 前后一致）",
+    "P5_标题后缀": "pi 自身继承父名（session_info 原样复制）；(fork) 后缀由插件在 fork 后用 sessions.rename 离线追加",
+    "P6_与插件列表": "PiSessionIndex.list 递归扫 root + header.cwd 过滤（不看子目录名）→ spawn 时 workingDir=项目根即可出现在列表"
+  },
+  "decision": "方案 A 成立（一次性进程，spawn 形态 `pi --mode rpc --fork <file>` + stdinText=''），不降级方案 B"
+}

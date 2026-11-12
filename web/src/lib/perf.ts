@@ -16,6 +16,9 @@ export type PerfEvent =
   | "switch.pending"
   | "switch.content"
   | "switch.ready"
+  // 026 FR-007: a discoverable failure mark (reason=timeout|rpc|abort_timeout),
+  // so "pending without a matching ready" stops being the only stuck signature.
+  | "switch.failed"
   | "scroll.frame"
   | "hover.render";
 

@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.5.8 — 2026-11-12
+
+**新增**
+- 自定义 Provider（027）：Auth 面板可直接新建、编辑、删除自定义 Provider——API 格式、Base URL、模型清单以及是否支持思考 / 图片都可填；保存后模型选择器立刻能选到，不必重启 pi。
+- 回到底部（029）：向上翻看历史时消息列表右下角浮出「回到底部」按钮，点击即跳到最新一条并恢复自动跟随，不必一路滚回去。
+
+**修复**
+- 会话切换既不卡死也不堆积（026 / 030）：pi 无响应时 8 秒内收敛成可重试的失败横条，卡住期间点「新建会话」也能立即接管；快速连点（含搜索结果跳转）不再每次点击都排一个请求，最后一个目标总能加载出来，不会再报「切换会话失败」。
+- 会话列表的行内动作改对了（024）：复制按钮改为复制「标题 + 会话 ID」两行，不再克隆会话；Fork 复制的是你点的那一行，不再是当前打开的那条。
+- 滚到列表末端后立刻反向滚动即可跟手（022）：此前要停一下才恢复，现在不再需要。
+- 注入内容后输入框不再被裁（025）：右键动作、引用、拖拽、取回等注入之后，输入框总是长到正确高度并把内容末尾显示出来。
+- 安装引导补上官方脚本与正确的 Node 门槛（028）：可一键跑官方安装脚本（连 Node 一起装），Node 版本要求修正为 22.19，设置里也能显式指定 Node 路径。
+
+**Added**
+- Custom providers (027): the Auth panel now creates, edits and deletes providers in place — API format, base URL, model list, thinking and image support — and the model picker offers them as soon as you save, with no pi restart.
+- Scroll to bottom (029): a pill appears at the transcript's corner while you are scrolled up; one click jumps to the latest message and resumes following instead of a long scroll back.
+
+**Fixed**
+- Session switching neither hangs nor piles up (026 / 030): an unresponsive pi converges into a retryable failure bar within 8 seconds, New session takes over immediately while a switch is stuck, and rapid taps (including search hits) no longer queue one request each, so the last target always loads instead of failing.
+- Session-list row actions now hit the right target (024): copy copies the title and session ID instead of cloning, and Fork duplicates the row you clicked rather than the session you have open.
+- Scrolling back up right after hitting the bottom of a list follows your wheel immediately (022) instead of only after a pause.
+- Injected content no longer leaves the composer clipped (025): after IDE actions, quotes, drops or restores it always sizes to the right height and reveals the tail.
+- The setup guide ships the official install script and the correct Node floor (028): run the vendor script (it installs Node too), the Node requirement is corrected to 22.19, and a Node path can be set explicitly.
+
 ## 0.5.7 — 2026-11-11
 
 **新增**

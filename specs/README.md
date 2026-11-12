@@ -330,3 +330,52 @@ Phase 7 收尾：i18n / 全基线 / MANUAL_TEST / 真机目视
 | 019 | 实例注册表结构、事件分桶、请求带实例号、生命周期与关闭确认、四阶段顺序 | **纠正 spec 初版两处偏差**：「web 侧零改动」不成立（需回传实例号）；关闭确认不能用 web 的 `ConfirmDialog`（改用 IDE 原生对话框） |
 
 015–018 已实现并发布，不再回头补 plan（属文档考古）；新规格一律重新走 spec → plan → tasks。
+
+---
+
+# 0.5.8 批次（2026-11-12 追加）
+
+> 版本分支：`release/0.5.8`（已推 origin，版本位 `0.5.8`；已含 `collectChangelog` 碎片流程与 CI 碎片校验）
+> 本批共 **6 份规格**：缺陷 3（024–026）+ 需求 3（027–029）。全部为 spec 定稿，**plan / tasks 待补**。
+> 用户口径（2026-11-12）：先整理 spec，实现另排。
+
+| # | 规格 | 类型 | 一句话 | 已核实的根因 / 关键约束 |
+|---|---|---|---|---|
+| 024 | [会话列表行内动作重排](./024-session-list-actions/spec.md) | 缺陷 | 复制按钮改成「复制标题+ID」，原 clone 位置换成 fork 按钮（整条复制）；修「点哪条都克隆最上面那条」 | **错行根因已确证**：`store.ts:2008` 给 pi 的 `clone` 传 `sessionPath`，而 `clone` **只作用于活动会话、忽略该参数**。非当前会话只能走 CLI `pi --fork <path>`（一次性进程，用户已选方案 A），T001 探针不通过则降级「先切过去再克隆」 |
+| 025 | [注入内容后输入框自适应并滚到末尾](./025-composer-inject-autosize/spec.md) | 缺陷 | 右键菜单/引用/拖拽等任意通路把内容加到输入框，都要长到该有的高度**并停在末尾** | `lib/autosize.ts:52-62` 只改 height、**从不设 `scrollTop`**；`Composer.tsx:370-377` 的 rAF 单帧测量在页签/工具窗未激活时读到 0 → 卡在 34px 且无重测。7 条通路都经 `pendingPrompt`，一处收口即可 |
+| 026 | [会话切换卡死](./026-switch-stuck/spec.md) | 缺陷 | 连切三次后卡「仍在切换」90s+，无超时/重试/取消，连带新建会话也点不动 | 三层叠加：① `jcef.ts:160` 默认 deadline **360s** ② `store.ts:1849` `seq !== switchSeq` 静默 return、不清自己的 pending ③ `store.ts:777` `newSession` 被 pending **静默**挡住。真机签名：`switch.pending` 无配对 `switch.ready` |
+| 027 | [自定义 Provider](./027-custom-provider/spec.md) | 需求 | 表单新建自定义 provider：API 格式 4 选 1 + Base URL + Key + 模型（含**支持思考 / 支持图片 / 思考级别**），参考 cc-switch | pi 1.5.0 schema 已逐字核对（`ProviderConfigSchema` / `ModelDefinitionSchema`）：`api` 枚举 `anthropic-messages`/`openai-completions`/`openai-responses`/`google-generative-ai`；`thinkingLevelMap[level]=null` 表示不支持（pi 自己的构造法见 `virtual-models.js:67-77`）；**pi 不会拉远端 `/models`**，模型 ID 须手填。保存后复用 017 的 `/pi-agent-reload-models` 热重载 |
+| 028 | [安装引导（官方脚本 + npm + Node 路径）](./028-install-guide/spec.md) | 需求 | 覆盖官网安装方式，支持手动选 Node 路径 | 官网 4 条路（README:28-45），本批做 **install.ps1 / install.sh + npm**（nix 用户已明确不做）。**顺带发现现成缺陷**：`PiEnvironment.kt:60` `MIN_NODE_MAJOR = 18`，而 pi 要求 **Node ≥ 22.19** → 低版本机器上引导页报「环境正常」然后 pi 起不来。Node 路径目前无配置项（`PiAgentSettings` 只有 `piPath`） |
+| 029 | [「回到底部」悬浮按钮](./029-jump-to-bottom/spec.md) | 需求 | 未贴底时右下角浮出向下箭头，点击滚到底并消失 | `lib/pin.ts` 的 `PinState.pinned` 已有（022），但是 **ref 不触发渲染**，需镜像成 state；按钮**必须放在滚动容器之外**（放进去会改 `scrollHeight`，重蹈 `content-visibility` 的坑）；显隐不得再用距离阈值 |
+
+## 建议实施顺序
+
+```
+026（卡死，影响可用性）→ 024（错行 bug + 按钮语义）→ 025（注入手感）
+                                    ↓
+                        029（小，纯前端，可穿插）
+                                    ↓
+                       027（Provider，Kotlin 写盘 + 桥接四处同步）
+                                    ↓
+                       028（安装引导，含 Node 门槛修正，最后做全局回归）
+```
+
+理由：026/024 是「行为错」而非「缺功能」，先修；029 与 025 都只碰 `MessageList` / `Composer` 的相邻区域，可合并一轮回归；
+027/028 都要动 `manage.*` 桥接与设置项，放后面统一做一次 Kotlin 侧回归。
+
+## 与既有条款的关系
+
+- **027 推翻**本文件「未纳入本批」中的「不做表单式编辑 models.json」——推翻范围仅限**自定义 provider 的定义**，
+  仍不做通用 models.json 编辑器、不碰 pi 内置模型目录 `models-store.json`。
+- **024 改写** 018 「fork 标题后缀」的适用范围：新增「非当前会话 fork」这条通路也要打后缀。
+- **025 不改** 010 FR-006/FR-007 的拼接语义与高度上限；**029 不改** 022 的 pin 判定规则。
+
+## 待关闭的开放问题（写进各 spec 末尾）
+
+| # | 问题 | 默认口径 |
+|---|---|---|
+| 024-Q1 | `pi --fork <path>` 的副作用（是否无消息即退出、写到哪个 sessions 目录、标题后缀、是否碰 auth 锁） | 由 T001 探针实测；不成立则降级「先切过去再克隆」 |
+| 027-Q1 | 「测试连通」怎么发请求 | 直连 `${baseUrl}/models` 带 key（不阻塞保存） |
+| 027-Q2 | 是否暴露 `compat.thinkingFormat` | 不暴露（仅 `openai-completions` + 勾思考时给高级下拉，默认不写） |
+| 028-Q1 | 允许插件执行官网安装脚本吗（远程代码执行） | 已确认做，但必须「展示命令 + 用户确认」 |
+| 029-Q1 | 平滑滚动在 JCEF OSR 下是否够顺 | 先做 smooth，真机目验后决定是否降级为瞬时 |

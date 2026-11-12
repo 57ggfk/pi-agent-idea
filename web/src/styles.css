@@ -128,6 +128,38 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* 022 (2026-11-12, real machine) — "滚到底再往上滑就不动" is scroll chaining,
+   not a slow frame.
+
+   Measured with a genuine WM_MOUSEWHEEL probe (web/probe-wheel-real.mjs, which
+   exists because CDP-injected wheel events use pixel-precise deltas and cannot
+   reproduce this): at the bottom of a list, a few extra down notches are left
+   unhandled by the inner scroller, so Chromium *chains* them to the ancestor
+   and latches the wheel there. The next upward notch is then delivered to that
+   latched ancestor and the list never scrolls again — `scrollTop` frozen, zero
+   `scroll` events, until the user pauses long enough for the latch to expire.
+   That is the "停一下才能滑" the user reported twice.
+
+   `overscroll-behavior: contain` keeps the chain inside each list, so the
+   latch stays on the element that can actually scroll: 0/3 stuck rounds before
+   the fix, 3/3 clean after (build/probe-wheel-real-{none,css-contain}.json).
+
+   App-level scrollers only. A scrollable block *inside* a message (tool output,
+   diff, code) deliberately keeps the default: chaining from it into the
+   transcript is wanted, and its own boundary is not where the gesture ends. */
+.message-list,
+.sessions-list,
+.model-list,
+.options-menu,
+.file-menu,
+.slash-menu,
+.manage-content,
+.queue-bar,
+.outline-list,
+.session-search-results {
+  overscroll-behavior: contain;
+}
+
 button,
 input,
 textarea,
@@ -1901,6 +1933,32 @@ button {
   color: var(--text);
 }
 
+/* 026: failed-switch retry bar (mounted app-wide, every tab). Same visual
+   language as .setup-gate-error; the text truncates so a long session file
+   cannot push the buttons out of the window. */
+.switch-retry-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: color-mix(in srgb, #f0883e 14%, transparent);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text);
+}
+
+.switch-retry-bar .switch-retry-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.switch-retry-bar .switch-retry-dismiss {
+  padding: 2px 8px;
+}
+
 /* App-wide tooltip (012 US2): one delegated bubble for every [data-tip].
    z-index 30 sits under the confirm scrim (40), the model popover (50) and
    the menus (60) — a tooltip never covers a dialog (T114). */
@@ -2026,6 +2084,18 @@ button {
 }
 
 /* Message list - prototype style */
+/* 029: positioning wrapper around the scroll container — same box the
+   .message-list used to occupy alone (the flex slots moved up one level, the
+   scroller keeps its own flex:1 inside). The jump button anchors here so it
+   can never join the scrollable overflow. */
+.message-list-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+}
+
 .message-list {
   flex: 1;
   min-height: 0;
@@ -3173,6 +3243,34 @@ button {
 .session-action:hover {
   background: var(--surface-hover);
   color: var(--text);
+}
+
+/* 024: list-level fork in progress on a row — a slow one-shot pi process,
+   so the icon pulses instead of the row just sitting there. */
+.session-action.session-action-busy {
+  color: var(--accent, var(--text));
+  animation: session-fork-pulse 1s ease-in-out infinite;
+}
+
+@keyframes session-fork-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* 024: transient copy/fork outcome on the session list (auto-clears). */
+.sessions-notice {
+  padding: 6px 12px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sessions-notice-info {
+  background: color-mix(in srgb, #3fb950 12%, transparent);
+}
+
+.sessions-notice-error {
+  background: color-mix(in srgb, #f0883e 14%, transparent);
 }
 
 /* Options menu — the only definition (the older one at the top of the file
@@ -4716,4 +4814,30 @@ button {
   color: inherit;
   border-radius: 2px;
   padding: 0 1px;
+}
+
+/* 029: "scroll to bottom" pill — a sibling of the scroll container (never
+   inside it: it would join the scrollable overflow), bottom-right of the
+   transcript, above the composer's visual edge but below nothing else. */
+.jump-bottom {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 5;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  box-shadow: 0 1px 4px rgba(16, 24, 40, 0.18);
+  cursor: pointer;
+}
+
+.jump-bottom:hover {
+  color: var(--text);
+  background: var(--surface-hover);
 }

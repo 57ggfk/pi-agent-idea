@@ -5,7 +5,7 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByTestId("empty-state")).toBeVisible();
 });
 
-test("sessions list shows message counts and supports clone/delete/export", async ({ page }) => {
+test("sessions list shows message counts and supports fork/delete/export", async ({ page }) => {
   await page.getByTestId("tab-sessions").click();
   await expect(page.getByTestId("sessions-view")).toBeVisible();
 
@@ -14,9 +14,11 @@ test("sessions list shows message counts and supports clone/delete/export", asyn
   await expect(rows.first()).toBeVisible();
   await expect(page.locator(".session-preview", { hasText: "12 msgs" }).first()).toBeVisible();
 
-  // Clone: a new session appears and the UI switches to it (chat tab).
+  // Fork on the live row: full-copy branch via the clone RPC — a new session
+  // appears and the UI switches to it (chat tab). 024: the button used to be
+  // "clone" and silently cloned the top row for every row.
   const before = await rows.count();
-  await page.getByTestId("session-clone").first().click();
+  await page.getByTestId("session-fork").first().click();
   await expect(page.getByTestId("tab-chat")).toHaveClass(/tab-active/);
 
   await page.getByTestId("tab-sessions").click();

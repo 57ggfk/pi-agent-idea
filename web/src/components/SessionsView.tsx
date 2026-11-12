@@ -50,7 +50,10 @@ export default function SessionsView() {
   const switchSession = usePiStore((s) => s.switchSession);
   const sessionId = usePiStore((s) => s.sessionId);
   const deleteSession = usePiStore((s) => s.deleteSession);
-  const cloneSession = usePiStore((s) => s.cloneSession);
+  const copySessionInfo = usePiStore((s) => s.copySessionInfo);
+  const forkSessionFromList = usePiStore((s) => s.forkSessionFromList);
+  const forkingFile = usePiStore((s) => s.forkingFile);
+  const sessionsNotice = usePiStore((s) => s.sessionsNotice);
   const exportSession = usePiStore((s) => s.exportSession);
   const sessionSearch = usePiStore((s) => s.sessionSearch);
   const searchAllSessions = usePiStore((s) => s.searchAllSessions);
@@ -95,7 +98,11 @@ export default function SessionsView() {
 
   /** A hit click: switch session, then land on that exact hit in the chat. */
   const openHit = (match: SessionSearchMatch, hitIndex: number) => {
-    void switchSession(match.file).then(() => {
+    // 030: `switchSession` resolves false when a newer tap took the screen while
+    // this one was queued. Jumping then would scroll the *other* session to a
+    // position from this one, so the jump is owned by the winning tap only.
+    void switchSession(match.file).then((ok) => {
+      if (!ok) return;
       requestSearchJump(filter.trim(), hitIndex);
     });
   };
@@ -111,6 +118,18 @@ export default function SessionsView() {
           onChange={(e) => setFilter(e.target.value)}
         />
       </div>
+
+      {/* 024: transient copy/fork feedback — the transcript's error items are
+          invisible while this tab is open, so outcomes surface here. */}
+      {sessionsNotice ? (
+        <div
+          className={`sessions-notice sessions-notice-${sessionsNotice.kind}`}
+          data-testid="sessions-notice"
+          role="status"
+        >
+          {sessionsNotice.text}
+        </div>
+      ) : null}
 
       {sessionSearch && filter.trim().length >= 2 ? (
         <div className="session-search-results" data-testid="session-search-results">
@@ -215,11 +234,27 @@ export default function SessionsView() {
               </button>
               <button
                 className="btn session-action"
-                data-testid="session-clone"
-                title={t("sessions.cloneTitle")}
-                onClick={() => void cloneSession(s.file)}
+                data-testid="session-copy"
+                title={t("sessions.copyTitle")}
+                aria-label={t("sessions.copyTitle")}
+                onClick={() => void copySessionInfo(s.file)}
               >
                 <Icon name="copy" className="ic-sm" />
+              </button>
+              <button
+                className={`btn session-action${forkingFile === s.file ? " session-action-busy" : ""}`}
+                data-testid="session-fork"
+                title={
+                  forkingFile == null
+                    ? t("sessions.forkTitle")
+                    : forkingFile === s.file
+                      ? t("sessions.forkBusyThis")
+                      : t("sessions.forkBusyOther")
+                }
+                aria-busy={forkingFile === s.file ? "true" : undefined}
+                onClick={() => void forkSessionFromList(s.file)}
+              >
+                <Icon name="fork" className="ic-sm" />
               </button>
               <button
                 className="btn session-action"

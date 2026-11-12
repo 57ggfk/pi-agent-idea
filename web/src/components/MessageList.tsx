@@ -161,6 +161,21 @@ export default function MessageList() {
   const pinRef = useRef<PinState>(initialPin());
   /** Set by an upward wheel/arrow gesture; consumed by the next scroll event. */
   const userUpRef = useRef(false);
+  // 029 FR-001: the pin machine lives in a ref (no renders per wheel notch),
+  // but the jump button needs it as UI state. uiPinnedRef is the comparison
+  // baseline so syncPinUi fires ONLY on a real flip — a wheel scroll that
+  // keeps the pin must not re-render per notch.
+  const uiPinnedRef = useRef(true);
+  const [jumpVisible, setJumpVisible] = useState(false);
+  // 029 FR-008: new content arrived while unpinned. No badge this round —
+  // this boolean is the hook the future badge reads.
+  const unseenRef = useRef(false);
+  const syncPinUi = (pinned: boolean) => {
+    if (uiPinnedRef.current !== pinned) {
+      uiPinnedRef.current = pinned;
+      setJumpVisible(!pinned);
+    }
+  };
 
   // The hit the search bar currently points at (spec 006 US2): its tool card
   // must auto-expand (T011) and its block gets the paint anchor.
@@ -207,11 +222,17 @@ export default function MessageList() {
 
   useEffect(() => {
     const el = scrollRef.current;
-    if (!el || !pinRef.current.pinned) return;
+    if (!el || !pinRef.current.pinned) {
+      // 029 FR-008: content changed while unpinned — the future badge's hook.
+      unseenRef.current = true;
+      return;
+    }
     el.scrollTop = el.scrollHeight;
     // Record where the programmatic scroll landed, or the next `onScroll`
     // would read it as an upward move.
     pinRef.current = { pinned: true, lastTop: el.scrollTop, lastHeight: el.scrollHeight };
+    unseenRef.current = false;
+    syncPinUi(true);
   }, [items, retryInfo]);
 
   const onScroll = () => {
@@ -220,6 +241,24 @@ export default function MessageList() {
     const userUp = userUpRef.current;
     userUpRef.current = false;
     pinRef.current = nextPin(pinRef.current, el.scrollTop, el.scrollHeight, el.clientHeight, userUp);
+    syncPinUi(pinRef.current.pinned);
+  };
+
+  /**
+   * 029 FR-004: jump back to the live tail. Pin FIRST (the button disappears
+   * and the machine must not read the programmatic scroll as an upward
+   * gesture — scrolling down only ever increases scrollTop, so rule 4 keeps
+   * the pin and the final event re-pins at the bottom), then smooth-scroll.
+   */
+  const jumpToBottom = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    pinRef.current = { pinned: true, lastTop: el.scrollTop, lastHeight: el.scrollHeight };
+    uiPinnedRef.current = true;
+    setJumpVisible(false);
+    unseenRef.current = false;
+    const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
+    el.scrollTo({ top: el.scrollHeight, behavior: reduced ? "auto" : "smooth" });
   };
 
   /**
@@ -246,7 +285,8 @@ export default function MessageList() {
   }, []);
 
   return (
-    <div className="message-list" ref={scrollRef} onScroll={onScroll} data-testid="message-list">
+    <div className="message-list-wrap">
+      <div className="message-list" ref={scrollRef} onScroll={onScroll} data-testid="message-list">
       <div className="message-col">
         {/* 021 T307: a history switch empties `items` first — the empty state
             would read as "this session is blank", so a switching placeholder
@@ -281,6 +321,23 @@ export default function MessageList() {
           </div>
         ) : null}
       </div>
+      </div>
+      {/* 029 FR-002: a SIBLING of the scroll container — inside it the button
+          would join the scrollable overflow and change scrollHeight (the
+          content-visibility lesson). Anchored to the wrap, so it never
+          covers the composer or the queue bar (FR-006). */}
+      {jumpVisible ? (
+        <button
+          type="button"
+          className="jump-bottom"
+          data-testid="jump-bottom"
+          aria-label={t("chat.jumpToBottom")}
+          title={t("chat.jumpToBottom")}
+          onClick={jumpToBottom}
+        >
+          <Icon name="chev-down" className="ic-sm" />
+        </button>
+      ) : null}
     </div>
   );
 }

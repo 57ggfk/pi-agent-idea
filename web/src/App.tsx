@@ -7,6 +7,7 @@ import MessageList from "./components/MessageList";
 import Composer from "./components/Composer";
 import SetupCard from "./components/SetupCard";
 import QueueBar, { QueueDiscardBanner } from "./components/QueueBar";
+import SwitchRetryBar from "./components/SwitchRetryBar";
 import ApprovalCard from "./components/ApprovalCard";
 import StatusBar from "./components/StatusBar";
 import SessionsView from "./components/SessionsView";
@@ -181,6 +182,9 @@ export default function App() {
             ) : null}
           </div>
           <QueueDiscardBanner />
+          {/* 026: failed-switch retry — visible on every tab, since a failure
+              lands on the session list where chat error items are hidden. */}
+          <SwitchRetryBar />
           {tab === "chat" ? (
             <>
               <SetupCard />

@@ -246,3 +246,49 @@ test.describe("transcript scrolling", () => {
     expect(top).toBeGreaterThanOrEqual(max - 4);
   });
 });
+
+/**
+ * 022 — the latch at a scroll boundary (2026-11-12, real machine).
+ *
+ * The reproducible half of the bug lives below the DOM: at the bottom of a
+ * list, unhandled wheel notches chain to the ancestor, Chromium latches the
+ * wheel there, and the next upward notch never comes back. CDP-injected wheel
+ * events use pixel-precise deltas and cannot see it, so the real guard is
+ * `web/probe-wheel-real.mjs` on a running IDE. What *can* be asserted here is
+ * that the fix stays in the stylesheet — losing it silently is exactly how this
+ * regression would come back.
+ */
+test.describe("scroll chaining", () => {
+  const overscrollY = (page: Page, selector: string) =>
+    page.evaluate((sel) => {
+      const el = document.querySelector(sel);
+      return el ? getComputedStyle(el).overscrollBehaviorY : null;
+    }, selector);
+
+  test("transcript and session list contain their own overscroll", async ({ page }) => {
+    await page.goto("/?models=now");
+    await expect(page.getByTestId("empty-state")).toBeVisible();
+    expect(await overscrollY(page, '[data-testid="message-list"]')).toBe("contain");
+
+    await page.getByTestId("tab-sessions").click();
+    await expect(page.locator(".sessions-list")).toBeVisible();
+    expect(await overscrollY(page, ".sessions-list")).toBe("contain");
+  });
+
+  test("a scrollable block inside a message keeps chaining into the transcript", async ({ page }) => {
+    await page.goto("/?models=now");
+    await expect(page.getByTestId("empty-state")).toBeVisible();
+    // `.tool-output` must stay `auto`: reaching the end of a long tool output
+    // should hand the gesture to the transcript, and its own boundary is not
+    // where a wheel gesture ends.
+    const value = await page.evaluate(() => {
+      const st = document.createElement("pre");
+      st.className = "tool-output";
+      document.body.appendChild(st);
+      const v = getComputedStyle(st).overscrollBehaviorY;
+      st.remove();
+      return v;
+    });
+    expect(value).toBe("auto");
+  });
+});

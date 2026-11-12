@@ -105,6 +105,60 @@ export interface ModelsOpenResult extends CliOutcome {
   created?: boolean;
 }
 
+// -- 027: custom provider definition ------------------------------------------
+
+export interface CustomProviderModel {
+  id: string;
+  name?: string;
+  reasoning: boolean;
+  inputImage: boolean;
+  /** Levels the model supports (pi's thinkingLevelMap, value != null). */
+  thinkingLevels: string[];
+  contextWindow?: number;
+  maxTokens?: number;
+}
+
+export interface CustomProviderPayload {
+  name: string;
+  displayName?: string;
+  api: string;
+  baseUrl: string;
+  /** Omitted/blank on edit = keep the stored key (it never comes back). */
+  apiKey?: string;
+  thinkingFormat?: string;
+  models: CustomProviderModel[];
+}
+
+export interface CustomProviderGetResult extends CliOutcome {
+  exists?: boolean;
+  name?: string;
+  path?: string;
+  provider?: {
+    name: string;
+    displayName?: string;
+    baseUrl?: string;
+    api?: string;
+    models: CustomProviderModel[];
+    hasKey: boolean;
+    keyMasked: string | null;
+  };
+}
+
+export interface CustomProviderSaveResult extends CliOutcome {
+  name?: string;
+  path?: string;
+  /** Refusal code: "builtin" | "exists" | "badName" | "badApi" | "badUrl" | … */
+  code?: string;
+  /** False = the write landed but the 017 reload failed (restart to apply). */
+  reloaded?: boolean;
+  reloadError?: string;
+}
+
+export interface CustomProviderTestResult extends CliOutcome {
+  status?: number;
+  ms?: number;
+}
+
 /** One AGENTS.md location pi loads (012 US3); order = pi's load order. */
 export interface AgentsEntry {
   /** "global" (agent dir) | "root" (project root) | "subdirectory". */
@@ -212,7 +266,13 @@ export interface EnvDetectResult extends CliOutcome {
   nodeMajor?: number | null;
   nodeOk?: boolean;
   minNodeMajor?: number;
-  /** False when node or npm is missing: the manual path is the only option. */
+  // 028: the corrected gate and its presentation fields.
+  nodeVersion?: string;
+  minNode?: string;
+  /** "no-node" | "node-version" | "no-npm" — why the npm install is off. */
+  installBlocker?: string;
+  scriptSupported?: boolean;
+  /** False when node is missing or below 22.19: the manual path is the only option. */
   canInstall?: boolean;
   piPackage?: string;
   agentDir?: string;
@@ -250,10 +310,12 @@ export function manageApi(bridge: Bridge) {
     environment: () => call<EnvironmentResult>("manage.env"),
     envDetect: () => call<EnvDetectResult>("manage.envDetect"),
     /** No deadline: the user stops this one with [envCancelInstall]. */
-    envInstall: (p: { source: string; registry?: string }) =>
+    envInstall: (p: { source?: string; registry?: string; method?: "script" }) =>
       call<EnvInstallResult>("manage.envInstall", p, 0),
     envCancelInstall: () => call<{ ok: boolean; cancelled?: boolean; error?: string }>("manage.envCancelInstall"),
     envSetPath: (p: { path: string }) => call<EnvInstallResult>("manage.envSetPath", p),
+    /** 028: the explicit Node interpreter; empty clears back to discovery. */
+    envSetNodePath: (p: { path: string }) => call<EnvInstallResult>("manage.envSetNodePath", p),
     mcpList: () => call<McpListResult>("manage.mcpList"),
     mcpAdd: (p: { name: string; command?: string; args?: string[]; url?: string; env?: Record<string, string>; local?: boolean }) =>
       call<CliOutcome>("manage.mcpAdd", p),
@@ -273,6 +335,14 @@ export function manageApi(bridge: Bridge) {
     packageUpdateAll: () => call<CliOutcome>("manage.packageUpdateAll"),
     envUpdate: () => call<EnvUpdateResult>("manage.envUpdate"),
     modelsReadProvider: (p: { name: string }) => call<ProviderInfoResult>("manage.modelsReadProvider", p),
+    /** 027: custom provider definition (models.json form). The key never
+     *  crosses back; providerGet answers with hasKey + a mask only. */
+    providerGet: (p: { name: string }) => call<CustomProviderGetResult>("manage.providerGet", p),
+    providerSave: (p: { provider: CustomProviderPayload; overwrite?: boolean }) =>
+      call<CustomProviderSaveResult>("manage.providerSave", p),
+    providerDelete: (p: { name: string }) => call<CliOutcome & { name?: string }>("manage.providerDelete", p),
+    providerTest: (p: { baseUrl: string; api: string; apiKey?: string }) =>
+      call<CustomProviderTestResult>("manage.providerTest", p),
     modelsOpenFile: (p: { provider: string }) => call<ModelsOpenResult>("manage.modelsOpenFile", p),
     /** Forces a full JCEF frame repaint (OSR frame-lag workaround, 0.5.4
      *  real-machine find): call after view-level DOM swaps. */

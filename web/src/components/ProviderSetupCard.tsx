@@ -4,6 +4,7 @@ import { manageApi, type AuthOverviewResult } from "../manage";
 import { usePiStore } from "../store/store";
 import { useT } from "../i18n/useT";
 import ProviderForm from "./manage/ProviderForm";
+import CustomProviderForm from "./manage/CustomProviderForm";
 
 /**
  * Post-install provider step (012 US5, T130): right after the setup gate
@@ -16,6 +17,7 @@ export default function ProviderSetupCard() {
   const dismiss = usePiStore((s) => s.dismissProviderStep);
   const [overview, setOverview] = useState<AuthOverviewResult | null>(null);
   const [api, setApi] = useState<ReturnType<typeof manageApi> | null>(null);
+  const [showCustom, setShowCustom] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -47,7 +49,30 @@ export default function ProviderSetupCard() {
         <div className="panel-row-sub">{t("provider.setupHint")}</div>
       )}
       {api ? (
-        <ProviderForm api={api} testPrefix="provider-setup" onDone={() => void dismiss(false)} />
+        <>
+          {/* 027 FR-009: the custom-provider definition step uses the SAME
+              component as the Auth panel — one validation, one wording. */}
+          <button
+            type="button"
+            className="btn"
+            data-testid="provider-setup-cprov-toggle"
+            onClick={() => setShowCustom((v) => !v)}
+          >
+            {showCustom ? t("cprov.setupHide") : t("cprov.setupShow")}
+          </button>
+          {showCustom ? (
+            <CustomProviderForm
+              api={api}
+              testPrefix="provider-setup-cprov"
+              onDone={() => {
+                void (async () => {
+                  setOverview(await api.authOverview().catch(() => null));
+                })();
+              }}
+            />
+          ) : null}
+          <ProviderForm api={api} testPrefix="provider-setup" onDone={() => void dismiss(false)} />
+        </>
       ) : null}
     </div>
   );

@@ -4,6 +4,8 @@ import { useT } from "../../i18n/useT";
 import { tip } from "../Tooltip";
 import Icon from "../Icon";
 import ProviderForm from "./ProviderForm";
+import CustomProviderForm from "./CustomProviderForm";
+import { KNOWN_PROVIDERS } from "../../lib/knownProviders";
 import { usePiStore } from "../../store/store";
 
 type StatusMap = Record<string, string>;
@@ -51,6 +53,10 @@ export default function AuthPanel({ api }: { api: ReturnType<typeof manageApi> }
   const [openNote, setOpenNote] = useState<string | null>(null);
   /** null = no editor; "new" = adding; otherwise = the provider being edited. */
   const [formMode, setFormMode] = useState<"new" | string | null>(null);
+  /** 027: the custom-provider DEFINITION form ("new" = create, else editing). */
+  const [customForm, setCustomForm] = useState<"new" | string | null>(null);
+  /** Built-in ids (027): customs get edit/delete-definition entries. */
+  const builtinIds = new Set(KNOWN_PROVIDERS.map((k) => k.id));
 
   /**
    * spec 014 real-machine finding: a running browser login pins the form
@@ -180,6 +186,13 @@ export default function AuthPanel({ api }: { api: ReturnType<typeof manageApi> }
         <button className="btn" data-testid="auth-add" onClick={() => switchForm(formMode === "new" ? null : "new")}>
           {formMode === "new" ? t("provider.addClose") : t("provider.add")}
         </button>
+        <button
+          className="btn"
+          data-testid="auth-add-custom"
+          onClick={() => setCustomForm(customForm === "new" ? null : "new")}
+        >
+          {customForm === "new" ? t("cprov.addClose") : t("cprov.add")}
+        </button>
         <button className="btn" data-testid="auth-refresh" onClick={() => void refresh()}>
           {t("auth.refresh")}
         </button>
@@ -198,6 +211,18 @@ export default function AuthPanel({ api }: { api: ReturnType<typeof manageApi> }
           defaultCustom={false}
           testPrefix="provider-add"
           onDone={() => void afterCredentialChange()}
+        />
+      ) : null}
+      {customForm !== null ? (
+        <CustomProviderForm
+          api={api}
+          editing={customForm === "new" ? undefined : customForm}
+          testPrefix="cprov-add"
+          onDone={() => {
+            setCustomForm(null);
+            void afterCredentialChange();
+          }}
+          onCancel={() => setCustomForm(null)}
         />
       ) : null}
       {providers.length === 0 ? (
@@ -245,6 +270,47 @@ export default function AuthPanel({ api }: { api: ReturnType<typeof manageApi> }
                 >
                   {formMode === p ? t("provider.editClose") : t("provider.edit")}
                 </button>
+                {/* 027 US4: a models.json custom gets definition edit/delete on
+                    its row; bundled providers only have credentials here. */}
+                {!builtinIds.has(p) ? (
+                  <button
+                    className="btn"
+                    data-testid={`provider-editdef-${p}`}
+                    onClick={() => setCustomForm(customForm === p ? null : p)}
+                  >
+                    {customForm === p ? t("cprov.editDefClose") : t("cprov.editDef")}
+                  </button>
+                ) : null}
+                {!builtinIds.has(p) ? (
+                  <button
+                    className="btn btn-abort"
+                    data-testid={`provider-deldef-${p}`}
+                    onClick={() => {
+                      usePiStore.getState().askConfirm({
+                        title: t("cprov.deleteDefTitle"),
+                        message: t("cprov.deleteDefMessage", { name: p }),
+                        confirmLabel: t("common.delete"),
+                        danger: true,
+                        onConfirm: () => {
+                          void (async () => {
+                            try {
+                              const res = await api.providerDelete({ name: p });
+                              if (!res.ok) setOpenNote(res.error ?? t("cprov.saveFailed"));
+                              else setOpenNote(t("cprov.deleted", { name: p }));
+                            } catch (e) {
+                              setOpenNote((e as Error).message);
+                            }
+                            await refresh();
+                            // 027: the picker must drop the deleted models too.
+                            await reloadModels();
+                          })();
+                        },
+                      });
+                    }}
+                  >
+                    {t("common.delete")}
+                  </button>
+                ) : null}
                 {withCreds.has(p) ? (
                   <button
                     className="btn btn-abort"
