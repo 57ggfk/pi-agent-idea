@@ -1847,6 +1847,10 @@ export class MockBridge implements Bridge {
       case "set_auto_compaction":
         this.autoCompactionEnabled = command["enabled"] !== false;
         return { success: true };
+      case "compact":
+        // 031: realistic figures so the compacted notice shows a
+        // locale-formatted before → after comparison.
+        return { success: true, data: { tokensBefore: 12000, estimatedTokensAfter: 3400 } };
       case "set_auto_retry":
         return { success: true };
       default:
