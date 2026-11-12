@@ -27,6 +27,7 @@
 - [x] T1308 收尾：三件套全量（gradlew test SUCCESSFUL / vitest 444/444 / e2e 334/334）+
       `verifyPlugin` SUCCESSFUL（无 internal API 命中）+ `changelog.d/032-ide-env-context.added.md`
       两行碎片 + run-report 第 14 节 + spec 验证计划回填
-- [ ] T1309（真机）r29 装包探针：快照文件存在且 collectedAt 随消息更新、pi 回复正常
-      无扩展报错、WebStorm 缺 SDK 档降级（US5）、开关关闭后快照 enabled:false
-      — probe-032-env.mjs verdict 入库
+- [x] T1309（真机）r29 装包探针：**7/7 PASS**——快照文件启动即有（enabled=true）、
+      发消息后 collectedAt 前移（US4 每轮刷新）、lastAppliedAt 回执（注入实证）、pi 正常回复、
+      WebStorm 降级（sources=node-sdk, shell-env，无 sdk 档无报错）、面板查看器显示真实快照。
+      verdict 入库 `specs/032-ide-env-context/evidence/probe-032-env.json`

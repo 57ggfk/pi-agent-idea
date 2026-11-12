@@ -17,7 +17,7 @@ const targets = await p.evaluate(() =>
       name: r.querySelector(".session-name")?.textContent?.trim() ?? "",
       prev: r.querySelector(".session-preview")?.textContent?.trim() ?? "",
     }))
-    .filter((r) => r.prev.includes("031探针")),
+    .filter((r) => r.prev.includes("031探针") || r.prev.includes("032探针")),
 );
 console.log("to delete:", JSON.stringify(targets));
 
