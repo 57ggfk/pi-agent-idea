@@ -18,8 +18,9 @@
       降级、string/array 两形状兼容）+ `PiIdeEnvExtension.ensureExtensionInstalled` +
       扩展列表接线 + web vitest import 资源断言行为 —
       `npx vitest run src/pi-env-extension.test.ts` 8/8 绿 + gradlew 全量绿
-- [ ] T1306 设置开关：`PiAgentSettings.envContextEnabled`（默认 true）+ Configurable
-      复选框 + Bundle 文案（en/zh_CN）+ 关闭时重写快照 — `gradlew test` 全量 SUCCESSFUL
+- [x] T1306 设置开关：`PiAgentSettings.envContextEnabled`（默认 true）+ Configurable
+      复选框 + Bundle 文案（en/zh_CN）+ 关闭时对全部打开的项目重写快照（免重启）—
+      `gradlew test` 全量 SUCCESSFUL
 - [ ] T1307 web 只读入口：`manage.envSnapshot` 桥接路由 + SettingsPanel「环境快照」
       只读块 + i18n en/zh + e2e（mock 固定文本→点击→pre 展示）—
       `npm run typecheck` + `npx vitest run` + `npx playwright test e2e/manage.spec.ts`

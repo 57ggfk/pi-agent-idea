@@ -23,6 +23,7 @@ class PiAgentSettingsConfigurable : Configurable {
     private var pathField: TextFieldWithBrowseButton? = null
     private var nodePathField: TextFieldWithBrowseButton? = null
     private var autoOpenBox: JBCheckBox? = null
+    private var envContextBox: JBCheckBox? = null
 
     override fun getDisplayName(): String = "Pi Agent"
 
@@ -46,6 +47,7 @@ class PiAgentSettingsConfigurable : Configurable {
             text = settings.nodePath() ?: ""
         }
         autoOpenBox = JBCheckBox(dev.pi.agent.PiAgentBundle.message("settings.autoOpen"), settings.autoOpen())
+        envContextBox = JBCheckBox(dev.pi.agent.PiAgentBundle.message("settings.envContext"), settings.envContextEnabled())
 
         val c = GridBagConstraints()
         c.weightx = 1.0
@@ -65,6 +67,8 @@ class PiAgentSettingsConfigurable : Configurable {
         c.gridx = 0
         c.gridwidth = 2
         panel.add(autoOpenBox, c)
+        c.gridy = 3
+        panel.add(envContextBox, c)
         return panel
     }
 
@@ -74,19 +78,30 @@ class PiAgentSettingsConfigurable : Configurable {
         val nodePath = nodePathField?.text?.trim().orEmpty()
         return path != (settings.customPiPath() ?: "") ||
             nodePath != (settings.nodePath() ?: "") ||
-            autoOpenBox?.isSelected != settings.autoOpen()
+            autoOpenBox?.isSelected != settings.autoOpen() ||
+            envContextBox?.isSelected != settings.envContextEnabled()
     }
 
     override fun apply() {
         val settings = PiAgentSettings.getInstance()
         val pathBefore = settings.customPiPath()
         val nodePathBefore = settings.nodePath()
+        val envContextBefore = settings.envContextEnabled()
         val path = pathField?.text?.trim().orEmpty()
         val nodePath = nodePathField?.text?.trim().orEmpty()
         settings.setCustomPiPath(path.takeIf { it.isNotBlank() })
         // setNodePath already restarts pi everywhere on change (028 FR-006).
         settings.setNodePath(nodePath.takeIf { it.isNotBlank() }, onChanged = {})
         settings.setAutoOpen(autoOpenBox?.isSelected ?: false)
+        settings.setEnvContextEnabled(envContextBox?.isSelected ?: true)
+        if (envContextBefore != settings.envContextEnabled()) {
+            // 032 FR-010: the flag reaches pi WITHOUT a restart — the snapshot
+            // file is re-flagged and the extension re-reads it every turn.
+            for (project in com.intellij.openapi.project.ProjectManager.getInstance().openProjects) {
+                if (project.isDisposed) continue
+                runCatching { dev.pi.agent.manage.PiIdeEnv.onSettingChanged(project) }
+            }
+        }
         if (pathBefore != settings.customPiPath()) {
             // pi must pick up the new executable: drop the cached discovery
             // result and restart running instances in every open project.
@@ -102,11 +117,13 @@ class PiAgentSettingsConfigurable : Configurable {
         pathField?.text = settings.customPiPath() ?: ""
         nodePathField?.text = settings.nodePath() ?: ""
         autoOpenBox?.isSelected = settings.autoOpen()
+        envContextBox?.isSelected = settings.envContextEnabled()
     }
 
     override fun disposeUIResources() {
         pathField = null
         nodePathField = null
         autoOpenBox = null
+        envContextBox = null
     }
 }
