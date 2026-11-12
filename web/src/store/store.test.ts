@@ -63,6 +63,7 @@ import {
   usePiStore,
   branchTargetFor,
   isSwitchLong,
+  resetSwitchGate,
   roundEndIndex,
   userCountUpTo,
   SWITCH_RPC_TIMEOUT_MS,
@@ -106,6 +107,7 @@ describe("message actions: store orchestration", () => {
     h.state.calls.length = 0;
     h.state.rpc.clear();
     h.state.methods.clear();
+    resetSwitchGate(); // 030: relay gate is module state, not store state
     await usePiStore.getState().init();
     h.state.calls.length = 0;
     h.state.rpc.set("get_fork_messages", () => [
@@ -298,6 +300,7 @@ describe("fork at a message: store orchestration (spec 007)", () => {
     h.state.calls.length = 0;
     h.state.rpc.clear();
     h.state.methods.clear();
+    resetSwitchGate(); // 030: relay gate is module state, not store state
     await usePiStore.getState().init();
     h.state.calls.length = 0;
     h.state.rpc.set("get_fork_messages", () => ({
@@ -483,6 +486,7 @@ describe("data sources: loadSource orchestration (spec 003)", () => {
     h.state.calls.length = 0;
     h.state.rpc.clear();
     h.state.methods.clear();
+    resetSwitchGate(); // 030: relay gate is module state, not store state
     await usePiStore.getState().init();
     h.state.calls.length = 0;
     usePiStore.setState({ sources: emptySources(), files: [] });
@@ -569,6 +573,7 @@ describe("message queue: store orchestration (spec 005)", () => {
     h.state.calls.length = 0;
     h.state.methods.clear();
     h.state.rpc.clear();
+    resetSwitchGate(); // 030: relay gate is module state, not store state
     await usePiStore.getState().init();
     h.state.calls.length = 0;
     usePiStore.setState({
@@ -708,6 +713,7 @@ describe("session navigation state (spec 006)", () => {
     h.state.calls.length = 0;
     h.state.rpc.clear();
     h.state.methods.clear();
+    resetSwitchGate(); // 030: relay gate is module state, not store state
     await usePiStore.getState().init();
     h.state.calls.length = 0;
     h.state.rpc.set("get_messages", () => ({ messages: [] }));
@@ -810,6 +816,7 @@ describe("session titles (012 US1)", () => {
   });
 
   it("a name event updates the status bar and the matching list row with zero refreshes (T105)", async () => {
+    resetSwitchGate(); // 030: relay gate is module state, not store state
     await usePiStore.getState().init();
     h.state.calls.length = 0;
 
@@ -821,6 +828,7 @@ describe("session titles (012 US1)", () => {
   });
 
   it("a hand-set title wins over a later pi event (T106)", async () => {
+    resetSwitchGate(); // 030: relay gate is module state, not store state
     await usePiStore.getState().init();
     usePiStore.setState({ manualTitle: true, sessionName: "手动名", sessions: [{ ...currentRow, name: "手动名" }] });
 
@@ -831,6 +839,7 @@ describe("session titles (012 US1)", () => {
   });
 
   it("a late event never writes into a session the user switched away from (T106)", async () => {
+    resetSwitchGate(); // 030: relay gate is module state, not store state
     await usePiStore.getState().init();
     usePiStore.setState({
       sessionId: "sess-B",
@@ -845,12 +854,14 @@ describe("session titles (012 US1)", () => {
   });
 
   it("an event after the session was deleted does not throw (T106)", async () => {
+    resetSwitchGate(); // 030: relay gate is module state, not store state
     await usePiStore.getState().init();
     usePiStore.setState({ sessions: [] });
     expect(() => dispatchPi({ type: "session_info_changed", name: "ghost" })).not.toThrow();
   });
 
   it("the first user message names the session via set_session_name — nothing else (T109)", async () => {
+    resetSwitchGate(); // 030: relay gate is module state, not store state
     await usePiStore.getState().init();
     h.state.calls.length = 0;
     usePiStore.setState({ items: [userItem("fix the login bug")] });
@@ -865,6 +876,7 @@ describe("session titles (012 US1)", () => {
   });
 
   it("titling fires exactly once even when more messages arrive (T109)", async () => {
+    resetSwitchGate(); // 030: relay gate is module state, not store state
     await usePiStore.getState().init();
     usePiStore.setState({ items: [userItem("first")] });
     dispatchPi({ type: "message_end", message: { role: "user", content: "first" } });
@@ -879,6 +891,7 @@ describe("session titles (012 US1)", () => {
   });
 
   it("an expanded skill message titles with the user question, not the body (T109 + 011)", async () => {
+    resetSwitchGate(); // 030: relay gate is module state, not store state
     await usePiStore.getState().init();
     const expanded =
       '<skill name="demo" location="/tmp/x/SKILL.md">\nLONG BODY MARKER\n</skill>\n\nwhat does it do?';
@@ -891,6 +904,7 @@ describe("session titles (012 US1)", () => {
   });
 
   it("a pure-image first message produces no title attempt", async () => {
+    resetSwitchGate(); // 030: relay gate is module state, not store state
     await usePiStore.getState().init();
     h.state.calls.length = 0;
     const image = emptyItem("user", [{ kind: "image", data: "AA", mimeType: "image/png" }]);
@@ -905,6 +919,7 @@ describe("session titles (012 US1)", () => {
   });
 
   it("submitSessionTitle validates: empty and overlong are refused, the editor stays open", async () => {
+    resetSwitchGate(); // 030: relay gate is module state, not store state
     await usePiStore.getState().init();
     usePiStore.setState({ editingSessionTitle: "current" });
 
@@ -929,6 +944,7 @@ describe("session titles (012 US1)", () => {
       otherRow.name = p.name ?? "";
       return { ok: true };
     });
+    resetSwitchGate(); // 030: relay gate is module state, not store state
     await usePiStore.getState().init();
     usePiStore.setState({ sessions: [{ ...currentRow }, { ...otherRow }], editingSessionTitle: "/tmp/sess-b.jsonl" });
     h.state.calls.length = 0;
@@ -946,6 +962,7 @@ describe("session titles (012 US1)", () => {
   });
 
   it("renaming the current row (its file) still goes through pi's set_session_name", async () => {
+    resetSwitchGate(); // 030: relay gate is module state, not store state
     await usePiStore.getState().init();
     usePiStore.setState({ editingSessionTitle: "/tmp/sess-a.jsonl" });
     h.state.calls.length = 0;
@@ -959,6 +976,7 @@ describe("session titles (012 US1)", () => {
   // -- stage B: the LLM refinement fired after the first assistant reply ----
 
   it("B: the first assistant reply refines the title through title.generate", async () => {
+    resetSwitchGate(); // 030: relay gate is module state, not store state
     await usePiStore.getState().init();
     h.state.calls.length = 0;
     usePiStore.setState({
@@ -985,6 +1003,7 @@ describe("session titles (012 US1)", () => {
   });
 
   it("B: fires only with text on both sides — an empty reply retries on the next one", async () => {
+    resetSwitchGate(); // 030: relay gate is module state, not store state
     await usePiStore.getState().init();
     h.state.calls.length = 0;
     usePiStore.setState({ items: [userItem("question")] });
@@ -1000,6 +1019,7 @@ describe("session titles (012 US1)", () => {
   });
 
   it("B: failure keeps A's title and never surfaces", async () => {
+    resetSwitchGate(); // 030: relay gate is module state, not store state
     await usePiStore.getState().init();
     h.state.calls.length = 0;
     usePiStore.setState({ items: [userItem("q")] });
@@ -1013,6 +1033,7 @@ describe("session titles (012 US1)", () => {
   });
 
   it("B: never fires when the title was set by hand", async () => {
+    resetSwitchGate(); // 030: relay gate is module state, not store state
     await usePiStore.getState().init();
     h.state.calls.length = 0;
     usePiStore.setState({ manualTitle: true, items: [userItem("q")] });
@@ -1025,6 +1046,7 @@ describe("session titles (012 US1)", () => {
   });
 
   it("B: a session the user switched away from is renamed through the file append", async () => {
+    resetSwitchGate(); // 030: relay gate is module state, not store state
     await usePiStore.getState().init();
     h.state.calls.length = 0;
     usePiStore.setState({
@@ -1049,6 +1071,7 @@ describe("session titles (012 US1)", () => {
   });
 
   it("B: a row renamed while generating is left alone", async () => {
+    resetSwitchGate(); // 030: relay gate is module state, not store state
     await usePiStore.getState().init();
     h.state.calls.length = 0;
     usePiStore.setState({
@@ -1079,6 +1102,7 @@ describe("auth login reduction (spec 014)", () => {
     h.state.calls.length = 0;
     h.state.rpc.clear();
     h.state.methods.clear();
+    resetSwitchGate(); // 030: relay gate is module state, not store state
     await usePiStore.getState().init();
     usePiStore.getState().resetAuthLogin();
   });
@@ -1248,6 +1272,7 @@ describe("session switching (021)", () => {
     h.state.calls.length = 0;
     h.state.rpc.clear();
     h.state.methods.clear();
+    resetSwitchGate(); // 030: relay gate is module state, not store state
     await usePiStore.getState().init();
     h.state.calls.length = 0;
     usePiStore.setState({
@@ -1379,12 +1404,20 @@ describe("session switching (021)", () => {
 
     const pa = usePiStore.getState().switchSession("/sessions/a.jsonl");
     const pb = usePiStore.getState().switchSession("/sessions/b.jsonl");
-    // The late A response must not paint over B.
-    first.resolve({});
-    await pa;
+    // 030: only one switch is on the wire, so B is queued rather than sent —
+    // the view already owns B, and A's RPC is the one that has to come back.
     expect(usePiStore.getState().pendingSwitch).toMatchObject({ file: "/sessions/b.jsonl" });
+    expect(call).toBe(1);
+
+    first.resolve({});
+    // A's late answer is dropped, then the runner relays to B (call #2, parked
+    // on `second`): the newer tap must not die just because A answered first.
+    await vi.waitFor(() => expect(call).toBe(2));
+    expect(usePiStore.getState().pendingSwitch).toMatchObject({ file: "/sessions/b.jsonl" });
+
     second.resolve({});
-    await pb;
+    expect(await pa).toBe(false); // A never became the visible session
+    expect(await pb).toBe(true);
     expect(usePiStore.getState().pendingSwitch).toBeNull();
     expect(usePiStore.getState().sessionName).toBe("B");
   });
@@ -1451,6 +1484,7 @@ describe("switch stuck & convergence (026)", () => {
     h.state.calls.length = 0;
     h.state.rpc.clear();
     h.state.methods.clear();
+    resetSwitchGate(); // 030: relay gate is module state, not store state
     await usePiStore.getState().init();
     h.state.calls.length = 0;
     usePiStore.setState({
@@ -1542,18 +1576,18 @@ describe("switch stuck & convergence (026)", () => {
     const pendingBefore = usePiStore.getState().pendingSwitch;
     expect(pendingBefore).toMatchObject({ file: "/sessions/b.jsonl" });
 
-    // A's RPC refuses after B already owns the screen: the early return must
-    // not clear B's placeholder (pre-026 it could not clear anything; the
-    // guard makes the intent explicit and testable).
+    // 030: A's refusal is dropped (B owns the seq) and the runner relays to B —
+    // the newer pending survives its predecessor's failure and still lands.
     gateA.reject(new Error("late refusal"));
-    await pa;
+    await vi.waitFor(() => expect(call).toBe(2));
 
     const s = usePiStore.getState();
     expect(s.pendingSwitch).toMatchObject({ file: "/sessions/b.jsonl" });
     expect(s.pendingSwitch?.startedAt).toBe(pendingBefore?.startedAt);
 
     gateB.resolve({});
-    await pb;
+    expect(await pa).toBe(false);
+    expect(await pb).toBe(true);
     expect(usePiStore.getState().pendingSwitch).toBeNull();
     expect(usePiStore.getState().sessionName).toBe("B");
   });
@@ -1641,6 +1675,45 @@ describe("switch stuck & convergence (026)", () => {
     expect(s.tab).toBe("chat");
     expect(s.sessionName).toBe("Retry target");
   });
+
+  it("030: five overlapping taps put two switch_session on the wire, not five", async () => {
+    const switchTargets: string[] = [];
+    h.state.rpc.set("switch_session", (cmd) => {
+      switchTargets.push(String(cmd["sessionPath"]));
+      return {};
+    });
+    h.state.rpc.set("get_messages", () => ({ messages: [{ role: "user", content: "from last" }] }));
+    h.state.rpc.set("get_session_stats", () => ({}));
+    h.state.rpc.set("get_state", () => ({ sessionName: "last" }));
+
+    // Real-machine measurements: pi answers switch_session strictly in arrival
+    // order, so every queued tap delays the newest one. Seven of them plus a
+    // brief stall burned the last tap's whole 5s deadline behind the others.
+    const settled = await Promise.all(
+      ["a", "b", "c", "d", "e"].map((n) => usePiStore.getState().switchSession(`/sessions/${n}.jsonl`)),
+    );
+
+    expect(switchTargets).toEqual(["/sessions/a.jsonl", "/sessions/e.jsonl"]);
+    // Only the tap that owns the screen reports success; the four superseded
+    // ones say so, which is what stops the search-hit jump from firing.
+    expect(settled).toEqual([false, false, false, false, true]);
+    const s = usePiStore.getState();
+    expect(s.pendingSwitch).toBeNull();
+    expect(s.sessionName).toBe("last");
+    expect(s.items.some((i) => JSON.stringify(i).includes("from last"))).toBe(true);
+  });
+
+  it("030: an idle gate does not leak between taps", async () => {
+    h.state.rpc.set("switch_session", () => ({}));
+    h.state.rpc.set("get_messages", () => ({ messages: [] }));
+    h.state.rpc.set("get_session_stats", () => ({}));
+    h.state.rpc.set("get_state", () => ({ sessionName: "one" }));
+
+    expect(await usePiStore.getState().switchSession("/sessions/one.jsonl")).toBe(true);
+    usePiStore.setState({ pendingSwitch: null });
+    expect(await usePiStore.getState().switchSession("/sessions/two.jsonl")).toBe(true);
+    expect(usePiStore.getState().pendingSwitch).toBeNull();
+  });
 });
 
 // -- 024: session list copy (US1) --------------------------------------------
@@ -1652,6 +1725,7 @@ describe("session list copy (024 US1)", () => {
     h.state.methods.clear();
     h.state.copied.length = 0;
     h.state.copyResult = true;
+    resetSwitchGate(); // 030: relay gate is module state, not store state
     await usePiStore.getState().init();
     usePiStore.setState({
       sessions: [
@@ -1719,6 +1793,7 @@ describe("session list fork (024 US2/US3)", () => {
     h.state.rpc.clear();
     h.state.methods.clear();
     h.state.copied.length = 0;
+    resetSwitchGate(); // 030: relay gate is module state, not store state
     await usePiStore.getState().init();
     h.state.calls.length = 0;
     usePiStore.setState({

@@ -98,7 +98,11 @@ export default function SessionsView() {
 
   /** A hit click: switch session, then land on that exact hit in the chat. */
   const openHit = (match: SessionSearchMatch, hitIndex: number) => {
-    void switchSession(match.file).then(() => {
+    // 030: `switchSession` resolves false when a newer tap took the screen while
+    // this one was queued. Jumping then would scroll the *other* session to a
+    // position from this one, so the jump is owned by the winning tap only.
+    void switchSession(match.file).then((ok) => {
+      if (!ok) return;
       requestSearchJump(filter.trim(), hitIndex);
     });
   };

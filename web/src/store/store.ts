@@ -101,6 +101,44 @@ export const SWITCH_ABORT_TIMEOUT_MS = 3_000;
 export const SWITCH_READ_TIMEOUT_MS = 3_000;
 
 /**
+ * 030: at most one `switch_session` on the wire.
+ *
+ * The list disables its rows while a switch is pending (021 T309), but the other
+ * entry points do not — a search hit, a fork's "go to", a message link — and a
+ * stuttering IDE can also deliver two taps before React repaints the disabled
+ * state. Every one of those taps used to call pi for real, and pi answers in
+ * strict arrival order: measured on a real machine, seven overlapping taps
+ * queued seven commands, and `switch.failed reason=timeout` at 5012ms was the
+ * *last* one burning its deadline behind the other six — while the switch it was
+ * waiting for would have succeeded.
+ *
+ * Only the newest target is ever displayed (the seq check drops the rest), so
+ * the extra queue entries are pure waste. This gate runs one switch and keeps
+ * just the last target asked for meanwhile; the runner relays there when it
+ * finishes. N taps now cost at most 2 RPCs, not N.
+ *
+ * Module-level rather than inside the store closure: both fields describe the
+ * *in-flight* attempt, which a store reset cannot resurrect or cancel.
+ */
+type QueuedSwitch = { file: string; settle: (ok: boolean) => void };
+
+let switchBusy = false;
+let switchQueued: QueuedSwitch | null = null;
+
+/**
+ * 030: clears the relay gate. A store reset wipes state but not this, and a test
+ * that parks a switch on a never-resolving gate would otherwise leave `busy`
+ * set for every test after it — every later `switchSession` would return early.
+ * A queued tap is settled with `false` so its caller never hangs on a switch
+ * that will not happen.
+ */
+export function resetSwitchGate(): void {
+  switchBusy = false;
+  switchQueued?.settle(false);
+  switchQueued = null;
+}
+
+/**
  * 026 FR-007: the `reason=` value for `switch.failed`. `withTimeout` rejections
  * carry "<label> timeout"; the abort hop is named so its signature is distinct
  * from a hung `switch_session` (the real-machine attribution question spec §0
@@ -580,7 +618,13 @@ interface PiStore {
    *  the slash menu permanently empty. */
   refreshCommands(): Promise<void>;
   refreshSessions(): Promise<void>;
-  switchSession(file: string): Promise<void>;
+  /**
+   * 030: resolves `true` only when this exact file became the visible session.
+   * A tap that got superseded by a newer one resolves `false` — callers that do
+   * something *to* the transcript afterwards (the search-hit jump) must not act
+   * on a session they no longer own.
+   */
+  switchSession(file: string): Promise<boolean>;
   /** 026 FR-005: re-fires the failed switch's target (no-op when none kept). */
   retryLastSwitch(): Promise<void>;
   /** 026: the retry bar's dismiss — forget the failed target. */
@@ -1883,16 +1927,18 @@ export const usePiStore = create<PiStore>((set, get) => {
       });
     },
 
-    async switchSession(file: string) {
-      if (!bridge) return;
+    async switchSession(file: string): Promise<boolean> {
+      if (!bridge) return false;
       // FR-012: confirm before a session change discards queued entries.
       if (get().queue.items.length > 0) {
         set({ queueDiscardConfirm: { count: get().queue.items.length, kind: "switch", file } });
-        return;
+        return false;
       }
       const b = bridge;
       const startedAt = performance.now();
-      const seq = ++switchSeq;
+      // 030: bumping the generation is what makes this click "the newest one";
+      // the runner below re-reads it per round instead of capturing it here.
+      ++switchSeq;
       // Captured before the optimistic set below clears it — the abort must
       // still happen for a run that was streaming at click time.
       const wasStreaming = get().isStreaming;
@@ -1920,69 +1966,130 @@ export const usePiStore = create<PiStore>((set, get) => {
       requestRepaint();
       perfMark("switch.pending", startedAt, { kind: "history" });
 
-      try {
-        // A run still tied to the old session would keep streaming into the
-        // new one — but abort after the visible switch, so the user waits on
-        // the page they asked for instead of on the old run settling. 026: a
-        // hung abort is the suspected stuck-switch trigger, so it gets its own
-        // deadline and a hung one fails the switch (reason=abort_timeout)
-        // instead of parking the placeholder forever.
-        if (wasStreaming) {
-          await withTimeout(get().abort(), SWITCH_ABORT_TIMEOUT_MS, "abort");
-        }
-        await withTimeout(rpc(b, { type: "switch_session", sessionPath: file }), SWITCH_RPC_TIMEOUT_MS, "switch_session");
-
-        // 021 D3: three independent reads in parallel, one set. Sequential
-        // awaits added ~330ms of pure latency; separate sets would flash.
-        // 026: each read is bounded, but a read timeout only degrades to empty
-        // content (the catch below) — it must not fail the switch (FR-006).
-        const [messages, stats, state] = await Promise.all([
-          withTimeout(rpc<{ messages: unknown[] }>(b, { type: "get_messages" }), SWITCH_READ_TIMEOUT_MS, "get_messages").catch(
-            () => ({ messages: [] as unknown[] }),
-          ),
-          withTimeout(rpc<SessionStats>(b, { type: "get_session_stats" }), SWITCH_READ_TIMEOUT_MS, "get_session_stats").catch(
-            () => undefined,
-          ),
-          withTimeout(
-            rpc<{ sessionName?: string; sessionId?: string; model?: ModelInfo; thinkingLevel?: string }>(b, {
-              type: "get_state",
-            }),
-            SWITCH_READ_TIMEOUT_MS,
-            "get_state",
-          ).catch(() => undefined),
-        ]);
-        if (seq !== switchSeq) {
-          clearOwnPending(startedAt); // 026 FR-003: D8 drop still cleans itself
-          return; // D8: a newer target owns the screen
-        }
-
-        set({
-          items: itemsFromMessages(messages.messages ?? []).filter((i) => !i.ephemeral),
-          stats,
-          sessionName: state?.sessionName,
-          sessionId: state?.sessionId,
-          model: state?.model,
-          thinkingLevel: state?.thinkingLevel ?? "medium",
-          pendingSwitch: null,
-          // 026 FR-005: also covers late-success-after-timeout — the target
-          // came through after all, so the retry bar must go.
-          retrySwitch: null,
+      // 030: single-flight. The view has already jumped to this target above,
+      // so a switch that is still on the wire only has to be told where to go
+      // next — it relays there when it finishes (see the loop below). The tap
+      // that gets queued stays pending until its own round runs, so callers can
+      // still await "did my session become the visible one".
+      if (switchBusy) {
+        switchQueued?.settle(false); // superseded before it ever got a round
+        return new Promise<boolean>((resolve) => {
+          switchQueued = { file, settle: resolve };
         });
-        perfMark("switch.content", startedAt, { kind: "history" });
-        requestRepaint();
-        perfMark("switch.ready", startedAt, { kind: "history" });
-      } catch (e) {
-        if (seq !== switchSeq) {
-          clearOwnPending(startedAt); // 026 FR-003: a stale failure still cleans itself
-          return;
+      }
+
+      /** One switch: RPC, three reads, paint. Resolves `true` only when this
+       *  target is what the screen ends up showing; its seq check decides that,
+       *  so a relay round that gets overtaken again drops its content instead
+       *  of flashing it and reports `false` to whoever awaited it. */
+      const runSwitch = async (target: string, at: number, seqAt: number, doAbort: boolean): Promise<boolean> => {
+        try {
+          // A run still tied to the old session would keep streaming into the
+          // new one — but abort after the visible switch, so the user waits on
+          // the page they asked for instead of on the old run settling. 026: a
+          // hung abort is the suspected stuck-switch trigger, so it gets its own
+          // deadline and a hung one fails the switch (reason=abort_timeout)
+          // instead of parking the placeholder forever. Only the first round can
+          // owe an abort — the optimistic set cleared isStreaming.
+          if (doAbort) {
+            await withTimeout(get().abort(), SWITCH_ABORT_TIMEOUT_MS, "abort");
+          }
+          await withTimeout(rpc(b, { type: "switch_session", sessionPath: target }), SWITCH_RPC_TIMEOUT_MS, "switch_session");
+
+          // 021 D3: three independent reads in parallel, one set. Sequential
+          // awaits added ~330ms of pure latency; separate sets would flash.
+          // 026: each read is bounded, but a read timeout only degrades to empty
+          // content (the catch below) — it must not fail the switch (FR-006).
+          const [messages, stats, state] = await Promise.all([
+            withTimeout(rpc<{ messages: unknown[] }>(b, { type: "get_messages" }), SWITCH_READ_TIMEOUT_MS, "get_messages").catch(
+              () => ({ messages: [] as unknown[] }),
+            ),
+            withTimeout(rpc<SessionStats>(b, { type: "get_session_stats" }), SWITCH_READ_TIMEOUT_MS, "get_session_stats").catch(
+              () => undefined,
+            ),
+            withTimeout(
+              rpc<{ sessionName?: string; sessionId?: string; model?: ModelInfo; thinkingLevel?: string }>(b, {
+                type: "get_state",
+              }),
+              SWITCH_READ_TIMEOUT_MS,
+              "get_state",
+            ).catch(() => undefined),
+          ]);
+          if (seqAt !== switchSeq) {
+            clearOwnPending(at); // 026 FR-003: D8 drop still cleans itself
+            return false; // D8: a newer target owns the screen
+          }
+
+          set({
+            items: itemsFromMessages(messages.messages ?? []).filter((i) => !i.ephemeral),
+            stats,
+            sessionName: state?.sessionName,
+            sessionId: state?.sessionId,
+            model: state?.model,
+            thinkingLevel: state?.thinkingLevel ?? "medium",
+            pendingSwitch: null,
+            // 026 FR-005: also covers late-success-after-timeout — the target
+            // came through after all, so the retry bar must go.
+            retrySwitch: null,
+          });
+          perfMark("switch.content", at, { kind: "history" });
+          requestRepaint();
+          perfMark("switch.ready", at, { kind: "history" });
+          return true;
+        } catch (e) {
+          if (seqAt !== switchSeq) {
+            clearOwnPending(at); // 026 FR-003: a stale failure still cleans itself
+            return false;
+          }
+          // 026 FR-007: timeout and RPC refusal are the same failure to the
+          // user, but the log keeps them apart for real-machine attribution.
+          perfMark("switch.failed", at, { reason: switchFailReason(e) });
+          // D3/Q3: land back on the list rather than on an empty transcript.
+          // 026 FR-005: remember the target so the retry bar can re-fire it.
+          set({ pendingSwitch: null, tab: "sessions", items: [], retrySwitch: target });
+          appendError(t("error.switchSession.failed", { msg: (e as Error).message }));
+          return false;
         }
-        // 026 FR-007: timeout and RPC refusal are the same failure to the
-        // user, but the log keeps them apart for real-machine attribution.
-        perfMark("switch.failed", startedAt, { reason: switchFailReason(e) });
-        // D3/Q3: land back on the list rather than on an empty transcript.
-        // 026 FR-005: remember the target so the retry bar can re-fire it.
-        set({ pendingSwitch: null, tab: "sessions", items: [], retrySwitch: file });
-        appendError(t("error.switchSession.failed", { msg: (e as Error).message }));
+      };
+
+      switchBusy = true;
+      try {
+        let target = file;
+        let at = startedAt;
+        let doAbort = wasStreaming;
+        /** Settles the tap that queued this round (the first round's caller is
+         *  the runner itself and gets `result` instead). */
+        let settleRound: ((ok: boolean) => void) | null = null;
+        let result = false;
+        let first = true;
+        // Relay to whatever was asked for while this switch was in flight. Each
+        // round re-reads the newest target, so it converges even while taps keep
+        // arriving; a target re-picked after being queued runs again rather than
+        // being skipped, because its own seq is what the paint is gated on.
+        for (;;) {
+          const seqAt = switchSeq;
+          const ok = await runSwitch(target, at, seqAt, doAbort);
+          if (first) {
+            result = ok;
+            first = false;
+          }
+          settleRound?.(ok);
+          const next = switchQueued;
+          switchQueued = null;
+          if (next == null) break;
+          target = next.file;
+          settleRound = next.settle;
+          at = performance.now();
+          doAbort = false;
+        }
+        return result;
+      } finally {
+        switchBusy = false;
+        // A tap that arrived in the last sync window (between the queue read and
+        // here) would otherwise wait forever; it never got a round, so it failed.
+        const leftover = switchQueued;
+        switchQueued = null;
+        leftover?.settle(false);
       }
     },
 
