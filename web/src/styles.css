@@ -128,6 +128,38 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* 022 (2026-11-12, real machine) — "滚到底再往上滑就不动" is scroll chaining,
+   not a slow frame.
+
+   Measured with a genuine WM_MOUSEWHEEL probe (web/probe-wheel-real.mjs, which
+   exists because CDP-injected wheel events use pixel-precise deltas and cannot
+   reproduce this): at the bottom of a list, a few extra down notches are left
+   unhandled by the inner scroller, so Chromium *chains* them to the ancestor
+   and latches the wheel there. The next upward notch is then delivered to that
+   latched ancestor and the list never scrolls again — `scrollTop` frozen, zero
+   `scroll` events, until the user pauses long enough for the latch to expire.
+   That is the "停一下才能滑" the user reported twice.
+
+   `overscroll-behavior: contain` keeps the chain inside each list, so the
+   latch stays on the element that can actually scroll: 0/3 stuck rounds before
+   the fix, 3/3 clean after (build/probe-wheel-real-{none,css-contain}.json).
+
+   App-level scrollers only. A scrollable block *inside* a message (tool output,
+   diff, code) deliberately keeps the default: chaining from it into the
+   transcript is wanted, and its own boundary is not where the gesture ends. */
+.message-list,
+.sessions-list,
+.model-list,
+.options-menu,
+.file-menu,
+.slash-menu,
+.manage-content,
+.queue-bar,
+.outline-list,
+.session-search-results {
+  overscroll-behavior: contain;
+}
+
 button,
 input,
 textarea,
