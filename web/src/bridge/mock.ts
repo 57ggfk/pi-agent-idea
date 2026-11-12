@@ -1282,6 +1282,26 @@ export class MockBridge implements Bridge {
         return { ok: true, path: "/tmp/mock-home/.pi/agent/settings.json", text: "{\n  \"theme\": \"dark\"\n}" };
       case "manage.settingsWrite":
         return { ok: true, output: "saved" };
+      // 032 Q6-b: ?envsnapshot=off|empty|fail rotates the viewer's three
+      // states; default returns a realistic snapshot body.
+      case "manage.envSnapshot": {
+        const knob = query()?.get("envsnapshot");
+        if (knob === "fail") return { ok: false, error: "snapshot unavailable (mock)" };
+        if (knob === "off") return { ok: true, enabled: false, collectedAt: "", text: "", file: "/tmp/pi-ide-env.json" };
+        if (knob === "empty") return { ok: true, enabled: true, collectedAt: "", text: "", file: "/tmp/pi-ide-env.json" };
+        return {
+          ok: true,
+          enabled: true,
+          collectedAt: "2026-11-13T03:30:00Z",
+          text:
+            "# IDE environment snapshot\n" +
+            "Provided by the Pi Agent JetBrains plugin. Collected: 2026-11-13T03:30:00Z.\n" +
+            "Sources present: sdk, shell-env.\n\n" +
+            "## Project SDK (tier: sdk)\n- Project SDK: Oracle JDK 21 (21.0.1)\n- SDK home: /opt/jdk-21\n\n" +
+            "## Build-relevant environment (tier: shell-env)\n- JAVA_HOME=/opt/jdk-21\n",
+          file: "/tmp/pi-ide-env.json",
+        };
+      }
       case "trust.get": {
         if (this.trustBroken) {
           return {

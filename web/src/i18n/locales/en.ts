@@ -479,6 +479,10 @@ export const en = {
   "settings.reload": "Reload",
   "settings.save": "Save",
   "settings.saved": "saved {{path}}",
+  // 032 Q6-b: the read-only environment snapshot viewer.
+  "settings.envSnapshot": "View environment snapshot",
+  "settings.envSnapshotEmpty": "No snapshot yet — it is filled on the first message.",
+  "settings.envSnapshotOff": "The IDE environment injection is turned off in Settings.",
   "package.install": "Install",
   "package.refresh": "Refresh",
   "package.update": "Update",

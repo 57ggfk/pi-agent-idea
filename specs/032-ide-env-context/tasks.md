@@ -21,9 +21,9 @@
 - [x] T1306 设置开关：`PiAgentSettings.envContextEnabled`（默认 true）+ Configurable
       复选框 + Bundle 文案（en/zh_CN）+ 关闭时对全部打开的项目重写快照（免重启）—
       `gradlew test` 全量 SUCCESSFUL
-- [ ] T1307 web 只读入口：`manage.envSnapshot` 桥接路由 + SettingsPanel「环境快照」
-      只读块 + i18n en/zh + e2e（mock 固定文本→点击→pre 展示）—
-      `npm run typecheck` + `npx vitest run` + `npx playwright test e2e/manage.spec.ts`
+- [x] T1307 web 只读入口：`manage.envSnapshot` 桥接路由 + mock 旋钮（off/empty/fail）+
+      SettingsPanel「查看环境快照」只读块 + i18n en/zh + e2e 3 条（正文/关闭提示/空提示）—
+      typecheck 0 错、manage.spec 30/30（含新 3 条）
 - [ ] T1308 收尾：三件套全量（gradlew test / vitest / e2e）+ `verifyPlugin` +
       `changelog.d/032-*.md` 两行碎片 + run-report 第 14 节 + spec 验证计划回填
 - [ ] T1309（真机）r29 装包探针：快照文件存在且 collectedAt 随消息更新、pi 回复正常

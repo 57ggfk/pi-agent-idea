@@ -301,6 +301,14 @@ export interface SettingsReadResult extends CliOutcome {
   text?: string;
 }
 
+/** 032: what the IDE would append to pi's system prompt this turn (Q6-b). */
+export interface EnvSnapshotResult extends CliOutcome {
+  enabled?: boolean;
+  collectedAt?: string;
+  text?: string;
+  file?: string;
+}
+
 /** Typed helpers over the bridge for management operations. */
 export function manageApi(bridge: Bridge) {
   const call = <T>(method: BridgeMethod, params?: unknown, timeoutMs?: number) =>
@@ -375,6 +383,9 @@ export function manageApi(bridge: Bridge) {
     authCheck: (p: { provider: string }) => call<{ ok: boolean; status: string; detail?: unknown }>("manage.authCheck", p),
     settingsRead: () => call<SettingsReadResult>("manage.settingsRead"),
     settingsWrite: (p: { text: string }) => call<CliOutcome>("manage.settingsWrite", p),
+    // 032 Q6-b: read-only view of the environment snapshot; the call also
+    // refreshes it, so what the user sees is what the next turn injects.
+    envSnapshot: () => call<EnvSnapshotResult>("manage.envSnapshot"),
     trustGet: () => call<TrustState>("trust.get"),
     // `confirmed` is mandatory: an unconfirmed write must be refused by the
     // backend, not merely hidden in the UI.

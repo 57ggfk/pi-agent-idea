@@ -75,6 +75,7 @@ export type BridgeMethod =
   | "manage.providerSetKey"
   | "manage.settingsRead"
   | "manage.settingsWrite"
+  | "manage.envSnapshot"
   | "trust.get"
   | "trust.grant"
   | "trust.revoke"

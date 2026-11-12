@@ -74,6 +74,40 @@ test.describe("manage view (MockBridge)", () => {
     await expect(page.getByTestId("outcome-banner")).toContainText("✓");
   });
 
+  // -- 032 Q6-b: the read-only IDE environment snapshot viewer ---------------
+
+  test("the environment snapshot viewer shows what would be injected (zh)", async ({ page }) => {
+    await page.goto("/?locale=zh");
+    await expect(page.getByTestId("empty-state")).toBeVisible();
+    await page.getByTestId("tab-manage").click();
+    await page.getByTestId("manage-tab-settings").click();
+    await page.getByTestId("env-snapshot-btn").click();
+    await expect(page.getByTestId("env-snapshot-text")).toContainText("# IDE environment snapshot");
+    await expect(page.getByTestId("env-snapshot-text")).toContainText("Oracle JDK 21");
+    await expect(page.getByTestId("env-snapshot-text")).toContainText("JAVA_HOME=/opt/jdk-21");
+    await expect(page.getByTestId("env-snapshot-text")).not.toContainText("⟦");
+    await expect(page.getByText("查看环境快照")).toBeVisible();
+  });
+
+  test("a disabled injection shows the off hint instead of a snapshot body", async ({ page }) => {
+    await page.goto("/?envsnapshot=off");
+    await expect(page.getByTestId("empty-state")).toBeVisible();
+    await page.getByTestId("tab-manage").click();
+    await page.getByTestId("manage-tab-settings").click();
+    await page.getByTestId("env-snapshot-btn").click();
+    await expect(page.getByTestId("env-snapshot-off")).toBeVisible();
+    await expect(page.getByTestId("env-snapshot-text")).toHaveCount(0);
+  });
+
+  test("an empty snapshot (no message sent yet) shows the empty hint", async ({ page }) => {
+    await page.goto("/?envsnapshot=empty");
+    await expect(page.getByTestId("empty-state")).toBeVisible();
+    await page.getByTestId("tab-manage").click();
+    await page.getByTestId("manage-tab-settings").click();
+    await page.getByTestId("env-snapshot-btn").click();
+    await expect(page.getByTestId("env-snapshot-empty")).toBeVisible();
+  });
+
   // -- MCP enable / disable (spec 001 US1) ---------------------------------
 
   test("disabling a server keeps its configuration and enables it again", async ({ page }) => {

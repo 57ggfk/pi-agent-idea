@@ -10,20 +10,29 @@ import { join } from "node:path";
  * the four contract points: append-not-replace, both runtime shapes, the
  * enabled flag (FR-010), and silent degradation (FR-001).
  */
-// @vite-ignore keeps Vite from pre-bundling the resource; vitest loads it as ESM.
-const extension = (await import(/* @vite-ignore */ "../../src/main/resources/pi-env/pi-env.js")).default;
+type EnvExtension = (
+  pi: {
+    on: (name: string, handler: (event: unknown, ctx?: unknown) => Promise<unknown>) => void;
+  },
+) => void;
+
+// The resource ships in the plugin jar (outside web/); vite transforms the
+// relative literal import fine, TS just has no declarations for a plain .js —
+// the runtime shape is pinned by the assertions below instead.
+// @ts-expect-error TS7016: no declaration file for the bundled JS resource
+const extension = (await import("../../src/main/resources/pi-env/pi-env.js")).default as EnvExtension;
 
 let dir: string;
 const envBefore = process.env.PI_IDE_ENV_SNAPSHOT;
 
 function fakePi() {
   const handlers: Record<string, (event: unknown, ctx?: unknown) => Promise<unknown>> = {};
-  return {
-    on: (name: string, handler: (event: unknown, ctx?: unknown) => Promise<unknown>) => {
+  const pi: Parameters<EnvExtension>[0] = {
+    on: (name, handler) => {
       handlers[name] = handler;
     },
-    handlers,
   };
+  return { pi, handlers };
 }
 
 function writeSnapshot(body: unknown): string {
@@ -44,16 +53,16 @@ afterAll(() => {
 
 describe("pi-env extension (032)", () => {
   it("registers a before_agent_start handler", () => {
-    const pi = fakePi();
+    const { pi, handlers } = fakePi();
     extension(pi);
-    expect(Object.keys(pi.handlers)).toContain("before_agent_start");
+    expect(Object.keys(handlers)).toContain("before_agent_start");
   });
 
   it("appends the snapshot to the current prompt without replacing it", async () => {
-    const pi = fakePi();
+    const { pi, handlers } = fakePi();
     extension(pi);
     process.env.PI_IDE_ENV_SNAPSHOT = writeSnapshot({ enabled: true, text: "# IDE environment snapshot\n- JDK 21" });
-    const result = (await pi.handlers["before_agent_start"]({ systemPrompt: "You are pi." })) as {
+    const result = (await handlers["before_agent_start"]({ systemPrompt: "You are pi." })) as {
       systemPrompt: string;
     };
     expect(result.systemPrompt.startsWith("You are pi.")).toBe(true);
@@ -62,10 +71,10 @@ describe("pi-env extension (032)", () => {
   });
 
   it("normalizes the string[] shape from the 18.x flavor", async () => {
-    const pi = fakePi();
+    const { pi, handlers } = fakePi();
     extension(pi);
     process.env.PI_IDE_ENV_SNAPSHOT = writeSnapshot({ enabled: true, text: "ENV-BLOCK" });
-    const result = (await pi.handlers["before_agent_start"]({ systemPrompt: ["part one", "part two"] })) as {
+    const result = (await handlers["before_agent_start"]({ systemPrompt: ["part one", "part two"] })) as {
       systemPrompt: string;
     };
     expect(result.systemPrompt.startsWith("part one\npart two")).toBe(true);
@@ -73,42 +82,42 @@ describe("pi-env extension (032)", () => {
   });
 
   it("emits the bare snapshot when the current prompt is empty", async () => {
-    const pi = fakePi();
+    const { pi, handlers } = fakePi();
     extension(pi);
     process.env.PI_IDE_ENV_SNAPSHOT = writeSnapshot({ enabled: true, text: "ONLY" });
-    const result = (await pi.handlers["before_agent_start"]({ systemPrompt: "" })) as { systemPrompt: string };
+    const result = (await handlers["before_agent_start"]({ systemPrompt: "" })) as { systemPrompt: string };
     expect(result.systemPrompt).toBe("ONLY");
   });
 
   it("returns undefined when the flag is disabled (FR-010: prompt stays as-is)", async () => {
-    const pi = fakePi();
+    const { pi, handlers } = fakePi();
     extension(pi);
     process.env.PI_IDE_ENV_SNAPSHOT = writeSnapshot({ enabled: false, text: "SHOULD-NOT-APPEAR" });
-    const result = await pi.handlers["before_agent_start"]({ systemPrompt: "You are pi." });
+    const result = await handlers["before_agent_start"]({ systemPrompt: "You are pi." });
     expect(result).toBeUndefined();
   });
 
   it("returns undefined when the snapshot file is missing (FR-001 degrade)", async () => {
-    const pi = fakePi();
+    const { pi, handlers } = fakePi();
     extension(pi);
     process.env.PI_IDE_ENV_SNAPSHOT = join(dir, "does-not-exist.json");
-    const result = await pi.handlers["before_agent_start"]({ systemPrompt: "You are pi." });
+    const result = await handlers["before_agent_start"]({ systemPrompt: "You are pi." });
     expect(result).toBeUndefined();
   });
 
   it("returns undefined when no snapshot path is configured", async () => {
-    const pi = fakePi();
+    const { pi, handlers } = fakePi();
     extension(pi);
     delete process.env.PI_IDE_ENV_SNAPSHOT;
-    const result = await pi.handlers["before_agent_start"]({ systemPrompt: "You are pi." });
+    const result = await handlers["before_agent_start"]({ systemPrompt: "You are pi." });
     expect(result).toBeUndefined();
   });
 
   it("returns undefined on an empty text body", async () => {
-    const pi = fakePi();
+    const { pi, handlers } = fakePi();
     extension(pi);
     process.env.PI_IDE_ENV_SNAPSHOT = writeSnapshot({ enabled: true, text: "   " });
-    const result = await pi.handlers["before_agent_start"]({ systemPrompt: "You are pi." });
+    const result = await handlers["before_agent_start"]({ systemPrompt: "You are pi." });
     expect(result).toBeUndefined();
   });
 });

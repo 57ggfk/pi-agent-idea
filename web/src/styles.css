@@ -1188,6 +1188,23 @@ button {
   border-color: var(--accent);
 }
 
+/* 032 Q6-b: read-only IDE environment snapshot viewer (manage → settings). */
+.env-snapshot {
+  max-height: 280px;
+  overflow: auto;
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .mono {
   font-family: "SF Mono", Menlo, Consolas, monospace;
   font-size: 11px;
