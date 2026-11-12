@@ -25,7 +25,7 @@
  * empty text → returns undefined → pi's prompt stays exactly as it would be
  * without this extension (FR-010, the settings switch writes enabled:false).
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 
 export default function (pi) {
   pi.on("before_agent_start", async (event) => {
@@ -48,6 +48,13 @@ export default function (pi) {
         : Array.isArray(event.systemPrompt)
           ? event.systemPrompt.join("\n")
           : "";
+    // Injection receipt (best-effort): stamping the snapshot back lets the IDE
+    // probe and debug sessions see WHEN the block last reached the model
+    // without instrumenting the prompt. A lost race against the IDE's
+    // per-turn rewrite only costs the timestamp.
+    try {
+      writeFileSync(path, JSON.stringify({ ...snapshot, lastAppliedAt: new Date().toISOString() }));
+    } catch {}
     return { systemPrompt: current ? `${current}\n\n${snapshot.text}` : snapshot.text };
   });
 }

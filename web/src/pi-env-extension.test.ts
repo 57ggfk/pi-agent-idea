@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -119,5 +119,21 @@ describe("pi-env extension (032)", () => {
     process.env.PI_IDE_ENV_SNAPSHOT = writeSnapshot({ enabled: true, text: "   " });
     const result = await handlers["before_agent_start"]({ systemPrompt: "You are pi." });
     expect(result).toBeUndefined();
+  });
+
+  it("stamps lastAppliedAt on a successful injection and never on a skip", async () => {
+    const { pi, handlers } = fakePi();
+    extension(pi);
+    const appliedFile = writeSnapshot({ enabled: true, text: "APPLIED" });
+    process.env.PI_IDE_ENV_SNAPSHOT = appliedFile;
+    await handlers["before_agent_start"]({ systemPrompt: "You are pi." });
+    const stamped = JSON.parse(readFileSync(appliedFile, "utf8"));
+    expect(stamped.lastAppliedAt).toBeTruthy();
+    expect(stamped.text).toBe("APPLIED");
+
+    const skippedFile = writeSnapshot({ enabled: false, text: "SKIPPED" });
+    process.env.PI_IDE_ENV_SNAPSHOT = skippedFile;
+    await handlers["before_agent_start"]({ systemPrompt: "You are pi." });
+    expect(JSON.parse(readFileSync(skippedFile, "utf8")).lastAppliedAt).toBeUndefined();
   });
 });

@@ -24,8 +24,9 @@
 - [x] T1307 web 只读入口：`manage.envSnapshot` 桥接路由 + mock 旋钮（off/empty/fail）+
       SettingsPanel「查看环境快照」只读块 + i18n en/zh + e2e 3 条（正文/关闭提示/空提示）—
       typecheck 0 错、manage.spec 30/30（含新 3 条）
-- [ ] T1308 收尾：三件套全量（gradlew test / vitest / e2e）+ `verifyPlugin` +
-      `changelog.d/032-*.md` 两行碎片 + run-report 第 14 节 + spec 验证计划回填
+- [x] T1308 收尾：三件套全量（gradlew test SUCCESSFUL / vitest 444/444 / e2e 334/334）+
+      `verifyPlugin` SUCCESSFUL（无 internal API 命中）+ `changelog.d/032-ide-env-context.added.md`
+      两行碎片 + run-report 第 14 节 + spec 验证计划回填
 - [ ] T1309（真机）r29 装包探针：快照文件存在且 collectedAt 随消息更新、pi 回复正常
       无扩展报错、WebStorm 缺 SDK 档降级（US5）、开关关闭后快照 enabled:false
       — probe-032-env.mjs verdict 入库

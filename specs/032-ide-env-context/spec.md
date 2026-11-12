@@ -157,15 +157,18 @@ run configuration 里配的 `SPRING_PROFILES_ACTIVE`、`NODE_ENV`、`PYTHONPATH`
 
 ## 验证计划
 
-实现后填写。
+2026-11-13 实现后填写（证据详见 `specs/0.5.8-run-report.md` 第 14 节；真机第 13 节流程）。
 
-| 层 | 用例 | 期望 |
-|---|---|---|
-| 单测 | 快照生成器吃「假 SDK + 假语言级别」 | 输出固定文本，敏感变量被过滤 |
-| 单测 | 敏感过滤 | `GITHUB_TOKEN`/`DB_PASSWORD` 不出现；`JAVA_HOME` 保留 |
-| 单测 | 档位缺失 | 三档全空时输出「未检测到」而非抛异常 |
-| 单测 | env 差量补齐 | 已有 PATH 不被覆盖，`PI_IDE_*` 前缀生效 |
-| 真机 | IDEA：切项目 SDK 17→21 后发消息 | 提示词随之变化，pi 未重启 |
-| 真机 | WebStorm：Node 解释器 | 提示词含 node 路径与版本 |
-| 真机 | PyCharm：venv | 提示词含解释器路径 |
-| 真机 | 三款 IDE 各 `verifyPlugin` | 无 internal API 命中，`sinceBuild=233` 兼容 |
+| 层 | 用例 | 期望 | 结果 |
+|---|---|---|---|
+| 单测 | 快照生成器吃「假 SDK + 假语言级别」 | 输出固定文本，敏感变量被过滤 | ✅ PiEnvSnapshotTest（渲染/时间戳/档位标注/命令建议）+ PiIdeEnvTiersTest（四档构建） |
+| 单测 | 敏感过滤 | `GITHUB_TOKEN`/`DB_PASSWORD` 不出现；`JAVA_HOME` 保留 | ✅ filterEnvVars + whitelistAdditions 双闸断言 |
+| 单测 | 档位缺失 | 三档全空时输出「未检测到」而非抛异常 | ✅ render 空档位 + sdkTier/nodeTier/envTier 全 null 降级 |
+| 单测 | env 差量补齐 | 已有 PATH 不被覆盖，`PI_IDE_*` 前缀生效 | ✅ applyToProcess：已有值不覆盖、缺的补上、PI_IDE_ENV_SNAPSHOT 断言 |
+| 扩展 | 行为契约 | 追加不覆盖内置提示词、enabled:false/缺文件降级 | ✅ web vitest 直接 import 资源 9/9（含 lastAppliedAt 回执） |
+| e2e | 只读入口 | 查看快照/关闭提示/空快照提示 | ✅ manage.spec 新增 3 条，全量 334/334 |
+| 静态 | internal API | verifyPlugin 无命中 | ✅ SUCCESSFUL（语言级别/Node 管理器反射公共 API） |
+| 真机 | IDEA：切项目 SDK 17→21 后发消息 | 提示词随之变化，pi 未重启 | ◐ 机制已实证（快照每轮重写 + collectedAt 前移 + lastAppliedAt 回执，probe-032-env）；本机只有 WebStorm，IDEA+JDK 切换留人工 |
+| 真机 | WebStorm：Node 解释器 | 提示词含 node 路径与版本 | ✅ probe-032-env（PATH node + 版本；JS 插件反射档视安装情况） |
+| 真机 | PyCharm：venv | 提示词含解释器路径 | ⬜ 留人工（本机未装 PyCharm 的 pi 会话；A 档 projectSdk 路径已由真机 WebStorm 验证格式） |
+| 真机 | 三款 IDE 各 `verifyPlugin` | 无 internal API 命中，`sinceBuild=233` 兼容 | ✅ verifyPlugin SUCCESSFUL（编译基线 2024.3.1、sinceBuild=233 不变；反射路径无静态引用） |
