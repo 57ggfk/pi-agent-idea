@@ -1,0 +1,77 @@
+{
+  "when": "2026-11-12T17:21:30.795Z",
+  "pageUrl": "http://127.0.0.1:49904/?token=<redacted>",
+  "results": [
+    {
+      "n": "UI language is Chinese",
+      "ok": true,
+      "d": {}
+    },
+    {
+      "n": "fresh empty session",
+      "ok": true,
+      "d": {}
+    },
+    {
+      "n": "context filled past the compaction threshold",
+      "ok": true,
+      "d": {
+        "ctxText": "ctx 42%"
+      }
+    },
+    {
+      "n": "zh compaction_start event notice appears (RPC forwards compaction events)",
+      "ok": true,
+      "d": {
+        "zhStart": "正在压缩上下文（手动）…"
+      }
+    },
+    {
+      "n": "zh compacted notice with grouped tokens (US1)",
+      "ok": true,
+      "d": {
+        "zhEnd": "上下文已压缩：83,016 → 23,687 tokens。"
+      }
+    },
+    {
+      "n": "UI switched to English; label is Compact",
+      "ok": true,
+      "d": {
+        "label": "Compact"
+      }
+    },
+    {
+      "n": "en compaction_start event notice verbatim (US5)",
+      "ok": true,
+      "d": {
+        "enStart": "Compacting context (manual)…"
+      }
+    },
+    {
+      "n": "en compacted notice verbatim pre-031 wording (US5)",
+      "ok": true,
+      "d": {
+        "enEnd": "Context compacted: 108,370 → 23,865 tokens."
+      }
+    },
+    {
+      "n": "zh notices not retranslated after switching to en (FR-005)",
+      "ok": true,
+      "d": {
+        "zhStart": "正在压缩上下文（手动）…",
+        "zhEnd": "上下文已压缩：83,016 → 23,687 tokens。"
+      }
+    }
+  ],
+  "pass": 9,
+  "total": 9,
+  "zhNotices": [
+    "正在压缩上下文（手动）…",
+    "上下文已压缩：83,016 → 23,687 tokens。"
+  ],
+  "enNotices": [
+    "Compacting context (manual)…",
+    "Context compacted: 108,370 → 23,865 tokens."
+  ],
+  "ctxAfterFill": "ctx 51%"
+}

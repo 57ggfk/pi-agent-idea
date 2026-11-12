@@ -558,10 +558,14 @@ export function applyEvent(items: ChatItem[], event: AnyRecord): ChatItem[] {
       }));
     }
 
-    // 031 FR-001: pi 18.0.7 emits `auto_compaction_*` (the old
-    // `compaction_start`/`compaction_end` names never fire — dead branches).
-    // `action` is deliberately not rendered: an unstable internal detail
-    // (FR-012). Copy is snapshotted at generation time (FR-005).
+    // 031 FR-001: auto-compaction notices. Two pi distributions use different
+    // event names for the SAME shapes — the runtime on this machine
+    // (@earendil-works 1.5.0) emits `compaction_start`/`compaction_end`
+    // (reason "manual" or the auto reason), while the @oh-my-pi 18.x bundle
+    // renames them to `auto_compaction_*`. Accept both; `action` is
+    // deliberately not rendered (FR-012). Copy snapshots at generation time
+    // (FR-005).
+    case "compaction_start":
     case "auto_compaction_start": {
       const item = emptyItem("system", [
         {
@@ -574,6 +578,7 @@ export function applyEvent(items: ChatItem[], event: AnyRecord): ChatItem[] {
       return [...items, item];
     }
 
+    case "compaction_end":
     case "auto_compaction_end": {
       const result = asRecord(event["result"]);
       const before = result ? result["tokensBefore"] : undefined;

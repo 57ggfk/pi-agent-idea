@@ -173,9 +173,17 @@ describe("applyEvent", () => {
     expect(textOf(items, 0)).toBe("Compaction aborted.");
   });
 
-  it("the pre-18.0.7 compaction_* event names are dead branches — no items (031 FR-001)", () => {
-    expect(applyEvent([], { type: "compaction_start", reason: "manual" })).toHaveLength(0);
-    expect(applyEvent([], { type: "compaction_end", result: { tokensBefore: 1 } })).toHaveLength(0);
+  it("both pi distributions' compaction event names produce notices (031 FR-001)", () => {
+    // Runtime (@earendil-works 1.5.0) emits compaction_start/end; the
+    // @oh-my-pi 18.x bundle renames them to auto_compaction_*. Same shapes.
+    for (const end of ["compaction_end", "auto_compaction_end"]) {
+      const items = applyEvent([], { type: end, result: { tokensBefore: 100, estimatedTokensAfter: 20 } });
+      expect(items).toHaveLength(1);
+      expect(items[0].role).toBe("system");
+    }
+    for (const start of ["compaction_start", "auto_compaction_start"]) {
+      expect(applyEvent([], { type: start, reason: "manual" })).toHaveLength(1);
+    }
   });
 
   it("unknown compaction reasons pass through verbatim; missing reason defaults to manual (031 FR-009)", () => {
