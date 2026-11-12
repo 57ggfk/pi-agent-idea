@@ -120,6 +120,7 @@ class PiProcessManager(private val project: Project) : Disposable {    private v
             extensions = listOfNotNull(
                 PiApprovalSupport.ensureExtensionInstalled()?.absolutePath,
                 PiModelReload.ensureExtensionInstalled()?.absolutePath,
+                PiIdeEnvExtension.ensureExtensionInstalled()?.absolutePath,
             ),
             approveProjectFiles = consumeApproveOnNextStart(),
         )

@@ -14,10 +14,10 @@
 - [x] T1304 env 差量补齐：`applyToProcess`（只增不改、PI_IDE_ENV_SNAPSHOT）+
       `PiProcessManager.start()` 接线 — `PiIdeEnvTiersTest` 覆盖（不覆盖已有值、
       黑名单剔除、PI_IDE_ 前缀断言）
-- [ ] T1305 扩展：`resources/pi-env/pi-env.js`（before_agent_start 追加、enabled/缺文件
+- [x] T1305 扩展：`resources/pi-env/pi-env.js`（before_agent_start 追加、enabled/缺文件
       降级、string/array 两形状兼容）+ `PiIdeEnvExtension.ensureExtensionInstalled` +
-      `PiStartArgs` 扩展列表接线 + web vitest import 资源断言行为 —
-      `npx vitest run src/pi-env-extension.test.ts`
+      扩展列表接线 + web vitest import 资源断言行为 —
+      `npx vitest run src/pi-env-extension.test.ts` 8/8 绿 + gradlew 全量绿
 - [ ] T1306 设置开关：`PiAgentSettings.envContextEnabled`（默认 true）+ Configurable
       复选框 + Bundle 文案（en/zh_CN）+ 关闭时重写快照 — `gradlew test` 全量 SUCCESSFUL
 - [ ] T1307 web 只读入口：`manage.envSnapshot` 桥接路由 + SettingsPanel「环境快照」
