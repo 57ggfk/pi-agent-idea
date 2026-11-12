@@ -3,10 +3,10 @@
 > 每个 task 带「— 验证」；task 绿即提交，当场勾选并补 run-report。
 
 - [ ] T1301 plan.md + tasks.md 落盘，run-report 补 032 行与 task 清单 — 提交即证
-- [ ] T1302 快照纯函数：`PiEnvSnapshot.render`（时间戳+档位标注+构建工具命令建议）与
+- [x] T1302 快照纯函数：`PiEnvSnapshot.render`（时间戳+档位标注+构建工具命令建议）与
       `filterEnvVars`（白名单+黑名单双闸、值截断）+ `PiEnvSnapshotTest`
       （假档位渲染固定文本、GITHUB_TOKEN/DB_PASSWORD 不出现而 JAVA_HOME 保留、
-      三档全空输出未检测到不抛异常）— `gradlew test --tests "*PiEnvSnapshot*"`
+      三档全空输出未检测到不抛异常）— `gradlew test --tests "*PiEnvSnapshot*"` 绿
 - [ ] T1303 采集与编排：`PiIdeEnv.collectSections`（A 档 projectSdk+语言级别、B 档
       System.getenv、Node 反射档降级、PyCharm 由 A 档覆盖）+ `refreshSnapshot` 写盘 +
       `BridgeService.rpcRequest` prompt 拦截 + pi start 后台首采 —
