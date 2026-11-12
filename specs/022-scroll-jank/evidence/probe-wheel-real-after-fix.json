@@ -1,0 +1,453 @@
+{
+  "port": "9222",
+  "at": "2026-11-12T02:42:56.419Z",
+  "fix": "none",
+  "page": "http://127.0.0.1:62442/?token=<redacted>",
+  "calib": {
+    "hits": [
+      {
+        "screen": {
+          "x": 1607,
+          "y": 123
+        },
+        "client": {
+          "x": 186,
+          "y": 30
+        },
+        "off": {
+          "x": 1421,
+          "y": 93
+        }
+      },
+      {
+        "screen": {
+          "x": 1607,
+          "y": 155
+        },
+        "client": {
+          "x": 186,
+          "y": 62
+        },
+        "off": {
+          "x": 1421,
+          "y": 93
+        }
+      }
+    ],
+    "off1": {
+      "x": 1421,
+      "y": 93
+    },
+    "off2": {
+      "x": 1421,
+      "y": 93
+    },
+    "scaleOk": true
+  },
+  "env": {
+    "innerW": 457,
+    "innerH": 329,
+    "dpr": 1,
+    "items": 106,
+    "scrollHeight": 10939,
+    "clientHeight": 169
+  },
+  "rounds": [
+    {
+      "r": 0,
+      "bottom": 10770,
+      "afterDown": 10770,
+      "afterUp60": 10734,
+      "afterUp310": 10570,
+      "movedFirstUp": 36,
+      "movedTwoUp": 200,
+      "wheelEventsDown": 5,
+      "scrollEventsDown": 0,
+      "wheelEventsUp": 2,
+      "scrollEventsUp": 23,
+      "downSent": 5
+    },
+    {
+      "r": 1,
+      "bottom": 10770,
+      "afterDown": 10770,
+      "afterUp60": 10733,
+      "afterUp310": 10570,
+      "movedFirstUp": 37,
+      "movedTwoUp": 200,
+      "wheelEventsDown": 5,
+      "scrollEventsDown": 0,
+      "wheelEventsUp": 2,
+      "scrollEventsUp": 24,
+      "downSent": 5
+    },
+    {
+      "r": 2,
+      "bottom": 10770,
+      "afterDown": 10770,
+      "afterUp60": 10733,
+      "afterUp310": 10570,
+      "movedFirstUp": 37,
+      "movedTwoUp": 200,
+      "wheelEventsDown": 5,
+      "scrollEventsDown": 0,
+      "wheelEventsUp": 2,
+      "scrollEventsUp": 23,
+      "downSent": 5
+    }
+  ],
+  "checks": [
+    {
+      "name": "picked session",
+      "ok": null,
+      "detail": {
+        "i": 5,
+        "count": 138
+      }
+    },
+    {
+      "name": "on chat with a long transcript",
+      "ok": true,
+      "detail": {
+        "items": 106
+      }
+    },
+    {
+      "name": "transcript environment",
+      "ok": null,
+      "detail": {
+        "innerW": 457,
+        "innerH": 329,
+        "dpr": 1,
+        "items": 106,
+        "scrollHeight": 10939,
+        "clientHeight": 169
+      }
+    },
+    {
+      "name": "ide frame",
+      "ok": null,
+      "detail": {
+        "hwnd": 7080212,
+        "class": "SunAwtFrame",
+        "title": "pi-agent-idea",
+        "rect": {
+          "l": 9,
+          "t": 9,
+          "r": 1927,
+          "b": 1039,
+          "w": 1918,
+          "h": 1030
+        }
+      }
+    },
+    {
+      "name": "ide focused",
+      "ok": true,
+      "detail": {
+        "set_foreground_ok": true,
+        "foreground": 7080212,
+        "want": 7080212,
+        "matched": true,
+        "rect": {
+          "l": 9,
+          "t": 9,
+          "r": 1927,
+          "b": 1039,
+          "w": 1918,
+          "h": 1030
+        }
+      }
+    },
+    {
+      "name": "page located on screen (offset stable)",
+      "ok": true,
+      "detail": {
+        "hits": [
+          {
+            "screen": {
+              "x": 1607,
+              "y": 123
+            },
+            "client": {
+              "x": 186,
+              "y": 30
+            },
+            "off": {
+              "x": 1421,
+              "y": 93
+            }
+          },
+          {
+            "screen": {
+              "x": 1607,
+              "y": 155
+            },
+            "client": {
+              "x": 186,
+              "y": 62
+            },
+            "off": {
+              "x": 1421,
+              "y": 93
+            }
+          }
+        ],
+        "off1": {
+          "x": 1421,
+          "y": 93
+        },
+        "off2": {
+          "x": 1421,
+          "y": 93
+        },
+        "scaleOk": true
+      }
+    },
+    {
+      "name": "目标点落在消息列表内",
+      "ok": true,
+      "detail": {
+        "pt": {
+          "x": 1650,
+          "y": 218
+        },
+        "box": {
+          "x": 0,
+          "y": 40,
+          "w": 457,
+          "h": 169,
+          "top": 10770,
+          "sh": 10939,
+          "ch": 169
+        },
+        "hit": {
+          "inside": true,
+          "tag": "item item-assistant "
+        },
+        "at": {
+          "x": 229,
+          "y": 125
+        },
+        "aimed": true
+      }
+    },
+    {
+      "name": "消息列表 overscroll-behavior",
+      "ok": null,
+      "detail": "contain"
+    },
+    {
+      "name": "列表中部滚轮正常（上/下都动）",
+      "ok": true,
+      "detail": {
+        "midUp": {
+          "before": 4000,
+          "after": 3913,
+          "dxy": [
+            -100
+          ]
+        },
+        "midDown": {
+          "before": 3987,
+          "after": 4079,
+          "dxy": [
+            100
+          ]
+        },
+        "bottomUp1": {
+          "before": 10770,
+          "after": 10674,
+          "dxy": [
+            -100
+          ]
+        },
+        "bottomUp1AfterPause": {
+          "before": 10670,
+          "after": 10575,
+          "dxy": [
+            -100
+          ]
+        },
+        "bottomUp3Burst": {
+          "from": 10465,
+          "dxy": [
+            -100,
+            -100,
+            -100
+          ]
+        }
+      }
+    },
+    {
+      "name": "对照组：无额外下滚时底部上滑正常",
+      "ok": true,
+      "detail": {
+        "before": 10770,
+        "after": 10674,
+        "dxy": [
+          -100
+        ]
+      }
+    },
+    {
+      "name": "底部停 900ms 后再上滑",
+      "ok": true,
+      "detail": {
+        "before": 10670,
+        "after": 10575,
+        "dxy": [
+          -100
+        ]
+      }
+    },
+    {
+      "name": "会话列表可滚（够长才有意义）",
+      "ok": true,
+      "detail": {
+        "scrollHeight": 2178,
+        "clientHeight": 217
+      }
+    },
+    {
+      "name": "会话列表 overscroll-behavior",
+      "ok": null,
+      "detail": "contain"
+    },
+    {
+      "name": "会话列表：到底再上滑立刻动",
+      "ok": true,
+      "detail": {
+        "rounds": 3,
+        "stuck": 0,
+        "worstMoved": 36
+      }
+    },
+    {
+      "name": "消息列表：每一轮「到底再上滑」都能立刻向上",
+      "ok": true,
+      "detail": {
+        "rounds": 3,
+        "stuck": 0,
+        "worstMoved": 36
+      }
+    },
+    {
+      "name": "上滑滚轮事件确实到达页面",
+      "ok": true,
+      "detail": {
+        "roundsWithoutWheel": 0
+      }
+    }
+  ],
+  "error": null,
+  "diag": {
+    "midUp": {
+      "before": 4000,
+      "after": 3913,
+      "dxy": [
+        -100
+      ]
+    },
+    "midDown": {
+      "before": 3987,
+      "after": 4079,
+      "dxy": [
+        100
+      ]
+    },
+    "bottomUp1": {
+      "before": 10770,
+      "after": 10674,
+      "dxy": [
+        -100
+      ]
+    },
+    "bottomUp1AfterPause": {
+      "before": 10670,
+      "after": 10575,
+      "dxy": [
+        -100
+      ]
+    },
+    "bottomUp3Burst": {
+      "from": 10465,
+      "dxy": [
+        -100,
+        -100,
+        -100
+      ]
+    }
+  },
+  "stage2": {
+    "aim": {
+      "pt": {
+        "x": 1650,
+        "y": 286
+      },
+      "box": {
+        "x": 0,
+        "y": 84,
+        "w": 457,
+        "h": 217,
+        "top": 0,
+        "sh": 2178,
+        "ch": 217
+      },
+      "hit": {
+        "inside": true,
+        "tag": "session-preview"
+      },
+      "at": {
+        "x": 229,
+        "y": 193
+      },
+      "aimed": true
+    },
+    "ov": "contain",
+    "rounds": [
+      {
+        "r": 0,
+        "bottom": 1961,
+        "afterDown": 1961,
+        "afterUp60": 1925,
+        "afterUp310": 1761,
+        "movedFirstUp": 36,
+        "movedTwoUp": 200,
+        "wheelEventsDown": 5,
+        "scrollEventsDown": 0,
+        "wheelEventsUp": 2,
+        "scrollEventsUp": 0,
+        "downSent": 5
+      },
+      {
+        "r": 1,
+        "bottom": 1961,
+        "afterDown": 1961,
+        "afterUp60": 1922,
+        "afterUp310": 1761,
+        "movedFirstUp": 39,
+        "movedTwoUp": 200,
+        "wheelEventsDown": 5,
+        "scrollEventsDown": 0,
+        "wheelEventsUp": 2,
+        "scrollEventsUp": 0,
+        "downSent": 5
+      },
+      {
+        "r": 2,
+        "bottom": 1961,
+        "afterDown": 1961,
+        "afterUp60": 1925,
+        "afterUp310": 1761,
+        "movedFirstUp": 36,
+        "movedTwoUp": 200,
+        "wheelEventsDown": 5,
+        "scrollEventsDown": 0,
+        "wheelEventsUp": 2,
+        "scrollEventsUp": 0,
+        "downSent": 5
+      }
+    ]
+  }
+}

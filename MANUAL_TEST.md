@@ -380,9 +380,10 @@
 - [x] **滚到最底部后，再多滚 3–5 格，然后立刻往上滚：第一格就要动**（消息列表与会话列表都要试）
       （0.5.8 修的是**这个**：底部之下的多余下滚被 scroll chaining 交给了祖先，Chromium 把手势 latch
       在不能滚的祖先上，反向第一格就再也回不来。`web/probe-wheel-real.mjs` 用真实 `WM_MOUSEWHEEL`
-      量过：修前消息列表 4/4 轮、会话列表 3/3 轮「0 位移 + 0 个 scroll 事件」；加
+      量过：修前消息列表 3/3 轮、会话列表 3/3 轮「0 位移 + 0 个 scroll 事件」；加
       `overscroll-behavior: contain` 后两种列表各 3/3 轮第一格就动。注意 `probe-scroll-jcef.mjs` 永远
-      测不到这一条 —— CDP 注入的是像素级 delta，不经过那条动画路径）
+      测不到这一条 —— CDP 注入的是像素级 delta，不经过那条动画路径。两轮原始 verdict 见
+      `specs/022-scroll-jank/evidence/`）
 - [x] 长会话**滚到顶再回到底部，滚动条长度不来回跳**
       （`web/probe-scroll-hitch.mjs` 连做 4 个来回、每个来回采样 6 点：`scrollHeight` 恒为 10379、
       滚动条比例恒为 0.0719，一个值都没变）

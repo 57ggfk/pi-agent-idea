@@ -45,7 +45,8 @@ try {
     if (hit) page = p;
   }
   if (!page) throw new Error("no pi webview among CDP pages");
-  result.page = page.url();
+  // Never persist the bridge session token (see probe-wheel-real.mjs).
+  result.page = page.url().replace(/([?&]token=)[^&#]*/gi, "$1<redacted>");
 
   // Which build is actually loaded?
   const assets = await page.evaluate(() =>

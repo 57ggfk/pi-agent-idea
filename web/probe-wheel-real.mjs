@@ -56,7 +56,10 @@ try {
     if (hit) page = p;
   }
   if (!page) throw new Error("no pi webview among CDP pages");
-  result.page = page.url();
+  // The verdict file gets committed as evidence from time to time, and the UI
+  // server hands out a session token in its own query string. Never let that
+  // reach disk: it is a live credential for the local bridge.
+  result.page = page.url().replace(/([?&]token=)[^&#]*/gi, "$1<redacted>");
 
   // A fresh document: earlier runs (and the app itself) leave listeners and
   // injected styles on `window`, and a stale wheel listener silently doubles

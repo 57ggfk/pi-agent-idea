@@ -47,7 +47,8 @@ try {
     if (hit) page = p;
   }
   if (!page) throw new Error("no pi webview among CDP pages");
-  result.page = page.url();
+  // Never persist the bridge session token (see probe-wheel-real.mjs).
+  result.page = page.url().replace(/([?&]token=)[^&#]*/gi, "$1<redacted>");
 
   // ---- open the longest transcript -------------------------------------
   if (await page.getByTestId("tab-sessions").count()) {
