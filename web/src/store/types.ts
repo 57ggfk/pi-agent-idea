@@ -1,11 +1,42 @@
 /**
- * Chat item model + pure event reducer.
+ * Chat item model + event reducer.
  *
  * The reducer folds pi's RPC event stream (docs/json.md) into a flat list of
- * chat items. It is a pure function so it can be unit-tested without React.
+ * chat items. It has no React dependency and stays unit-testable in plain
+ * Node; the one piece of ambient state it reads is the i18n locale — system
+ * notice copy is snapshotted in the language current at generation time
+ * (spec 031 FR-005, same convention as the store's error.* notices), and the
+ * eager English base bundle keeps Node tests producing real text (FR-007).
  */
 
 import { displaySkillText } from "../lib/skillDisplay";
+import { FALLBACK, i18n } from "../i18n";
+import { formatNumber } from "../i18n/format";
+
+/** Shorthand for reducer-side (non-React) copy; English falls out of the base bundle. */
+const t = i18n.t.bind(i18n);
+
+/**
+ * Locale-aware token figure for compaction notices (031 FR-010): thousands
+ * grouping per the current locale ("12,000"), never a hardcoded comma.
+ * Missing / non-numeric values degrade to the "?" the old template showed.
+ */
+export function formatTokens(value: unknown): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "?";
+  return formatNumber(value, i18n.language || FALLBACK);
+}
+
+/**
+ * Compaction reason for display (031 FR-009): the known pi values map to
+ * localized words, anything else passes through verbatim. A missing reason
+ * keeps the "manual" default the original template used.
+ */
+export function compactionReasonText(reason: unknown): string {
+  const raw = String(reason ?? "manual");
+  if (raw === "manual") return t("notice.compaction.reasonManual");
+  if (raw === "auto") return t("notice.compaction.reasonAuto");
+  return raw;
+}
 
 export type ContentBlock =
   | { kind: "text"; text: string; done: boolean }
@@ -344,7 +375,10 @@ export function applyEvent(items: ChatItem[], event: AnyRecord): ChatItem[] {
       // Provider stream errors (e.g. 401/404/5xx from the API) arrive as
       // assistantMessageEvent {type:"error"} — surface them and stop the spin.
       if (ev["type"] === "error") {
-        const text = `⚠ ${String(ev["reason"] ?? "error")}: ${String(ev["error"] ?? "unknown provider error")}`;
+        const text = t("notice.provider.error", {
+          reason: String(ev["reason"] ?? "error"),
+          error: String(ev["error"] ?? "unknown provider error"),
+        });
         const idx = lastIndexOfRole(items, "assistant");
         if (idx >= 0) {
           const next = items.slice();
@@ -524,22 +558,30 @@ export function applyEvent(items: ChatItem[], event: AnyRecord): ChatItem[] {
       }));
     }
 
-    case "compaction_start": {
+    // 031 FR-001: pi 18.0.7 emits `auto_compaction_*` (the old
+    // `compaction_start`/`compaction_end` names never fire — dead branches).
+    // `action` is deliberately not rendered: an unstable internal detail
+    // (FR-012). Copy is snapshotted at generation time (FR-005).
+    case "auto_compaction_start": {
       const item = emptyItem("system", [
-        { kind: "text", text: `Compacting context (reason: ${String(event["reason"] ?? "manual")})…`, done: true },
+        {
+          kind: "text",
+          text: t("notice.compaction.start", { reason: compactionReasonText(event["reason"]) }),
+          done: true,
+        },
       ]);
       item.done = true;
       return [...items, item];
     }
 
-    case "compaction_end": {
+    case "auto_compaction_end": {
       const result = asRecord(event["result"]);
       const before = result ? result["tokensBefore"] : undefined;
       const after = result ? result["estimatedTokensAfter"] : undefined;
       const aborted = Boolean(event["aborted"]);
       const text = aborted
-        ? "Compaction aborted."
-        : `Context compacted: ${before ?? "?"} → ${after ?? "?"} tokens.`;
+        ? t("notice.compaction.aborted")
+        : t("notice.compaction.end", { before: formatTokens(before), after: formatTokens(after) });
       const item = emptyItem("system", [{ kind: "text", text, done: true }]);
       item.done = true;
       return [...items, item];

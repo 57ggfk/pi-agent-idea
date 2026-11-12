@@ -1,4 +1,5 @@
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { setLanguage } from "../i18n";
 import {
   actionsForItem,
   applyEvent,
@@ -154,17 +155,39 @@ describe("applyEvent", () => {
     expect(block.id).toBe("call_x");
   });
 
-  it("compaction events add system notices", () => {
-    let items = applyEvent([], { type: "compaction_start", reason: "threshold" });
+  it("auto compaction events add system notices with locale-formatted tokens (031 FR-001/010)", () => {
+    let items = applyEvent([], { type: "auto_compaction_start", reason: "auto" });
     expect(items[0].role).toBe("system");
+    expect(textOf(items, 0)).toBe("Compacting context (auto)…");
     items = applyEvent(items, {
-      type: "compaction_end",
-      reason: "threshold",
-      result: { summary: "s", tokensBefore: 100, estimatedTokensAfter: 20 },
+      type: "auto_compaction_end",
+      reason: "auto",
+      result: { summary: "s", tokensBefore: 12000, estimatedTokensAfter: 3400 },
     });
     expect(items).toHaveLength(2);
-    expect(textOf(items, 1)).toContain("100");
-    expect(textOf(items, 1)).toContain("20");
+    expect(textOf(items, 1)).toBe("Context compacted: 12,000 → 3,400 tokens.");
+  });
+
+  it("aborted auto compaction shows the aborted notice (031 US4)", () => {
+    const items = applyEvent([], { type: "auto_compaction_end", aborted: true });
+    expect(textOf(items, 0)).toBe("Compaction aborted.");
+  });
+
+  it("the pre-18.0.7 compaction_* event names are dead branches — no items (031 FR-001)", () => {
+    expect(applyEvent([], { type: "compaction_start", reason: "manual" })).toHaveLength(0);
+    expect(applyEvent([], { type: "compaction_end", result: { tokensBefore: 1 } })).toHaveLength(0);
+  });
+
+  it("unknown compaction reasons pass through verbatim; missing reason defaults to manual (031 FR-009)", () => {
+    const items = applyEvent([], { type: "auto_compaction_start", reason: "handoff" });
+    expect(textOf(items, 0)).toBe("Compacting context (handoff)…");
+    const noReason = applyEvent([], { type: "auto_compaction_start" });
+    expect(textOf(noReason, 0)).toBe("Compacting context (manual)…");
+  });
+
+  it("non-numeric token figures degrade to ? like the old template (031 FR-010)", () => {
+    const items = applyEvent([], { type: "auto_compaction_end", result: {} });
+    expect(textOf(items, 0)).toBe("Context compacted: ? → ? tokens.");
   });
 
   it("ignores events without type", () => {
@@ -679,5 +702,42 @@ describe("quoteMarkdownSource", () => {
 
   it("round-trips a single line unchanged apart from the prefix", () => {
     expect(quoteMarkdownSource("hello")).toBe("> hello");
+  });
+});
+
+describe("compaction notices under zh (031 FR-002/005/009/010)", () => {
+  beforeEach(async () => {
+    await setLanguage("zh");
+  });
+  afterEach(async () => {
+    await setLanguage("en");
+  });
+
+  it("manual compaction shows Chinese copy with the reason mapped (FR-009)", () => {
+    const start = applyEvent([], { type: "auto_compaction_start", reason: "manual" });
+    expect(textOf(start, 0)).toBe("正在压缩上下文（手动）…");
+    const end = applyEvent(start, {
+      type: "auto_compaction_end",
+      result: { tokensBefore: 12000, estimatedTokensAfter: 3400 },
+    });
+    expect(textOf(end, 1)).toBe("上下文已压缩：12,000 → 3,400 tokens。");
+  });
+
+  it("aborted compaction is Chinese (US4)", () => {
+    const items = applyEvent([], { type: "auto_compaction_end", aborted: true });
+    expect(textOf(items, 0)).toBe("压缩已中断。");
+  });
+
+  it("unknown reasons pass through untranslated in zh too (FR-009)", () => {
+    const items = applyEvent([], { type: "auto_compaction_start", reason: "snapcompact" });
+    expect(textOf(items, 0)).toBe("正在压缩上下文（snapcompact）…");
+  });
+
+  it("provider stream errors keep the ⚠ shape under zh", () => {
+    const items = applyEvent([], {
+      type: "message_update",
+      assistantMessageEvent: { type: "error", reason: "api", error: "404: No endpoints available" },
+    });
+    expect(textOf(items, 0)).toBe("⚠ api: 404: No endpoints available");
   });
 });
