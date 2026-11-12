@@ -284,6 +284,20 @@ export const zh: Dict = {
   "error.queueClear.failed": "queue.clear 失败：{{msg}}",
   "error.switchSession.failed": "切换会话失败：{{msg}}",
   "error.restart.failed": "重启失败：{{msg}}",
+  // 031：消息流里插入的系统提示（压缩 + 同一批发后即忘的失败通知）。
+  // reason 已知值映射中文（manual→手动、auto→自动），未知值原样透传。
+  "notice.compaction.start": "正在压缩上下文（{{reason}}）…",
+  "notice.compaction.end": "上下文已压缩：{{before}} → {{after}} tokens。",
+  "notice.compaction.aborted": "压缩已中断。",
+  "notice.compaction.failed": "压缩失败：{{msg}}",
+  "notice.compaction.reasonManual": "手动",
+  "notice.compaction.reasonAuto": "自动",
+  "notice.send.failed": "发送失败：{{msg}}",
+  "notice.rename.failed": "重命名失败：{{msg}}",
+  "notice.export.failed": "导出失败：{{msg}}",
+  "notice.setModel.failed": "切换模型失败：{{msg}}",
+  "notice.thinking.failed": "设置思考等级失败：{{msg}}",
+  "notice.provider.error": "⚠ {{reason}}: {{error}}",
   // 026：重试横条（所有页签可见——失败落在会话列表页，聊天区的错误条目看不见）。
   "switch.retryBar": "会话切换失败，目标：{{file}}",
   "switch.retryDismiss": "忽略",

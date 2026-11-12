@@ -290,6 +290,21 @@ export const en = {
   "error.queueClear.failed": "queue.clear failed: {{msg}}",
   "error.switchSession.failed": "switch_session failed: {{msg}}",
   "error.restart.failed": "restart failed: {{msg}}",
+  // 031: system notices inserted into the transcript (compaction + the same
+  // family of fire-and-forget failures). English wording matches what used to
+  // be hardcoded verbatim (US5); en reason words are the raw pi values.
+  "notice.compaction.start": "Compacting context ({{reason}})…",
+  "notice.compaction.end": "Context compacted: {{before}} → {{after}} tokens.",
+  "notice.compaction.aborted": "Compaction aborted.",
+  "notice.compaction.failed": "compact failed: {{msg}}",
+  "notice.compaction.reasonManual": "manual",
+  "notice.compaction.reasonAuto": "auto",
+  "notice.send.failed": "Failed to send: {{msg}}",
+  "notice.rename.failed": "rename failed: {{msg}}",
+  "notice.export.failed": "export failed: {{msg}}",
+  "notice.setModel.failed": "set_model failed: {{msg}}",
+  "notice.thinking.failed": "set_thinking_level failed: {{msg}}",
+  "notice.provider.error": "⚠ {{reason}}: {{error}}",
   // 026: the retry bar (visible on every tab — a failed switch lands on the
   // session list where transcript error items would be invisible).
   "switch.retryBar": "Session switch failed — target: {{file}}",
