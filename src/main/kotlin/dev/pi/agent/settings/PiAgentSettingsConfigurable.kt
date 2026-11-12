@@ -9,16 +9,19 @@ import java.awt.GridBagConstraints
 import java.awt.GridBagLayout
 import java.awt.Insets
 import javax.swing.JComponent
+import javax.swing.JLabel
 import javax.swing.JPanel
 
 /**
- * Settings → Tools → Pi Agent: explicit pi executable path and tool-window
- * auto-open. Plain Swing so it compiles cleanly against the 2024.3.1
- * baseline; no UI DSL.
+ * Settings → Tools → Pi Agent: explicit pi executable path, explicit Node
+ * interpreter (028 FR-010 — both fields clear back to "discover") and
+ * tool-window auto-open. Plain Swing so it compiles cleanly against the
+ * 2024.3.1 baseline; no UI DSL.
  */
 class PiAgentSettingsConfigurable : Configurable {
 
     private var pathField: TextFieldWithBrowseButton? = null
+    private var nodePathField: TextFieldWithBrowseButton? = null
     private var autoOpenBox: JBCheckBox? = null
 
     override fun getDisplayName(): String = "Pi Agent"
@@ -36,16 +39,31 @@ class PiAgentSettingsConfigurable : Configurable {
             )
             text = settings.customPiPath() ?: ""
         }
+        nodePathField = TextFieldWithBrowseButton().apply {
+            addBrowseFolderListener(
+                TextBrowseFolderListener(FileChooserDescriptorFactory.createSingleFileNoJarsDescriptor()),
+            )
+            text = settings.nodePath() ?: ""
+        }
         autoOpenBox = JBCheckBox(dev.pi.agent.PiAgentBundle.message("settings.autoOpen"), settings.autoOpen())
 
         val c = GridBagConstraints()
-        c.gridx = 0
         c.weightx = 1.0
         c.fill = GridBagConstraints.HORIZONTAL
         c.insets = Insets(4, 0, 4, 0)
         val panel = JPanel(GridBagLayout())
+        c.gridx = 0
+        panel.add(JLabel(dev.pi.agent.PiAgentBundle.message("settings.piPath")), c)
+        c.gridx = 1
         panel.add(pathField, c)
         c.gridy = 1
+        c.gridx = 0
+        panel.add(JLabel(dev.pi.agent.PiAgentBundle.message("settings.nodePath")), c)
+        c.gridx = 1
+        panel.add(nodePathField, c)
+        c.gridy = 2
+        c.gridx = 0
+        c.gridwidth = 2
         panel.add(autoOpenBox, c)
         return panel
     }
@@ -53,19 +71,28 @@ class PiAgentSettingsConfigurable : Configurable {
     override fun isModified(): Boolean {
         val settings = PiAgentSettings.getInstance()
         val path = pathField?.text?.trim().orEmpty()
-        return path != (settings.customPiPath() ?: "") || autoOpenBox?.isSelected != settings.autoOpen()
+        val nodePath = nodePathField?.text?.trim().orEmpty()
+        return path != (settings.customPiPath() ?: "") ||
+            nodePath != (settings.nodePath() ?: "") ||
+            autoOpenBox?.isSelected != settings.autoOpen()
     }
 
     override fun apply() {
         val settings = PiAgentSettings.getInstance()
         val pathBefore = settings.customPiPath()
+        val nodePathBefore = settings.nodePath()
         val path = pathField?.text?.trim().orEmpty()
+        val nodePath = nodePathField?.text?.trim().orEmpty()
         settings.setCustomPiPath(path.takeIf { it.isNotBlank() })
+        // setNodePath already restarts pi everywhere on change (028 FR-006).
+        settings.setNodePath(nodePath.takeIf { it.isNotBlank() }, onChanged = {})
         settings.setAutoOpen(autoOpenBox?.isSelected ?: false)
         if (pathBefore != settings.customPiPath()) {
             // pi must pick up the new executable: drop the cached discovery
             // result and restart running instances in every open project.
             dev.pi.agent.process.PiLocator.locate(forceRefresh = true)
+        }
+        if (pathBefore != settings.customPiPath() || nodePathBefore != settings.nodePath()) {
             PiAgentSettings.restartPiEverywhere()
         }
     }
@@ -73,11 +100,13 @@ class PiAgentSettingsConfigurable : Configurable {
     override fun reset() {
         val settings = PiAgentSettings.getInstance()
         pathField?.text = settings.customPiPath() ?: ""
+        nodePathField?.text = settings.nodePath() ?: ""
         autoOpenBox?.isSelected = settings.autoOpen()
     }
 
     override fun disposeUIResources() {
         pathField = null
+        nodePathField = null
         autoOpenBox = null
     }
 }

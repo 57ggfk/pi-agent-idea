@@ -152,6 +152,13 @@ export const en = {
   "setup.nodeWarnMid": "or, on a slow link,",
   "setup.nodeWarnMirror": "the China mirror",
   "setup.nodeWarnEnd": "then reopen this tool window.",
+  "setup.nodeMissing": "(not found)",
+  "setup.nodeWarnScript": "the official install script below installs its own Node.",
+  "setup.scriptLabel": "Official install script (installs Node too)",
+  "setup.scriptHint": "The full command is shown before anything runs; the script comes from pi.dev and downloads remote code.",
+  "setup.scriptConfirmBody": "About to run (source: pi.dev):",
+  "setup.scriptRun": "Run it",
+  "setup.scriptOpen": "Use the official install script…",
   "setup.installLabel": "Install through npm",
   "setup.custom": "Custom…",
   "setup.customHint":
@@ -164,6 +171,8 @@ export const en = {
   "setup.stopHint": "Stop npm and keep the current state",
   "setup.noNpm":
     "npm was not found, so the plugin cannot install pi for you. Install Node.js (it ships npm), or point at an existing pi below.",
+  "setup.blockerNoNode": "No Node.js was found — the npm route is off; the official install script above installs its own Node.",
+  "setup.blockerNodeVersion": "Node is too old: {{min}} or newer is required, found {{cur}}. Upgrade Node, or use the official install script above.",
   "setup.manualLabel": "Or point at an existing pi",
   "setup.usePath": "Use this path",
   "setup.errBlank": "Paste a registry URL first, or pick npm default.",

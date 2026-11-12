@@ -116,7 +116,10 @@ export default function CustomProviderForm({
     setBusy(true);
     try {
       const payload = toPayload(form) as unknown as CustomProviderPayload;
-      const res = await api.providerSave({ provider: payload, overwrite });
+      // An EDIT of an existing definition already implies overwrite — the
+      // confirm strip is for the CREATE path (a brand-new form overwriting a
+      // name that exists, or a bundled provider).
+      const res = await api.providerSave({ provider: payload, overwrite: overwrite || editing != null });
       if (!res.ok) {
         if (res.code === "builtin" || res.code === "exists") {
           setConfirmOverwrite(res.code as "builtin" | "exists");
