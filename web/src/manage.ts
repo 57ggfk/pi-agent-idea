@@ -79,8 +79,58 @@ export interface McpSetEnabledResult extends CliOutcome {
   warning?: string;
 }
 
+/** One configured package, structured from `pi list` output (033 FR-001/FR-002). */
+export interface PackageEntry {
+  source: string;
+  /** "user" | "project" — the section header pi printed, lowercased. */
+  scope: string;
+  /** Resolved install path; absent = declared but not installed / files missing. */
+  path?: string;
+  /** From the path's package.json; absent = unknown (unreadable or broken). */
+  version?: string;
+  /** Source line without a path line (probe P13/P18): offer a reinstall. */
+  broken: boolean;
+}
+
 export interface PackagesListResult extends CliOutcome {
-  lines?: string[];
+  entries?: PackageEntry[];
+}
+
+/**
+ * One-shot version check (033 FR-003). `state` is the three-way verdict;
+ * `reason` explains an "unknown": offline | auth | not-found | bad-response |
+ * git-ref | local.
+ */
+export interface PackageCheckResult extends CliOutcome {
+  source?: string;
+  installed?: string;
+  latest?: string;
+  state?: "up-to-date" | "upgradable" | "unknown";
+  reason?: string;
+}
+
+/** One gallery card from the npm `pi-package` search (033 FR-006). */
+export interface MarketPackage {
+  name: string;
+  version: string;
+  description: string;
+  author: string;
+  downloads: number;
+  updated: string;
+  badges: string[];
+  linkNpm: string;
+  linkRepo: string;
+}
+
+export interface MarketSearchResult extends CliOutcome {
+  total?: number;
+  page?: number;
+  pageSize?: number;
+  /** True when the registry ignored the `keywords:` filter (npmmirror, P19). */
+  degraded?: boolean;
+  packages?: MarketPackage[];
+  /** Set with ok:false: offline | auth | unavailable (endpoint missing). */
+  code?: "offline" | "auth" | "unavailable";
 }
 
 /** `pi update` reports the outcome itself; the plugin only relays it. */
@@ -336,11 +386,21 @@ export function manageApi(bridge: Bridge) {
      */
     mcpSetEnabled: (p: { name: string; scope: string; enabled: boolean }) =>
       call<McpSetEnabledResult>("manage.mcpSetEnabled", p),
+    /**
+     * 033: the explicit registry override travels with the network-touching
+     * calls; empty/absent = "follow npm config" (the backend resolves the
+     * chain and never rewrites .npmrc).
+     */
     packagesList: () => call<PackagesListResult>("manage.packagesList"),
-    packageInstall: (p: { source: string }) => call<CliOutcome>("manage.packageInstall", p),
+    packageInstall: (p: { source: string; registry?: string }) => call<CliOutcome>("manage.packageInstall", p),
     packageRemove: (p: { source: string }) => call<CliOutcome>("manage.packageRemove", p),
-    packageUpdate: (p: { source: string }) => call<CliOutcome>("manage.packageUpdate", p),
-    packageUpdateAll: () => call<CliOutcome>("manage.packageUpdateAll"),
+    packageCheck: (p: { source: string; registry?: string }) => call<PackageCheckResult>("manage.packageCheck", p),
+    marketSearch: (p: { query?: string; page?: number; pageSize?: number; registry?: string }) =>
+      call<MarketSearchResult>("manage.marketSearch", p),
+    packageUpdateAll: (p?: { registry?: string }) => call<CliOutcome>("manage.packageUpdateAll", p ?? {}),
+    prefsGet: () =>
+      call<{ autoRetry?: boolean; theme?: string; language?: string; registryOverride?: string }>("config.getPrefs"),
+    prefsSet: (p: { registryOverride?: string | null }) => call<{ ok: boolean }>("config.setPrefs", p),
     envUpdate: () => call<EnvUpdateResult>("manage.envUpdate"),
     modelsReadProvider: (p: { name: string }) => call<ProviderInfoResult>("manage.modelsReadProvider", p),
     /** 027: custom provider definition (models.json form). The key never

@@ -4885,3 +4885,194 @@ button {
   color: var(--text);
   background: var(--surface-hover);
 }
+
+/* -- 033: package management (tabs, registry row, market cards) -------------- */
+
+.panel-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.panel-tab {
+  border: 1px solid transparent;
+  border-bottom: none;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: 8px 8px 0 0;
+  padding: 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.panel-tab-on {
+  color: var(--text);
+  background: var(--bg-secondary);
+  border-color: var(--border);
+  font-weight: 600;
+}
+
+.package-registry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  font-size: 11px;
+}
+
+.package-registry-title {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.package-registry-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary);
+}
+
+.package-registry-input {
+  flex: 1;
+  min-width: 180px;
+  max-width: 320px;
+  font-size: 11px;
+}
+
+.package-row-sub {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pkg-version {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.pkg-scope {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 5px;
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+.pkg-status-broken {
+  color: var(--danger, #d14343);
+  font-size: 11px;
+}
+
+.pkg-check {
+  color: var(--accent-text);
+  font-size: 11px;
+}
+
+.cli-details {
+  margin-top: 4px;
+  font-size: 11px;
+}
+
+.cli-details summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+
+.cli-details pre {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px;
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.market-degraded {
+  margin-bottom: 6px;
+}
+
+.market-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  padding: 8px 10px;
+  margin-bottom: 6px;
+}
+
+.market-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.market-name {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.pkg-badge {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 5px;
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+.market-card-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pkg-installed {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.market-desc {
+  color: var(--text-secondary);
+  font-size: 11px;
+  margin: 4px 0;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.market-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.market-link {
+  color: var(--accent-text);
+  text-decoration: none;
+}
+
+.market-link:hover {
+  text-decoration: underline;
+}
+
+.market-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}

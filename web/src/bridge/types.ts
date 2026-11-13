@@ -51,7 +51,10 @@ export type BridgeMethod =
   | "manage.packagesList"
   | "manage.packageInstall"
   | "manage.packageRemove"
-  | "manage.packageUpdate"
+  // 033: version check and gallery search; the single-package `pi update
+  // <source>` RPC is gone — pi 1.5.0 rejects every notation (FR-004).
+  | "manage.packageCheck"
+  | "manage.marketSearch"
   | "manage.packageUpdateAll"
   | "manage.envUpdate"
   | "manage.modelsReadProvider"

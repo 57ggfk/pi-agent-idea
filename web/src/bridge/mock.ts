@@ -93,6 +93,120 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// -- 033 package fixtures -----------------------------------------------------
+
+/** `npm:name` vs `npm:name@1.2.3` compare on the name part only. */
+function sameNpmSource(line: string, source: string): boolean {
+  return stripVersionSuffix(line) === stripVersionSuffix(source);
+}
+
+/** `npm:x@1.2.3` → `npm:x`; other schemes keep their tail (mock-only aid). */
+function stripVersionSuffix(source: string): string {
+  const at = source.lastIndexOf("@");
+  return at > source.indexOf(":") + 1 && /@[\w.+-]+$/.test(source)
+    ? source.slice(0, at)
+    : source;
+}
+
+/** `npm:x@1.2.3` → `1.2.3`, else undefined. */
+function versionSuffix(source: string): string | undefined {
+  const m = /@([\w.+-]+)$/.exec(source);
+  return m?.[1];
+}
+
+function bumpVersion(version: string): string {
+  const m = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
+  if (!m) return version;
+  return `${m[1]}.${Number(m[2]) + 1}.0`;
+}
+
+/** The gallery the market tab renders: 137 deterministic entries (P15 shape). */
+function marketFixture(): Array<{
+  name: string;
+  version: string;
+  description: string;
+  author: string;
+  downloads: number;
+  updated: string;
+  badges: string[];
+  linkNpm: string;
+  linkRepo: string;
+}> {
+  const curated = [
+    {
+      name: "billion-context",
+      version: "0.1.213",
+      description: "A context-compression plugin for pi and other agents",
+      author: "ranxianglei",
+      downloads: 3257276,
+      updated: "2026-11-13T16:02:38.501Z",
+      badges: ["package"],
+      linkNpm: "https://www.npmjs.com/package/billion-context",
+      linkRepo: "git+https://github.com/ranxianglei/billion-context.git",
+    },
+    {
+      name: "pi-mcp-adapter",
+      version: "7.0.1",
+      description: "Bridge MCP servers into pi sessions",
+      author: "nicobailon",
+      downloads: 41230,
+      updated: "2026-11-10T08:00:00.000Z",
+      badges: ["package"],
+      linkNpm: "https://www.npmjs.com/package/pi-mcp-adapter",
+      linkRepo: "git+https://github.com/nicobailon/pi-mcp-adapter.git",
+    },
+    {
+      name: "pi-web-access",
+      version: "0.47.0",
+      description: "Give pi web search and fetch tools",
+      author: "nicobailon",
+      downloads: 128004,
+      updated: "2026-11-12T09:30:00.000Z",
+      badges: ["extension"],
+      linkNpm: "https://www.npmjs.com/package/pi-web-access",
+      linkRepo: "git+https://github.com/nicobailon/pi-web-access.git",
+    },
+    {
+      name: "pi-subagents",
+      version: "0.88.1",
+      description: "Spawn focused subagents from a pi session",
+      author: "nicobailon",
+      downloads: 96012,
+      updated: "2026-11-11T21:00:00.000Z",
+      badges: ["package"],
+      linkNpm: "https://www.npmjs.com/package/pi-subagents",
+      linkRepo: "git+https://github.com/nicobailon/pi-subagents.git",
+    },
+    {
+      name: "openwiki",
+      version: "0.9.0",
+      description: "Wikipedia research skills for pi",
+      author: "langchain-ai",
+      downloads: 2561,
+      updated: "2026-11-05T12:00:00.000Z",
+      badges: ["package"],
+      linkNpm: "https://www.npmjs.com/package/openwiki",
+      linkRepo: "git+https://github.com/langchain-ai/openwiki.git",
+    },
+  ];
+  const filler = Array.from({ length: 132 }, (_, i) => {
+    const n = i + 6;
+    const name = `pi-sample-${String(n).padStart(3, "0")}`;
+    return {
+      name,
+      version: `1.${n}.0`,
+      description: `Sample gallery package number ${n} for pagination tests`,
+      author: `mock-author-${n % 5}`,
+      downloads: n * 1000,
+      updated: "2026-11-01T00:00:00.000Z",
+      badges: n % 7 === 0 ? ["extension"] : ["package"],
+      linkNpm: `https://www.npmjs.com/package/${name}`,
+      linkRepo: `git+https://github.com/mock/${name}.git`,
+    };
+  });
+  return [...curated, ...filler];
+}
+
 /** bridge method / rpc command → the source id it feeds (spec 003). */
 const METHOD_SOURCE: Record<string, string> = {
   "files.list": "files",
@@ -284,14 +398,30 @@ export class MockBridge implements Bridge {
   private readonly mcpOverride = query()?.get("mcpoverride") === "1";
   /** Reported by manage.env; bumped by a successful manage.envUpdate. */
   private piVersion = "1.4.0-mock";
-  /** Installed packages as `pi list` lines; packageUpdate bumps the version.
-   *  `?pkgs=2` adds a second package and `?pkgs=0` empties the list, so the
-   *  update-all flow (018 US6) has both an "all" of two rows and the empty
-   *  state its button must refuse. */
+  /** Installed packages as `pi list` source lines; the structured entries the
+   *  panel consumes are derived per call (033). A version-pinned install moves
+   *  the line's version. `?pkgs=2` adds a git package, `?pkgs=0` empties the
+   *  list (the empty state its button must refuse), and `?pkgbroken=1` adds a
+   *  source line without a resolved path — the "declared but not installed /
+   *  files missing" shape (probe P13/P18). */
   private packages = [
     ...(query()?.get("pkgs") === "0" ? [] : ["npm:@example/pi-tools@1.0.0"]),
     ...(query()?.get("pkgs") === "2" ? ["git:github.com/example/pi-git-pkg@0.3.0"] : []),
+    ...(query()?.get("pkgbroken") === "1" ? ["npm:@example/pi-broken"] : []),
   ];
+  /** 033: explicit npm registry override, mirroring PiUserPrefs (null = follow
+   *  npm). PiUserPrefs survives IDE restarts, so the mock keeps the value in
+   *  sessionStorage across reloads; `?regoverride=<url|none>` seeds it for e2e. */
+  private registryOverride: string | null = (() => {
+    const knob = query()?.get("regoverride");
+    if (knob === "none") return null;
+    if (knob) return knob;
+    try {
+      return globalThis.sessionStorage?.getItem("pi-mock-registry-override") ?? null;
+    } catch {
+      return null;
+    }
+  })();
   /** `?models=broken|missing` — the models.json world the Auth panel must explain.
    *  `?models=now|many20|providers55` — 020 model-scale fixtures (see
    *  `pickerModels`); they only change the catalog size, the auth panels ignore
@@ -698,6 +828,8 @@ export class MockBridge implements Bridge {
         theme: this.themePreference,
         language: this.languagePreference,
         providerSetupSkipped: this.providerSetupSkipped,
+        // 033: explicit npm registry override; absent = follow npm config.
+        ...(this.registryOverride == null ? {} : { registryOverride: this.registryOverride }),
       } as T);
     }
     if (method === "config.setPrefs") {
@@ -706,6 +838,7 @@ export class MockBridge implements Bridge {
         theme?: string;
         language?: string;
         providerSetupSkipped?: boolean;
+        registryOverride?: string | null;
       } | undefined;
       if (typeof prefs?.autoRetry === "boolean") this.autoRetryEnabled = prefs.autoRetry;
       if (prefs?.theme === "system" || prefs?.theme === "light" || prefs?.theme === "dark") {
@@ -713,6 +846,20 @@ export class MockBridge implements Bridge {
       }
       if (typeof prefs?.language === "string") this.languagePreference = prefs.language;
       if (typeof prefs?.providerSetupSkipped === "boolean") this.providerSetupSkipped = prefs.providerSetupSkipped;
+      if (prefs && "registryOverride" in prefs) {
+        this.registryOverride = typeof prefs.registryOverride === "string" && prefs.registryOverride.trim()
+          ? prefs.registryOverride.trim()
+          : null;
+        try {
+          if (this.registryOverride == null) {
+            globalThis.sessionStorage?.removeItem("pi-mock-registry-override");
+          } else {
+            globalThis.sessionStorage?.setItem("pi-mock-registry-override", this.registryOverride);
+          }
+        } catch {
+          // node test env has no sessionStorage
+        }
+      }
       return Promise.resolve({ ok: true } as T);
     }
     if (method === "approval.getPolicy") {
@@ -925,11 +1072,10 @@ export class MockBridge implements Bridge {
       case "manage.mcpRemove":
       case "manage.mcpLogin":
       case "manage.mcpLogout":
-      case "manage.packageInstall":
       case "manage.packageRemove":
       case "manage.skillCreate":
         return { ok: true, output: "mock: done" };
-      case "manage.packageUpdate": {
+      case "manage.packageInstall": {
         const p = (params ?? {}) as { source?: string };
         if (!p.source) return { ok: false, error: "missing source" };
         if (this.shouldFail("update")) {
@@ -937,19 +1083,72 @@ export class MockBridge implements Bridge {
             ok: false,
             exitCode: 1,
             output:
-              "npm error code E404\nnpm error 404 '@example/pi-extra@latest' is not in the npm registry",
+              "npm error code E404\nnpm error 404 '@example/pi-extra' is not in the npm registry",
           };
         }
-        const idx = this.packages.findIndex((l) => l.includes(p.source!));
-        if (idx < 0) return { ok: false, exitCode: 1, output: `not installed: ${p.source}` };
-        // A successful update changes the version the list reports, so the
-        // "update refreshes the version" e2e can assert on the row text.
-        const bumped = this.packages[idx].replace(
-          /(\d+)\.(\d+)\.(\d+)/,
-          (_m, a: string, b: string, c: string) => `${a}.${Number(b) + 1}.${c}`,
-        );
-        this.packages[idx] = bumped;
-        return { ok: true, exitCode: 0, output: `updated ${p.source} -> ${bumped}` };
+        // 033: upgrades arrive as version-pinned installs. One that names an
+        // installed package moves its version (the physical reinstall, P10/P11);
+        // a new source appends, so the market-install e2e sees the row appear.
+        const idx = this.packages.findIndex((l) => sameNpmSource(l, p.source!));
+        const pinned = versionSuffix(p.source!) ?? "";
+        if (idx >= 0) {
+          if (pinned) this.packages[idx] = stripVersionSuffix(this.packages[idx]) + "@" + pinned;
+          return { ok: true, exitCode: 0, output: `changed 1 package in 2s\nInstalled ${p.source}` };
+        }
+        this.packages.push(p.source);
+        return { ok: true, exitCode: 0, output: `added 1 package in 5s\nInstalled ${p.source}` };
+      }
+      case "manage.packageCheck": {
+        const p = (params ?? {}) as { source?: string };
+        if (!p.source) return { ok: false, error: "missing source" };
+        const checkKnob = query()?.get("check");
+        if (checkKnob === "offline") return { ok: true, source: p.source, state: "unknown", reason: "offline" };
+        if (checkKnob === "auth") return { ok: true, source: p.source, state: "unknown", reason: "auth" };
+        if (!p.source.startsWith("npm:")) {
+          return {
+            ok: true,
+            source: p.source,
+            state: "unknown",
+            reason: p.source.startsWith("git:") ? "git-ref" : "local",
+          };
+        }
+        const idx = this.packages.findIndex((l) => sameNpmSource(l, p.source!));
+        if (idx < 0) return { ok: true, source: p.source, state: "unknown", reason: "not-found" };
+        const installed = versionSuffix(this.packages[idx]) ?? "1.0.0";
+        const latest =
+          query()?.get("pkgold") === "1" ? bumpVersion(installed) : installed;
+        return {
+          ok: true,
+          source: p.source,
+          installed,
+          latest,
+          state: latest === installed ? "up-to-date" : "upgradable",
+          reason: "",
+        };
+      }
+      case "manage.marketSearch": {
+        const p = (params ?? {}) as { query?: string; page?: number; pageSize?: number };
+        const knob = query()?.get("market");
+        if (knob === "offline") return { ok: false, code: "offline", error: "registry unreachable" };
+        if (knob === "unavailable") return { ok: false, code: "unavailable", error: "market search failed" };
+        if (knob === "auth") return { ok: false, code: "auth", error: "market search failed" };
+        const page = Math.max(1, Number(p.page ?? 1) || 1);
+        const pageSize = Math.min(50, Math.max(1, Number(p.pageSize ?? 50) || 50));
+        if (knob === "empty") return { ok: true, total: 0, page, pageSize, degraded: false, packages: [] };
+        const all = marketFixture();
+        const needle = (p.query ?? "").trim().toLowerCase();
+        const filtered = needle
+          ? all.filter((m) => (m.name + " " + m.description).toLowerCase().includes(needle))
+          : all;
+        const start = (page - 1) * pageSize;
+        return {
+          ok: true,
+          total: filtered.length,
+          page,
+          pageSize,
+          degraded: knob === "degraded",
+          packages: filtered.slice(start, start + pageSize),
+        };
       }
       case "manage.packageUpdateAll": {
         // Mirrors `pi update --extensions`: pi reports one line per package in
@@ -1007,8 +1206,26 @@ export class MockBridge implements Bridge {
         this.piVersion = "1.5.0-mock";
         return { ok: true, exitCode: 0, output: "pi updated to 1.5.0-mock", version: this.piVersion };
       }
-      case "manage.packagesList":
-        return { ok: true, lines: [...this.packages, "No packages installed."] };
+      case "manage.packagesList": {
+        const brokenLine = "npm:@example/pi-broken";
+        return {
+          ok: true,
+          entries: this.packages.map((line) => {
+            if (line === brokenLine) {
+              // The probe-P13 shape: a source line with no resolved path.
+              return { source: line, scope: "user", broken: true };
+            }
+            const name = stripVersionSuffix(line);
+            return {
+              source: line,
+              scope: "user",
+              path: `/tmp/mock-agent/npm/node_modules/${name.replace(/^[a-z]+:/, "")}`,
+              version: versionSuffix(line) ?? undefined,
+              broken: false,
+            };
+          }),
+        };
+      }
       case "manage.agentsList":
         return agentsListFixture(this.agentsKnob);
       case "manage.agentsOpen":
