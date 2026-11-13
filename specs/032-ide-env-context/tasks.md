@@ -2,7 +2,7 @@
 
 > 每个 task 带「— 验证」；task 绿即提交，当场勾选并补 run-report。
 
-- [ ] T1301 plan.md + tasks.md 落盘，run-report 补 032 行与 task 清单 — 提交即证
+- [x] T1301 plan.md + tasks.md 落盘，run-report 补 032 行与 task 清单 — 提交即证
 - [x] T1302 快照纯函数：`PiEnvSnapshot.render`（时间戳+档位标注+构建工具命令建议）与
       `filterEnvVars`（白名单+黑名单双闸、值截断）+ `PiEnvSnapshotTest`
       （假档位渲染固定文本、GITHUB_TOKEN/DB_PASSWORD 不出现而 JAVA_HOME 保留、
