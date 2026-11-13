@@ -43,7 +43,7 @@ test.describe("manage view (MockBridge)", () => {
     await expect(page.getByTestId("package-row")).toHaveCount(1);
     await page.locator(".packages-input").fill("npm:@example/pi-extra");
     await page.getByTestId("package-install").click();
-    await expect(page.getByTestId("outcome-banner")).toContainText("✓");
+    await expect(page.getByTestId("update-result")).toContainText("✓");
   });
 
   test("skills panel lists and creates skills", async ({ page }) => {
@@ -165,31 +165,49 @@ test.describe("manage view (MockBridge)", () => {
     await expect(page.getByTestId("mcp-server-row").first()).toHaveAttribute("data-enabled", "true");
   });
 
-  // -- Package update (spec 001 US2) ----------------------------------------
+  // -- Package check + upgrade (spec 033 US2/US3; the old `pi update <source>`
+  //    row button is gone — pi 1.5.0 rejects it, upgrades are pinned installs) --
 
-  test("package update refreshes the version in the list", async ({ page }) => {
+  test("check reports up-to-date by default and the upgrade button stays disabled", async ({ page }) => {
     await page.getByTestId("manage-tab-packages").click();
-    await expect(page.getByTestId("package-row")).toContainText("1.0.0");
+    await expect(page.getByTestId("package-version-0")).toContainText("1.0.0");
 
-    await page.getByTestId("package-update-0").click();
-
-    await expect(page.getByTestId("update-result")).toContainText(
-      "updated npm:@example/pi-tools@1.0.0 -> npm:@example/pi-tools@1.1.0",
-    );
-    await expect(page.getByTestId("package-row")).toContainText("1.1.0");
+    await page.getByTestId("package-check-0").click();
+    await expect(page.getByTestId("package-check-verdict-0")).toContainText("Up to date (1.0.0)");
+    await expect(page.getByTestId("package-upgrade-0")).toBeDisabled();
   });
 
-  test("a failed package update shows the raw output and the stale-version note", async ({ page }) => {
-    await openManage(page, "fail=update");
+  test("check → upgrade moves the version in the list", async ({ page }) => {
+    await openManage(page, "pkgold=1");
     await page.getByTestId("manage-tab-packages").click();
-    await page.getByTestId("package-update-0").click();
+    await expect(page.getByTestId("package-version-0")).toContainText("1.0.0");
+
+    await page.getByTestId("package-check-0").click();
+    await expect(page.getByTestId("package-check-verdict-0")).toContainText("Upgrade available: 1.0.0 → 1.1.0");
+    await expect(page.getByTestId("package-upgrade-0")).toBeEnabled();
+
+    await page.getByTestId("package-upgrade-0").click();
+    await expect(page.getByTestId("update-result")).toContainText("✓");
+    await expect(page.getByTestId("package-version-0")).toContainText("1.1.0");
+  });
+
+  test("a failed upgrade shows a friendly headline and keeps the raw npm output in details", async ({ page }) => {
+    await openManage(page, "pkgold=1&fail=update");
+    await page.getByTestId("manage-tab-packages").click();
+
+    await page.getByTestId("package-check-0").click();
+    await expect(page.getByTestId("package-check-verdict-0")).toContainText("Upgrade available");
+    await page.getByTestId("package-upgrade-0").click();
 
     const result = page.getByTestId("update-result");
-    await expect(result).toContainText("npm error 404");
-    await expect(result).toContainText("exit code 1");
-    await expect(result).toContainText("may still be the old one");
-    // A failed update must not silently bump the listed version.
-    await expect(page.getByTestId("package-row")).toContainText("1.0.0");
+    await expect(result).toContainText("✗");
+    // FR-014: the npm error wall must not be the headline…
+    await expect(page.getByTestId("update-result-headline")).not.toContainText("npm error");
+    // …and the raw output stays reachable in the collapsed details.
+    await page.getByTestId("cli-details").locator("summary").click();
+    await expect(page.getByTestId("cli-details")).toContainText("npm error 404");
+    // A failed upgrade must not silently bump the listed version.
+    await expect(page.getByTestId("package-version-0")).toContainText("1.0.0");
   });
 
   // -- pi self-update (spec 001 US3) -----------------------------------------
@@ -360,16 +378,17 @@ test.describe("packages panel 018", () => {
     await openManage(page, "pkgs=2");
     await page.getByTestId("manage-tab-packages").click();
     await expect(page.getByTestId("package-row")).toHaveCount(2);
-    await expect(page.getByTestId("package-row").first()).toContainText("1.0.0");
+    await expect(page.getByTestId("package-version-0")).toContainText("1.0.0");
 
     await page.getByTestId("packages-update-all").click();
     await expect(page.getByTestId("update-result")).toContainText("✓");
-    // pi-style per-package lines, verbatim
-    await expect(page.getByTestId("update-result")).toContainText("updated npm:@example/pi-tools@1.0.0 -> npm:@example/pi-tools@1.1.0");
-    await expect(page.getByTestId("update-result")).toContainText("updated git:github.com/example/pi-git-pkg@0.3.0 -> git:github.com/example/pi-git-pkg@0.4.0");
+    // pi-style per-package lines stay verbatim — in the collapsed details now.
+    await page.getByTestId("cli-details").locator("summary").click();
+    await expect(page.getByTestId("cli-details")).toContainText("updated npm:@example/pi-tools@1.0.0 -> npm:@example/pi-tools@1.1.0");
+    await expect(page.getByTestId("cli-details")).toContainText("updated git:github.com/example/pi-git-pkg@0.3.0 -> git:github.com/example/pi-git-pkg@0.4.0");
     // the list refreshed: both rows show the bumped versions
-    await expect(page.getByTestId("package-row").first()).toContainText("1.1.0");
-    await expect(page.getByTestId("package-row").nth(1)).toContainText("0.4.0");
+    await expect(page.getByTestId("package-version-0")).toContainText("1.1.0");
+    await expect(page.getByTestId("package-version-1")).toContainText("0.4.0");
   });
 
   test("update all is disabled with nothing installed", async ({ page }) => {
@@ -396,6 +415,128 @@ test.describe("packages panel 018", () => {
     await page.getByTestId("package-remove-0").click();
     await page.getByTestId("confirm-ok").click();
     await expect(page.getByTestId("confirm-dialog")).toHaveCount(0);
-    await expect(page.getByTestId("outcome-banner")).toContainText("✓");
+    await expect(page.getByTestId("update-result")).toContainText("✓");
+  });
+});
+
+// -- 033: structured list, broken rows, offline fast-fail, registry, market ----
+
+test.describe("packages panel 033", () => {
+  test("rows show version, scope and a broken entry with reinstall", async ({ page }) => {
+    await openManage(page, "pkgbroken=1");
+    await page.getByTestId("manage-tab-packages").click();
+    await expect(page.getByTestId("package-row")).toHaveCount(2);
+    await expect(page.getByTestId("package-version-0")).toContainText("1.0.0");
+    await expect(page.getByTestId("package-row").first()).toContainText("global");
+    await expect(page.getByTestId("package-broken-1")).toContainText("not installed / files missing");
+    await expect(page.getByTestId("package-reinstall-1")).toBeVisible();
+    await expect(page.getByTestId("package-check-1")).toHaveCount(0);
+
+    await page.getByTestId("package-reinstall-1").click();
+    await expect(page.getByTestId("update-result")).toContainText("✓");
+  });
+
+  test("a version check degrades gracefully when the registry is unreachable", async ({ page }) => {
+    await openManage(page, "check=offline");
+    await page.getByTestId("manage-tab-packages").click();
+    await page.getByTestId("package-check-0").click();
+    await expect(page.getByTestId("package-check-verdict-0")).toContainText("Latest unknown: network unreachable");
+    await expect(page.getByTestId("package-upgrade-0")).toBeDisabled();
+  });
+
+  test("an authenticated private registry degrades the check with a reason", async ({ page }) => {
+    await openManage(page, "check=auth");
+    await page.getByTestId("manage-tab-packages").click();
+    await page.getByTestId("package-check-0").click();
+    await expect(page.getByTestId("package-check-verdict-0")).toContainText("registry requires authentication");
+  });
+
+  test("market: cards render with fields, pager and the installed state", async ({ page }) => {
+    await openManage(page, "");
+    await page.getByTestId("manage-tab-packages").click();
+    await page.getByTestId("packages-tab-market").click();
+
+    await expect(page.getByTestId("market-card").first()).toContainText("billion-context");
+    await expect(page.getByTestId("market-card").first()).toContainText("v0.1.213");
+    await expect(page.getByTestId("market-downloads").first()).toContainText("3,257,276");
+    // 137 fixtures / 50 per page = 3 pages
+    await expect(page.getByTestId("market-pageinfo")).toHaveText("1 / 3");
+
+    await page.getByTestId("market-next").click();
+    await expect(page.getByTestId("market-pageinfo")).toHaveText("2 / 3");
+    await expect(page.getByTestId("market-card").first()).toContainText("pi-sample-051");
+
+    // The pre-installed mock package disables its market card (no such card in
+    // the fixture, so install openwiki and watch the badge appear instead).
+    await page.getByTestId("market-search").fill("openwiki");
+    await page.getByTestId("market-search-btn").click();
+    await expect(page.getByTestId("market-card")).toHaveCount(1);
+    await page.getByTestId("market-install-openwiki").click();
+    await expect(page.getByTestId("confirm-dialog")).toBeVisible();
+    await page.getByTestId("confirm-ok").click();
+    await expect(page.getByTestId("market-installed")).toContainText("Installed");
+    await expect(page.getByTestId("market-install-openwiki")).toHaveCount(0);
+  });
+
+  test("market fails fast and friendly when offline", async ({ page }) => {
+    await openManage(page, "market=offline");
+    await page.getByTestId("manage-tab-packages").click();
+    await page.getByTestId("packages-tab-market").click();
+
+    await expect(page.getByTestId("market-error")).toContainText("Network unreachable");
+    await expect(page.getByTestId("market-card")).toHaveCount(0);
+  });
+
+  test("market explains a registry without a search endpoint", async ({ page }) => {
+    await openManage(page, "market=unavailable");
+    await page.getByTestId("manage-tab-packages").click();
+    await page.getByTestId("packages-tab-market").click();
+
+    await expect(page.getByTestId("market-error")).toContainText("does not support search");
+  });
+
+  test("market explains an authenticated registry", async ({ page }) => {
+    await openManage(page, "market=auth");
+    await page.getByTestId("manage-tab-packages").click();
+    await page.getByTestId("packages-tab-market").click();
+
+    await expect(page.getByTestId("market-error")).toContainText("authentication");
+  });
+
+  test("market shows the fuzzy-match hint on degraded registries and the empty state", async ({ page }) => {
+    await openManage(page, "market=degraded");
+    await page.getByTestId("manage-tab-packages").click();
+    await page.getByTestId("packages-tab-market").click();
+    await expect(page.getByTestId("market-degraded")).toBeVisible();
+
+    await openManage(page, "market=empty");
+    await page.getByTestId("manage-tab-packages").click();
+    await page.getByTestId("packages-tab-market").click();
+    await expect(page.getByTestId("market-empty")).toBeVisible();
+  });
+
+  test("the registry choice persists across a reload", async ({ page }) => {
+    await openManage(page, "");
+    await page.getByTestId("manage-tab-packages").click();
+    await expect(page.getByTestId("package-registry-follow")).toBeChecked();
+
+    await page.getByTestId("package-registry-china").click();
+    await expect(page.getByTestId("package-registry-china")).toBeChecked();
+
+    await page.reload();
+    await expect(page.getByTestId("empty-state")).toBeVisible();
+    await page.getByTestId("tab-manage").click();
+    await page.getByTestId("manage-tab-packages").click();
+    await expect(page.getByTestId("package-registry-china")).toBeChecked();
+  });
+
+  test("an invalid custom registry is refused with an inline reason", async ({ page }) => {
+    await openManage(page, "");
+    await page.getByTestId("manage-tab-packages").click();
+    await page.getByTestId("package-registry-custom-input").fill("not a registry");
+    await page.getByTestId("package-registry-custom").click();
+    await expect(page.getByTestId("package-registry-invalid")).toBeVisible();
+    // follow mode untouched
+    await expect(page.getByTestId("package-registry-follow")).toBeChecked();
   });
 });

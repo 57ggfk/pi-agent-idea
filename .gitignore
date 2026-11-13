@@ -43,3 +43,6 @@ web/probe-*.json
 # 版本执行提示词：派发给外部 agent 的临时编排稿，只留本地，不入库。
 # 命名约定 <version>-PROMPT.md，任意版本前缀均忽略，避免每版本改一次规则。
 specs/*-PROMPT.md
+
+# web/node_modules is a junction/symlink to a shared store (git cannot track it)
+web/node_modules
