@@ -203,6 +203,7 @@ registry 完全一致。
   packument（`GET <registry>/<name>`，`Accept: application/vnd.npm.install-v1+json`）
   的 `dist-tags.latest` 兜底（Nexus hosted 仓 `/name/version` 端点有已知缺陷）；
   401/403 降级为「无法访问私服元数据（可能需要认证）」，仅显示已装版本。
+- **FR-020**（2026-11-14 用户实测反馈追加）操作保持**单飞**——并发 pi install/remove 会撞两把无锁写（`<agent>/npm`：npm 对同一 prefix 无跨进程锁，node_modules/lockfile 互相踩；`settings.json`：pi 读改写、并发回丢条目）——但正在执行的行 MUST 高亮（accent 边框）并显示**专属进度线**（滑动假进度 + 「正在安装/移除/升级/重装…」文案），工具栏级操作（手输安装、全部升级）与市场卡片同理；用户 MUST 能分辨**哪一行、哪个操作**在跑，而不是整片无差别禁用。
 
 ## Decisions（待拍板——每条已给推荐默认）
 

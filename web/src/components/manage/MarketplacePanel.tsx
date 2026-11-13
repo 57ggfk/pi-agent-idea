@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useT } from "../../i18n/useT";
 import { usePiStore } from "../../store/store";
 import { formatNumber, formatRelativeDay } from "../../i18n/format";
-import type { CliOutcome, manageApi, MarketPackage, MarketSearchResult } from "../../manage";
+import { ProgressLine } from "./PackagesPanel";
+import type { manageApi, MarketPackage, MarketSearchResult } from "../../manage";
 import type { TFunction } from "i18next";
 
 /**
@@ -20,21 +21,23 @@ export default function MarketplacePanel({
   api,
   registry,
   installedNames,
-  onInstallDone,
+  onInstall,
+  installingName,
   busy,
-  setBusy,
-  setOutcome,
 }: {
   api: ReturnType<typeof manageApi>;
   /** Explicit registry override; null = follow npm config. */
   registry: string | null;
   /** npm names already installed — those cards show a disabled "installed". */
   installedNames: Set<string>;
-  /** Called after a successful install so the installed list can refresh. */
-  onInstallDone: () => void;
+  /**
+   * One-click install, executed by the parent (single-flight + the shared
+   * outcome banner live there); this card renders its own progress while
+   * [installingName] matches (033 FR-020).
+   */
+  onInstall: (pkg: MarketPackage) => void;
+  installingName: string | null;
   busy: boolean;
-  setBusy: (v: boolean) => void;
-  setOutcome: (o: { ok: boolean; error?: string; output?: string } | null) => void;
 }) {
   const { t, language } = useT();
   const askConfirm = usePiStore((s) => s.askConfirm);
@@ -80,19 +83,6 @@ export default function MarketplacePanel({
   const run = (nextQuery: string) => {
     setAppliedQuery(nextQuery);
     setPage(1);
-  };
-
-  const install = (pkg: MarketPackage) => {
-    setBusy(true);
-    setOutcome(null);
-    api
-      .packageInstall({ source: `npm:${pkg.name}`, registry: registry ?? undefined })
-      .then((res: CliOutcome) => {
-        setOutcome(res);
-        onInstallDone();
-      })
-      .catch((e: Error) => setOutcome({ ok: false, error: e.message }))
-      .finally(() => setBusy(false));
   };
 
   const total = data?.total ?? 0;
@@ -158,13 +148,14 @@ export default function MarketplacePanel({
           language={language}
           pkg={pkg}
           installed={installedNames.has(pkg.name)}
+          installing={installingName === pkg.name}
           busy={busy}
           onInstall={() =>
             askConfirm({
               title: t("package.marketInstallTitle"),
               message: t("package.marketInstallMessage", { pkg: `npm:${pkg.name}` }),
               confirmLabel: t("package.install"),
-              onConfirm: () => install(pkg),
+              onConfirm: () => onInstall(pkg),
             })
           }
         />
@@ -200,6 +191,7 @@ function MarketCard({
   language,
   pkg,
   installed,
+  installing,
   busy,
   onInstall,
 }: {
@@ -207,6 +199,7 @@ function MarketCard({
   language: string;
   pkg: MarketPackage;
   installed: boolean;
+  installing: boolean;
   busy: boolean;
   onInstall: () => void;
 }) {
@@ -234,6 +227,8 @@ function MarketCard({
             <span className="pkg-installed" data-testid="market-installed">
               {t("package.marketInstalled")}
             </span>
+          ) : installing ? (
+            <ProgressLine testid={`market-progress-${pkg.name}`} text={t("package.progressInstall")} />
           ) : (
             <button className="btn btn-send" data-testid={`market-install-${pkg.name}`} disabled={busy} onClick={onInstall}>
               {t("package.install")}

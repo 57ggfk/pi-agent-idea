@@ -78,6 +78,40 @@ interface CheckState {
   result?: PackageCheckResult | null;
 }
 
+/**
+ * The one mutation in flight (033 FR-020). Operations stay single-flight —
+ * concurrent pi install/remove races two unguarded writes (`<agent>/npm` and
+ * `settings.json`, both lock-free read-modify-write) — but the row being
+ * worked on is highlighted with its own progress line so the user can see
+ * WHICH row is busy instead of a uniformly disabled panel.
+ */
+type PendingAction = {
+  index: number | "toolbar";
+  kind: "install" | "remove" | "upgrade" | "reinstall" | "updateAll";
+} | null;
+
+const PENDING_KEY: Record<
+  NonNullable<PendingAction>["kind"],
+  "package.progressInstall" | "package.progressRemove" | "package.progressUpgrade" | "package.progressReinstall" | "package.progressUpdateAll"
+> = {
+  install: "package.progressInstall",
+  remove: "package.progressRemove",
+  upgrade: "package.progressUpgrade",
+  reinstall: "package.progressReinstall",
+  updateAll: "package.progressUpdateAll",
+};
+
+export function ProgressLine({ testid, text }: { testid: string; text: string }) {
+  return (
+    <div className="pkg-progress" data-testid={testid}>
+      <span className="pkg-progress-text">{text}</span>
+      <div className="pkg-progress-track">
+        <div className="pkg-progress-fill" />
+      </div>
+    </div>
+  );
+}
+
 export default function PackagesPanel({ api }: { api: ReturnType<typeof manageApi> }) {
   const { t } = useT();
   const askConfirm = usePiStore((s) => s.askConfirm);
@@ -87,6 +121,9 @@ export default function PackagesPanel({ api }: { api: ReturnType<typeof manageAp
   const [updateResult, setUpdateResult] = useState<CliOutcome | null>(null);
   const [upgradeStale, setUpgradeStale] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<PendingAction>(null);
+  /** npm name of the market card whose install is running (033 FR-020). */
+  const [marketInstalling, setMarketInstalling] = useState<string | null>(null);
   const [source, setSource] = useState("");
   const [checks, setChecks] = useState<Record<number, CheckState>>({});
   // null = follow npm config (FR-016); a URL = explicit override.
@@ -132,8 +169,9 @@ export default function PackagesPanel({ api }: { api: ReturnType<typeof manageAp
   );
 
   /** Runs a CLI action, shows its verbatim output, then refreshes the list. */
-  const act = async (action: Promise<CliOutcome>) => {
+  const act = async (pendingAction: NonNullable<PendingAction>, action: Promise<CliOutcome>) => {
     setBusy(true);
+    setPending(pendingAction);
     setOutcome(null);
     setUpdateResult(null);
     setUpgradeStale(false);
@@ -145,7 +183,30 @@ export default function PackagesPanel({ api }: { api: ReturnType<typeof manageAp
       setUpdateResult({ ok: false, error: (e as Error).message });
     } finally {
       setBusy(false);
+      setPending(null);
     }
+  };
+
+  /** Market one-click install, handled here so the card can show its progress. */
+  const installFromMarket = (pkg: { name: string }) => {
+    setBusy(true);
+    setPending({ index: "toolbar", kind: "install" });
+    setMarketInstalling(pkg.name);
+    setOutcome(null);
+    setUpdateResult(null);
+    setUpgradeStale(false);
+    api
+      .packageInstall({ source: `npm:${pkg.name}`, registry: registry ?? undefined })
+      .then((res: CliOutcome) => {
+        setUpdateResult(res);
+        return refresh();
+      })
+      .catch((e: Error) => setUpdateResult({ ok: false, error: e.message }))
+      .finally(() => {
+        setBusy(false);
+        setPending(null);
+        setMarketInstalling(null);
+      });
   };
 
   const changeRegistry = (mode: RegistryMode, customText: string) => {
@@ -183,6 +244,7 @@ export default function PackagesPanel({ api }: { api: ReturnType<typeof manageAp
     const name = npmNameOf(entry.source);
     if (!name) return;
     setBusy(true);
+    setPending({ index, kind: "upgrade" });
     setOutcome(null);
     setUpdateResult(null);
     setUpgradeStale(false);
@@ -201,6 +263,7 @@ export default function PackagesPanel({ api }: { api: ReturnType<typeof manageAp
       setUpdateResult({ ok: false, error: (e as Error).message });
     } finally {
       setBusy(false);
+      setPending(null);
     }
   };
 
@@ -228,10 +291,9 @@ export default function PackagesPanel({ api }: { api: ReturnType<typeof manageAp
           api={api}
           registry={registry}
           installedNames={installedNames}
-          onInstallDone={() => void refresh()}
+          onInstall={installFromMarket}
+          installingName={marketInstalling}
           busy={busy}
-          setBusy={setBusy}
-          setOutcome={setOutcome}
         />
       ) : (
         <>
@@ -279,7 +341,7 @@ export default function PackagesPanel({ api }: { api: ReturnType<typeof manageAp
               data-testid="package-install"
               disabled={busy || !source.trim()}
               onClick={() => {
-                void act(api.packageInstall({ source: source.trim(), registry: registry ?? undefined }));
+                void act({ index: "toolbar", kind: "install" }, api.packageInstall({ source: source.trim(), registry: registry ?? undefined }));
                 setSource("");
               }}
             >
@@ -289,7 +351,7 @@ export default function PackagesPanel({ api }: { api: ReturnType<typeof manageAp
               className="btn"
               data-testid="packages-update-all"
               disabled={busy || entries.length === 0}
-              onClick={() => void act(api.packageUpdateAll({ registry: registry ?? undefined }))}
+              onClick={() => void act({ index: "toolbar", kind: "updateAll" }, api.packageUpdateAll({ registry: registry ?? undefined }))}
             >
               {t("package.updateAll")}
             </button>
@@ -297,6 +359,13 @@ export default function PackagesPanel({ api }: { api: ReturnType<typeof manageAp
               {t("package.refresh")}
             </button>
           </div>
+
+          {pending?.index === "toolbar" ? (
+            <ProgressLine
+              testid={pending.kind === "updateAll" ? "packages-progress-all" : "package-progress-toolbar"}
+              text={t(PENDING_KEY[pending.kind])}
+            />
+          ) : null}
 
           {entries.length === 0 ? (
             <div className="panel-empty" data-testid="packages-empty">
@@ -310,11 +379,12 @@ export default function PackagesPanel({ api }: { api: ReturnType<typeof manageAp
                 entry={entry}
                 index={i}
                 busy={busy}
+                rowPending={pending && pending.index === i ? pending : null}
                 checkState={checks[i]}
                 onCheck={() => void check(entry, i)}
                 onUpgrade={() => void upgrade(entry, i)}
                 onReinstall={() =>
-                  void act(api.packageInstall({ source: entry.source, registry: registry ?? undefined }))
+                  void act({ index: i, kind: "reinstall" }, api.packageInstall({ source: entry.source, registry: registry ?? undefined }))
                 }
                 onRemove={() =>
                   askConfirm({
@@ -323,7 +393,7 @@ export default function PackagesPanel({ api }: { api: ReturnType<typeof manageAp
                     confirmLabel: t("package.remove"),
                     danger: true,
                     onConfirm: () => {
-                      void act(api.packageRemove({ source: entry.source }));
+                      void act({ index: i, kind: "remove" }, api.packageRemove({ source: entry.source }));
                     },
                   })
                 }
@@ -360,6 +430,7 @@ function PackageRow({
   entry,
   index,
   busy,
+  rowPending,
   checkState,
   onCheck,
   onUpgrade,
@@ -370,6 +441,7 @@ function PackageRow({
   entry: PackageEntry;
   index: number;
   busy: boolean;
+  rowPending: NonNullable<PendingAction> | null;
   checkState?: CheckState;
   onCheck: () => void;
   onUpgrade: () => void;
@@ -379,7 +451,10 @@ function PackageRow({
   const checkResult = checkState?.result;
   const upgradable = checkResult?.state === "upgradable" && !!checkResult.latest;
   return (
-    <div className="panel-row package-row" data-testid="package-row">
+    <div
+      className={`panel-row package-row ${rowPending ? "pkg-row-active" : ""}`}
+      data-testid="package-row"
+    >
       <div className="panel-row-main">
         <span className="panel-row-title mono">{entry.source}</span>
         <span className="panel-row-sub package-row-sub">
@@ -410,6 +485,12 @@ function PackageRow({
             </span>
           ) : null}
         </span>
+        {rowPending ? (
+          <ProgressLine
+            testid={`package-progress-${index}`}
+            text={t(PENDING_KEY[rowPending.kind])}
+          />
+        ) : null}
       </div>
       <div className="panel-row-actions">
         {!entry.broken ? (

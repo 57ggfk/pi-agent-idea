@@ -530,6 +530,42 @@ test.describe("packages panel 033", () => {
     await expect(page.getByTestId("package-registry-china")).toBeChecked();
   });
 
+  test("the row in flight shows its own progress while other rows just wait", async ({ page }) => {
+    await openManage(page, "pkgs=2&pkgspeed=slow");
+    await page.getByTestId("manage-tab-packages").click();
+    await expect(page.getByTestId("package-row")).toHaveCount(2);
+
+    await page.getByTestId("package-remove-1").click();
+    await page.getByTestId("confirm-ok").click();
+
+    // FR-020: the row being removed is highlighted and carries its own bar…
+    const activeRow = page.getByTestId("package-row").nth(1);
+    await expect(activeRow).toHaveClass(/pkg-row-active/);
+    await expect(page.getByTestId("package-progress-1")).toContainText("Removing");
+    // …while the other row's actions merely wait (disabled, no bar of its own).
+    await expect(page.getByTestId("package-remove-0")).toBeDisabled();
+    await expect(page.getByTestId("package-progress-0")).toHaveCount(0);
+
+    await expect(page.getByTestId("package-progress-1")).toHaveCount(0, { timeout: 10_000 });
+    await expect(page.getByTestId("update-result")).toContainText("✓");
+  });
+
+  test("toolbar install and update-all show the toolbar-level progress", async ({ page }) => {
+    await openManage(page, "pkgspeed=slow");
+    await page.getByTestId("manage-tab-packages").click();
+
+    await page.locator(".packages-input").fill("npm:@example/pi-extra");
+    await page.getByTestId("package-install").click();
+    await expect(page.getByTestId("package-progress-toolbar")).toContainText("Installing");
+    await expect(page.getByTestId("package-progress-toolbar")).toHaveCount(0, { timeout: 10_000 });
+    await expect(page.getByTestId("update-result")).toContainText("✓");
+
+    await page.getByTestId("packages-update-all").click();
+    await expect(page.getByTestId("packages-progress-all")).toContainText("Updating all");
+    await expect(page.getByTestId("packages-progress-all")).toHaveCount(0, { timeout: 10_000 });
+    await expect(page.getByTestId("update-result")).toContainText("✓");
+  });
+
   test("an invalid custom registry is refused with an inline reason", async ({ page }) => {
     await openManage(page, "");
     await page.getByTestId("manage-tab-packages").click();

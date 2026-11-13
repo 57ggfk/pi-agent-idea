@@ -871,6 +871,14 @@ export class MockBridge implements Bridge {
       return Promise.resolve({ ok: true } as T);
     }
     if (method.startsWith("manage.") || method.startsWith("trust.")) {
+      // `?pkgspeed=slow` stretches the package mutations so the per-row
+      // progress UI has something observable to assert against.
+      if (
+        query()?.get("pkgspeed") === "slow" &&
+        /^manage\.(packageInstall|packageRemove|packageUpdateAll)$/.test(method)
+      ) {
+        return delay(1200).then(() => this.handleManage(method, params) as T);
+      }
       return Promise.resolve(this.handleManage(method, params) as T);
     }
     if (method.startsWith("queue.")) {

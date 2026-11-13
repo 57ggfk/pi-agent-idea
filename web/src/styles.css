@@ -5076,3 +5076,57 @@ button {
   font-size: 11px;
   color: var(--text-secondary);
 }
+
+/* -- 033 FR-020: per-row in-flight progress (indeterminate, single-flight) --- */
+
+.pkg-row-active {
+  border-color: var(--accent);
+}
+
+.pkg-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--accent-text);
+}
+
+.pkg-progress-text {
+  flex-shrink: 0;
+}
+
+.pkg-progress-track {
+  position: relative;
+  flex: 1;
+  max-width: 220px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.pkg-progress-fill {
+  position: absolute;
+  top: 0;
+  left: -30%;
+  height: 100%;
+  width: 30%;
+  border-radius: 2px;
+  background: var(--accent);
+  animation: pkg-progress-slide 1.1s infinite ease-in-out;
+}
+
+@keyframes pkg-progress-slide {
+  0% {
+    left: -30%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+.market-card-actions .pkg-progress {
+  margin-top: 0;
+  min-width: 120px;
+}
