@@ -176,8 +176,12 @@ class BridgeService(private val project: Project) : Disposable {
                 "manage.packagesList" -> dev.pi.agent.manage.PiManage.packagesList()
                 "manage.packageInstall" -> dev.pi.agent.manage.PiManage.packageInstall(params)
                 "manage.packageRemove" -> dev.pi.agent.manage.PiManage.packageRemove(params)
-                "manage.packageUpdate" -> dev.pi.agent.manage.PiManage.packageUpdate(params)
-                "manage.packageUpdateAll" -> dev.pi.agent.manage.PiManage.packageUpdateAll()
+                // 033: version check and gallery search; the broken single-package
+                // `pi update <source>` RPC is gone (FR-004) — upgrades are
+                // version-pinned installs issued by the frontend.
+                "manage.packageCheck" -> dev.pi.agent.manage.PiManage.packageCheck(params)
+                "manage.marketSearch" -> dev.pi.agent.manage.PiManage.marketSearch(params)
+                "manage.packageUpdateAll" -> dev.pi.agent.manage.PiManage.packageUpdateAll(params)
                 "manage.envUpdate" -> dev.pi.agent.manage.PiManage.envUpdate()
                 "manage.modelsReadProvider" -> dev.pi.agent.manage.PiManage.modelsReadProvider(params)
                 "manage.providerGet" -> dev.pi.agent.manage.PiModels.providerGet(params)
@@ -379,6 +383,8 @@ class BridgeService(private val project: Project) : Disposable {
             if (autoRetry != null) put("autoRetry", autoRetry)
             if (themePreference != null) put("theme", themePreference)
             if (languagePreference != null) put("language", languagePreference)
+            // 033 FR-016: explicit npm registry override; absent = follow npm.
+            prefs.registryOverride()?.let { put("registryOverride", it) }
         }
     }
 
@@ -390,6 +396,14 @@ class BridgeService(private val project: Project) : Disposable {
         if (themePreference != null) prefs.setThemePreference(themePreference)
         val languagePreference = (params["language"] as? JsonPrimitive)?.content
         if (languagePreference != null) prefs.setLanguagePreference(languagePreference)
+        // The key present with a null/blank value clears the override; a value
+        // that cannot be a registry URL is refused by storing "follow npm"
+        // instead — the frontend shows the reason, the backend stays sane.
+        if (params.containsKey("registryOverride")) {
+            val raw = params["registryOverride"] as? JsonPrimitive
+            val normalized = raw?.content?.let { dev.pi.agent.manage.PiEnvironment.normalizeCustomRegistry(it) }
+            prefs.setRegistryOverride(normalized)
+        }
         return buildJsonObject { put("ok", true) }
     }
 

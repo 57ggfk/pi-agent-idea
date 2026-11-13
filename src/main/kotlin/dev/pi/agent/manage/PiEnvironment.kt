@@ -535,7 +535,7 @@ object PiEnvironment {
      * flag. Shown next to the "npm default" option so the choice is concrete.
      * Any failure (old npm, broken config) just means "unknown", never an error.
      */
-    private fun npmConfiguredRegistry(npmPath: String): String? = runCatching {
+    internal fun npmConfiguredRegistry(npmPath: String): String? = runCatching {
         val parent = File(npmPath).parentFile ?: return@runCatching null
         val pb = ProcessBuilder(OsProcess.launchCommand(listOf(npmPath, "config", "get", "registry")))
             .redirectErrorStream(true)

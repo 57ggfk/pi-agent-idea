@@ -119,21 +119,128 @@ object PiManage {
 
     // -- Packages (extensions) ----------------------------------------------
 
+    /**
+     * Installed packages, structured (033 FR-001/FR-002). `pi list` prints a
+     * section header per scope, the source line, and — for resolved installs —
+     * the path; the version is read from that path's package.json. A source
+     * line without a path line is the "declared but not installed / files
+     * missing" shape (probe P13/P18).
+     */
     fun packagesList(): JsonObject {
         val result = PiCliRunner.run(listOf("list"))
-        val lines = result.stdout.lines().filter { it.isNotBlank() }
+        val entries = PiPackages.parsePiList(result.stdout)
         return buildJsonObject {
             put("ok", result.success)
-            put("lines", JsonArray(lines.map { JsonPrimitive(it) }))
-            put("error", if (result.success) "" else result.stderr)
+            put("entries", buildJsonArray {
+                entries.forEach { entry ->
+                    add(buildJsonObject {
+                        put("source", entry.source)
+                        put("scope", entry.scope)
+                        put("broken", entry.broken)
+                        entry.path?.let { put("path", it) }
+                        PiPackages.readInstalledVersion(entry.path)?.let { put("version", it) }
+                    })
+                }
+            })
+            put("error", if (result.success) "" else cliOutput(result))
         }
     }
 
-    fun packageInstall(params: JsonObject): JsonObject {
+    /**
+     * One-shot version check (033 FR-003): installed version from the resolved
+     * path (local, always available) plus the registry's latest for npm
+     * sources. The installed side re-runs `pi list` instead of trusting the
+     * panel's cached rows — a stale path is worse than 0.7s of latency.
+     *
+     * [listStdout]/[preflight]/[latest] are test seams; production uses the
+     * real CLI and HTTP adapters.
+     */
+    fun packageCheck(
+        params: JsonObject,
+        listStdout: () -> String = { PiCliRunner.run(listOf("list")).stdout },
+        preflight: (String) -> PiPackages.Preflight = { PiPackages.preflight(it) },
+        latest: (registry: String, name: String) -> PiPackages.Latest = { registry, name ->
+            PiPackages.latestVersion(registry, name)
+        },
+    ): JsonObject {
         val source = params.string("source") ?: return error("missing source")
-        val args = mutableListOf("install", source)
-        if (params.boolean("local") == true) args += "--local"
-        return cliToElement(PiCliRunner.run(args, timeoutSeconds = 300))
+        val entry = PiPackages.parsePiList(listStdout()).firstOrNull { it.source == source }
+        val installed = entry?.let { PiPackages.readInstalledVersion(it.path) }
+
+        fun result(state: String, reason: String, latest: String?): JsonObject = buildJsonObject {
+            put("ok", true)
+            put("source", source)
+            installed?.let { put("installed", it) }
+            latest?.let { put("latest", it) }
+            put("state", state)
+            put("reason", reason)
+        }
+
+        val name = PiPackages.npmName(source)
+        if (name == null) {
+            // git sources reconcile to their ref; local paths have no version.
+            val reason = if (source.startsWith("git:")) "git-ref" else "local"
+            return result("unknown", reason, null)
+        }
+
+        val registry = PiPackages.registryChain(PiEnvironment.normalizeCustomRegistry(params.string("registry")))
+        val check = preflight(registry)
+        if (!check.reachable) return result("unknown", check.code, null)
+
+        val latestResult = latest(registry, name)
+        PiPackages.LOG.info(
+            "pi-packages check: source=$source name=$name registry=$registry " +
+                "installed=$installed state-reason=${latestResult.reason} latest=${latestResult.version}",
+        )
+        if (latestResult.reason != "" || latestResult.version == null) {
+            return result("unknown", latestResult.reason.ifEmpty { "bad-response" }, null)
+        }
+        // Plain string inequality: pi installs resolve to dist-tags.latest, so
+        // "different" always means "the pinned reinstall can move it" (P10/P11).
+        val state = if (installed != null && installed == latestResult.version) "up-to-date" else "upgradable"
+        return result(state, "", latestResult.version)
+    }
+
+    /** Market gallery search (033 FR-005/FR-018); [PiPackages.marketSearch] owns the logic. */
+    fun marketSearch(params: JsonObject): JsonObject {
+        val registry = PiPackages.registryChain(PiEnvironment.normalizeCustomRegistry(params.string("registry")))
+        val preflight = PiPackages.preflight(registry)
+        if (!preflight.reachable) {
+            return buildJsonObject { put("ok", false); put("code", preflight.code); put("error", "registry unreachable") }
+        }
+        val query = params.string("query")?.takeIf { it.isNotBlank() }
+        val page = params.int("page")?.coerceAtLeast(1) ?: 1
+        val pageSize = params.int("pageSize")?.coerceIn(1, 50) ?: 50
+        val result = PiPackages.marketSearch(registry, query, page, pageSize)
+        PiPackages.LOG.info(
+            "pi-packages market: registry=$registry query=$query page=$page code=${result.code} " +
+                "total=${result.total} degraded=${result.degraded} size=${result.packages.size}",
+        )
+        if (result.code.isNotEmpty()) {
+            return buildJsonObject { put("ok", false); put("code", result.code); put("error", "market search failed") }
+        }
+        return buildJsonObject {
+            put("ok", true)
+            put("total", result.total)
+            put("page", page)
+            put("pageSize", pageSize)
+            put("degraded", result.degraded)
+            put("packages", buildJsonArray {
+                result.packages.forEach { pkg ->
+                    add(buildJsonObject {
+                        put("name", pkg.name)
+                        put("version", pkg.version)
+                        put("description", pkg.description)
+                        put("author", pkg.author)
+                        put("downloads", pkg.downloads)
+                        put("updated", pkg.updated)
+                        put("badges", buildJsonArray { pkg.badges.forEach { add(JsonPrimitive(it)) } })
+                        put("linkNpm", pkg.linkNpm)
+                        put("linkRepo", pkg.linkRepo)
+                    })
+                }
+            })
+        }
     }
 
     fun packageRemove(params: JsonObject): JsonObject {
@@ -142,29 +249,69 @@ object PiManage {
     }
 
     /**
-     * `pi update <source>` — the TUI command already reports the outcome
-     * ("updated to x.y.z" / "already up to date") in its own output, so the
-     * plugin forwards stdout+stderr verbatim instead of diffing install state
-     * to guess whether anything changed. Timeout matches [packageInstall].
+     * The single upgrade path for npm packages (033 FR-004): pi 1.5.0's
+     * `pi update <source>` is broken for every notation (probe P8), but a
+     * version-pinned `pi install npm:<name>@<latest>` moves the physical
+     * install while keeping the settings entry unpinned (P10/P11). The frontend
+     * passes the pinned source after a [packageCheck]; the backend never
+     * second-guesses it.
      */
-    fun packageUpdate(
+    fun packageInstall(
         params: JsonObject,
-        runner: (List<String>, Long) -> CliResult = ::defaultRunner,
+        runner: (List<String>, Long, Map<String, String>) -> CliResult = { a, t, env ->
+            PiCliRunner.run(a, timeoutSeconds = t, extraEnv = env)
+        },
+        preflight: (String) -> PiPackages.Preflight = { PiPackages.preflight(it) },
     ): JsonObject {
         val source = params.string("source") ?: return error("missing source")
-        return cliToElement(runner(packageUpdateArgs(source), UPDATE_TIMEOUT_SECONDS))
+        val args = mutableListOf("install", source)
+        if (params.boolean("local") == true) args += "--local"
+        return networkedCli(params, args, INSTALL_TIMEOUT_SECONDS, runner, preflight)
     }
 
     /**
      * `pi update --extensions` — one CLI call updates every installed package
      * (spec 018 US6; the flag is native, see spec 001 调研). Same
-     * verbatim-output contract as [packageUpdate]: pi reports the per-package
-     * outcomes in its own output, so the plugin never diffs install state.
+     * verbatim-output contract as the pinned reinstall: pi reports the
+     * per-package outcomes in its own output, so the plugin never diffs
+     * install state.
      */
     fun packageUpdateAll(
-        runner: (List<String>, Long) -> CliResult = ::defaultRunner,
+        params: JsonObject = JsonObject(emptyMap()),
+        runner: (List<String>, Long, Map<String, String>) -> CliResult = { a, t, env ->
+            PiCliRunner.run(a, timeoutSeconds = t, extraEnv = env)
+        },
+        preflight: (String) -> PiPackages.Preflight = { PiPackages.preflight(it) },
     ): JsonObject {
-        return cliToElement(runner(packageUpdateAllArgs(), UPDATE_TIMEOUT_SECONDS))
+        return networkedCli(params, packageUpdateAllArgs(), UPDATE_TIMEOUT_SECONDS, runner, preflight)
+    }
+
+    /**
+     * Shared path for every package command that needs the registry: preflight
+     * first (FR-008 — npm spends 72s+ inside its retry ladder before failing
+     * offline, so the plugin refuses to spawn it when the registry is
+     * unreachable), then the CLI with the explicit-override env (FR-017).
+     */
+    private fun networkedCli(
+        params: JsonObject,
+        args: List<String>,
+        timeoutSeconds: Long,
+        runner: (List<String>, Long, Map<String, String>) -> CliResult = { a, t, env ->
+            PiCliRunner.run(a, timeoutSeconds = t, extraEnv = env)
+        },
+        preflight: (String) -> PiPackages.Preflight = { PiPackages.preflight(it) },
+    ): JsonObject {
+        val registryOverride = PiEnvironment.normalizeCustomRegistry(params.string("registry"))
+        val registry = PiPackages.registryChain(registryOverride)
+        val check = preflight(registry)
+        if (!check.reachable) {
+            return buildJsonObject {
+                put("ok", false)
+                put("code", check.code)
+                put("error", "registry unreachable before running: ${args.joinToString(" ")}")
+            }
+        }
+        return cliToElement(runner(args, timeoutSeconds, PiPackages.registryEnv(registryOverride)))
     }
 
     // -- Skills --------------------------------------------------------------
@@ -527,10 +674,10 @@ object PiManage {
 
     // -- helpers -------------------------------------------------------------
 
-    /** Updates can legitimately take minutes (npm registry round-trips). */
+    /** Installs/updates can legitimately take minutes (npm registry round-trips). */
     internal const val UPDATE_TIMEOUT_SECONDS = 300L
 
-    internal fun packageUpdateArgs(source: String): List<String> = listOf("update", source)
+    internal const val INSTALL_TIMEOUT_SECONDS = 300L
 
     internal fun packageUpdateAllArgs(): List<String> = listOf("update", "--extensions")
 
@@ -564,6 +711,9 @@ object PiManage {
 
     private fun JsonObject.string(key: String): String? =
         (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
+
+    private fun JsonObject.int(key: String): Int? =
+        (this[key] as? JsonPrimitive)?.content?.toIntOrNull()
 
     private fun JsonObject.boolean(key: String): Boolean? =
         (this[key] as? JsonPrimitive)?.content?.toBooleanStrictOrNull()
