@@ -1,0 +1,2 @@
+The per-package "Update" button no longer fails against pi 1.5.0 (`pi update <source>` rejects every notation); upgrades now check the latest version first and reinstall pinned, with a stale-version warning when the upgrade does not take effect (033).
+Offline resilience: package installs, upgrades and market browsing preflight the registry and fail within seconds with a friendly message instead of hanging for minutes in npm's retry ladder; listing and uninstalling work fully offline (033).

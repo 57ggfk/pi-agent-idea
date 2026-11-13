@@ -1,0 +1,3 @@
+Package management reworked: the installed list is now an operable table with per-package versions, status (not installed / files missing) and scope, one-click version checks against the registry, and single-package upgrades (033).
+Official marketplace tab: browse and search the pi.dev/packages gallery (npm `pi-package` keyword) with pagination, download counts and one-click install with a confirmation; already-installed packages are marked (033).
+npm registry settings: follow npm config (default), official, China mirror (npmmirror) or a custom private registry (Nexus/Verdaccio style); the override also drives installs and version checks without touching `.npmrc` (033).

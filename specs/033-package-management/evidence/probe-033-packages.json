@@ -1,0 +1,27 @@
+{
+  "when": "2026-11-13T16:20:00+08:00",
+  "piVersion": "1.5.0",
+  "method": "PI_CODING_AGENT_DIR 沙箱隔离（Temp/pi033-probe，探针后已删除）+ 真机只读命令 + npm registry HTTP",
+  "offlineSimulation": "HTTP_PROXY/HTTPS_PROXY=http://127.0.0.1:9（连接拒绝）；PI_OFFLINE=1 单独验证",
+  "results": [
+    { "n": "P1 pi list 无包输出 / list --help", "ok": true, "d": { "output": "No packages installed." } },
+    { "n": "P2 沙箱安装 npm:openwiki", "ok": true, "d": { "seconds": 25, "exit": 0, "depsInstalled": 336 } },
+    { "n": "P3 pi list 有包输出格式 = 作用域标题+源行+路径行，无版本号", "ok": true, "d": { "settingsEntry": "npm:openwiki", "unpinned": true } },
+    { "n": "P4 PI_OFFLINE=1 不约束包命令（install 仍成功）", "ok": true, "d": { "seconds": 4.4, "exit": 0 } },
+    { "n": "P5 断网安装 72s 才失败（npm 错误墙，exit 1）", "ok": true, "d": { "seconds": 72.3, "pluginHardTimeoutSeconds": 300 } },
+    { "n": "P6 在线 pi update --extensions", "ok": true, "d": { "seconds": 2.3, "output": "Updated packages" } },
+    { "n": "P7 断网 pi update --extensions 144s 才失败", "ok": true, "d": { "seconds": 144.0, "mechanism": "npm install <name>@latest --prefix <agent>/npm per package" } },
+    { "n": "P8 pi 1.5.0 单包更新损坏：update <source> / 裸名 / --extension <source> 全部 No matching package found", "ok": true, "d": { "notions": ["npm:openwiki", "openwiki", "--extension npm:openwiki"], "secondsEach": 0.65, "affectsPluginRowUpdateButton": true } },
+    { "n": "P9 重装同名包为 no-op（agent/npm/package-lock.json 钉住解析结果）", "ok": true, "d": { "output": "up to date in 1s", "physicalVersionUnchanged": "0.8.0" } },
+    { "n": "P10 pi install npm:<name>@<ver> 强制变更物理版本且 settings 不钉版", "ok": true, "d": { "pin": "0.8.0", "settingsAfter": "npm:openwiki" } },
+    { "n": "P11 pi install npm:<name>@<latest> 升回 latest（单包升级可行通路）", "ok": true, "d": { "output": "changed 1 package in 2s", "versionAfter": "0.9.0" } },
+    { "n": "P12 断网本地命令可用：list 0.65s / remove 3s exit 0", "ok": true, "d": { "listSeconds": 0.65, "removeSeconds": 3.0 } },
+    { "n": "P13 装失败的包 = pi list 源行缺路径行", "ok": true, "d": { "entry": "npm:nonexistent-pkg-xyz", "pathLinePresent": false } },
+    { "n": "P14 已装版本读 package.json，与 registry /latest 对账一致", "ok": true, "d": { "installed": "0.9.0", "registryLatest": "0.9.0" } },
+    { "n": "P15 npm search API text=keywords:pi-package 可用（total=13710），字段齐全", "ok": true, "d": { "total": 13710, "top": "billion-context", "fields": ["name", "version", "description", "keywords", "author", "date", "downloads.monthly", "links.repository"] } },
+    { "n": "P16 pi.dev/packages 为 Vite SPA，5397 包 50/页，首名与 npm API 一致（同源）", "ok": true, "d": { "siteTotal": 5397, "apiTotal": 13710, "discrepancy": "站点有未披露的额外过滤" } },
+    { "n": "P17 插件现状：无市场入口；行内升级按钮传 npm:xxx 对 pi 1.5.0 必坏；install/update 无预检", "ok": true, "d": { "kotlinHttpPrecedent": "PiModels.kt:348 java.net.http.HttpClient connectTimeout 10s" } }
+  ],
+  "pass": 17,
+  "total": 17
+}
