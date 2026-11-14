@@ -5154,3 +5154,57 @@ button {
   color: var(--accent-text);
   font-weight: 600;
 }
+
+/* -- 034: skills groups, switches, external sources -------------------------- */
+
+.skill-group {
+  margin-bottom: 10px;
+}
+
+.skill-group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin: 6px 0 4px;
+}
+
+.skill-group-count {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 5px;
+  font-size: 10px;
+}
+
+.skill-row-off {
+  opacity: 0.55;
+}
+
+.skill-external {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  font-size: 11px;
+}
+
+.skill-external-title {
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.skill-external-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 8px;
+  font-size: 11px;
+}
+
+.skill-external-add {
+  margin-top: 6px;
+}

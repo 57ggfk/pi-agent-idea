@@ -272,7 +272,7 @@ export default function ManageView() {
         ) : tab === "packages" ? (
           <PackagesPanel api={api} />
         ) : tab === "skills" ? (
-          <SkillsPanel api={api} trusted={trusted} />
+          <SkillsPanel api={api} bridge={bridge} trusted={trusted} />
         ) : tab === "agents" ? (
           <AgentsPanel api={api} trusted={trusted} />
         ) : tab === "auth" ? (

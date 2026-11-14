@@ -195,6 +195,15 @@ class BridgeService(private val project: Project) : Disposable {
                 "manage.agentsOpen" -> dev.pi.agent.manage.PiAgents.open(project, project.basePath, params)
                 "manage.agentsCreate" -> dev.pi.agent.manage.PiAgents.create(project.basePath, params)
                 "manage.skillsList" -> dev.pi.agent.manage.PiManage.skillsList(project.basePath)
+                // 034: the trust gate lives server-side — a project-scope
+                // enable/disable is refused while the project is untrusted.
+                "manage.skillSetEnabled" -> dev.pi.agent.manage.PiManage.skillSetEnabled(
+                    params,
+                    project.basePath,
+                    dev.pi.agent.process.PiTrust.snapshot(project.basePath).trusted,
+                )
+                "manage.skillSetSourceEnabled" -> dev.pi.agent.manage.PiManage.skillSetSourceEnabled(params)
+                "manage.skillToggleModelInvocation" -> dev.pi.agent.manage.PiManage.skillToggleModelInvocation(params)
                 "manage.skillCreate" -> dev.pi.agent.manage.PiManage.skillCreate(params)
                 "manage.authOverview" -> dev.pi.agent.manage.PiManage.authOverview()
                 "manage.authCheck" -> dev.pi.agent.manage.PiManage.authCheck(params)

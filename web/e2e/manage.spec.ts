@@ -366,7 +366,7 @@ test.describe("project trust (MockBridge)", () => {
 
     const userRow = page.locator('[data-testid="skill-row"][data-scope="user"]');
     await expect(userRow).toHaveAttribute("data-active", "true", { timeout: 5_000 });
-    await expect(userRow.getByTestId("skill-scope")).toContainText("用户级");
+    await expect(userRow.getByTestId("skill-scope")).toContainText("user");
   });
 
 });
@@ -587,5 +587,67 @@ test.describe("packages panel 033", () => {
     await expect(page.getByTestId("package-registry-invalid")).toBeVisible();
     // follow mode untouched
     await expect(page.getByTestId("package-registry-follow")).toBeChecked();
+  });
+});
+
+// -- 034: skills management ---------------------------------------------------
+
+test.describe("skills panel 034", () => {
+  test("groups by source and flags duplicates, manual-only and disabled rows", async ({ page }) => {
+    await openManage(page, "skills=rich");
+    await page.getByTestId("manage-tab-skills").click();
+
+    await expect(page.getByTestId("skill-source-user-pi")).toBeVisible();
+    await expect(page.getByTestId("skill-source-user-agents")).toBeVisible();
+    await expect(page.getByTestId("skill-source-package")).toBeVisible();
+
+    // The hard switch: an excluded row shows the disabled badge and dims.
+    const betaRow = page.locator('[data-testid="skill-row"]').filter({ hasText: "beta-skill" });
+    await expect(betaRow).toHaveClass(/skill-row-off/);
+    await expect(page.getByTestId("skill-disabled-1")).toContainText("Disabled");
+
+    // The soft switch state shows as a badge, not a state change.
+    await expect(page.getByTestId("skill-manual-2")).toContainText("Manual only");
+
+    // Duplicate names are flagged beyond the first discovery.
+    await expect(page.getByTestId("skill-dup-3")).toContainText("Duplicate");
+  });
+
+  test("the hard switch disables a skill and offers the reload bar", async ({ page }) => {
+    await openManage(page, "");
+    await page.getByTestId("manage-tab-skills").click();
+    await expect(page.getByTestId("skills-reload-bar")).toHaveCount(0);
+
+    await page.getByTestId("skill-enable-0").click();
+    await expect(page.getByTestId("skill-disabled-0")).toContainText("Disabled");
+    await expect(page.getByTestId("skills-reload-bar")).toContainText("reload");
+
+    await page.getByTestId("skills-reload-btn").click();
+    await expect(page.getByTestId("skills-reload-bar")).toHaveCount(0);
+  });
+
+  test("the soft switch toggles manual-only without touching the hard state", async ({ page }) => {
+    await openManage(page, "");
+    await page.getByTestId("manage-tab-skills").click();
+
+    await page.getByTestId("skill-soft-0").click();
+    await expect(page.getByTestId("skill-manual-0")).toContainText("Manual only");
+    await expect(page.getByTestId("skill-disabled-0")).toHaveCount(0);
+  });
+
+  test("external sources wire Claude-style dirs with presets and custom input", async ({ page }) => {
+    await openManage(page, "");
+    await page.getByTestId("manage-tab-skills").click();
+
+    await expect(page.getByTestId("skill-external-claude")).toContainText(".claude");
+    await page.getByTestId("skill-external-claude").click();
+
+    // The mock mirrors what the reload discovers in the wired dir.
+    await expect(page.getByTestId("skill-source-external")).toBeVisible();
+    await expect(page.getByTestId("skill-row").filter({ hasText: "claude-skill" })).toHaveCount(1);
+
+    await page.getByTestId("skill-external-input").fill("/tmp/mock-home/.codex/skills");
+    await page.getByTestId("skill-external-add").click();
+    await expect(page.getByTestId("skill-external-codex")).toContainText("Disable");
   });
 });

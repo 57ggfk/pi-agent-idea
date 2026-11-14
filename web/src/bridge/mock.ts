@@ -426,6 +426,84 @@ export class MockBridge implements Bridge {
     ...(query()?.get("pkgs") === "2" ? ["git:github.com/example/pi-git-pkg@0.3.0"] : []),
     ...(query()?.get("pkgbroken") === "1" ? ["npm:@example/pi-broken"] : []),
   ];
+  /** 034: skill fixture state — grouped sources, switches and external dirs. */
+  private mockSkills: Array<{
+    name: string;
+    description: string;
+    path: string;
+    scope: "user" | "project";
+    source: "user-pi" | "user-agents" | "project-pi" | "project-agents" | "package" | "external";
+    disableModelInvocation: boolean;
+    enabled: boolean;
+    duplicate: boolean;
+  }> = [
+    {
+      name: "pdf-tools",
+      description: "Extract text and tables from PDF files.",
+      path: "/tmp/mock-home/.pi/agent/skills/pdf-tools",
+      scope: "user",
+      source: "user-pi",
+      disableModelInvocation: false,
+      enabled: true,
+      duplicate: false,
+    },
+    ...(query()?.get("skills") === "rich"
+      ? [
+          {
+            name: "beta-skill",
+            description: "Excluded via a settings entry (the hard switch demo).",
+            path: "/tmp/mock-home/.pi/agent/skills/beta-skill",
+            scope: "user" as const,
+            source: "user-agents" as const,
+            disableModelInvocation: false,
+            enabled: false,
+            duplicate: false,
+          },
+          {
+            name: "manual-skill",
+            description: "Only reachable through /skill:manual-skill.",
+            path: "/tmp/mock-home/.agents/skills/manual-skill",
+            scope: "user" as const,
+            source: "user-agents" as const,
+            disableModelInvocation: true,
+            enabled: true,
+            duplicate: false,
+          },
+          {
+            name: "pdf-tools",
+            description: "Same name as the user skill — pi keeps the first.",
+            path: "/tmp/mock-home/.agents/skills/pdf-tools",
+            scope: "user" as const,
+            source: "user-agents" as const,
+            disableModelInvocation: false,
+            enabled: true,
+            duplicate: true,
+          },
+          {
+            name: "pkg-skill",
+            description: "Carried by an installed pi package.",
+            path: "/tmp/mock-home/.pi/agent/npm/node_modules/openwiki/skills/pkg-skill",
+            scope: "user" as const,
+            source: "package" as const,
+            disableModelInvocation: false,
+            enabled: true,
+            duplicate: false,
+          },
+        ]
+      : []),
+    {
+      name: "project-conventions",
+      description: "House rules for this repository.",
+      path: `${MOCK_PROJECT_PATH}/.pi/skills/project-conventions`,
+      scope: "project",
+      source: "project-pi",
+      disableModelInvocation: false,
+      enabled: true,
+      duplicate: false,
+    },
+  ];
+  /** 034: positive dir entries in the user settings `skills` array. */
+  private externalSkillSources: string[] = query()?.get("skillext") === "1" ? ["/tmp/mock-home/.claude/skills"] : [];
   /** 033: explicit npm registry override, mirroring PiUserPrefs (null = follow
    *  npm). PiUserPrefs survives IDE restarts, so the mock keeps the value in
    *  sessionStorage across reloads; `?regoverride=<url|none>` seeds it for e2e. */
@@ -924,6 +1002,19 @@ export class MockBridge implements Bridge {
     return this.handleCommand(command) as T;
   }
 
+  /** Assembles the 034 skills payload: grouped entries + external sources. */
+  private skillsState() {
+    return {
+      skills: this.mockSkills.map((s) => ({ ...s })),
+      externalSources: [...this.externalSkillSources],
+      externalPresets: {
+        claude: "/tmp/mock-home/.claude/skills",
+        codex: "/tmp/mock-home/.codex/skills",
+      },
+      projectBasePath: MOCK_PROJECT_PATH,
+    };
+  }
+
   private handleManage(method: string, params?: unknown): unknown {
     switch (method) {
       case "manage.env":
@@ -1262,25 +1353,46 @@ export class MockBridge implements Bridge {
         return { ok: true, path, created: this.agentsKnob !== "exists" };
       }
       case "manage.skillsList":
-        return {
-          ok: true,
-          skills: [
-            {
-              name: "pdf-tools",
-              description: "Extract text and tables from PDF files.",
-              path: "/tmp/mock-home/.pi/agent/skills/pdf-tools/SKILL.md",
+        return { ok: true, ...this.skillsState() };
+      case "manage.skillSetEnabled": {
+        const p = (params ?? {}) as { path?: string; enabled?: boolean };
+        const skill = this.mockSkills.find((s) => s.path === p.path);
+        if (!skill) return { ok: false, error: `unknown skill: ${p.path}` };
+        skill.enabled = p.enabled === true;
+        return { ok: true, changed: true, enabled: skill.enabled };
+      }
+      case "manage.skillSetSourceEnabled": {
+        const p = (params ?? {}) as { dir?: string; enabled?: boolean };
+        if (!p.dir) return { ok: false, error: "missing dir" };
+        const dir = p.dir.replace(/\\/g, "/").replace(/\/+$/, "");
+        if (p.enabled) {
+          if (!this.externalSkillSources.includes(dir)) this.externalSkillSources.push(dir);
+          // Enabling a preset mirrors what the reload would discover.
+          if (dir.includes(".claude")) {
+            this.mockSkills.push({
+              name: "claude-skill",
+              description: "Skill discovered from the external dir.",
+              path: `${dir}/claude-skill`,
               scope: "user",
+              source: "external",
               disableModelInvocation: false,
-            },
-            {
-              name: "project-conventions",
-              description: "House rules for this repository.",
-              path: `${MOCK_PROJECT_PATH}/.pi/skills/project-conventions`,
-              scope: "project",
-              disableModelInvocation: false,
-            },
-          ],
-        };
+              enabled: true,
+              duplicate: false,
+            });
+          }
+        } else {
+          this.externalSkillSources = this.externalSkillSources.filter((d) => d !== dir);
+          this.mockSkills = this.mockSkills.filter((s) => s.source !== "external" || !s.path.startsWith(`${dir}/`));
+        }
+        return { ok: true, enabled: p.enabled === true };
+      }
+      case "manage.skillToggleModelInvocation": {
+        const p = (params ?? {}) as { path?: string; disable?: boolean };
+        const skill = this.mockSkills.find((s) => s.path === p.path);
+        if (!skill) return { ok: false, error: `unknown skill: ${p.path}` };
+        skill.disableModelInvocation = p.disable === true;
+        return { ok: true, changed: true, disable: skill.disableModelInvocation };
+      }
       case "manage.authOverview": {
         // 027: models.json customs join the provider list (no credentials —
         // their key lives in models.json and never crosses the bridge).

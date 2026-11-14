@@ -229,13 +229,31 @@ export interface AgentsListResult extends CliOutcome {
   entries?: AgentsEntry[];
 }
 
+/** Where a skill was discovered (034 FR-001). */
+export type SkillSource = "user-pi" | "user-agents" | "project-pi" | "project-agents" | "package" | "external";
+
 export interface SkillInfo {
   name: string;
   description: string;
   path: string;
   /** User skills always load; project skills only when the project is trusted. */
   scope: Scope;
+  source: SkillSource;
+  /** Soft switch: hidden from automatic model selection, /skill:name still works. */
   disableModelInvocation: boolean;
+  /** Hard switch: false = excluded from discovery via a settings entry (034 FR-003). */
+  enabled: boolean;
+  /** Same effective name as an earlier entry — pi keeps the first. */
+  duplicate: boolean;
+}
+
+export interface SkillsListResult extends CliOutcome {
+  skills?: SkillInfo[];
+  /** Positive dir entries in the user settings `skills` array (034 FR-005). */
+  externalSources?: string[];
+  /** Preset external dirs derived from the real home (Q2). */
+  externalPresets?: { claude: string; codex: string };
+  projectBasePath?: string;
 }
 
 export interface AuthOverviewResult extends CliOutcome {
@@ -429,7 +447,15 @@ export function manageApi(bridge: Bridge) {
       call<CliOutcome & { provider?: string }>("manage.providerSetKey", p),
     agentsOpen: (p: { path: string }) => call<CliOutcome>("manage.agentsOpen", p),
     agentsCreate: (p: { path: string }) => call<ModelsOpenResult>("manage.agentsCreate", p),
-    skillsList: () => call<{ ok: boolean; skills: SkillInfo[] }>("manage.skillsList"),
+    skillsList: () => call<SkillsListResult>("manage.skillsList"),
+    /** 034: hard switch — a settings exclusion entry, project scope needs trust. */
+    skillSetEnabled: (p: { path: string; enabled: boolean; scope: string }) =>
+      call<CliOutcome>("manage.skillSetEnabled", p),
+    /** 034: external source wiring (presets + custom dirs). */
+    skillSetSourceEnabled: (p: { dir: string; enabled: boolean }) => call<CliOutcome>("manage.skillSetSourceEnabled", p),
+    /** 034: soft switch — frontmatter `disable-model-invocation` toggle. */
+    skillToggleModelInvocation: (p: { path: string; disable: boolean }) =>
+      call<CliOutcome>("manage.skillToggleModelInvocation", p),
     skillCreate: (p: { name: string; description: string; body?: string }) => call<CliOutcome>("manage.skillCreate", p),
     authOverview: () => call<AuthOverviewResult>("manage.authOverview"),
     /**

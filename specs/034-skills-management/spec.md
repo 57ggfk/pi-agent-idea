@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-14
 
-**Status**: Draft（Q1–Q4 待用户拍板；每条已给推荐默认）
+**Status**: Approved（2026-11-14 用户拍板：Q1=b 项目禁用写 project settings 需信任、Q2=ab 预设两开关+自定义外接目录、Q3=b 软开关可切换（改写 SKILL.md frontmatter）、Q4=a 提示条+一键 reload）
 
 **Input**: 用户提出（2026-11-14）
 > skills 管理完善，按不同的目录来源分类。如果能支持 skill 的允许和是否允许就好了，

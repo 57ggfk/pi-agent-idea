@@ -318,48 +318,38 @@ object PiManage {
     // -- Skills --------------------------------------------------------------
 
     /**
-     * Lists skills from the user dir and — when [projectBasePath] is known —
-     * from the project's own `.pi/skills` and `.agents/skills`.
-     *
-     * The project dirs used to be resolved as `File(".pi/skills")`, i.e.
-     * relative to the *IDE process* working directory rather than the project
-     * root: multi-project windows listed the wrong project's skills (or none).
+     * Lists skills across all six sources with attribution, enable state and
+     * duplicates (spec 034, T1501). Delegates to [PiSkills]; trust only gates
+     * the write paths, the listing marks untrusted projects for the UI.
      */
     fun skillsList(projectBasePath: String? = null): JsonObject {
-        data class Source(val dir: File, val scope: String)
-
-        val sources = buildList {
-            add(Source(File(PiCliRunner.agentDir(), "skills"), "user"))
-            projectBasePath?.takeIf { it.isNotBlank() }?.let { base ->
-                val root = File(base)
-                add(Source(File(root, ".pi/skills"), "project"))
-                add(Source(File(root, ".agents/skills"), "project"))
-            }
-        }
-        val skills = mutableListOf<JsonObject>()
-        // The same directory can be reachable twice (symlinked .agents/skills);
-        // dedupe on the resolved SKILL.md so it is listed once.
-        val seen = mutableSetOf<String>()
-        for (source in sources) {
-            if (!source.dir.isDirectory) continue
-            source.dir.walkTopDown()
-                .filter { it.name == "SKILL.md" && it.isFile }
-                .forEach { file ->
-                    val key = runCatching { file.canonicalPath }.getOrElse { file.absolutePath }
-                    if (!seen.add(key)) return@forEach
-                    val front = parseFrontmatter(file)
-                    skills.add(buildJsonObject {
-                        put("name", front["name"] ?: file.parentFile.name)
-                        put("description", front["description"] ?: "")
-                        put("path", file.parentFile.absolutePath)
-                        put("scope", source.scope)
-                        put("disableModelInvocation", front["disable-model-invocation"] == "true")
-                    })
-                }
-        }
+        val listing = PiSkills.list(
+            agentDir = PiCliRunner.agentDir(),
+            userHome = File(System.getProperty("user.home")),
+            projectBasePath = projectBasePath,
+        )
         return buildJsonObject {
             put("ok", true)
-            put("skills", JsonArray(skills))
+            put("skills", buildJsonArray {
+                listing.entries.forEach { e ->
+                    add(buildJsonObject {
+                        put("name", e.name)
+                        put("description", e.description)
+                        put("path", e.path)
+                        put("scope", e.scope)
+                        put("source", e.source)
+                        put("disableModelInvocation", e.disableModelInvocation)
+                        put("enabled", e.enabled)
+                        put("duplicate", e.duplicate)
+                    })
+                }
+            })
+            put("externalSources", buildJsonArray { listing.externalSources.forEach { add(JsonPrimitive(it)) } })
+            put("externalPresets", buildJsonObject {
+                put("claude", listing.claudeDir)
+                put("codex", listing.codexDir)
+            })
+            projectBasePath?.takeIf { it.isNotBlank() }?.let { put("projectBasePath", it) }
         }
     }
 
@@ -381,7 +371,32 @@ object PiManage {
         return buildJsonObject { put("ok", true); put("path", dir.absolutePath) }
     }
 
-    private fun parseFrontmatter(file: File): Map<String, String> {
+    // -- Skills 034: enable/disable + external sources + soft switch ----------
+
+    /** Hard switch (FR-003): settings exclusion entries. Project scope writes
+     *  `.pi/settings.json` and is refused while untrusted (Q1-b). */
+    fun skillSetEnabled(params: JsonObject, projectBasePath: String?, trusted: Boolean): JsonObject {
+        val path = params.string("path") ?: return error("missing path")
+        val enabled = params.boolean("enabled") ?: return error("missing enabled")
+        val scope = params.string("scope") ?: "user"
+        return PiSkills.setEnabled(path, enabled, scope, PiCliRunner.agentDir(), projectBasePath, trusted)
+    }
+
+    /** External source wiring (Q2): plain dir entries in user settings. */
+    fun skillSetSourceEnabled(params: JsonObject): JsonObject {
+        val dir = params.string("dir") ?: return error("missing dir")
+        val enabled = params.boolean("enabled") ?: return error("missing enabled")
+        return PiSkills.setSourceEnabled(dir, enabled, PiCliRunner.agentDir())
+    }
+
+    /** Soft per-skill switch (Q3-b): frontmatter toggle in SKILL.md. */
+    fun skillToggleModelInvocation(params: JsonObject): JsonObject {
+        val path = params.string("path") ?: return error("missing path")
+        val disable = params.boolean("disable") ?: return error("missing disable")
+        return PiSkills.toggleModelInvocation(path, disable)
+    }
+
+    internal fun parseFrontmatter(file: File): Map<String, String> {
         val map = mutableMapOf<String, String>()
         try {
             file.useLines { lines ->
