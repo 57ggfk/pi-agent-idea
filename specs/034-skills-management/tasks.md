@@ -20,3 +20,5 @@
   — 验证：manage.spec +1 条（折叠持久化/响应式切换断言），46/46
 - [x] **T1508** 编辑按钮：行内「编辑」→ ide.openFile 打开 SKILL.md（IDEA 编辑器）
   — 验证：manage.spec 断言点击无错误横幅；mock ide.openFile 复用
+- [x] **T1509** AGENTS 面板同款路径优化：entryJson +displayPath（global=~/.pi/agent 短格式、root/子目录=项目相对）、响应式双 span 独立路径行
+  — 验证：agents.spec +响应式断言（宽全路径/窄短路径），agents+manage 52/52

@@ -55,12 +55,13 @@ object PiAgents {
         val entries = mutableListOf<JsonObject>()
 
         val agentDir = PiCliRunner.agentDir()
-        entries.add(entryJson(scope = "global", dir = agentDir, relative = null, priority = 0))
+        val userHome = File(System.getProperty("user.home"))
+        entries.add(entryJson(scope = "global", dir = agentDir, relative = null, priority = 0, userHome = userHome))
 
         if (projectPath != null) {
             val root = File(projectPath)
             if (root.isDirectory) {
-                entries.add(entryJson(scope = "root", dir = root, relative = null, priority = 1))
+                entries.add(entryJson(scope = "root", dir = root, relative = null, priority = 1, userHome = userHome))
 
                 var count = 0
                 root.walkTopDown().onEnter { dir ->
@@ -78,6 +79,7 @@ object PiAgents {
                                 dir = dir,
                                 relative = dir.relativeToOrNull(root)?.invariantSeparatorsPath,
                                 priority = 1 + dir.depth(root),
+                                userHome = userHome,
                             ),
                         )
                     }
@@ -96,7 +98,7 @@ object PiAgents {
     private fun File.depth(root: File): Int =
         relativeToOrNull(root)?.path?.count { it == File.separatorChar }?.plus(1) ?: 1
 
-    private fun entryJson(scope: String, dir: File, relative: String?, priority: Int): JsonObject {
+    private fun entryJson(scope: String, dir: File, relative: String?, priority: Int, userHome: File): JsonObject {
         val eff = effectiveIn(dir)
         return buildJsonObject {
             put("scope", scope)
