@@ -462,6 +462,9 @@ test.describe("packages panel 033", () => {
     await expect(page.getByTestId("market-downloads").first()).toContainText("3,257,276");
     // 137 fixtures / 50 per page = 3 pages
     await expect(page.getByTestId("market-pageinfo")).toHaveText("1 / 3");
+    // raw repository values are git schemes; the card must show a browsable https link
+    await expect(page.locator('[data-testid="market-card"] a[href^="git"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="market-card"] a[href="https://github.com/ranxianglei/billion-context"]')).toHaveCount(1);
 
     await page.getByTestId("market-next").click();
     await expect(page.getByTestId("market-pageinfo")).toHaveText("2 / 3");

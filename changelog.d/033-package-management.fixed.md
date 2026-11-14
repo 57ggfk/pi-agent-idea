@@ -1,2 +1,3 @@
 The per-package "Update" button no longer fails against pi 1.5.0 (`pi update <source>` rejects every notation); upgrades now check the latest version first and reinstall pinned, with a stale-version warning when the upgrade does not take effect (033).
 Offline resilience: package installs, upgrades and market browsing preflight the registry and fail within seconds with a friendly message instead of hanging for minutes in npm's retry ladder; listing and uninstalling work fully offline (033).
+市场卡片的「仓库」链接已从 package.json 原始值（git+https / git:// / git+ssh 等浏览器打不开的 scheme）归一化为可打开的 https 页面链接，无法归一化时隐藏链接而不是给出死链（033）。

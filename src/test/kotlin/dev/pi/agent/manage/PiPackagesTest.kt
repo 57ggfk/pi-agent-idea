@@ -276,7 +276,8 @@ class PiPackagesTest {
         assertEquals("2026-11-13T16:02:38.501Z", first.updated)
         assertEquals(listOf("package"), first.badges)
         assertEquals("https://www.npmjs.com/package/billion-context", first.linkNpm)
-        assertEquals("git+https://github.com/ranxianglei/billion-context.git", first.linkRepo)
+        // raw `git+https://…git` must come out as a browsable https page link
+        assertEquals("https://github.com/ranxianglei/billion-context", first.linkRepo)
         assertEquals(listOf("extension"), packages[1].badges)
     }
 
@@ -381,6 +382,26 @@ class PiPackagesTest {
         PiPackages.marketSearch("https://registry.example.com", "mcp", 1, 50, fetch = fetch)
 
         assertTrue(seen[0].contains("keywords:pi-package mcp"), "keywords mode keeps the user query, got ${seen[0]}")
+    }
+
+    // -- repo link normalization (user report: git+https link = ERR_UNKNOWN_URL_SCHEME) --
+
+    @Test
+    fun `repo links normalize to browsable https or disappear`() {
+        assertEquals("https://github.com/x/y", PiPackages.webRepoUrl("git+https://github.com/x/y.git"))
+        assertEquals("https://github.com/x/y", PiPackages.webRepoUrl("git://github.com/x/y"))
+        assertEquals("https://github.com/x/y", PiPackages.webRepoUrl("git+ssh://git@github.com/x/y.git"))
+        assertEquals("https://github.com/x/y", PiPackages.webRepoUrl("github:x/y"))
+        assertEquals("https://gitlab.com/a/b", PiPackages.webRepoUrl("https://gitlab.com/a/b"))
+        assertNull(PiPackages.webRepoUrl("git@gitlab.com:a/b.git"))
+        assertNull(PiPackages.webRepoUrl("file:///local/repo"))
+        assertNull(PiPackages.webRepoUrl("  "))
+        assertNull(PiPackages.webRepoUrl(null))
+        // The search mapper routes repository values through the normalizer.
+        val body = """{"total":1,"objects":[{"package":{"name":"p","version":"1.0.0",
+          "description":"","keywords":["pi-package"],
+          "links":{"repository":"git+https://github.com/ranxianglei/billion-context.git"}}}]}"""
+        assertEquals("https://github.com/ranxianglei/billion-context", PiPackages.parseSearchResponse(body).second.single().linkRepo)
     }
 
     private fun hit(name: String, version: String = "1.0.0"): String =

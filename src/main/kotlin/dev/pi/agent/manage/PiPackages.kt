@@ -510,7 +510,9 @@ object PiPackages {
                 updated = hit.string("date") ?: "",
                 badges = badgesOf(keywords),
                 linkNpm = links?.string("npm") ?: "https://www.npmjs.com/package/$name",
-                linkRepo = links?.string("repository") ?: "",
+                // Raw repository values are git schemes (git+https/ssh/scp); a
+                // browser needs https or nothing (ERR_UNKNOWN_URL_SCHEME report).
+                linkRepo = webRepoUrl(links?.string("repository")) ?: "",
             )
         }
         return total to packages
@@ -525,6 +527,40 @@ object PiPackages {
             "pi-prompt" in keywords -> add("prompt")
             else -> add("package")
         }
+    }
+
+    /**
+     * Browsable https URL out of a package.json `repository` value. npm hands
+     * the raw field over (`git+https://…`, `git://…`, `git+ssh://git@…`, the
+     * `github:user/repo` shorthand), and a browser cannot open any of those
+     * schemes (ERR_UNKNOWN_URL_SCHEME — real-machine user report). Returns
+     * null when the value cannot be turned into an http(s) page, so the card
+     * hides the link instead of shipping a dead one.
+     */
+    fun webRepoUrl(raw: String?): String? {
+        var url = raw?.trim().takeUnless { it.isNullOrEmpty() } ?: return null
+        val shorthand = Regex("^(github|gitlab|bitbucket):(.+)$").find(url)
+        if (shorthand != null) {
+            url = "https://${shorthand.groupValues[1]}.com/${shorthand.groupValues[2]}"
+        } else if (url.startsWith("git@") && url.contains(':')) {
+            // scp form `git@host:path` — no scheme, no browser can open it.
+            return null
+        }
+        url = url.removePrefix("git+")
+        url = when {
+            url.startsWith("https://") || url.startsWith("http://") -> url
+            url.startsWith("git://") -> "https://${url.removePrefix("git://")}"
+            url.startsWith("ssh://") -> {
+                val body = url.removePrefix("ssh://")
+                val host = body.substringBefore('/').substringAfterLast('@')
+                val path = body.substringAfter('/', missingDelimiterValue = "")
+                if (host.isEmpty() || path.isEmpty()) return null
+                "https://$host/$path"
+            }
+            else -> return null
+        }
+        url = url.removeSuffix(".git")
+        return url
     }
 
     private fun JsonObject.string(key: String): String? =

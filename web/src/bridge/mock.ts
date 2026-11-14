@@ -114,6 +114,23 @@ function versionSuffix(source: string): string | undefined {
   return m?.[1];
 }
 
+/** TS twin of PiPackages.webRepoUrl — the mock mirrors backend shaping. */
+function webRepoUrl(raw: string): string {
+  let url = raw.trim();
+  const sh = /^(github|gitlab|bitbucket):(.+)$/.exec(url);
+  if (sh) url = `https://${sh[1]}.com/${sh[2]}`;
+  else if (url.startsWith('git@') && url.includes(':')) return '';
+  url = url.replace(/^git\+/, '');
+  if (url.startsWith('git://')) url = 'https://' + url.slice('git://'.length);
+  else if (url.startsWith('ssh://')) {
+    const body = url.slice('ssh://'.length);
+    const host = body.split('/')[0].split('@').pop() ?? '';
+    const path = body.includes('/') ? body.slice(body.indexOf('/') + 1) : '';
+    if (!host || !path) return '';
+    url = `https://${host}/${path}`;
+  } else if (!url.startsWith('https://') && !url.startsWith('http://')) return '';
+  return url.replace(/\.git$/, '');
+}
 function bumpVersion(version: string): string {
   const m = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
   if (!m) return version;
@@ -204,7 +221,7 @@ function marketFixture(): Array<{
       linkRepo: `git+https://github.com/mock/${name}.git`,
     };
   });
-  return [...curated, ...filler];
+  return [...curated, ...filler].map((p) => ({ ...p, linkRepo: webRepoUrl(p.linkRepo) }));
 }
 
 /** bridge method / rpc command → the source id it feeds (spec 003). */

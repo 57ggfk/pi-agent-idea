@@ -100,3 +100,5 @@
 - [x] **T1434** e2e：`?pkgspeed=slow` 旋钮，进行中行为「active 行有 bar+文案、他行仅禁用、结束 bar 消失」
   — 验证：manage.spec 新增 2 条进度用例全绿（40/40）
   
+- [x] **T1435** 市场仓库链接归一化（真机用户报告：git+https 链接 ERR_UNKNOWN_URL_SCHEME）
+  — 验证：PiPackagesTest webRepoUrl 10 例（git+https/git:///git+ssh/shorthand/scp/file 拒绝）+ e2e href 断言（40/40）
