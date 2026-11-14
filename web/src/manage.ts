@@ -395,7 +395,7 @@ export function manageApi(bridge: Bridge) {
     packageInstall: (p: { source: string; registry?: string }) => call<CliOutcome>("manage.packageInstall", p),
     packageRemove: (p: { source: string }) => call<CliOutcome>("manage.packageRemove", p),
     packageCheck: (p: { source: string; registry?: string }) => call<PackageCheckResult>("manage.packageCheck", p),
-    marketSearch: (p: { query?: string; page?: number; pageSize?: number; registry?: string }) =>
+    marketSearch: (p: { query?: string; page?: number; pageSize?: number; registry?: string; type?: string }) =>
       call<MarketSearchResult>("manage.marketSearch", p),
     packageUpdateAll: (p?: { registry?: string }) => call<CliOutcome>("manage.packageUpdateAll", p ?? {}),
     prefsGet: () =>

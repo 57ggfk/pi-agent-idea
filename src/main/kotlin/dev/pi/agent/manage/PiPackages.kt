@@ -395,25 +395,31 @@ object PiPackages {
         query: String?,
         page: Int,
         pageSize: Int,
+        type: String? = null,
         fetch: (String, Long) -> Fetch = { url, t -> httpGet(url, t) },
     ): MarketResult {
         val base = registry.trimEnd('/')
         val size = pageSize.coerceIn(1, 50)
         val from = (page.coerceAtLeast(1) - 1) * size
+        // Type filter (2026-11-14 user request, P21): pi.dev's categories are
+        // the package/skill/theme/prompt/extension badges; the registry can
+        // refine them server-side via a second `keywords:` qualifier — precise
+        // on npmjs, plain-text AND approximation on cnpmcore-family mirrors.
+        val typeKeyword = type?.trim()?.takeIf { it in setOf("extension", "skill", "theme", "prompt") }
         fun url(mode: SearchMode): String {
-            val text = if (mode == SearchMode.KEYWORDS) GALLERY_KEYWORD else "pi-package"
-            val needle = listOf(text, query?.trim().takeUnless { it.isNullOrEmpty() })
-                .filterNotNull().joinToString(" ")
-            val encoded = URLEncoder.encode(needle, StandardCharsets.UTF_8)
+            val parts = buildList {
+                add(if (mode == SearchMode.KEYWORDS) GALLERY_KEYWORD else "pi-package")
+                typeKeyword?.let {
+                    add(if (mode == SearchMode.KEYWORDS) "keywords:pi-$it" else "pi-$it")
+                }
+                query?.trim()?.takeUnless { it.isNullOrEmpty() }?.let(::add)
+            }
+            val encoded = URLEncoder.encode(parts.joinToString(" "), StandardCharsets.UTF_8)
             return "$base/-/v1/search?text=$encoded&size=$size&from=$from"
         }
 
-        val mode = searchModes.computeIfAbsent(base) { SearchMode.KEYWORDS }
-        if (mode == SearchMode.UNAVAILABLE) return MarketResult(0, emptyList(), false, "unavailable")
-        if (mode == SearchMode.AUTH) return MarketResult(0, emptyList(), false, "auth")
-
-        fun attempt(useMode: SearchMode): Pair<Fetch, SearchMode>? = try {
-            val response = fetch(url(useMode), 15)
+        fun attempt(useMode: SearchMode, probeUrl: String): Fetch? = try {
+            val response = fetch(probeUrl, 15)
             if (response.status == 401 || response.status == 403) {
                 searchModes[base] = SearchMode.AUTH
                 null
@@ -421,7 +427,7 @@ object PiPackages {
                 searchModes[base] = SearchMode.UNAVAILABLE
                 null
             } else {
-                response to useMode
+                response
             }
         } catch (_: Exception) {
             // Transport failure: leave the cached mode untouched (could be a
@@ -429,30 +435,7 @@ object PiPackages {
             null
         }
 
-        var degraded = false
-        if (mode == SearchMode.KEYWORDS) {
-            val keywordsHit = attempt(SearchMode.KEYWORDS) ?: run {
-                searchModes[base]?.takeIf { it == SearchMode.AUTH }?.let {
-                    return MarketResult(0, emptyList(), false, "auth")
-                }
-                searchModes[base]?.takeIf { it == SearchMode.UNAVAILABLE }?.let {
-                    return MarketResult(0, emptyList(), false, "unavailable")
-                }
-                return MarketResult(0, emptyList(), false, "offline")
-            }
-            val parsed = parseSearchResponse(keywordsHit.first.body)
-            if (parsed.second.isNotEmpty() || query != null) {
-                return MarketResult(parsed.first, parsed.second, false, "")
-            }
-            // keywords: understood by npmjs but not by cnpmcore-family
-            // registries, which answer 200 with total=0 (P19). Distinguish by
-            // probing plain text once and remembering the more permissive mode.
-            degraded = true
-        } else {
-            degraded = true // cached TEXT mode: this registry ignores keywords:
-        }
-
-        val textHit = attempt(SearchMode.TEXT) ?: run {
+        fun codeForAttemptFailure(): MarketResult {
             searchModes[base]?.takeIf { it == SearchMode.AUTH }?.let {
                 return MarketResult(0, emptyList(), false, "auth")
             }
@@ -461,9 +444,44 @@ object PiPackages {
             }
             return MarketResult(0, emptyList(), false, "offline")
         }
-        if (searchModes[base] == SearchMode.KEYWORDS) searchModes[base] = SearchMode.TEXT
-        val parsed = parseSearchResponse(textHit.first.body)
-        return MarketResult(parsed.first, parsed.second, degraded, "")
+
+        /**
+         * Learns the registry's search dialect once, with the **base** query
+         * only — never with the user's words or a type filter baked in, or a
+         * legitimately-empty result would be misread as "this registry ignores
+         * the keywords: syntax" (cnpmcore answers 200 total=0 for unknown
+         * syntax, P19; npmjs answers empty for truly-no-matches). Cache
+         * hit/empty/404/auth verdicts; a transport error stays uncached.
+         */
+        fun probeMode(): SearchMode? {
+            val keywordsProbe = attempt(SearchMode.KEYWORDS, "$base/-/v1/search?text=${URLEncoder.encode(GALLERY_KEYWORD, StandardCharsets.UTF_8)}&size=1")
+                ?: return null
+            val keywordsParsed = parseSearchResponse(keywordsProbe.body)
+            if (keywordsParsed.second.isNotEmpty() || keywordsParsed.first > 0) {
+                searchModes[base] = SearchMode.KEYWORDS
+                return SearchMode.KEYWORDS
+            }
+            // Route accepted but yielded nothing: cnpmcore-family ignores the
+            // keywords: qualifier — check whether plain text fares better.
+            val textProbe = attempt(SearchMode.TEXT, "$base/-/v1/search?text=pi-package&size=1")
+                ?: return null
+            val textParsed = parseSearchResponse(textProbe.body)
+            val learned = if (textParsed.second.isNotEmpty() || textParsed.first > 0) SearchMode.TEXT else SearchMode.TEXT
+            searchModes[base] = learned
+            return learned
+        }
+
+        val mode = searchModes[base] ?: probeMode()
+        if (mode == null) return codeForAttemptFailure()
+        if (mode == SearchMode.UNAVAILABLE) return MarketResult(0, emptyList(), false, "unavailable")
+        if (mode == SearchMode.AUTH) return MarketResult(0, emptyList(), false, "auth")
+
+        val hit = attempt(mode, url(mode)) ?: return codeForAttemptFailure()
+        val parsed = parseSearchResponse(hit.body)
+        // In TEXT mode this registry ignores keywords: — every answer is a
+        // fuzzy approximation (degraded hint), including typed ones. In
+        // KEYWORDS mode a typed/empty answer is precise and stays as-is.
+        return MarketResult(parsed.first, parsed.second, degraded = mode == SearchMode.TEXT, code = "")
     }
 
     /**

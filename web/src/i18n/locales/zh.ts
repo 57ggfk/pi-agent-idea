@@ -518,6 +518,7 @@ export const zh: Dict = {
   "package.registryInvalid": "不是有效的 registry 地址",
   "package.marketSearch": "搜索",
   "package.marketOpenPidev": "在 pi.dev 排序浏览 ↗",
+  "package.filterAll": "全部",
   "package.marketSearchPlaceholder": "搜索 pi.dev/packages…",
   "package.marketLoading": "加载中…",
   "package.marketEmpty": "没有匹配的包。",

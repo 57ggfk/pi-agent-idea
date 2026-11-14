@@ -17,6 +17,15 @@ import type { TFunction } from "i18next";
 
 const PAGE_SIZE = 50;
 
+/** Gallery type chips (P21) — explicit keys for the typed i18n dictionary. */
+const TYPES: Array<{ value: "" | "extension" | "skill" | "theme" | "prompt"; key: "package.filterAll" | "package.badge.extension" | "package.badge.skill" | "package.badge.theme" | "package.badge.prompt" }> = [
+  { value: "", key: "package.filterAll" },
+  { value: "extension", key: "package.badge.extension" },
+  { value: "skill", key: "package.badge.skill" },
+  { value: "theme", key: "package.badge.theme" },
+  { value: "prompt", key: "package.badge.prompt" },
+];
+
 export default function MarketplacePanel({
   api,
   registry,
@@ -44,6 +53,8 @@ export default function MarketplacePanel({
   const [appliedQuery, setAppliedQuery] = useState("");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
+  /** Gallery type filter (P21): server-side refinement via `keywords:pi-<type>`. */
+  const [type, setType] = useState("");
   const [data, setData] = useState<MarketSearchResult | null>(null);
   const [failed, setFailed] = useState<{ code: string; raw?: string } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -59,6 +70,7 @@ export default function MarketplacePanel({
         page,
         pageSize: PAGE_SIZE,
         registry: registry ?? undefined,
+        type: type || undefined,
       });
       if (seq !== loadSeq.current) return; // a newer load superseded this one
       if (!res.ok) {
@@ -74,7 +86,7 @@ export default function MarketplacePanel({
     } finally {
       if (seq === loadSeq.current) setLoading(false);
     }
-  }, [api, appliedQuery, page, registry]);
+  }, [api, appliedQuery, page, registry, type]);
 
   useEffect(() => {
     void load();
@@ -118,6 +130,23 @@ export default function MarketplacePanel({
         >
           {t("package.marketOpenPidev")}
         </a>
+      </div>
+
+      <div className="market-types" data-testid="market-types">
+        {TYPES.map(({ value, key }) => (
+          <button
+            key={value || "all"}
+            className={`btn market-type ${type === value ? "market-type-on" : ""}`}
+            data-testid={`market-type-${value || "all"}`}
+            disabled={busy && !loading}
+            onClick={() => {
+              setType(value);
+              setPage(1);
+            }}
+          >
+            {t(key)}
+          </button>
+        ))}
       </div>
 
       {data?.degraded ? (

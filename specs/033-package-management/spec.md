@@ -159,6 +159,7 @@ registry 完全一致。
   **MUST NOT 调用 `pi update <source>`**（pi 1.5.0 实证损坏）。单包升级成功后 MUST 刷新清单并重读版本，
   且 MUST 校验物理版本已变为目标版本（防止 P9 类 no-op 假成功——本方案带版本号，不受 lock 影响，
   此校验为保险）。settings 的不钉版性质 MUST 保持（现状即如此，P10/P11 实证，无需额外处理）。
+- **FR-005**（2026-11-14 P21 追加：类型过滤 = 多一个 keywords: 限定符的服务端过滤，chips 行 全部/扩展/技能/主题/提示词；npmjs 精确、镜像端纯文本近似；类型来自 pi-* 关键词推断，与官网 manifest 索引口径有差。取证 P21：官方首页徽章分布 extension 23/package 24/prompt 1/skill 1/theme 1；多 keywords AND total=6451）
 - **FR-005** 官方市场 MUST 直连 npm registry search API
   （`/-/v1/search?text=keywords:pi-package[+ 搜索词]`，分页 `size`/`from`，50/页），
   **MUST NOT 爬取 pi.dev 页面**。搜索框 MUST 转化为 API text 参数追加检索词。

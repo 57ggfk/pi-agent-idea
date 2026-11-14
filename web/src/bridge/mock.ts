@@ -1152,7 +1152,7 @@ export class MockBridge implements Bridge {
         };
       }
       case "manage.marketSearch": {
-        const p = (params ?? {}) as { query?: string; page?: number; pageSize?: number };
+        const p = (params ?? {}) as { query?: string; page?: number; pageSize?: number; type?: string };
         const knob = query()?.get("market");
         if (knob === "offline") return { ok: false, code: "offline", error: "registry unreachable" };
         if (knob === "unavailable") return { ok: false, code: "unavailable", error: "market search failed" };
@@ -1160,7 +1160,9 @@ export class MockBridge implements Bridge {
         const page = Math.max(1, Number(p.page ?? 1) || 1);
         const pageSize = Math.min(50, Math.max(1, Number(p.pageSize ?? 50) || 50));
         if (knob === "empty") return { ok: true, total: 0, page, pageSize, degraded: false, packages: [] };
-        const all = marketFixture();
+        // P21: mirror the backend's server-side type refinement.
+        const type = (p.type ?? "").trim();
+        const all = marketFixture().filter((pkg) => !type || pkg.badges.includes(type));
         const needle = (p.query ?? "").trim().toLowerCase();
         const filtered = needle
           ? all.filter((m) => (m.name + " " + m.description).toLowerCase().includes(needle))

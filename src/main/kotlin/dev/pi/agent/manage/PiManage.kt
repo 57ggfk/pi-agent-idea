@@ -211,7 +211,8 @@ object PiManage {
         val query = params.string("query")?.takeIf { it.isNotBlank() }
         val page = params.int("page")?.coerceAtLeast(1) ?: 1
         val pageSize = params.int("pageSize")?.coerceIn(1, 50) ?: 50
-        val result = PiPackages.marketSearch(registry, query, page, pageSize)
+        val type = params.string("type")?.takeIf { it.isNotBlank() }
+        val result = PiPackages.marketSearch(registry, query, page, pageSize, type)
         PiPackages.LOG.info(
             "pi-packages market: registry=$registry query=$query page=$page code=${result.code} " +
                 "total=${result.total} degraded=${result.degraded} size=${result.packages.size}",

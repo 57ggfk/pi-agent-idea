@@ -320,7 +320,8 @@ class PiPackagesTest {
         assertEquals(10000, result.total)
         assertEquals("pi-subagents", result.packages.single().name)
         assertEquals("", result.code)
-        assertTrue(urls.size == 2, "exactly one keywords probe then one text probe, got $urls")
+        // Probe keywords → probe plain text → learn TEXT → execute the real query.
+        assertTrue(urls.size == 3, "probe pair + the real query, got $urls")
     }
 
     @Test
@@ -372,16 +373,68 @@ class PiPackagesTest {
     }
 
     @Test
+    fun `type filter refines the keywords query server-side and never degrades on empty`() {
+        PiPackages.resetSearchModes()
+        val seen = mutableListOf<String>()
+        val fetch: (String, Long) -> PiPackages.Fetch = { url, _ ->
+            seen += java.net.URLDecoder.decode(url.substringAfter("text=").substringBefore("&"), "UTF-8")
+            if (seen.size == 1) {
+                // The base-dialect probe: npmjs answers with hits → KEYWORDS.
+                fetchOf(200, """{"total":13710,"objects":[${hit("billion-context")}]}""")
+            } else {
+                // A typed/empty answer is a real answer — no fuzzy fallback.
+                fetchOf(200, """{"total":0,"objects":[]}""")
+            }
+        }
+
+        val result = PiPackages.marketSearch("https://registry.npmjs.org", null, 1, 50, type = "extension", fetch = fetch)
+
+        // P21: the type rides as a second keywords: qualifier (server-side AND)…
+        assertTrue(seen[1].contains("keywords:pi-package keywords:pi-extension"), "got ${seen[1]}")
+        // …and an empty result for a typed filter is a real answer — no fuzzy fallback.
+        assertEquals(2, seen.size)
+        assertTrue(result.packages.isEmpty())
+        assertTrue(!result.degraded)
+    }
+
+    @Test
+    fun `type filter uses plain text on degraded text-mode registries`() {
+        PiPackages.resetSearchModes()
+        val seen = mutableListOf<String>()
+        val fetch: (String, Long) -> PiPackages.Fetch = { url, _ ->
+            seen += java.net.URLDecoder.decode(url.substringAfter("text=").substringBefore("&"), "UTF-8")
+            if (url.contains("keywords%3Api-package") || url.contains("keywords:pi-package")) {
+                fetchOf(200, """{"total":0,"objects":[]}""")
+            } else {
+                fetchOf(200, """{"total":2,"objects":[${hit("pi-x")},${hit("pi-y")}]}""")
+            }
+        }
+
+        val first = PiPackages.marketSearch("https://registry.npmmirror.com", null, 1, 50, type = "extension", fetch = fetch)
+
+        assertTrue(seen[2].startsWith("pi-package pi-extension"), "text mode keeps the type as a plain word, got ${seen[2]}")
+        assertTrue(first.degraded)
+        assertEquals(2, first.total)
+    }
+
+    @Test
     fun `keyword queries ride along in both modes`() {
         PiPackages.resetSearchModes()
         val seen = mutableListOf<String>()
         val fetch: (String, Long) -> PiPackages.Fetch = { url, _ ->
             seen += java.net.URLDecoder.decode(url.substringAfter("text=").substringBefore("&"), "UTF-8")
-            fetchOf(200, """{"total":0,"objects":[]}""")
+            if (seen.size == 1) {
+                fetchOf(200, """{"total":1,"objects":[${hit("billion-context")}]}""")
+            } else {
+                fetchOf(200, """{"total":0,"objects":[]}""")
+            }
         }
         PiPackages.marketSearch("https://registry.example.com", "mcp", 1, 50, fetch = fetch)
 
-        assertTrue(seen[0].contains("keywords:pi-package mcp"), "keywords mode keeps the user query, got ${seen[0]}")
+        // The dialect probe runs on the bare keyword first; the user's words
+        // ride along in the learned mode's real query.
+        assertTrue(seen[0].contains("keywords:pi-package"), "probe is base-only, got ${seen[0]}")
+        assertTrue(seen[1].contains("keywords:pi-package mcp"), "keywords mode keeps the user query, got ${seen[1]}")
     }
 
     // -- repo link normalization (user report: git+https link = ERR_UNKNOWN_URL_SCHEME) --

@@ -102,3 +102,8 @@
   
 - [x] **T1435** 市场仓库链接归一化（真机用户报告：git+https 链接 ERR_UNKNOWN_URL_SCHEME）
   — 验证：PiPackagesTest webRepoUrl 10 例（git+https/git:///git+ssh/shorthand/scp/file 拒绝）+ e2e href 断言（40/40）
+- [x] **T1436** 市场类型过滤（P21）：chips 行（全部/扩展/技能/主题/提示词）→ marketSearch type 参数 →
+  npmjs 服务端 keywords AND、镜像端纯文本近似；探测先行重构（模式探测与业务查询解耦，
+  修复「镜像首次带类型过滤拿到假空」的设计缺陷，探空永远用裸 keywords 基准）
+  — 验证：PiPackagesTest +2 条（typed 空不降级/text 模式带类型词）；manage.spec +断言（extension 过滤后
+  徽章全为 extension、回到全部 pager 恢复 1/3），40/40

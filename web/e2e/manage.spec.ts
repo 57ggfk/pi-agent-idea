@@ -466,6 +466,15 @@ test.describe("packages panel 033", () => {
     await expect(page.locator('[data-testid="market-card"] a[href^="git"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="market-card"] a[href="https://github.com/ranxianglei/billion-context"]')).toHaveCount(1);
 
+    // P21 type filter: server-side keyword refinement via the chips row.
+    await page.getByTestId("market-type-extension").click();
+    await expect(page.getByTestId("market-card").first()).toContainText("pi-web-access");
+    const badges = await page.locator('[data-testid="market-card"] .pkg-badge').allInnerTexts();
+    await expect(page.getByTestId("market-card")).toHaveCount(badges.length);
+    for (const badge of badges) await expect(badge === "extension").toBe(true);
+    await page.getByTestId("market-type-all").click();
+    await expect(page.getByTestId("market-pageinfo")).toHaveText("1 / 3");
+
     await page.getByTestId("market-next").click();
     await expect(page.getByTestId("market-pageinfo")).toHaveText("2 / 3");
     await expect(page.getByTestId("market-card").first()).toContainText("pi-sample-051");

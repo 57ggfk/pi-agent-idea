@@ -5137,3 +5137,20 @@ button {
   align-items: center;
   color: var(--accent-text);
 }
+
+.market-types {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.market-type {
+  font-size: 11px;
+  padding: 3px 10px;
+}
+
+.market-type-on {
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
