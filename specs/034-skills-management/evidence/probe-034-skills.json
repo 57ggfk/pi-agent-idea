@@ -1,0 +1,78 @@
+{
+  "when": "2026-11-14T06:02:33.764Z",
+  "pi": "1.5.0",
+  "sandbox": "C:/Users/Administrator/AppData/Local/Temp/pi034-probe",
+  "results": {
+    "base": [
+      "alpha",
+      "beta",
+      "dim-model",
+      "find-skills",
+      "jcef-knowledge",
+      "microsoft-foundry",
+      "orca-cli",
+      "orca-computer-use",
+      "orchestration",
+      "vmware-workstation"
+    ],
+    "agentsSpec": [
+      "alpha",
+      "beta",
+      "dim-model",
+      "find-skills",
+      "jcef-knowledge",
+      "microsoft-foundry",
+      "orca-cli",
+      "orca-computer-use",
+      "orchestration",
+      "vmware-workstation"
+    ],
+    "excludeExact": [
+      "alpha",
+      "dim-model",
+      "find-skills",
+      "jcef-knowledge",
+      "microsoft-foundry",
+      "orca-cli",
+      "orca-computer-use",
+      "orchestration",
+      "vmware-workstation"
+    ],
+    "excludeGlob": [
+      "alpha",
+      "dim-model",
+      "find-skills",
+      "jcef-knowledge",
+      "microsoft-foundry",
+      "orca-cli",
+      "orca-computer-use",
+      "orchestration",
+      "vmware-workstation"
+    ],
+    "excludeBare": [
+      "alpha",
+      "beta",
+      "dim-model",
+      "find-skills",
+      "jcef-knowledge",
+      "microsoft-foundry",
+      "orca-cli",
+      "orca-computer-use",
+      "orchestration",
+      "vmware-workstation"
+    ],
+    "externalDir": [
+      "alpha",
+      "beta",
+      "claude-skill",
+      "dim-model",
+      "find-skills",
+      "jcef-knowledge",
+      "microsoft-foundry",
+      "orca-cli",
+      "orca-computer-use",
+      "orchestration",
+      "vmware-workstation"
+    ]
+  }
+}
