@@ -555,8 +555,8 @@ test.describe("packages panel 033", () => {
     const activeRow = page.getByTestId("package-row").nth(1);
     await expect(activeRow).toHaveClass(/pkg-row-active/);
     await expect(page.getByTestId("package-progress-1")).toContainText("Removing");
-    // …while the other row's actions merely wait (disabled, no bar of its own).
-    await expect(page.getByTestId("package-remove-0")).toBeDisabled();
+    // …while the other row stays clickable: clicking would just enqueue (035).
+    await expect(page.getByTestId("package-remove-0")).toBeEnabled();
     await expect(page.getByTestId("package-progress-0")).toHaveCount(0);
 
     await expect(page.getByTestId("package-progress-1")).toHaveCount(0, { timeout: 10_000 });
@@ -696,5 +696,41 @@ test.describe("skills layout rework", () => {
     // The mock handles ide.openFile; no failure banner may appear.
     await expect(page.getByTestId("outcome-banner")).toHaveCount(0);
     await expect(page.getByTestId("skills-panel")).toBeVisible();
+  });
+});
+
+// -- 035: serial management queue ------------------------------------------------
+
+test.describe("management queue 035", () => {
+  test("two ops enqueue and run in FIFO order with visible queue states", async ({ page }) => {
+    await openManage(page, "pkgs=2&pkgspeed=slow");
+    await page.getByTestId("manage-tab-packages").click();
+    await expect(page.getByTestId("package-row")).toHaveCount(2);
+
+    // Two quick clicks: the second op must enqueue, not be blocked.
+    await page.getByTestId("package-remove-1").click();
+    await page.getByTestId("confirm-ok").click();
+    await page.getByTestId("package-remove-0").click();
+    await page.getByTestId("confirm-ok").click();
+
+    // The first op runs (active), the second waits with its queue position.
+    await expect(page.getByTestId("package-progress-1")).toBeVisible();
+    await expect(page.getByTestId("package-queued-0")).toContainText("Queued");
+
+    // FIFO drain: both finish, no leftover queue badges.
+    await expect(page.getByTestId("package-progress-1")).toHaveCount(0, { timeout: 15_000 });
+    await expect(page.getByTestId("package-queued-0")).toHaveCount(0, { timeout: 15_000 });
+    await expect(page.getByTestId("update-result")).toContainText("✓");
+  });
+
+  test("skills ops share the same queue across panels (US3)", async ({ page }) => {
+    await openManage(page, "pkgspeed=slow&skills=rich");
+    await page.getByTestId("manage-tab-skills").click();
+
+    await page.getByTestId("skill-enable-0").click();
+    await expect(page.getByTestId("skills-reload-bar")).toBeVisible();
+    // Q4-a: the bar clears only after an explicit reload click.
+    await page.getByTestId("skills-reload-btn").click();
+    await expect(page.getByTestId("skills-reload-bar")).toHaveCount(0, { timeout: 15_000 });
   });
 });

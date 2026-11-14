@@ -520,6 +520,7 @@ export const zh: Dict = {
   "package.marketOpenPidev": "在 pi.dev 排序浏览 ↗",
   "skill.edit": "编辑",
   "skill.disabledCount": "项禁用",
+  "package.queued": "排队中（第 {{n}} 位）",
   "skill.source.userPi": "用户 · .pi/skills",
   "skill.source.userAgents": "用户 · ~/.agents/skills",
   "skill.source.projectPi": "项目 · .pi/skills",

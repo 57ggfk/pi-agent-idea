@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useT } from "../../i18n/useT";
 import { OutcomeBanner } from "../ManageView";
 import { restartPiProcess } from "../../manage";
+import { managementQueueSubscribe, managementQueueSnapshot } from "../../lib/opQueue";
 import type { Bridge } from "../../bridge/types";
 import type { manageApi, SkillInfo, SkillsListResult } from "../../manage";
 
@@ -92,6 +93,10 @@ export default function SkillsPanel({
   const skills = result?.skills ?? [];
   const externalSources = result?.externalSources ?? [];
   const presets = result?.externalPresets;
+
+  const queueSnap = useSyncExternalStore(managementQueueSubscribe, managementQueueSnapshot);
+  const ownPending = (key: string) =>
+    queueSnap.active === key || queueSnap.waiting.includes(key);
 
   const groups = useMemo(
     () =>
@@ -312,6 +317,7 @@ export default function SkillsPanel({
                       t={t}
                       skill={s}
                       index={index}
+                      ownPending={ownPending(`skill:${s.path}`)}
                       trusted={trusted}
                       busy={busy}
                       onToggleEnabled={() => void toggleEnabled(s)}
@@ -331,6 +337,7 @@ function SkillRow({
   t,
   skill,
   index,
+  ownPending,
   trusted,
   busy,
   onToggleEnabled,
@@ -340,6 +347,7 @@ function SkillRow({
   t: ReturnType<typeof useT>["t"];
   skill: SkillInfo;
   index: number;
+  ownPending: boolean;
   trusted: boolean;
   busy: boolean;
   onToggleEnabled: () => void;
@@ -394,7 +402,7 @@ function SkillRow({
       </div>
       <div className="panel-row-actions skill-actions">
         <div className="skill-actions-row">
-          <button className="btn" data-testid={`skill-edit-${index}`} disabled={busy} onClick={onEdit}>
+          <button className="btn" data-testid={`skill-edit-${index}`} disabled={busy || ownPending} onClick={onEdit}>
             {t("skill.edit")}
           </button>
           <button

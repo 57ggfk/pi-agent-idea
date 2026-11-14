@@ -5280,3 +5280,12 @@ button {
 .skill-chevron-collapsed {
   transform: rotate(-90deg);
 }
+
+.pkg-row-queued {
+  opacity: 0.75;
+}
+
+.pkg-queued {
+  font-size: 11px;
+  color: var(--text-secondary);
+}

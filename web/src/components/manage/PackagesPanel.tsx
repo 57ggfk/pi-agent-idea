@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { managementQueueRun, managementQueueSnapshot, managementQueueSubscribe } from "../../lib/opQueue";
 import { useT } from "../../i18n/useT";
 import { usePiStore } from "../../store/store";
 import { OutcomeBanner } from "../ManageView";
@@ -121,7 +122,8 @@ export default function PackagesPanel({ api }: { api: ReturnType<typeof manageAp
   const [updateResult, setUpdateResult] = useState<CliOutcome | null>(null);
   const [upgradeStale, setUpgradeStale] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [pending, setPending] = useState<PendingAction>(null);
+  /** Pending action per queue key (035): multiple ops can be queued at once. */
+  const [pendingByKey, setPendingByKey] = useState<Record<string, PendingAction>>({});
   /** npm name of the market card whose install is running (033 FR-020). */
   const [marketInstalling, setMarketInstalling] = useState<string | null>(null);
   const [source, setSource] = useState("");
@@ -168,45 +170,56 @@ export default function PackagesPanel({ api }: { api: ReturnType<typeof manageAp
     entries.map((e) => npmNameOf(e.source)).filter((n): n is string => n !== null),
   );
 
-  /** Runs a CLI action, shows its verbatim output, then refreshes the list. */
-  const act = async (pendingAction: NonNullable<PendingAction>, action: Promise<CliOutcome>) => {
-    setBusy(true);
-    setPending(pendingAction);
+  /** Live queue snapshot (035): operations enqueue instead of blocking. */
+  const queueSnap = useSyncExternalStore(managementQueueSubscribe, managementQueueSnapshot);
+  const ownPending = (key: string) =>
+    queueSnap.active === key || queueSnap.waiting.includes(key) || !!pendingByKey[key];
+
+  /** Runs a CLI action through the shared serial queue (035 FR-001): clicks
+   *  enqueue instead of being disabled; the row shows 排队中/进行中 from the
+   *  queue snapshot. The last completed op drives the outcome banner. */
+  const act = (pendingAction: NonNullable<PendingAction>, key: string, action: () => Promise<CliOutcome>) => {
     setOutcome(null);
     setUpdateResult(null);
     setUpgradeStale(false);
-    try {
-      const res = await action;
-      setUpdateResult(res);
-      await refresh();
-    } catch (e) {
-      setUpdateResult({ ok: false, error: (e as Error).message });
-    } finally {
-      setBusy(false);
-      setPending(null);
-    }
+    setPendingByKey((c) => ({ ...c, [key]: pendingAction }));
+    void managementQueueRun(key, async () => {
+      setBusy(true);
+      try {
+        const res = await action();
+        setUpdateResult(res);
+        await refresh();
+      } catch (e) {
+        setUpdateResult({ ok: false, error: (e as Error).message });
+      } finally {
+        setBusy(false);
+        setPendingByKey((c) => {
+          const { [key]: _gone, ...rest } = c;
+          return rest;
+        });
+      }
+    }).catch(() => undefined);
   };
 
-  /** Market one-click install, handled here so the card can show its progress. */
+  /** Market one-click install, handled here so the card can show its progress.
+   *  Queued like every other mutation (035) — key `market:<name>`. */
   const installFromMarket = (pkg: { name: string }) => {
-    setBusy(true);
-    setPending({ index: "toolbar", kind: "install" });
-    setMarketInstalling(pkg.name);
     setOutcome(null);
     setUpdateResult(null);
-    setUpgradeStale(false);
-    api
-      .packageInstall({ source: `npm:${pkg.name}`, registry: registry ?? undefined })
-      .then((res: CliOutcome) => {
+    void managementQueueRun(`market:${pkg.name}`, async () => {
+      setBusy(true);
+      setMarketInstalling(pkg.name);
+      try {
+        const res = await api.packageInstall({ source: `npm:${pkg.name}`, registry: registry ?? undefined });
         setUpdateResult(res);
-        return refresh();
-      })
-      .catch((e: Error) => setUpdateResult({ ok: false, error: e.message }))
-      .finally(() => {
+        await refresh();
+      } catch (e) {
+        setUpdateResult({ ok: false, error: (e as Error).message });
+      } finally {
         setBusy(false);
-        setPending(null);
         setMarketInstalling(null);
-      });
+      }
+    }).catch(() => undefined);
   };
 
   const changeRegistry = (mode: RegistryMode, customText: string) => {
@@ -238,33 +251,34 @@ export default function PackagesPanel({ api }: { api: ReturnType<typeof manageAp
    * it reports success the list is re-read and the version verified — the
    * lock-file no-op trap (probe P9) must not pass silently.
    */
-  const upgrade = async (entry: PackageEntry, index: number) => {
+  const upgrade = (entry: PackageEntry, index: number) => {
     const checkState = checks[index]?.result;
     if (!checkState?.latest) return;
     const name = npmNameOf(entry.source);
     if (!name) return;
-    setBusy(true);
-    setPending({ index, kind: "upgrade" });
-    setOutcome(null);
-    setUpdateResult(null);
-    setUpgradeStale(false);
-    try {
-      const res = await api.packageInstall({
-        source: `npm:${name}@${checkState.latest}`,
-        registry: registry ?? undefined,
-      });
-      setUpdateResult(res);
-      const fresh = res.ok ? await refresh() : null;
-      if (res.ok && fresh) {
-        const row = fresh.entries?.find((e) => npmNameOf(e.source) === name);
-        if (row?.version !== checkState.latest) setUpgradeStale(true);
+    void managementQueueRun(`pkg:${entry.source}`, async () => {
+      setBusy(true);
+      setPendingByKey((c) => ({ ...c, [`pkg:${entry.source}`]: { index, kind: "upgrade" } }));
+      setOutcome(null);
+      setUpdateResult(null);
+      setUpgradeStale(false);
+      try {
+        const res = await api.packageInstall({
+          source: `npm:${name}@${checkState.latest}`,
+          registry: registry ?? undefined,
+        });
+        setUpdateResult(res);
+        const fresh = res.ok ? await refresh() : null;
+        if (res.ok && fresh) {
+          const row = fresh.entries?.find((e) => npmNameOf(e.source) === name);
+          if (row?.version !== checkState.latest) setUpgradeStale(true);
+        }
+      } catch (e) {
+        setUpdateResult({ ok: false, error: (e as Error).message });
+      } finally {
+        setBusy(false);
       }
-    } catch (e) {
-      setUpdateResult({ ok: false, error: (e as Error).message });
-    } finally {
-      setBusy(false);
-      setPending(null);
-    }
+    }).catch(() => undefined);
   };
 
   return (
@@ -341,7 +355,7 @@ export default function PackagesPanel({ api }: { api: ReturnType<typeof manageAp
               data-testid="package-install"
               disabled={busy || !source.trim()}
               onClick={() => {
-                void act({ index: "toolbar", kind: "install" }, api.packageInstall({ source: source.trim(), registry: registry ?? undefined }));
+                void act({ index: "toolbar", kind: "install" }, "pkg:toolbar", () => api.packageInstall({ source: source.trim(), registry: registry ?? undefined }));
                 setSource("");
               }}
             >
@@ -351,7 +365,7 @@ export default function PackagesPanel({ api }: { api: ReturnType<typeof manageAp
               className="btn"
               data-testid="packages-update-all"
               disabled={busy || entries.length === 0}
-              onClick={() => void act({ index: "toolbar", kind: "updateAll" }, api.packageUpdateAll({ registry: registry ?? undefined }))}
+              onClick={() => void act({ index: "toolbar", kind: "updateAll" }, "pkg:updateAll", () => api.packageUpdateAll({ registry: registry ?? undefined }))}
             >
               {t("package.updateAll")}
             </button>
@@ -360,12 +374,17 @@ export default function PackagesPanel({ api }: { api: ReturnType<typeof manageAp
             </button>
           </div>
 
-          {pending?.index === "toolbar" ? (
-            <ProgressLine
-              testid={pending.kind === "updateAll" ? "packages-progress-all" : "package-progress-toolbar"}
-              text={t(PENDING_KEY[pending.kind])}
-            />
-          ) : null}
+          {(() => {
+            const toolbarKey = queueSnap.active === "pkg:toolbar" || queueSnap.active === "pkg:updateAll" ? queueSnap.active : null;
+            if (!toolbarKey) return null;
+            const kind = pendingByKey[toolbarKey]?.kind ?? "install";
+            return (
+              <ProgressLine
+                testid={kind === "updateAll" ? "packages-progress-all" : "package-progress-toolbar"}
+                text={t(PENDING_KEY[kind])}
+              />
+            );
+          })()}
 
           {entries.length === 0 ? (
             <div className="panel-empty" data-testid="packages-empty">
@@ -378,13 +397,16 @@ export default function PackagesPanel({ api }: { api: ReturnType<typeof manageAp
                 t={t}
                 entry={entry}
                 index={i}
+                ownPending={ownPending(`pkg:${entry.source}`)}
                 busy={busy}
-                rowPending={pending && pending.index === i ? pending : null}
+                rowKey={`pkg:${entry.source}`}
+                queueSnap={queueSnap}
+                rowPending={pendingByKey[`pkg:${entry.source}`] ?? null}
                 checkState={checks[i]}
                 onCheck={() => void check(entry, i)}
                 onUpgrade={() => void upgrade(entry, i)}
                 onReinstall={() =>
-                  void act({ index: i, kind: "reinstall" }, api.packageInstall({ source: entry.source, registry: registry ?? undefined }))
+                  void act({ index: i, kind: "reinstall" }, `pkg:${entry.source}`, () => api.packageInstall({ source: entry.source, registry: registry ?? undefined }))
                 }
                 onRemove={() =>
                   askConfirm({
@@ -393,7 +415,7 @@ export default function PackagesPanel({ api }: { api: ReturnType<typeof manageAp
                     confirmLabel: t("package.remove"),
                     danger: true,
                     onConfirm: () => {
-                      void act({ index: i, kind: "remove" }, api.packageRemove({ source: entry.source }));
+                      void act({ index: i, kind: "remove" }, `pkg:${entry.source}`, () => api.packageRemove({ source: entry.source }));
                     },
                   })
                 }
@@ -429,7 +451,10 @@ function PackageRow({
   t,
   entry,
   index,
+  ownPending,
   busy,
+  rowKey,
+  queueSnap,
   rowPending,
   checkState,
   onCheck,
@@ -440,7 +465,10 @@ function PackageRow({
   t: TFunction;
   entry: PackageEntry;
   index: number;
+  ownPending: boolean;
   busy: boolean;
+  rowKey: string;
+  queueSnap: { active: string | null; waiting: string[] };
   rowPending: NonNullable<PendingAction> | null;
   checkState?: CheckState;
   onCheck: () => void;
@@ -450,9 +478,12 @@ function PackageRow({
 }) {
   const checkResult = checkState?.result;
   const upgradable = checkResult?.state === "upgradable" && !!checkResult.latest;
+  const isActive = queueSnap.active === rowKey;
+  const waitPos = queueSnap.waiting.indexOf(rowKey);
+  const queued = waitPos >= 0;
   return (
     <div
-      className={`panel-row package-row ${rowPending ? "pkg-row-active" : ""}`}
+      className={`panel-row package-row ${isActive || rowPending ? "pkg-row-active" : ""} ${queued ? "pkg-row-queued" : ""}`}
       data-testid="package-row"
     >
       <div className="panel-row-main">
@@ -485,11 +516,16 @@ function PackageRow({
             </span>
           ) : null}
         </span>
-        {rowPending ? (
+        {isActive && rowPending ? (
           <ProgressLine
             testid={`package-progress-${index}`}
             text={t(PENDING_KEY[rowPending.kind])}
           />
+        ) : null}
+        {queued ? (
+          <div className="pkg-queued" data-testid={`package-queued-${index}`}>
+            {t("package.queued", { n: waitPos + 1 })}
+          </div>
         ) : null}
       </div>
       <div className="panel-row-actions">
@@ -508,11 +544,11 @@ function PackageRow({
             </button>
           </>
         ) : (
-          <button className="btn" data-testid={`package-reinstall-${index}`} disabled={busy} onClick={onReinstall}>
+          <button className="btn" data-testid={`package-reinstall-${index}`} disabled={ownPending} onClick={onReinstall}>
             {t("package.reinstall")}
           </button>
         )}
-        <button className="btn btn-abort" data-testid={`package-remove-${index}`} disabled={busy} onClick={onRemove}>
+        <button className="btn btn-abort" data-testid={`package-remove-${index}`} disabled={ownPending} onClick={onRemove}>
           {t("package.remove")}
         </button>
       </div>

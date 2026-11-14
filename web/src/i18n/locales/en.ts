@@ -530,6 +530,7 @@ export const en = {
   "package.marketOpenPidev": "Sort on pi.dev ↗",
   "skill.edit": "Edit",
   "skill.disabledCount": "disabled",
+  "package.queued": "Queued (#{{n}})",
   "skill.source.userPi": "User · .pi/skills",
   "skill.source.userAgents": "User · ~/.agents/skills",
   "skill.source.projectPi": "Project · .pi/skills",

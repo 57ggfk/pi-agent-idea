@@ -271,7 +271,7 @@ function MarketCard({
           ) : installing ? (
             <ProgressLine testid={`market-progress-${pkg.name}`} text={t("package.progressInstall")} />
           ) : (
-            <button className="btn btn-send" data-testid={`market-install-${pkg.name}`} disabled={busy} onClick={onInstall}>
+            <button className="btn btn-send" data-testid={`market-install-${pkg.name}`} disabled={busy || installing} onClick={onInstall}>
               {t("package.install")}
             </button>
           )}
