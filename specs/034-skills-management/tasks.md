@@ -24,3 +24,6 @@
   — 验证：agents.spec +响应式断言（宽全路径/窄短路径），agents+manage 52/52
 - [x] **T1510** AGENTS 面板 displayPath 落地修复：T1509 的 AgentsPanel/agents.spec patch 静默失败（replace marker 不匹配且脚本未验证），本轮用 Edit 工具重打；mock fixture/类型补齐；CDP live 复验
   — 验证：agents.spec +响应式断言（宽全路径/窄~短格式）6/6；manage 46/46；CDP 真机 DOM 断言待装 r40 后复测
+- [x] **T1513** frontmatter 块标量解析（用户截图反馈：description: | / >- 只显示指示符）
+  — 验证：PiSkillsTest +2 条（literal 保 
+ / folded 空格折叠 / 缩进续行不产生幽灵键）；CDP 真机实测 orchestration（>-）与 pi-subagents（|）描述完整显示，悬浮含换行原文

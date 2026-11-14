@@ -264,6 +264,40 @@ class PiSkillsTest {
     }
 
     @Test
+    fun `block scalar descriptions parse — literal and folded`() {
+        // Real-world shape from pi-subagents/orchestration (user report):
+        // description: | and description: >- with indented continuation lines.
+        val dir = tempDir().resolve("block").also { it.mkdirs() }
+        val nl = "\n"
+        File(dir, "SKILL.md").writeText(
+            "---" + nl +
+            "name: pi-subagents" + nl +
+            "description: |" + nl +
+            "  Delegate work to Pi subagents: one child," + nl +
+            "  parallel or scripted workflows." + nl +
+            "---" + nl,
+        )
+        val literal = PiManage.parseFrontmatter(File(dir, "SKILL.md"))
+        assertEquals("Delegate work to Pi subagents: one child,\nparallel or scripted workflows.", literal["description"])
+
+        val foldedFile = tempDir().resolve("folded/SKILL.md")
+        foldedFile.parentFile.mkdirs()
+        foldedFile.writeText(
+            "---" + nl +
+            "name: orchestration" + nl +
+            "description: >-" + nl +
+            "  Orchestrate subagents when the operator asks:" + nl +
+            "  review fanout and multi-lane flows." + nl +
+            "---" + nl,
+        )
+        val folded = PiManage.parseFrontmatter(foldedFile)
+        assertEquals("Orchestrate subagents when the operator asks: review fanout and multi-lane flows.", folded["description"])
+
+        // Indented continuation junk must not become phantom keys.
+        assertTrue(literal.keys.none { it.contains("child") || it.contains("Delegate") })
+    }
+
+    @Test
     fun `exact match honors the platform case policy`() {
         val agent = agentDirWith("alpha")
         val skillDir = File(agent, "skills/alpha")

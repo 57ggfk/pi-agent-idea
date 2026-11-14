@@ -398,26 +398,79 @@ object PiManage {
         return PiSkills.toggleModelInvocation(path, disable)
     }
 
+    /**
+     * Frontmatter parser with YAML block-scalar support (034 T1513): a value
+     * of `|` / `>` (with optional -/+ chomping) collects the indented lines
+     * that follow — literal keeps newlines, folded joins them with spaces.
+     * Real packages use these (`pi-subagents`, `orchestration`), and the old
+     * line-by-line parser reduced them to the bare indicator (`>-`) or empty.
+     */
     internal fun parseFrontmatter(file: File): Map<String, String> {
         val map = mutableMapOf<String, String>()
         try {
-            file.useLines { lines ->
-                var inFront = false
-                for (line in lines.take(40)) {
-                    val trimmed = line.trim()
-                    if (trimmed == "---") {
-                        if (!inFront) inFront = true else break
-                        continue
-                    }
-                    if (!inFront) {
-                        if (trimmed.isEmpty()) continue else break
-                    }
-                    val idx = trimmed.indexOf(':')
-                    if (idx > 0) {
-                        map[trimmed.substring(0, idx).trim()] = trimmed.substring(idx + 1).trim().trim('"')
+            val lines = file.readLines()
+            var i = 0
+            while (i < lines.size && lines[i].isBlank()) i++
+            if (i >= lines.size || lines[i].trim() != "---") return map
+            i++
+
+            var key: String? = null
+            var blockKind: Char? = null   // '|' literal, '>' folded, or ' ' plain multiline
+            var keyIndent = 0
+            var blockIndent = -1
+            val block = mutableListOf<String>()
+
+            fun flushBlock() {
+                val k = key ?: return
+                if (blockKind != null && block.isNotEmpty()) {
+                    map[k] = when (blockKind) {
+                        '|' -> block.joinToString("\n").trim()
+                        else -> block.filter { it.isNotEmpty() }.joinToString(" ").trim()
                     }
                 }
+                key = null
+                blockKind = null
+                blockIndent = -1
+                block.clear()
             }
+
+            while (i < lines.size) {
+                val line = lines[i]
+                val trimmed = line.trim()
+                if (trimmed == "---") break
+                if (trimmed.isEmpty()) {
+                    if (key != null && blockKind != null) block += ""
+                    i++
+                    continue
+                }
+                val indent = line.indexOfFirst { it != ' ' }.let { if (it < 0) 0 else it }
+
+                if (key != null && blockKind != null && indent > keyIndent) {
+                    // Inside a block scalar: deeper content continues the value.
+                    if (blockIndent < 0) blockIndent = indent
+                    block += if (indent >= blockIndent) line.substring(blockIndent).trimEnd() else trimmed
+                    i++
+                    continue
+                }
+
+                flushBlock()
+                val idx = trimmed.indexOf(':')
+                if (idx <= 0) { i++; continue } // stray line inside frontmatter
+                val k = trimmed.substring(0, idx).trim()
+                val v = trimmed.substring(idx + 1).trim().trim('"')
+                val blockMatch = Regex("^[|>]([+-]?\\d*)$").find(v)
+                if (blockMatch != null) {
+                    key = k
+                    blockKind = v[0]
+                    keyIndent = indent
+                    blockIndent = -1
+                    block.clear()
+                } else {
+                    map[k] = v
+                }
+                i++
+            }
+            flushBlock()
         } catch (_: Exception) {
         }
         return map
