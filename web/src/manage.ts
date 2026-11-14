@@ -215,6 +215,8 @@ export interface AgentsEntry {
   scope: string;
   dir: string;
   relativePath?: string;
+  /** Short display form (034 T1509): ~ for global, project-relative otherwise. */
+  displayPath?: string;
   /** The candidate that wins in this directory (pi's per-dir order). */
   fileName: string;
   path: string;

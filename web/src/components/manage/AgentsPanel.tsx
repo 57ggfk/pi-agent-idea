@@ -117,12 +117,15 @@ export default function AgentsPanel({
                 <span className="mono">{e.relativePath ? `${e.relativePath}/` : ""}{e.fileName}</span>
               </span>
               <span className="panel-row-sub">
-                <span className="mono">{e.path}</span>
-                {" · "}
                 {e.exists ? t("agents.exists") : t("agents.missing")}
                 {" · "}
                 {t("agents.priority", { rank: e.priority })}
               </span>
+              {/* T1509: path on its own line — full on wide panels, short form narrow. */}
+              <div className="skill-path-line mono" title={e.path}>
+                <span className="skill-path-full">{e.path}</span>
+                <span className="skill-path-short">{e.displayPath ?? e.path}</span>
+              </div>
             </div>
             <div className="panel-row-actions">
               {e.exists ? (

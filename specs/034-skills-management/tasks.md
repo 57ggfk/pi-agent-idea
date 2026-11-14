@@ -22,3 +22,5 @@
   — 验证：manage.spec 断言点击无错误横幅；mock ide.openFile 复用
 - [x] **T1509** AGENTS 面板同款路径优化：entryJson +displayPath（global=~/.pi/agent 短格式、root/子目录=项目相对）、响应式双 span 独立路径行
   — 验证：agents.spec +响应式断言（宽全路径/窄短路径），agents+manage 52/52
+- [x] **T1510** AGENTS 面板 displayPath 落地修复：T1509 的 AgentsPanel/agents.spec patch 静默失败（replace marker 不匹配且脚本未验证），本轮用 Edit 工具重打；mock fixture/类型补齐；CDP live 复验
+  — 验证：agents.spec +响应式断言（宽全路径/窄~短格式）6/6；manage 46/46；CDP 真机 DOM 断言待装 r40 后复测

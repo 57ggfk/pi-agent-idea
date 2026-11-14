@@ -350,6 +350,7 @@ object PiManage {
                 put("claude", listing.claudeDir)
                 put("codex", listing.codexDir)
             })
+            put("homeDir", listing.homeDir)
             projectBasePath?.takeIf { it.isNotBlank() }?.let { put("projectBasePath", it) }
         }
     }

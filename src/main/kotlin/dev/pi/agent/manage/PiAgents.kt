@@ -100,15 +100,30 @@ object PiAgents {
 
     private fun entryJson(scope: String, dir: File, relative: String?, priority: Int, userHome: File): JsonObject {
         val eff = effectiveIn(dir)
+        val candidate = eff.candidate
+        // T1509: short display form — global entries under the agent dir
+        // collapse to `~`; root/subdirectory entries are project-relative.
+        val displayPath = when (scope) {
+            "global" -> displayShort(dir, userHome) + "/" + candidate
+            else -> (relative?.takeIf { it.isNotEmpty() }?.plus("/") ?: "") + candidate
+        }
         return buildJsonObject {
             put("scope", scope)
             put("dir", dir.absolutePath)
             put("relativePath", relative ?: "")
-            put("fileName", eff.candidate)
+            put("fileName", candidate)
             put("path", (eff.file ?: File(dir, eff.candidate)).absolutePath)
+            put("displayPath", displayPath)
             put("exists", eff.exists)
             put("priority", priority)
         }
+    }
+
+    /** `~`-short form for dirs under the user home (034 T1509); else the full path. */
+    private fun displayShort(dir: File, userHome: File): String {
+        val d = dir.absolutePath.replace('\\', '/')
+        val home = userHome.absolutePath.replace('\\', '/')
+        return if (d.startsWith(home)) "~" + d.substring(home.length) else d
     }
 
     /**

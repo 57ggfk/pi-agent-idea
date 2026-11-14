@@ -5178,7 +5178,7 @@ button {
   font-size: 10px;
 }
 
-.skill-row-off {
+.skill-row-off .panel-row-main {
   opacity: 0.55;
 }
 
@@ -5250,8 +5250,17 @@ button {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 2px;
+  gap: 3px;
   flex-shrink: 0;
+}
+
+.skill-actions-row {
+  display: flex;
+  gap: 4px;
+}
+
+.skill-soft-btn {
+  width: 100%;
 }
 
 .skill-group-title {

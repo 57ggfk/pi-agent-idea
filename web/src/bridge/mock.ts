@@ -2920,6 +2920,7 @@ function agentsListFixture(knob: string | null | undefined): {
     {
       scope: "global",
       dir: "/tmp/mock-home/.pi/agent",
+      displayPath: "~/.pi/agent/AGENTS.md",
       fileName: "AGENTS.md",
       path: "/tmp/mock-home/.pi/agent/AGENTS.md",
       exists: knob === "deep" || knob === "none" ? false : true,
@@ -2928,6 +2929,7 @@ function agentsListFixture(knob: string | null | undefined): {
     {
       scope: "root",
       dir: "/tmp/mock-project",
+      displayPath: "AGENTS.md",
       fileName: "AGENTS.md",
       path: "/tmp/mock-project/AGENTS.md",
       exists: knob !== "none",
@@ -2963,6 +2965,7 @@ type AgentsEntryShape = {
   scope: string;
   dir: string;
   relativePath?: string;
+  displayPath?: string;
   fileName: string;
   path: string;
   exists: boolean;

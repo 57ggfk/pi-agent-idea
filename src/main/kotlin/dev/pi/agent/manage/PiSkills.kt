@@ -164,14 +164,20 @@ object PiSkills {
      * Whether one settings `skills` array entry excludes [skillPath] (the
      * SKILL.md parent dir, forward slashes). `-exact` matches the directory
      * or its SKILL.md file; `!glob` matches via a glob→regex translation.
-     * Windows paths compare case-insensitively.
+     * Path comparison is case-insensitive **only on Windows** (case-preserving
+     * filesystem); on macOS/Linux `Beta` and `beta` are distinct directories
+     * and must not cross-match.
      */
+    private val pathCaseInsensitive = dev.pi.agent.process.OsProcess.isWindows
+
     internal fun exclusionMatches(entry: String, skillPath: String): Boolean {
         val target = normalizePath(skillPath)
+        fun eq(a: String, b: String): Boolean =
+            if (pathCaseInsensitive) a.equals(b, ignoreCase = true) else a == b
         return when {
             entry.startsWith("-") -> {
                 val exact = normalizePath(entry.substring(1))
-                exact == target || exact == "$target/SKILL.md"
+                eq(exact, target) || eq(exact, "$target/SKILL.md")
             }
             entry.startsWith("!") -> globToRegex(entry.substring(1)).matches(target)
             else -> false
@@ -206,7 +212,8 @@ object PiSkills {
             }
             i++
         }
-        return Regex("(?i)$head$sb$tail")
+        val flags = if (pathCaseInsensitive) "(?i)" else ""
+        return Regex("$flags$head$sb$tail")
     }
 
     internal fun normalizePath(path: String): String = path.replace('\\', '/').trimEnd('/')

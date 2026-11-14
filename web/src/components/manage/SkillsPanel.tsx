@@ -393,19 +393,27 @@ function SkillRow({
         ) : null}
       </div>
       <div className="panel-row-actions skill-actions">
-        <button className="btn" data-testid={`skill-edit-${index}`} disabled={busy} onClick={onEdit}>
-          {t("skill.edit")}
-        </button>
-        <button className="btn" data-testid={`skill-soft-${index}`} disabled={busy} onClick={onToggleSoft}>
-          {skill.disableModelInvocation ? t("skill.softOff") : t("skill.softOn")}
-        </button>
+        <div className="skill-actions-row">
+          <button className="btn" data-testid={`skill-edit-${index}`} disabled={busy} onClick={onEdit}>
+            {t("skill.edit")}
+          </button>
+          <button
+            className={`btn ${skill.enabled ? "btn-abort" : "btn-send"}`}
+            data-testid={`skill-enable-${index}`}
+            disabled={busy || inert}
+            onClick={onToggleEnabled}
+          >
+            {skill.enabled ? t("skill.turnOff") : t("skill.turnOn")}
+          </button>
+        </div>
         <button
-          className={`btn ${skill.enabled ? "btn-abort" : "btn-send"}`}
-          data-testid={`skill-enable-${index}`}
-          disabled={busy || inert}
-          onClick={onToggleEnabled}
+          className="btn skill-soft-btn"
+          data-testid={`skill-soft-${index}`}
+          disabled={busy}
+          title={t("skill.softTip")}
+          onClick={onToggleSoft}
         >
-          {skill.enabled ? t("skill.turnOff") : t("skill.turnOn")}
+          {skill.disableModelInvocation ? t("skill.softOff") : t("skill.softOn")}
         </button>
       </div>
     </div>

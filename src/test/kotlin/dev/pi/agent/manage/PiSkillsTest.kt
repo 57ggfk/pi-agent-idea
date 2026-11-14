@@ -262,4 +262,23 @@ class PiSkillsTest {
         assertFalse(PiSkills.exclusionMatches("!**/beta/**", "C:/agent/skills/alpha"))
         assertFalse(PiSkills.exclusionMatches("-beta", "C:/agent/skills/beta"), "bare names do not match")
     }
+
+    @Test
+    fun `exact match honors the platform case policy`() {
+        val agent = agentDirWith("alpha")
+        val skillDir = File(agent, "skills/alpha")
+        // Same casing always matches. A case-different entry matches only on
+        // Windows (case-preserving filesystem); on macOS/Linux `ALPHA` names a
+        // different directory and must not cross-match.
+        val sameCase = PiSkills.exclusionMatches(
+            "-" + skillDir.absolutePath.replace('\\', '/') + "/SKILL.md",
+            skillDir.absolutePath,
+        )
+        assertTrue(sameCase)
+        val differentCase = PiSkills.exclusionMatches(
+            "-" + skillDir.absolutePath.replace('\\', '/').replace("alpha", "ALPHA") + "/SKILL.md",
+            skillDir.absolutePath,
+        )
+        assertEquals(dev.pi.agent.process.OsProcess.isWindows, differentCase)
+    }
 }
