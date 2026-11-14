@@ -518,6 +518,8 @@ export const zh: Dict = {
   "package.registryInvalid": "不是有效的 registry 地址",
   "package.marketSearch": "搜索",
   "package.marketOpenPidev": "在 pi.dev 排序浏览 ↗",
+  "skill.edit": "编辑",
+  "skill.disabledCount": "项禁用",
   "skill.source.userPi": "用户 · .pi/skills",
   "skill.source.userAgents": "用户 · ~/.agents/skills",
   "skill.source.projectPi": "项目 · .pi/skills",

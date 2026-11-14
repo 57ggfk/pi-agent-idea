@@ -651,3 +651,47 @@ test.describe("skills panel 034", () => {
     await expect(page.getByTestId("skill-external-codex")).toContainText("Disable");
   });
 });
+
+// -- 034 T1507: skills layout rework --------------------------------------------
+
+test.describe("skills layout rework", () => {
+  test("groups collapse, remember the state and show short/long paths responsively", async ({ page }) => {
+    await openManage(page, "skills=rich");
+    await page.getByTestId("manage-tab-skills").click();
+
+    // Collapse the user-agents group: its rows disappear…
+    const agentsHeader = page.getByTestId("skill-source-user-agents");
+    await agentsHeader.click();
+    await expect(page.getByTestId("skill-row").filter({ hasText: "beta-skill" })).toHaveCount(0);
+    // …and the choice survives a reload.
+    await page.reload();
+    await expect(page.getByTestId("empty-state")).toBeVisible();
+    await page.getByTestId("tab-manage").click();
+    await page.getByTestId("manage-tab-skills").click();
+    await expect(page.getByTestId("skill-row").filter({ hasText: "beta-skill" })).toHaveCount(0);
+
+    // Wide viewport shows the full path; the short ~ form exists in the DOM.
+    const pdfRow = page.getByTestId("skill-row").filter({ hasText: "pdf-tools" }).first();
+    await expect(pdfRow.locator(".skill-path-full")).toBeVisible();
+    await expect(pdfRow.locator(".skill-path-short")).toBeHidden();
+
+    // Narrow panel: the shortened ~ form takes over.
+    await page.setViewportSize({ width: 480, height: 800 });
+    await expect(pdfRow.locator(".skill-path-short")).toBeVisible();
+    await expect(pdfRow.locator(".skill-path-full")).toBeHidden();
+    await page.setViewportSize({ width: 1280, height: 720 });
+
+    // Expand again for the next tests.
+    await agentsHeader.click();
+    await expect(page.getByTestId("skill-row").filter({ hasText: "beta-skill" })).toHaveCount(1);
+  });
+
+  test("the edit button opens SKILL.md in the IDE editor", async ({ page }) => {
+    await openManage(page, "");
+    await page.getByTestId("manage-tab-skills").click();
+    await page.getByTestId("skill-edit-0").click();
+    // The mock handles ide.openFile; no failure banner may appear.
+    await expect(page.getByTestId("outcome-banner")).toHaveCount(0);
+    await expect(page.getByTestId("skills-panel")).toBeVisible();
+  });
+});

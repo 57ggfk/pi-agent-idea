@@ -236,6 +236,8 @@ export interface SkillInfo {
   name: string;
   description: string;
   path: string;
+  /** Shortened path (T1507): `~` for home, project/package-relative. */
+  displayPath?: string;
   /** User skills always load; project skills only when the project is trusted. */
   scope: Scope;
   source: SkillSource;
@@ -432,6 +434,8 @@ export function manageApi(bridge: Bridge) {
     modelsOpenFile: (p: { provider: string }) => call<ModelsOpenResult>("manage.modelsOpenFile", p),
     /** Forces a full JCEF frame repaint (OSR frame-lag workaround, 0.5.4
      *  real-machine find): call after view-level DOM swaps. */
+    /** 034: open a file (e.g. a skill SKILL.md) in the IDE editor. */
+    openInEditor: (p: { path: string }) => call<{ ok: boolean }>("ide.openFile", p),
     repaint: () => call<{ ok: boolean }>("ide.repaint"),
     agentsList: () => call<AgentsListResult>("manage.agentsList"),
     /** Writes a provider credential. Responses carry the provider name only —

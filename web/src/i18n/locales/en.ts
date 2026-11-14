@@ -528,6 +528,8 @@ export const en = {
   "package.registryInvalid": "Not a valid registry address",
   "package.marketSearch": "Search",
   "package.marketOpenPidev": "Sort on pi.dev ↗",
+  "skill.edit": "Edit",
+  "skill.disabledCount": "disabled",
   "skill.source.userPi": "User · .pi/skills",
   "skill.source.userAgents": "User · ~/.agents/skills",
   "skill.source.projectPi": "Project · .pi/skills",

@@ -5208,3 +5208,66 @@ button {
 .skill-external-add {
   margin-top: 6px;
 }
+
+/* -- 034 T1507: skills layout rework ------------------------------------------ */
+
+.skill-desc {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-path-line {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Wide panel: the full path. Narrow: the shortened ~/relative form. */
+.skill-path-short {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .skill-path-full {
+    display: none;
+  }
+  .skill-path-short {
+    display: inline;
+  }
+  .skill-actions {
+    flex-direction: row;
+  }
+}
+
+/* The three per-row buttons stack on the right edge. */
+.skill-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.skill-group-title {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.skill-chevron {
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+
+.skill-chevron-collapsed {
+  transform: rotate(-90deg);
+}

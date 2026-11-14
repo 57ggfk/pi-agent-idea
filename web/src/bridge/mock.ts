@@ -431,6 +431,7 @@ export class MockBridge implements Bridge {
     name: string;
     description: string;
     path: string;
+    displayPath?: string;
     scope: "user" | "project";
     source: "user-pi" | "user-agents" | "project-pi" | "project-agents" | "package" | "external";
     disableModelInvocation: boolean;
@@ -453,6 +454,7 @@ export class MockBridge implements Bridge {
             name: "beta-skill",
             description: "Excluded via a settings entry (the hard switch demo).",
             path: "/tmp/mock-home/.pi/agent/skills/beta-skill",
+            displayPath: "~/.pi/agent/skills/beta-skill",
             scope: "user" as const,
             source: "user-agents" as const,
             disableModelInvocation: false,
@@ -463,6 +465,7 @@ export class MockBridge implements Bridge {
             name: "manual-skill",
             description: "Only reachable through /skill:manual-skill.",
             path: "/tmp/mock-home/.agents/skills/manual-skill",
+            displayPath: "~/.agents/skills/manual-skill",
             scope: "user" as const,
             source: "user-agents" as const,
             disableModelInvocation: true,
@@ -473,6 +476,7 @@ export class MockBridge implements Bridge {
             name: "pdf-tools",
             description: "Same name as the user skill — pi keeps the first.",
             path: "/tmp/mock-home/.agents/skills/pdf-tools",
+            displayPath: "~/.agents/skills/pdf-tools",
             scope: "user" as const,
             source: "user-agents" as const,
             disableModelInvocation: false,
@@ -483,6 +487,7 @@ export class MockBridge implements Bridge {
             name: "pkg-skill",
             description: "Carried by an installed pi package.",
             path: "/tmp/mock-home/.pi/agent/npm/node_modules/openwiki/skills/pkg-skill",
+            displayPath: "openwiki/skills/pkg-skill",
             scope: "user" as const,
             source: "package" as const,
             disableModelInvocation: false,
@@ -1372,6 +1377,7 @@ export class MockBridge implements Bridge {
             this.mockSkills.push({
               name: "claude-skill",
               description: "Skill discovered from the external dir.",
+              displayPath: dir.replace("/tmp/mock-home", "~") + "/claude-skill",
               path: `${dir}/claude-skill`,
               scope: "user",
               source: "external",

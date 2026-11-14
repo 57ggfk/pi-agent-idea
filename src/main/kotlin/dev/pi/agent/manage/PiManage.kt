@@ -336,6 +336,7 @@ object PiManage {
                         put("name", e.name)
                         put("description", e.description)
                         put("path", e.path)
+                        put("displayPath", e.displayPath)
                         put("scope", e.scope)
                         put("source", e.source)
                         put("disableModelInvocation", e.disableModelInvocation)

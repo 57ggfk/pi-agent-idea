@@ -46,6 +46,25 @@ export default function SkillsPanel({
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: "", description: "" });
   const [customDir, setCustomDir] = useState("");
+  /** Collapsed groups (T1507), remembered across reloads. */
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("skills-collapsed") ?? "{}") as Record<string, boolean>;
+    } catch {
+      return {};
+    }
+  });
+
+  const toggleGroup = (key: string) =>
+    setCollapsed((c) => {
+      const next = { ...c, [key]: !c[key] };
+      try {
+        localStorage.setItem("skills-collapsed", JSON.stringify(next));
+      } catch {
+        // private mode: the collapse just won't persist
+      }
+      return next;
+    });
 
   const refresh = useCallback(async () => {
     setBusy(true);
@@ -159,6 +178,15 @@ export default function SkillsPanel({
     }
   };
 
+  const editInIde = async (skill: SkillInfo) => {
+    setOutcome(null);
+    try {
+      await api.openInEditor({ path: `${skill.path}/SKILL.md` });
+    } catch (e) {
+      setOutcome({ ok: false, error: (e as Error).message });
+    }
+  };
+
   return (
     <div data-testid="skills-panel">
       <OutcomeBanner outcome={outcome} />
@@ -249,29 +277,44 @@ export default function SkillsPanel({
         </div>
       ) : null}
 
-      {groups.map((group) => (
-        <div key={group.key} className="skill-group">
-          <div className="skill-group-title" data-testid={`skill-source-${group.key}`}>
-            {t(group.titleKey)}
-            <span className="skill-group-count">{group.entries.length}</span>
+      {groups.map((group) => {
+        const disabledCount = group.entries.filter((s) => !s.enabled).length;
+        const isCollapsed = collapsed[group.key] === true;
+        return (
+          <div key={group.key} className="skill-group">
+            <button
+              className="skill-group-title"
+              data-testid={`skill-source-${group.key}`}
+              onClick={() => toggleGroup(group.key)}
+            >
+              <span className={`skill-chevron ${isCollapsed ? "skill-chevron-collapsed" : ""}`}>▾</span>
+              {t(group.titleKey)}
+              <span className="skill-group-count">
+                {group.entries.length}
+                {disabledCount > 0 ? ` · ${disabledCount} ${t("skill.disabledCount")}` : ""}
+              </span>
+            </button>
+            {isCollapsed
+              ? null
+              : group.entries.map((s) => {
+                  const index = skills.indexOf(s);
+                  return (
+                    <SkillRow
+                      key={s.path}
+                      t={t}
+                      skill={s}
+                      index={index}
+                      trusted={trusted}
+                      busy={busy}
+                      onToggleEnabled={() => void toggleEnabled(s)}
+                      onToggleSoft={() => void toggleSoft(s)}
+                      onEdit={() => void editInIde(s)}
+                    />
+                  );
+                })}
           </div>
-          {group.entries.map((s) => {
-            const index = skills.indexOf(s);
-            return (
-              <SkillRow
-                key={s.path}
-                t={t}
-                skill={s}
-                index={index}
-                trusted={trusted}
-                busy={busy}
-                onToggleEnabled={() => void toggleEnabled(s)}
-                onToggleSoft={() => void toggleSoft(s)}
-              />
-            );
-          })}
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -284,6 +327,7 @@ function SkillRow({
   busy,
   onToggleEnabled,
   onToggleSoft,
+  onEdit,
 }: {
   t: ReturnType<typeof useT>["t"];
   skill: SkillInfo;
@@ -292,6 +336,7 @@ function SkillRow({
   busy: boolean;
   onToggleEnabled: () => void;
   onToggleSoft: () => void;
+  onEdit: () => void;
 }) {
   const inert = skill.scope === "project" && !trusted;
   return (
@@ -324,14 +369,25 @@ function SkillRow({
             </span>
           ) : null}
         </span>
-        <span className="panel-row-sub">{skill.description}</span>
+        <span className="panel-row-sub skill-desc" title={skill.description}>
+          {skill.description}
+        </span>
+        {/* T1507: path on its own line — full path on wide panels, the
+            shortened `~`/relative form on narrow ones (pure CSS switch). */}
+        <div className="skill-path-line mono" title={skill.path}>
+          <span className="skill-path-full">{skill.path}</span>
+          <span className="skill-path-short">{skill.displayPath ?? skill.path}</span>
+        </div>
         {inert ? (
           <span className="panel-row-sub panel-row-warn" data-testid="skill-inert-reason">
             {t("skill.inertReason")}
           </span>
         ) : null}
       </div>
-      <div className="panel-row-actions">
+      <div className="panel-row-actions skill-actions">
+        <button className="btn" data-testid={`skill-edit-${index}`} disabled={busy} onClick={onEdit}>
+          {t("skill.edit")}
+        </button>
         <button className="btn" data-testid={`skill-soft-${index}`} disabled={busy} onClick={onToggleSoft}>
           {skill.disableModelInvocation ? t("skill.softOff") : t("skill.softOn")}
         </button>
@@ -343,7 +399,6 @@ function SkillRow({
         >
           {skill.enabled ? t("skill.turnOff") : t("skill.turnOn")}
         </button>
-        <span className="panel-row-sub mono">{skill.path}</span>
       </div>
     </div>
   );

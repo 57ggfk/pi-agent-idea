@@ -33,6 +33,8 @@ object PiSkills {
         val name: String,
         val description: String,
         val path: String,
+        /** Shortened for display (T1507): `~` for home, project-relative for project skills. */
+        val displayPath: String,
         val scope: String,
         val source: String,
         val disableModelInvocation: Boolean,
@@ -104,6 +106,7 @@ object PiSkills {
                     name = name,
                     description = front["description"] ?: "",
                     path = file.parentFile.absolutePath,
+                    displayPath = displayPathOf(skillPath, source.source, source.dir, userHome, agentDir, projectBasePath),
                     scope = source.scope,
                     source = source.source,
                     disableModelInvocation = front["disable-model-invocation"] == "true",
@@ -204,6 +207,36 @@ object PiSkills {
     }
 
     internal fun normalizePath(path: String): String = path.replace('\\', '/').trimEnd('/')
+
+    /**
+     * Display shortening (T1507): `~` for anything under the real home,
+     * project-relative for project skills, package-relative for package
+     * skills (`<pkg>/…` from the npm prefix). The full path still travels in
+     * `path` and the UI keeps it as the tooltip.
+     */
+    internal fun displayPathOf(
+        skillPath: String,
+        source: String,
+        sourceDir: File,
+        userHome: File,
+        agentDir: File,
+        projectBasePath: String?,
+    ): String {
+        val p = normalizePath(skillPath)
+        if (source == "package") {
+            val nm = normalizePath(File(agentDir, "npm/node_modules").absolutePath)
+            if (p.startsWith("$nm/")) return p.substring(nm.length + 1)
+        }
+        if (projectBasePath?.isNotBlank() == true) {
+            val base = normalizePath(File(projectBasePath).absolutePath)
+            if (p.startsWith("$base/")) return p.substring(base.length + 1)
+        }
+        val agent = normalizePath(agentDir.absolutePath)
+        if (p.startsWith("$agent/")) return "~/.pi/agent/" + p.substring(agent.length + 1)
+        val home = normalizePath(userHome.absolutePath)
+        if (p.startsWith("$home/")) return "~/" + p.substring(home.length + 1)
+        return p
+    }
 
     // -- settings helpers --------------------------------------------------------
 

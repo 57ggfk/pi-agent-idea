@@ -16,3 +16,7 @@
   — 验证：探针输出留 run-report
 
 （T1505/T1506 的真机部分在验收时回填，见 run-report 22 节）
+- [x] **T1507** 布局返工（用户反馈）：分组可折叠（localStorage 记忆）、描述单行截断（title 全文）、路径另起一行双响应式（宽=全路径 / ≤640px=~ 与相对短路径，纯 CSS）、按钮右侧竖排
+  — 验证：manage.spec +1 条（折叠持久化/响应式切换断言），46/46
+- [x] **T1508** 编辑按钮：行内「编辑」→ ide.openFile 打开 SKILL.md（IDEA 编辑器）
+  — 验证：manage.spec 断言点击无错误横幅；mock ide.openFile 复用
