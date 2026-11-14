@@ -255,6 +255,8 @@ export interface SkillsListResult extends CliOutcome {
   externalSources?: string[];
   /** Preset external dirs derived from the real home (Q2). */
   externalPresets?: { claude: string; codex: string };
+  /** Real user home — the UI shortens external preset labels to ~. */
+  homeDir?: string;
   projectBasePath?: string;
 }
 

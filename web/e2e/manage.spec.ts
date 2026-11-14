@@ -640,6 +640,9 @@ test.describe("skills panel 034", () => {
     await page.getByTestId("manage-tab-skills").click();
 
     await expect(page.getByTestId("skill-external-claude")).toContainText(".claude");
+    // T1509-followup: the preset label renders the ~-shortened form.
+    await expect(page.getByTestId("skill-external-claude")).toContainText("~/.claude/skills");
+    await expect(page.getByTestId("skill-external-claude").locator(".mono")).not.toContainText("/tmp/mock-home");
     await page.getByTestId("skill-external-claude").click();
 
     // The mock mirrors what the reload discovers in the wired dir.

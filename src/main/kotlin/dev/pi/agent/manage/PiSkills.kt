@@ -47,6 +47,8 @@ object PiSkills {
         val externalSources: List<String>,
         val claudeDir: String,
         val codexDir: String,
+        /** Real home dir, so the UI can shorten external preset labels to `~`. */
+        val homeDir: String,
     )
 
     /**
@@ -120,6 +122,7 @@ object PiSkills {
             externalSources = externalDirs,
             claudeDir = normalizePath(File(userHome, ".claude/skills").absolutePath),
             codexDir = normalizePath(File(userHome, ".codex/skills").absolutePath),
+            homeDir = normalizePath(userHome.absolutePath),
         )
     }
 

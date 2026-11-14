@@ -1016,6 +1016,7 @@ export class MockBridge implements Bridge {
         claude: "/tmp/mock-home/.claude/skills",
         codex: "/tmp/mock-home/.codex/skills",
       },
+      homeDir: "/tmp/mock-home",
       projectBasePath: MOCK_PROJECT_PATH,
     };
   }

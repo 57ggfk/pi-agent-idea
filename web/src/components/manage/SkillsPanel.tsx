@@ -29,6 +29,13 @@ const SOURCES: Array<{
   { key: "external", titleKey: "skill.source.external" },
 ];
 
+function shortPath(path: string, homeDir?: string): string {
+  if (!homeDir) return path;
+  const home = homeDir.replace(/\\/g, "/").replace(/\/+$/, "");
+  const target = path.replace(/\\/g, "/");
+  return target.toLowerCase().startsWith(home.toLowerCase()) ? "~" + target.slice(home.length) : path;
+}
+
 export default function SkillsPanel({
   api,
   bridge,
@@ -40,6 +47,7 @@ export default function SkillsPanel({
 }) {
   const { t } = useT();
   const [result, setResult] = useState<SkillsListResult | null>(null);
+  const homeDir = result?.homeDir;
   const [outcome, setOutcome] = useState<{ ok: boolean; error?: string; output?: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -244,7 +252,7 @@ export default function SkillsPanel({
                   disabled={busy}
                   onClick={() => void toggleSource(dir, !enabled)}
                 >
-                  <span className="mono">{dir}</span>
+                  <span className="mono">{shortPath(dir, homeDir)}</span>
                   <span>{enabled ? t("skill.turnOff") : t("skill.turnOn")}</span>
                 </button>
               );
