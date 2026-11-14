@@ -106,6 +106,18 @@ export default function MarketplacePanel({
         <button className="btn" data-testid="market-search-btn" disabled={busy && !loading} onClick={() => run(query)}>
           {t("package.marketSearch")}
         </button>
+        {/* pi.dev sorts (downloads/recent/A-Z) live behind its own server-side
+            index — the npm registry API cannot sort, so we hand the user a
+            direct link instead of faking a sort over paginated relevance. */}
+        <a
+          className="btn market-pidev-link"
+          data-testid="market-open-pidev"
+          href="https://pi.dev/packages"
+          target="_blank"
+          rel="noreferrer"
+        >
+          {t("package.marketOpenPidev")}
+        </a>
       </div>
 
       {data?.degraded ? (

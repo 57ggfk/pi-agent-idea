@@ -219,6 +219,10 @@ registry 完全一致。
 | Q8 | pi 本体自更新（`pi update --self`） | a. 不做，另立需求 b. 顺带加（CLI 原生支持，接入成本低） | **a**——本条聚焦包管理，自更新涉及插件更新语义，另议 |
 | Q9 | registry 配置的形态与位置 | a. 设置面板一项：「跟随 npm 配置（默认）」或显式 URL + 预设按钮（官方 / npmmirror）；安装注入 `NPM_CONFIG_REGISTRY`，不改 `.npmrc`；028 引导安装将来复用同一设置项 b. 只影响市场检索，安装仍走 npm 自身配置（会出现「市场能看装不上」的割裂） c. 读写用户 `.npmrc`（越权，风险高） | **a**——统一解析链（FR-016）+ 环境注入（FR-017），2026-11-14 随私服需求一并拍板 |
 
+## 已知缺口（多排序，2026-11-14 P20 取证）
+
+pi.dev/packages 的三种排序（Most downloads / Recently published / A-Z）本地**无法真实现**：npm search API 无 sort 参数且权重参数实测无效（popularity=1 与默认序逐位相同）、cnpmcore 忽略权重且无 keyword 目录端点（404）、pi.dev 为服务端渲染 HTML 无公开 JSON API（复用=爬 HTML=FR-005 红线）。折中：市场页签提供「在 pi.dev 排序浏览 ↗」直通链（官方页三种排序开箱即用）；本地保持相关度单序——对分页结果做页内排序是假排序（跨页乱序），宁缺毋滥。等 npm search 加 sort 参数或 pi.dev 开放 JSON 后一行接入。
+
 ## 不做的事
 
 - **不做包详情页/README 渲染**：卡片链接跳 npm/GitHub（IDE 浏览器打开），详情即官网。

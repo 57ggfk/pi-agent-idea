@@ -456,6 +456,7 @@ test.describe("packages panel 033", () => {
     await page.getByTestId("manage-tab-packages").click();
     await page.getByTestId("packages-tab-market").click();
 
+    await expect(page.getByTestId("market-open-pidev")).toHaveAttribute("href", "https://pi.dev/packages");
     await expect(page.getByTestId("market-card").first()).toContainText("billion-context");
     await expect(page.getByTestId("market-card").first()).toContainText("v0.1.213");
     await expect(page.getByTestId("market-downloads").first()).toContainText("3,257,276");

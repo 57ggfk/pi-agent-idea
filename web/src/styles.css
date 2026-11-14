@@ -5130,3 +5130,10 @@ button {
   margin-top: 0;
   min-width: 120px;
 }
+
+.market-pidev-link {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent-text);
+}

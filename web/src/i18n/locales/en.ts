@@ -527,6 +527,7 @@ export const en = {
   "package.registryCustomPlaceholder": "https://nexus.example.com/repository/npm",
   "package.registryInvalid": "Not a valid registry address",
   "package.marketSearch": "Search",
+  "package.marketOpenPidev": "Sort on pi.dev ↗",
   "package.marketSearchPlaceholder": "Search pi.dev/packages…",
   "package.marketLoading": "Loading…",
   "package.marketEmpty": "No packages matched.",
