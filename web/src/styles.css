@@ -5289,3 +5289,18 @@ button {
   font-size: 11px;
   color: var(--text-secondary);
 }
+
+/* -- 034 T1515: source badges (external/package stand out) -------------------- */
+
+.skill-src-badge {
+  border: 1px solid var(--accent-text);
+  color: var(--accent-text);
+  border-radius: 6px;
+  padding: 0 5px;
+  font-size: 10px;
+}
+
+.skill-group-title[data-source="external"],
+.skill-group-title[data-source="package"] {
+  color: var(--accent-text);
+}

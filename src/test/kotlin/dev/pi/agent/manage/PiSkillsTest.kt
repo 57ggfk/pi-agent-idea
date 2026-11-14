@@ -288,10 +288,15 @@ class PiSkillsTest {
             "description: >-" + nl +
             "  Orchestrate subagents when the operator asks:" + nl +
             "  review fanout and multi-lane flows." + nl +
+            "" + nl +
+            "  Second paragraph after a blank line." + nl +
             "---" + nl,
         )
         val folded = PiManage.parseFrontmatter(foldedFile)
-        assertEquals("Orchestrate subagents when the operator asks: review fanout and multi-lane flows.", folded["description"])
+        assertEquals(
+            "Orchestrate subagents when the operator asks: review fanout and multi-lane flows.\n\nSecond paragraph after a blank line.",
+            folded["description"],
+        )
 
         // Indented continuation junk must not become phantom keys.
         assertTrue(literal.keys.none { it.contains("child") || it.contains("Delegate") })

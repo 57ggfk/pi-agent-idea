@@ -425,7 +425,21 @@ object PiManage {
                 if (blockKind != null && block.isNotEmpty()) {
                     map[k] = when (blockKind) {
                         '|' -> block.joinToString("\n").trim()
-                        else -> block.filter { it.isNotEmpty() }.joinToString(" ").trim()
+                        else -> {
+                            // folded: lines join with spaces; blank lines are
+                            // paragraph breaks (kept as \n\n, T1514)
+                            val paras = mutableListOf<String>()
+                            val cur = mutableListOf<String>()
+                            for (l in block) {
+                                if (l.isBlank()) {
+                                    if (cur.isNotEmpty()) { paras += cur.joinToString(" "); cur.clear() }
+                                } else {
+                                    cur += l
+                                }
+                            }
+                            if (cur.isNotEmpty()) paras += cur.joinToString(" ")
+                            paras.joinToString("\n\n").trim()
+                        }
                     }
                 }
                 key = null

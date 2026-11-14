@@ -298,6 +298,7 @@ export default function SkillsPanel({
             <button
               className="skill-group-title"
               data-testid={`skill-source-${group.key}`}
+              data-source={group.key}
               onClick={() => toggleGroup(group.key)}
             >
               <span className={`skill-chevron ${isCollapsed ? "skill-chevron-collapsed" : ""}`}>▾</span>
@@ -369,6 +370,11 @@ function SkillRow({
           <span className="scope-tag" data-testid="skill-scope" data-inert={inert ? "true" : "false"}>
             {skill.scope === "project" ? (inert ? t("skill.projectInert") : t("skill.project")) : t("skill.user")}
           </span>
+          {(skill.source === "external" || skill.source === "package") ? (
+            <span className={`skill-src-badge skill-src-${skill.source}`}>
+              {t(skill.source === "external" ? "skill.source.external" : "skill.source.package")}
+            </span>
+          ) : null}
           {!skill.enabled ? (
             <span className="pkg-status-broken" data-testid={`skill-disabled-${index}`}>
               {t("skill.disabled")}
