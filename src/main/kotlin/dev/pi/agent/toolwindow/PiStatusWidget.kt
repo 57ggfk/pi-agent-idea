@@ -51,26 +51,45 @@ class PiStatusWidget(private val project: Project) :
     }
 
     init {
-        PiProcessManager.getInstance(project).addStateListener(stateListener)
+        PiProcessManager.getInstance(project).addStateListener(listener = stateListener)
     }
 
     override fun ID(): String = PiStatusBarWidgetFactory.ID
 
     override fun getPresentation(): StatusBarWidget.WidgetPresentation = this
 
-    override fun getText(): String = when (val s = state) {
-        is PiConnectionState.Running -> "π ${s.installation.version ?: ""}".trim()
-        is PiConnectionState.Starting -> "π …"
-        is PiConnectionState.Exited -> "π ⚠"
-        PiConnectionState.NotStarted -> "π"
+    private fun activeInstance(): Int {
+        val content = ToolWindowManager.getInstance(project)
+            .getToolWindow("Pi Agent")
+            ?.contentManager
+            ?.selectedContent
+        return (content?.component as? PiAgentPanel)?.id ?: 1
     }
 
-    override fun getTooltipText(): String = when (val s = state) {
+    private fun activeState(): PiConnectionState {
+        val id = activeInstance()
+        return PiProcessManager.getInstance(project).stateOf(id)
+    }
+
+    private fun instanceSummary(): String {
+        val count = PiProcessManager.getInstance(project).liveInstanceIds().size
+        return if (count > 1) "Pi ${activeInstance()} / $count" else "Pi 1"
+    }
+
+    override fun getText(): String = when (val s = activeState()) {
+        is PiConnectionState.Running -> "${instanceSummary()} ${s.installation.version ?: ""}".trim()
+        is PiConnectionState.Starting -> "${instanceSummary()} …"
+        is PiConnectionState.Exited -> "${instanceSummary()} ⚠"
+        PiConnectionState.NotStarted -> instanceSummary()
+    }
+
+    override fun getTooltipText(): String = when (val s = activeState()) {
         is PiConnectionState.Running ->
-            PiAgentBundle.message("status.running") + (s.installation.version?.let { " ($it)" } ?: "")
-        is PiConnectionState.Starting -> PiAgentBundle.message("status.starting")
-        is PiConnectionState.Exited -> PiAgentBundle.message("status.exited", s.message ?: "")
-        PiConnectionState.NotStarted -> PiAgentBundle.message("status.notStarted")
+            "${instanceSummary()}: " + PiAgentBundle.message("status.running") +
+                (s.installation.version?.let { " ($it)" } ?: "")
+        is PiConnectionState.Starting -> "${instanceSummary()}: " + PiAgentBundle.message("status.starting")
+        is PiConnectionState.Exited -> "${instanceSummary()}: " + PiAgentBundle.message("status.exited", s.message ?: "")
+        PiConnectionState.NotStarted -> "${instanceSummary()}: " + PiAgentBundle.message("status.notStarted")
     }
 
     override fun getAlignment(): Float = 0.5f
@@ -80,6 +99,6 @@ class PiStatusWidget(private val project: Project) :
     }
 
     override fun dispose() {
-        PiProcessManager.getInstance(project).removeStateListener(stateListener)
+        PiProcessManager.getInstance(project).removeStateListener(listener = stateListener)
     }
 }

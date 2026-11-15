@@ -32,6 +32,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.booleanOrNull
@@ -69,21 +70,26 @@ class BridgeService(private val project: Project) : Disposable {
      */
     val ideFileDrop = IdeFileDrop()
 
-    /** Mirror of pi's message queue (spec 005); per-project by construction. */
-    private var messageQueueField: dev.pi.agent.queue.PiMessageQueue? = null
+    /** Mirror of pi's message queue (spec 005); per-project by construction.
+     *  019 D5: one mirror **per instance** — queue state must not bleed
+     *  across tool-window Contents. */
+    private val messageQueues = ConcurrentHashMap<Int, dev.pi.agent.queue.PiMessageQueue>()
+    private val streamingInstances = ConcurrentHashMap.newKeySet<Int>()
 
-    private fun messageQueue(): dev.pi.agent.queue.PiMessageQueue =
-        messageQueueField ?: dev.pi.agent.queue.PiMessageQueue(::queueRpc) { payload ->
-            push(buildJsonObject {
-                put("t", "event")
-                put("name", "queue")
-                put("data", payload)
-            })
-        }.also { messageQueueField = it }
+    private fun messageQueue(instanceId: Int = 1): dev.pi.agent.queue.PiMessageQueue =
+        messageQueues.computeIfAbsent(instanceId) { id ->
+            dev.pi.agent.queue.PiMessageQueue({ command -> queueRpc(command, id) }) { payload ->
+                push(buildJsonObject {
+                    put("t", "event")
+                    put("name", "queue")
+                    put("data", payload)
+                }, id)
+            }
+        }
 
     /** Blocking RPC sender for the queue executor (steer / follow_up / clear_queue). */
-    private fun queueRpc(command: JsonObject): JsonObject {
-        val client = PiProcessManager.getInstance(project).client()
+    private fun queueRpc(command: JsonObject, instanceId: Int = 1): JsonObject {
+        val client = PiProcessManager.getInstance(project).client(instanceId)
             ?: throw IllegalStateException("pi process is not running")
         try {
             return client.send(command, timeoutMs = 15_000)
@@ -95,11 +101,13 @@ class BridgeService(private val project: Project) : Disposable {
     }
 
     private val wiredLock = Any()
-    private var piEventsWired = false
+    /** Instance ids whose pi events are wired (019: per-instance listeners). */
+    private val wiredInstances = java.util.Collections.synchronizedSet(HashSet<Int>())
     private var themeEventsWired = false
 
-    /** Entry point for POST /bridge. Envelopes are handled asynchronously. */
-    fun handleEnvelope(message: String) {
+    /** Entry point for POST /bridge. Envelopes are handled asynchronously.
+     *  [instanceId] routes pi-bound work to the right process (019 D4). */
+    fun handleEnvelope(message: String, instanceId: Int = 1) {
         scope.launch {
             val element = try {
                 json.parseToJsonElement(message).jsonObject
@@ -108,12 +116,12 @@ class BridgeService(private val project: Project) : Disposable {
                 LOG.warn("bridge: malformed envelope (${message.length} chars)")
                 return@launch
             }
-            runCatching { dispatch(element) }
+            runCatching { dispatch(element, instanceId) }
                 .onFailure { LOG.warn("bridge: handler failed for ${element["t"]}", it) }
         }
     }
 
-    private suspend fun dispatch(msg: JsonObject) {
+    private suspend fun dispatch(msg: JsonObject, instanceId: Int = 1) {
         val id = msg["id"]?.let { it as? JsonPrimitive }?.content ?: ""
         val method = msg["t"]?.let { it as? JsonPrimitive }?.content ?: return
         val params = msg["p"] as? JsonObject ?: JsonObject(emptyMap())
@@ -121,14 +129,14 @@ class BridgeService(private val project: Project) : Disposable {
             val data: JsonObject = when (method) {
                 "ping" -> buildJsonObject { put("pong", true) }
                 "env" -> envInfo()
-                "rpc.request" -> rpcRequest(params)
+                "rpc.request" -> rpcRequest(params, instanceId)
                 "sessions.list" -> sessionsList()
                 "sessions.search" -> sessionsSearch(params)
                 "sessions.delete" -> sessionsDelete(params)
                 "sessions.rename" -> sessionsRename(params)
                 "sessions.fork" -> sessionsFork(params)
                 "sessions.exportHtml" -> sessionsExportHtml(params)
-                "title.generate" -> titleGenerate(params)
+                "title.generate" -> titleGenerate(params, instanceId)
                 "files.list" -> filesList(params)
                 "files.relpath" -> filesRelPath(params)
                 "files.takeDrop" -> filesTakeDrop()
@@ -146,10 +154,10 @@ class BridgeService(private val project: Project) : Disposable {
                 "config.setPrefs" -> setPrefs(params)
                 "approval.getPolicy" -> approvalGetPolicy()
                 "approval.setPolicy" -> approvalSetPolicy(params)
-                "rpc.restart" -> restartPi()
+                "rpc.restart" -> restartPi(instanceId)
                 // spec 017: re-read the model catalog after a credential or
                 // models.json write, without restarting pi (session intact).
-                "models.reload" -> reloadModels()
+                "models.reload" -> reloadModels(instanceId)
                 "manage.env" -> dev.pi.agent.manage.PiManage.environment()
                 "manage.envDetect" -> dev.pi.agent.manage.PiEnvironment.detect()
                 // 032 Q6-b: the read-only "what would be injected" viewer.
@@ -219,15 +227,15 @@ class BridgeService(private val project: Project) : Disposable {
                 "trust.get" -> trustGet()
                 "trust.grant" -> trustGrant(params)
                 "trust.revoke" -> trustRevoke(params)
-                "queue.get" -> messageQueue().handle("get", params)
-                "queue.enqueue" -> messageQueue().handle("enqueue", params)
-                "queue.move" -> messageQueue().handle("move", params)
-                "queue.remove" -> messageQueue().handle("remove", params)
-                "queue.restore" -> messageQueue().handle("restore", params)
-                "queue.promote" -> messageQueue().handle("promote", params)
-                "queue.pause" -> messageQueue().handle("pause", params)
-                "queue.resume" -> messageQueue().handle("resume", params)
-                "queue.clear" -> messageQueue().handle("clear", params)
+                "queue.get" -> messageQueue(instanceId).handle("get", params)
+                "queue.enqueue" -> messageQueue(instanceId).handle("enqueue", params)
+                "queue.move" -> messageQueue(instanceId).handle("move", params)
+                "queue.remove" -> messageQueue(instanceId).handle("remove", params)
+                "queue.restore" -> messageQueue(instanceId).handle("restore", params)
+                "queue.promote" -> messageQueue(instanceId).handle("promote", params)
+                "queue.pause" -> messageQueue(instanceId).handle("pause", params)
+                "queue.resume" -> messageQueue(instanceId).handle("resume", params)
+                "queue.clear" -> messageQueue(instanceId).handle("clear", params)
                 else -> throw IllegalArgumentException("unknown bridge method: $method")
             }
             push(buildJsonObject {
@@ -235,14 +243,14 @@ class BridgeService(private val project: Project) : Disposable {
                 put("id", id)
                 put("ok", true)
                 put("data", data)
-            })
+            }, instanceId)
         } catch (e: Exception) {
             push(buildJsonObject {
                 put("t", "resp")
                 put("id", id)
                 put("ok", false)
                 put("error", e.message ?: e.toString())
-            })
+            }, instanceId)
         }
     }
 
@@ -270,7 +278,7 @@ class BridgeService(private val project: Project) : Disposable {
         return JsonObject(params.toMutableMap().apply { put("projectPath", JsonPrimitive(base)) })
     }
 
-    private suspend fun rpcRequest(params: JsonObject): JsonObject {
+    private suspend fun rpcRequest(params: JsonObject, instanceId: Int = 1): JsonObject {
         val command = params["command"] as? JsonObject
             ?: throw IllegalArgumentException("rpc.request requires command object")
         // 032 US4: every user turn refreshes the env snapshot BEFORE the prompt
@@ -288,22 +296,22 @@ class BridgeService(private val project: Project) : Disposable {
         // the dialog (verified against the official rpc-extension-ui client,
         // which writes the bare record to stdin).
         if (command["type"]?.jsonPrimitive?.contentOrNull == "extension_ui_response") {
-            val client: PiRpcClient = PiProcessManager.getInstance(project).client()
+            val client: PiRpcClient = PiProcessManager.getInstance(project).client(instanceId)
                 ?: throw IllegalStateException("pi process is not running")
             if (!client.notify(command)) throw IllegalStateException("pi process is not running")
             return buildJsonObject { put("success", true) }
         }
         val timeoutMs = (params["timeoutMs"] as? JsonPrimitive)?.content?.toLongOrNull()
             ?: PiRpcClient.DEFAULT_TIMEOUT_MS
-        val client: PiRpcClient = PiProcessManager.getInstance(project).client()
+        val client: PiRpcClient = PiProcessManager.getInstance(project).client(instanceId)
             ?: throw IllegalStateException("pi process is not running")
         val response = client.send(command, timeoutMs = timeoutMs).await()
         return response.raw
     }
 
     /** Restarts the pi process after a crash or configuration change. */
-    private fun restartPi(): JsonObject {
-        PiProcessManager.getInstance(project).restart()
+    private fun restartPi(instanceId: Int = 1): JsonObject {
+        PiProcessManager.getInstance(project).restart(instanceId)
             ?: throw IllegalStateException("failed to restart pi (see logs)")
         return buildJsonObject { put("ok", true) }
     }
@@ -323,8 +331,8 @@ class BridgeService(private val project: Project) : Disposable {
      * When the command is missing (extraction failed, older pi) the list is
      * still re-read and `refreshed=false` lets the UI degrade without an error.
      */
-    private suspend fun reloadModels(): JsonObject = modelsReloadLock.withLock {
-        val client: PiRpcClient = PiProcessManager.getInstance(project).client()
+    private suspend fun reloadModels(instanceId: Int = 1): JsonObject = modelsReloadLock.withLock {
+        val client: PiRpcClient = PiProcessManager.getInstance(project).client(instanceId)
             ?: throw IllegalStateException("pi process is not running")
 
         suspend fun request(command: JsonObject, timeoutMs: Long) =
@@ -606,13 +614,13 @@ class BridgeService(private val project: Project) : Disposable {
      * Best-effort — errors come back as data and the caller keeps the
      * heuristic title, so nothing here needs to throw.
      */
-    private fun titleGenerate(params: JsonObject): JsonObject {
+    private fun titleGenerate(params: JsonObject, instanceId: Int = 1): JsonObject {
         val user = params["user"]?.let { it as? JsonPrimitive }?.content
             ?: throw IllegalArgumentException("title.generate requires user")
         val assistant = params["assistant"]?.let { it as? JsonPrimitive }?.content ?: ""
         val provider = params["provider"]?.let { it as? JsonPrimitive }?.content
         val modelId = params["modelId"]?.let { it as? JsonPrimitive }?.content
-        val state = PiProcessManager.getInstance(project).state
+        val state = PiProcessManager.getInstance(project).stateOf(instanceId)
         val path = when (state) {
             is PiConnectionState.Starting -> state.installation.path
             is PiConnectionState.Running -> state.installation.path
@@ -925,36 +933,35 @@ class BridgeService(private val project: Project) : Disposable {
 
     // -- push channel -------------------------------------------------------
 
-    private fun wirePiEvents() {
+    private fun wirePiEvents(instanceId: Int = 1) {
         synchronized(wiredLock) {
-            if (piEventsWired) return
-            piEventsWired = true
+            if (!wiredInstances.add(instanceId)) return
         }
         val manager = PiProcessManager.getInstance(project)
-        manager.addEventListener { event ->
+        manager.addEventListener(instanceId = instanceId) { event ->
             push(buildJsonObject {
                 put("t", "event")
                 put("name", "pi")
                 put("data", event)
-            })
+            }, instanceId)
             maybeCaptureBaseline(event)
             maybeScheduleVfsRefresh(event)
             notifyIfSettledInBackground(event)
             // spec 005: pi's queue events drive the mirror; an aborted run
             // parks it (abort's queue behaviour must not be relied upon).
-            messageQueue().onPiEvent(event)
+            messageQueue(instanceId).onPiEvent(event)
             val settledAborted = (event["aborted"] as? JsonPrimitive)?.content?.toBooleanStrictOrNull()
             if (event["type"]?.jsonPrimitive?.contentOrNull == "agent_settled" && settledAborted == true) {
-                messageQueue().onAborted()
+                messageQueue(instanceId).onAborted()
             }
         }
-        manager.addStateListener { state ->
-            pushStateEvent(state)
+        manager.addStateListener(instanceId = instanceId) { state ->
+            pushStateEvent(state, instanceId)
             // A fresh pi process starts with an empty queue: park a non-empty
             // mirror as paused instead of letting it be silently forgotten.
-            if (state is PiConnectionState.Running) messageQueue().onProcessRestarted()
+            if (state is PiConnectionState.Running) messageQueue(instanceId).onProcessRestarted()
         }
-        pushStateEvent(manager.state)
+        pushStateEvent(manager.stateOf(instanceId), instanceId)
         wireThemeEvents()
     }
 
@@ -1080,7 +1087,7 @@ class BridgeService(private val project: Project) : Disposable {
         filesCache = null
     }
 
-    private fun pushStateEvent(state: PiConnectionState) {
+    private fun pushStateEvent(state: PiConnectionState, instanceId: Int = 1) {
         val data = when (state) {
             is PiConnectionState.NotStarted -> buildJsonObject { put("status", "notStarted") }
             is PiConnectionState.Starting -> buildJsonObject {
@@ -1099,31 +1106,45 @@ class BridgeService(private val project: Project) : Disposable {
             put("t", "event")
             put("name", "pi-state")
             put("data", data)
-        })
+        }, instanceId)
     }
 
-    fun push(record: JsonObject) {
-        transport.push(record)
+    fun push(record: JsonObject, instanceId: Int = 1) {
+        transport.push(record, instanceId)
     }
 
     /** Poll endpoint backend for this project's frontend. */
-    fun pollEvents(cursor: Long, timeoutMs: Long): List<BridgeTransport.Entry> = transport.pollAfter(cursor, timeoutMs)
+    fun pollEvents(cursor: Long, timeoutMs: Long, instanceId: Int = 1): List<BridgeTransport.Entry> =
+        transport.pollAfter(cursor, timeoutMs, instanceId)
 
-    fun currentSeq(): Long = transport.currentSeq()
+    fun currentSeq(instanceId: Int = 1): Long = transport.currentSeq(instanceId)
 
     /** Lowest buffered sequence; a frontend cursor below it has missed events. */
-    fun oldestSeq(): Long = transport.oldestSeq()
+    fun oldestSeq(instanceId: Int = 1): Long = transport.oldestSeq(instanceId)
 
     /**
      * Milliseconds since this project's frontend last long-polled, or
      * [Long.MAX_VALUE] if it never has. Used by the panel to notice that its
      * embedded browser stopped running the page.
      */
-    fun sinceFrontendPollMs(): Long = transport.sinceLastPollMs()
+    fun sinceFrontendPollMs(instanceId: Int = 1): Long = transport.sinceLastPollMs(instanceId)
 
-    /** Lazily wires pi event listeners on first frontend contact. */
-    fun ensureWired() {
-        wirePiEvents()
+    fun closeInstance(instanceId: Int) {
+        // 019/C3: instance 1 is a normal instance too. The old early return
+        // left its listeners, queue mirror and event bucket behind when the
+        // first Content was closed; re-opening that id inherited stale state.
+        synchronized(wiredLock) { wiredInstances.remove(instanceId) }
+        messageQueues.remove(instanceId)?.shutdown()
+        transport.clearInstance(instanceId)
+    }
+
+    fun isStreaming(instanceId: Int = 1): Boolean =
+        messageQueues[instanceId]?.isStreaming() == true
+
+    /** Lazily wires pi event listeners on first frontend contact.
+     *  [instanceId] selects whose pi process gets the listeners (019). */
+    fun ensureWired(instanceId: Int = 1) {
+        wirePiEvents(instanceId)
     }
 
     /**
@@ -1231,7 +1252,9 @@ class BridgeService(private val project: Project) : Disposable {
         project.basePath?.let { runCatching { java.nio.file.Path.of(it) }.getOrNull() }
 
     override fun dispose() {
-        messageQueueField?.shutdown()
+        // 019 D12: every instance's queue mirror shuts down with the service.
+        messageQueues.values.forEach { it.shutdown() }
+        messageQueues.clear()
         scope.cancel()
     }
 

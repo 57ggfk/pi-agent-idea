@@ -11,6 +11,7 @@ import dev.pi.agent.bridge.BridgeService
 import dev.pi.agent.bridge.DropPaths
 import dev.pi.agent.bridge.DropRefs
 import dev.pi.agent.bridge.DropSource
+import dev.pi.agent.process.PiProcessManager
 import dev.pi.agent.ui.LocalUiServer
 import dev.pi.agent.ui.PiUiErrorPanel
 import org.cef.CefSettings
@@ -48,7 +49,10 @@ import javax.swing.Timer
  * the failure and carries the load URL, because the alternative (what shipped
  * up to 0.5.1) is a white rectangle with no information in it at all.
  */
-class PiAgentPanel(private val project: Project) : JPanel(), Disposable {
+class PiAgentPanel(private val project: Project, private val instanceId: Int = 1) : JPanel(), Disposable {
+
+    /** Java factory/content listeners use this stable tab identity. */
+    val id: Int get() = instanceId
 
     private val log = Logger.getInstance(PiAgentPanel::class.java)
 
@@ -274,7 +278,7 @@ class PiAgentPanel(private val project: Project) : JPanel(), Disposable {
         mountedAt = System.currentTimeMillis()
 
         val url = try {
-            LocalUiServer.getInstance().uiUrlFor(project)
+            LocalUiServer.getInstance().uiUrlFor(project, instanceId)
         } catch (t: Throwable) {
             log.warn("Pi Agent UI server unavailable", t)
             showFailure(
@@ -401,7 +405,7 @@ class PiAgentPanel(private val project: Project) : JPanel(), Disposable {
         // Count from the later of "document loaded" and "last poll": a freshly
         // mounted panel is silent for a moment before its first request.
         val silentFor = minOf(
-            BridgeService.getInstance(project).sinceFrontendPollMs(),
+            BridgeService.getInstance(project).sinceFrontendPollMs(instanceId),
             System.currentTimeMillis() - mountedAt,
         )
         if (silentFor <= BRIDGE_SILENCE_MS) return
@@ -430,7 +434,7 @@ class PiAgentPanel(private val project: Project) : JPanel(), Disposable {
             if (attempts > MAX_REBUILDS_PER_WINDOW) {
                 log.warn("Pi Agent UI keeps failing; not rebuilding again ($reason)")
                 rebuildGaveUp = true
-                val url = runCatching { LocalUiServer.getInstance().uiUrlFor(project) }.getOrNull()
+                val url = runCatching { LocalUiServer.getInstance().uiUrlFor(project, instanceId) }.getOrNull()
                 showFailure(
                     title = "The embedded browser keeps failing",
                     detail = listOf(
@@ -495,6 +499,10 @@ class PiAgentPanel(private val project: Project) : JPanel(), Disposable {
         disposed = true
         healthWatch.stop()
         disposeBrowser()
+        // ContentManager owns the close decision. The factory asks for
+        // confirmation after removal and stops the instance only when the
+        // close is accepted; keeping this callback side-effect free lets a
+        // cancelled close recreate a fresh panel for the same instance.
     }
 
     private companion object {

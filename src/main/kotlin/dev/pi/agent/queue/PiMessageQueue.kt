@@ -124,6 +124,9 @@ class PiMessageQueue(
         }
     }
 
+    /** True while pi reports an active agent run. */
+    fun isStreaming(): Boolean = piStreaming
+
     /** Consumes pi session events: run-state tracking + `queue_update`. */
     fun onPiEvent(event: JsonObject) {
         when (event["type"]?.jsonPrimitive?.contentOrNull) {

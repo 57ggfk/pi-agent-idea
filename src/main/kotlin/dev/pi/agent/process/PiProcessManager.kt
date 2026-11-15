@@ -10,6 +10,7 @@ import dev.pi.agent.rpc.PiRpcListener
 import kotlinx.serialization.json.JsonObject
 import java.io.File
 import java.io.IOException
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
@@ -58,156 +59,201 @@ internal object PiStartArgs {
 }
 
 /**
- * Owns the per-project `pi --mode rpc` child process and its [PiRpcClient].
+ * One pi instance's mutable state (019 D1). Everything that used to be a
+ * field on [PiProcessManager] lives here so a project can host N independent
+ * `pi --mode rpc` processes (one per tool-window Content).
+ */
+private class InstanceSlot(val id: Int) {
+    val processRef = AtomicReference<Process?>(null)
+    val clientRef = AtomicReference<PiRpcClient?>(null)
+    val stateListeners = CopyOnWriteArrayList<(PiConnectionState) -> Unit>()
+    val eventListeners = CopyOnWriteArrayList<(JsonObject) -> Unit>()
+
+    @Volatile var state: PiConnectionState = PiConnectionState.NotStarted
+
+    @Volatile var stderrTail: String = ""
+
+    @Volatile var pendingApprove = false
+}
+
+/**
+ * Owns the per-project `pi --mode rpc` child processes and their [PiRpcClient]s.
  *
- * The process intentionally outlives tool window visibility so agent tasks keep
- * running in the background; it is terminated when the project closes.
+ * 019: the manager hosts an instance **registry** (`instanceId → InstanceSlot`,
+ * ids from 1) instead of a single process pair. Every pre-existing method is a
+ * facade over instance 1 (019 D2), so single-instance callers are unchanged;
+ * the multi-instance path uses the [instanceId] overloads.
+ *
+ * Processes intentionally outlive tool window visibility so agent tasks keep
+ * running in the background; they are terminated when the project closes.
  */
 @Service(Service.Level.PROJECT)
-class PiProcessManager(private val project: Project) : Disposable {    private val LOG = Logger.getInstance(PiProcessManager::class.java)
+class PiProcessManager(private val project: Project) : Disposable {
 
-    private val processRef = AtomicReference<Process?>(null)
-    private val clientRef = AtomicReference<PiRpcClient?>(null)
+    private val LOG = Logger.getInstance(PiProcessManager::class.java)
 
-    @Volatile
-    var state: PiConnectionState = PiConnectionState.NotStarted
-        private set
+    private val slots = ConcurrentHashMap<Int, InstanceSlot>()
 
-    private val stateListeners = CopyOnWriteArrayList<(PiConnectionState) -> Unit>()
-    private val eventListeners = CopyOnWriteArrayList<(JsonObject) -> Unit>()
+    /** The slot for [id], created on demand (facade target = 1). */
+    private fun slot(id: Int = 1): InstanceSlot = slots.computeIfAbsent(id) { InstanceSlot(it) }
 
-    fun addStateListener(listener: (PiConnectionState) -> Unit) {
-        stateListeners.add(listener)
-        listener(state)
+    /** Facade: instance 1's connection state (pre-019 callers read this). */
+    val state: PiConnectionState
+        get() = slot(1).state
+
+    /** One instance's connection state (019 D4 callers). */
+    fun stateOf(instanceId: Int = 1): PiConnectionState = slot(instanceId).state
+
+    /** Smallest unused instance id ≥ 1 (019 D1). */
+    fun nextInstanceId(): Int {
+        var n = 1
+        while (slots.containsKey(n)) n++
+        return n
     }
 
-    fun addEventListener(listener: (JsonObject) -> Unit) {
-        eventListeners.add(listener)
-    }
+    /** Live instance ids, ascending. */
+    fun liveInstanceIds(): List<Int> = slots.keys.toIntArray().sorted().toList()
 
-    fun removeStateListener(listener: (PiConnectionState) -> Unit) = stateListeners.remove(listener)
-
-    fun removeEventListener(listener: (JsonObject) -> Unit) = eventListeners.remove(listener)
-
-    /** Returns the running client, starting the process if necessary. */
-    @Synchronized
-    fun client(): PiRpcClient? {
-        clientRef.get()?.let { return it }
-        return start()
-    }
-
-    @Synchronized
-    fun start(): PiRpcClient? {
-        val existing = clientRef.get()
-        if (existing != null) return existing
-
-        val installation = PiLocator.locate()
-        if (installation == null) {
-            setState(PiConnectionState.Exited("pi executable not found on this machine", null))
-            return null
+    /** Stops one instance's process and drops its slot (019 D7 close path). */
+    fun stopInstance(instanceId: Int) {
+        slots.remove(instanceId)?.let { slot ->
+            slot.clientRef.getAndSet(null)?.close()
+            shutdownProcessOf(slot, keepState = false)
         }
+    }
 
-        setState(PiConnectionState.Starting(installation))
-        val cwd = project.basePath ?: System.getProperty("user.home")
+    fun addStateListener(instanceId: Int = 1, listener: (PiConnectionState) -> Unit) {
+        val slot = slot(instanceId)
+        slot.stateListeners.add(listener)
+        listener(slot.state)
+    }
 
-        // Extensions: the approval extension and the model-reload extension are
-        // extracted per start so upgrades propagate. The approval policy file is
-        // re-read per tool call, so toggling never needs a restart. When
-        // extraction fails pi simply runs without that extension.
-        val piArgs = PiStartArgs.build(
-            // Resume the user's last model choice (persisted on set_model).
-            model = PiModelPreferences.getInstance(project).get(),
-            extensions = listOfNotNull(
-                PiApprovalSupport.ensureExtensionInstalled()?.absolutePath,
-                PiModelReload.ensureExtensionInstalled()?.absolutePath,
-                PiIdeEnvExtension.ensureExtensionInstalled()?.absolutePath,
-            ),
-            approveProjectFiles = consumeApproveOnNextStart(),
-        )
-        val command = PiLocator.spawnCommand(installation.path, piArgs)
+    fun addEventListener(instanceId: Int = 1, listener: (JsonObject) -> Unit) {
+        slot(instanceId).eventListeners.add(listener)
+    }
 
-        val pb = ProcessBuilder(command)
-        pb.directory(File(cwd))
-        pb.redirectErrorStream(false)
-        // The node interpreter next to pi (GUI-launched IDEs have neither
-        // node nor nvm in their PATH; pi and its MCP servers need both).
-        OsProcess.augmentPathEnv(pb, buildList {
-            PiLocator.nodeBinDirFor(installation.path)?.let { add(it) }
-            addAll(PiLocator.loginShellPath())
-        })
-        pb.environment()["PI_APPROVE_POLICY"] = PiApprovalSupport.policyFile().absolutePath
-        // pi-approve 在 pi 进程里跑，只有插件知道 IDE 是中文还是英文。
-        pb.environment()["PI_APPROVE_LANG"] = PiApprovalSupport.languageTag()
-        // 032 FR-005: 差量补齐构建相关环境变量（只增不改），并把快照路径交给
-        // pi-env 扩展——扩展每轮 before_agent_start 读它注入系统提示词。
-        dev.pi.agent.manage.PiIdeEnv.applyToProcess(
-            pb.environment(),
-            System.getenv(),
-            dev.pi.agent.manage.PiIdeEnv.snapshotFile().absolutePath,
-        )
+    fun removeStateListener(instanceId: Int = 1, listener: (PiConnectionState) -> Unit) =
+        slot(instanceId).stateListeners.remove(listener)
 
-        val process: Process = try {
-            pb.start()
-        } catch (e: IOException) {
-            // The command is part of the message: "Cannot run program" alone
-            // does not say which interpreter or which PATH entry was used.
-            LOG.warn("failed to start pi at ${installation.path}: ${command.joinToString(" ")}", e)
-            setState(PiConnectionState.Exited("failed to start pi: ${e.message}", null))
-            return null
-        }
+    fun removeEventListener(instanceId: Int = 1, listener: (JsonObject) -> Unit) =
+        slot(instanceId).eventListeners.remove(listener)
 
-        processRef.set(process)
-        stderrTail = ""
-        Thread({ drainStderr(process) }, "pi-rpc-stderr").apply { isDaemon = true; start() }
+    /** Returns the running client of [instanceId], starting it if necessary. */
+    @Synchronized
+    fun client(instanceId: Int = 1): PiRpcClient? = start(instanceId)
 
-        val client = PiRpcClient(process, object : PiRpcListener {
-            override fun onEvent(event: JsonObject) {
-                eventListeners.forEach { it(event) }
+    @Synchronized
+    fun start(instanceId: Int = 1): PiRpcClient? {
+        val slot = slot(instanceId)
+        synchronized(slot) {
+            slot.clientRef.get()?.let { return it }
+
+            val installation = PiLocator.locate()
+            if (installation == null) {
+                setSlotState(slot, PiConnectionState.Exited("pi executable not found on this machine", null))
+                return null
             }
 
-            override fun onClosed(message: String) {
-                // Give the process a moment to exit so we can read its code.
-                var exitCode: Int? = null
-                try {
-                    exitCode = if (process.waitFor(2, TimeUnit.SECONDS)) process.exitValue() else null
-                } catch (_: InterruptedException) {
-                }
-                val tail = stderrTail
-                val detail = buildString {
-                    append(message)
-                    if (exitCode != null && exitCode != 0) append(" (exit code $exitCode)")
-                }
-                setState(PiConnectionState.Exited(detail, tail.ifBlank { null }))
-                clientRef.set(null)
-                processRef.set(null)
+            setSlotState(slot, PiConnectionState.Starting(installation))
+            val cwd = project.basePath ?: System.getProperty("user.home")
+
+            // Extensions: the approval extension and the model-reload extension
+            // are extracted per start so upgrades propagate. The approval policy
+            // file is re-read per tool call, so toggling never needs a restart.
+            // When extraction fails pi simply runs without that extension.
+            val piArgs = PiStartArgs.build(
+                // Resume the user's last model choice (persisted on set_model).
+                model = PiModelPreferences.getInstance(project).get(),
+                extensions = listOfNotNull(
+                    PiApprovalSupport.ensureExtensionInstalled()?.absolutePath,
+                    PiModelReload.ensureExtensionInstalled()?.absolutePath,
+                    PiIdeEnvExtension.ensureExtensionInstalled()?.absolutePath,
+                ),
+                approveProjectFiles = consumeApproveOnNextStart(slot),
+            )
+            val command = PiLocator.spawnCommand(installation.path, piArgs)
+
+            val pb = ProcessBuilder(command)
+            pb.directory(File(cwd))
+            pb.redirectErrorStream(false)
+            // The node interpreter next to pi (GUI-launched IDEs have neither
+            // node nor nvm in their PATH; pi and its MCP servers need both).
+            OsProcess.augmentPathEnv(pb, buildList {
+                PiLocator.nodeBinDirFor(installation.path)?.let { add(it) }
+                addAll(PiLocator.loginShellPath())
+            })
+            pb.environment()["PI_APPROVE_POLICY"] = PiApprovalSupport.policyFile().absolutePath
+            // pi-approve 在 pi 进程里跑，只有插件知道 IDE 是中文还是英文。
+            pb.environment()["PI_APPROVE_LANG"] = PiApprovalSupport.languageTag()
+            // 032 FR-005: 差量补齐构建相关环境变量（只增不改），并把快照路径交给
+            // pi-env 扩展——扩展每轮 before_agent_start 读它注入系统提示词。
+            dev.pi.agent.manage.PiIdeEnv.applyToProcess(
+                pb.environment(),
+                System.getenv(),
+                dev.pi.agent.manage.PiIdeEnv.snapshotFile().absolutePath,
+            )
+
+            val process: Process = try {
+                pb.start()
+            } catch (e: IOException) {
+                LOG.warn("failed to start pi at ${installation.path}: ${command.joinToString(" ")}", e)
+                setSlotState(slot, PiConnectionState.Exited("failed to start pi: ${e.message}", null))
+                return null
             }
-        })
-        clientRef.set(client)
-        setState(PiConnectionState.Running(installation))
-        // 032: 首次采集放后台线程（FR-009 不占 EDT），让第一轮对话就有环境事实；
-        // 之后每轮 prompt 转发前都会刷新，无需这里再管。
-        com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
-            runCatching { dev.pi.agent.manage.PiIdeEnv.refreshSnapshot(project) }
+
+            slot.processRef.set(process)
+            slot.stderrTail = ""
+            Thread({ drainStderr(process, slot) }, "pi-rpc-stderr-$instanceId").apply { isDaemon = true; start() }
+
+            val client = PiRpcClient(process, object : PiRpcListener {
+                override fun onEvent(event: JsonObject) {
+                    slot.eventListeners.forEach { it(event) }
+                }
+
+                override fun onClosed(message: String) {
+                    // Give the process a moment to exit so we can read its code.
+                    var exitCode: Int? = null
+                    try {
+                        exitCode = if (process.waitFor(2, TimeUnit.SECONDS)) process.exitValue() else null
+                    } catch (_: InterruptedException) {
+                    }
+                    val tail = slot.stderrTail
+                    val detail = buildString {
+                        append(message)
+                        if (exitCode != null && exitCode != 0) append(" (exit code $exitCode)")
+                    }
+                    setSlotState(slot, PiConnectionState.Exited(detail, tail.ifBlank { null }))
+                    slot.clientRef.set(null)
+                    slot.processRef.set(null)
+                }
+            })
+            slot.clientRef.set(client)
+            setSlotState(slot, PiConnectionState.Running(installation))
+            // 032: 首次采集放后台线程（FR-009 不占 EDT），让第一轮对话就有环境事实；
+            // 之后每轮 prompt 转发前都会刷新，无需这里再管。
+            com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
+                runCatching { dev.pi.agent.manage.PiIdeEnv.refreshSnapshot(project) }
+            }
+            return client
         }
-        return client
     }
 
     @Volatile
-    private var stderrTail: String = ""
+    private var drainThreads: MutableList<Thread> = mutableListOf()
 
-    private fun drainStderr(process: Process) {
+    private fun drainStderr(process: Process, slot: InstanceSlot) {
         try {
             val reader = process.errorStream.bufferedReader(Charsets.UTF_8)
             val sb = StringBuilder()
             var line = reader.readLine()
             while (line != null) {
                 LOG.info("[pi stderr] $line")
-                synchronized(this) {
+                synchronized(slot) {
                     sb.appendLine(line)
                     if (sb.length > MAX_STDERR) {
                         sb.delete(0, sb.length - MAX_STDERR)
                     }
-                    stderrTail = sb.toString()
+                    slot.stderrTail = sb.toString()
                 }
                 line = reader.readLine()
             }
@@ -216,11 +262,12 @@ class PiProcessManager(private val project: Project) : Disposable {    private v
         }
     }
 
-    /** Restarts the process (used after a crash or a settings change). */
+    /** Restarts one instance's process (used after a crash or a settings change). */
     @Synchronized
-    fun restart(): PiRpcClient? {
-        shutdownProcess(keepState = true)
-        return start()
+    fun restart(instanceId: Int = 1): PiRpcClient? {
+        val slot = slot(instanceId)
+        synchronized(slot) { shutdownProcessOf(slot, keepState = true) }
+        return start(instanceId)
     }
 
     /**
@@ -229,27 +276,24 @@ class PiProcessManager(private val project: Project) : Disposable {    private v
      * picks it up: a running process is never re-created behind the user's
      * back, and the flag is single-use.
      */
-    fun approveOnNextStart() {
-        pendingApprove = true
+    fun approveOnNextStart(instanceId: Int = 1) {
+        slot(instanceId).pendingApprove = true
     }
 
-    @Volatile
-    private var pendingApprove = false
-
-    private fun consumeApproveOnNextStart(): Boolean {
-        if (!pendingApprove) return false
-        pendingApprove = false
+    private fun consumeApproveOnNextStart(slot: InstanceSlot): Boolean {
+        if (!slot.pendingApprove) return false
+        slot.pendingApprove = false
         return true
     }
 
-    private fun setState(newState: PiConnectionState) {
-        state = newState
-        stateListeners.forEach { it(newState) }
+    private fun setSlotState(slot: InstanceSlot, newState: PiConnectionState) {
+        slot.state = newState
+        slot.stateListeners.forEach { it(newState) }
     }
 
-    private fun shutdownProcess(keepState: Boolean) {
-        clientRef.getAndSet(null)?.close()
-        val process = processRef.getAndSet(null)
+    private fun shutdownProcessOf(slot: InstanceSlot, keepState: Boolean) {
+        slot.clientRef.getAndSet(null)?.close()
+        val process = slot.processRef.getAndSet(null)
         if (process != null && process.isAlive) {
             process.destroy()
             try {
@@ -261,14 +305,18 @@ class PiProcessManager(private val project: Project) : Disposable {    private v
             }
         }
         if (!keepState) {
-            setState(PiConnectionState.NotStarted)
+            setSlotState(slot, PiConnectionState.NotStarted)
         }
     }
 
     override fun dispose() {
-        shutdownProcess(keepState = false)
-        stateListeners.clear()
-        eventListeners.clear()
+        // 019 D12: every instance's process is stopped — no orphans.
+        slots.values.forEach { slot ->
+            shutdownProcessOf(slot, keepState = false)
+            slot.stateListeners.clear()
+            slot.eventListeners.clear()
+        }
+        slots.clear()
     }
 
     init {

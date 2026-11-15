@@ -31,7 +31,7 @@
                     anchor="right"
                     factoryClass="dev.pi.agent.toolwindow.PiAgentToolWindowFactory"
                     icon="/icons/piAgent.svg"
-                    canCloseContents="false"/>
+                    canCloseContents="true"/>
         <postStartupActivity implementation="dev.pi.agent.toolwindow.PiAgentStartupActivity"/>
 
         <!-- Balloon notifications (e.g. background run finished). -->
