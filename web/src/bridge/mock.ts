@@ -2499,7 +2499,11 @@ export class MockBridge implements Bridge {
             "More notes[^2].\n\n" +
             "[^1]: The change record.\n" +
             "[^2]: Follow-up notes."
-          : this.mdKnob === "svg"
+          : this.mdKnob === "math"
+            ? // 040: inline and block LaTeX via KaTeX, plus a nasty math body —
+              // the sanitizer must keep the math but strip script vectors.
+              "Energy:\n\n$E=mc^2$ inline, and a block:\n\n$$\\sum_{i=1}^{n} x_i$$\n\nNow a nasty one: $\\text{<script>alert(1)</script>}$\n"
+            : this.mdKnob === "svg"
             ? // 039: a legal inline SVG plus a malicious one — the sanitizer
               // must render the first and strip the second's vectors.
               "Icon:\n\n" +

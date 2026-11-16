@@ -3,6 +3,10 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import { installWheelGain } from "./lib/wheel";
 import "./styles.css";
+// 040: KaTeX fonts + layout. Loaded at the app entry (not inside the Markdown
+// component) — the e2e specs import src/App directly under Node, which cannot
+// load a CSS module from a component graph.
+import "katex/dist/katex.min.css";
 
 const root = document.getElementById("root");
 

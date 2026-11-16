@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, type MouseEvent } from "react";
 import { marked } from "marked";
 import markedFootnote from "marked-footnote";
+import markedKatex from "marked-katex-extension";
 import DOMPurify from "dompurify";
 import hljs from "highlight.js/lib/common";
 import { usePiStore } from "../store/store";
@@ -13,6 +14,10 @@ marked.setOptions({ gfm: true, breaks: true });
 // add — one dependency, marked >=7 peer, renders sup refs + a footnotes
 // section with in-page anchors.
 marked.use(markedFootnote());
+// 040 FR-001: LaTeX math ($…$ inline, $$…$$ block — the AI-output standard).
+// throwOnError:false renders invalid input as source text instead of throwing
+// (US1 degrades gracefully); output still passes DOMPurify below (FR-002).
+marked.use(markedKatex({ throwOnError: false }));
 
 // Links must never navigate the SPA: the IDE (Kotlin) intercepts the click and
 // opens the system browser; standalone the browser opens a new tab. The hook
