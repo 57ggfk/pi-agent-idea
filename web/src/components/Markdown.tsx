@@ -8,6 +8,7 @@ import { usePiStore } from "../store/store";
 import { i18n } from "../i18n";
 import { copyText } from "../lib/clipboard";
 import { normalizeFootnoteDefs } from "../lib/footnotePreprocess";
+import { renderMermaid } from "../lib/mermaidRender";
 
 marked.setOptions({ gfm: true, breaks: true });
 // 038 US2: marked ^15 has no GFM footnote support of its own (measured:
@@ -216,6 +217,27 @@ export default function Markdown({ text }: { text: string }) {
     });
     // Plain-text path references outside code blocks too.
     linkifyTextNodes(root);
+    // 040 US2: mermaid blocks render to SVG in place; invalid source keeps
+    // the code block (the degrade is the natural pre-render state).
+    root.querySelectorAll("pre code.language-mermaid").forEach((el) => {
+      const code = el as HTMLElement;
+      const source = code.textContent ?? "";
+      if (!source.trim() || code.dataset.mermaidDone === source) return;
+      code.dataset.mermaidDone = source;
+      void renderMermaid(source).then((svg) => {
+        if (!svg) return;
+        const pre = code.closest("pre");
+        if (!pre || !pre.isConnected) return;
+        let fig = pre.querySelector<HTMLDivElement>(".mermaid-figure");
+        if (!fig) {
+          fig = document.createElement("div");
+          fig.className = "mermaid-figure";
+          pre.insertBefore(fig, code);
+          code.style.display = "none";
+        }
+        fig.innerHTML = svg;
+      });
+    });
   }, [html, openSnippet]);
 
   // One delegated handler covers links rendered via dangerouslySetInnerHTML.
