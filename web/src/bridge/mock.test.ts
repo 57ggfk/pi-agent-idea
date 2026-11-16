@@ -374,3 +374,25 @@ describe("MockBridge custom provider (027)", () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe("MockBridge compact (031)", () => {
+  it("answers compact with locale-independent before/after token figures", async () => {
+    const bridge = new MockBridge();
+    const res = await rpc<{ tokensBefore?: number; estimatedTokensAfter?: number }>(bridge, {
+      type: "compact",
+    });
+    expect(res.tokensBefore).toBe(12000);
+    expect(res.estimatedTokensAfter).toBe(3400);
+  });
+
+  it("?failcmd=compact fails the first call so the failure notice is reachable in e2e", async () => {
+    vi.stubGlobal("location", { search: "?failcmd=compact" });
+    const bridge = new MockBridge();
+    const res = await bridge.request<{ success?: boolean; error?: string }>("rpc.request", {
+      command: { type: "compact" },
+    });
+    expect(res.success).toBe(false);
+    expect(res.error).toMatch(/mock refusal/);
+    vi.unstubAllGlobals();
+  });
+});

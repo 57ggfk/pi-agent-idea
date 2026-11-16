@@ -448,6 +448,33 @@ button {
   font-size: 14px;
 }
 
+/* Blockquotes — i.e. what "引用消息" produces once the message is sent
+   (`quoteMarkdownSource` prefixes every line with "> "). Until now there was
+   no rule at all, so the UA default (`margin: 1em 40px`, no bar, no tint) won:
+   inside a 360px tool window the text lost 80px of width to nothing and read
+   as an indented paragraph rather than a quote. Left-aligned now, with a bar
+   carrying the quote semantics; the accent ramp keeps it legible on both the
+   plain message background and the accent-soft user bubble. */
+.markdown blockquote {
+  margin: 4px 0 8px;
+  padding: 2px 0 2px 10px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 4px 4px 0;
+  color: var(--text-secondary);
+}
+
+.markdown blockquote p {
+  margin: 0 0 6px;
+}
+
+.markdown blockquote > :first-child {
+  margin-top: 0;
+}
+
+.markdown blockquote > :last-child {
+  margin-bottom: 0;
+}
+
 .cursor {
   display: inline-block;
   width: 7px;
@@ -1159,6 +1186,23 @@ button {
 
 .settings-editor:focus {
   border-color: var(--accent);
+}
+
+/* 032 Q6-b: read-only IDE environment snapshot viewer (manage → settings). */
+.env-snapshot {
+  max-height: 280px;
+  overflow: auto;
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--bg-input);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .mono {
@@ -4840,4 +4884,423 @@ button {
 .jump-bottom:hover {
   color: var(--text);
   background: var(--surface-hover);
+}
+
+/* -- 033: package management (tabs, registry row, market cards) -------------- */
+
+.panel-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.panel-tab {
+  border: 1px solid transparent;
+  border-bottom: none;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: 8px 8px 0 0;
+  padding: 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.panel-tab-on {
+  color: var(--text);
+  background: var(--bg-secondary);
+  border-color: var(--border);
+  font-weight: 600;
+}
+
+.package-registry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  font-size: 11px;
+}
+
+.package-registry-title {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.package-registry-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary);
+}
+
+.package-registry-input {
+  flex: 1;
+  min-width: 180px;
+  max-width: 320px;
+  font-size: 11px;
+}
+
+.package-row-sub {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pkg-version {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.pkg-scope {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 5px;
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+.pkg-status-broken {
+  color: var(--danger, #d14343);
+  font-size: 11px;
+}
+
+.pkg-check {
+  color: var(--accent-text);
+  font-size: 11px;
+}
+
+.cli-details {
+  margin-top: 4px;
+  font-size: 11px;
+}
+
+.cli-details summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+
+.cli-details pre {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px;
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.market-degraded {
+  margin-bottom: 6px;
+}
+
+.market-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  padding: 8px 10px;
+  margin-bottom: 6px;
+}
+
+.market-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.market-name {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.pkg-badge {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 5px;
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+.market-card-actions {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pkg-installed {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.market-desc {
+  color: var(--text-secondary);
+  font-size: 11px;
+  margin: 4px 0;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.market-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.market-link {
+  color: var(--accent-text);
+  text-decoration: none;
+}
+
+.market-link:hover {
+  text-decoration: underline;
+}
+
+.market-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+/* -- 033 FR-020: per-row in-flight progress (indeterminate, single-flight) --- */
+
+.pkg-row-active {
+  border-color: var(--accent);
+}
+
+.pkg-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--accent-text);
+}
+
+.pkg-progress-text {
+  flex-shrink: 0;
+}
+
+.pkg-progress-track {
+  position: relative;
+  flex: 1;
+  max-width: 220px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.pkg-progress-fill {
+  position: absolute;
+  top: 0;
+  left: -30%;
+  height: 100%;
+  width: 30%;
+  border-radius: 2px;
+  background: var(--accent);
+  animation: pkg-progress-slide 1.1s infinite ease-in-out;
+}
+
+@keyframes pkg-progress-slide {
+  0% {
+    left: -30%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+.market-card-actions .pkg-progress {
+  margin-top: 0;
+  min-width: 120px;
+}
+
+.market-pidev-link {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent-text);
+}
+
+.market-types {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.market-type {
+  font-size: 11px;
+  padding: 3px 10px;
+}
+
+.market-type-on {
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+/* -- 034: skills groups, switches, external sources -------------------------- */
+
+.skill-group {
+  margin-bottom: 10px;
+}
+
+.skill-group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin: 6px 0 4px;
+}
+
+.skill-group-count {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 5px;
+  font-size: 10px;
+}
+
+.skill-row-off .panel-row-main {
+  opacity: 0.55;
+}
+
+.skill-external {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  font-size: 11px;
+}
+
+.skill-external-title {
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.skill-external-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 8px;
+  font-size: 11px;
+}
+
+.skill-external-add {
+  margin-top: 6px;
+}
+
+/* -- 034 T1507: skills layout rework ------------------------------------------ */
+
+.skill-desc {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-path-line {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Wide panel: the full path. Narrow: the shortened ~/relative form. */
+.skill-path-short {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  .skill-path-full {
+    display: none;
+  }
+  .skill-path-short {
+    display: inline;
+  }
+  .skill-actions {
+    flex-direction: row;
+  }
+}
+
+/* The three per-row buttons stack on the right edge. */
+.skill-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.skill-actions-row {
+  display: flex;
+  gap: 4px;
+}
+
+.skill-soft-btn {
+  width: 100%;
+}
+
+.skill-group-title {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.skill-chevron {
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+
+.skill-chevron-collapsed {
+  transform: rotate(-90deg);
+}
+
+.pkg-row-queued {
+  opacity: 0.75;
+}
+
+.pkg-queued {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+/* -- 034 T1515: source badges (external/package stand out) -------------------- */
+
+.skill-src-badge {
+  border: 1px solid var(--accent-text);
+  color: var(--accent-text);
+  border-radius: 6px;
+  padding: 0 5px;
+  font-size: 10px;
+}
+
+.skill-group-title[data-source="external"],
+.skill-group-title[data-source="package"] {
+  color: var(--accent-text);
 }

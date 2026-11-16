@@ -1,0 +1,59 @@
+{
+  "when": "2026-11-12T18:32:06.239Z",
+  "pageUrl": "http://127.0.0.1:52811/?token=<redacted>",
+  "snapshotPath": "C:\\Users\\Administrator\\AppData\\Roaming\\JetBrains\\WebStorm2026.2\\pi-agent\\pi-ide-env.json",
+  "results": [
+    {
+      "n": "snapshot file exists and is enabled",
+      "ok": true,
+      "d": {
+        "collectedAt": "2026-11-12T18:31:25.609Z"
+      }
+    },
+    {
+      "n": "snapshot text is the rendered block",
+      "ok": true,
+      "d": {}
+    },
+    {
+      "n": "collectedAt advances with the turn (US4 freshness)",
+      "ok": true,
+      "d": {
+        "before": "2026-11-12T18:31:25.609Z",
+        "after": "2026-11-12T18:32:00.739Z"
+      }
+    },
+    {
+      "n": "extension stamped lastAppliedAt (injection receipt)",
+      "ok": true,
+      "d": {
+        "lastAppliedAt": "2026-11-12T18:32:00.882Z"
+      }
+    },
+    {
+      "n": "pi replied normally with the extension loaded",
+      "ok": true,
+      "d": {}
+    },
+    {
+      "n": "WebStorm degrade: sources line renders, no error markers (US5)",
+      "ok": true,
+      "d": {
+        "sources": "node-sdk, shell-env."
+      }
+    },
+    {
+      "n": "panel viewer shows the real snapshot body",
+      "ok": true,
+      "d": {}
+    }
+  ],
+  "pass": 7,
+  "total": 7,
+  "snapshot": {
+    "enabled": true,
+    "collectedAt": "2026-11-12T18:32:00.739Z",
+    "text": "# IDE environment snapshot\nProvided by the Pi Agent JetBrains plugin. Collected: 2026-11-12T18:32:00.739Z.\nSources present: node-sdk, shell-env.\nPick the JDK / interpreter / package manager from these facts when you run or build anything.\n\n## Node interpreter (tier: node-sdk)\n- Node on PATH: C:\\Program Files\\nodejs\\node.exe (v25.1.0)\n\n## Build-relevant environment (tier: shell-env)\n- JAVA_HOME=D:\\develop\\Java\\jdk-17.0.12\n\n## Suggested commands (tier: derived)\n- Build: ./gradlew build\n- Test: ./gradlew test\n\n",
+    "lastAppliedAt": "2026-11-12T18:32:00.882Z"
+  }
+}

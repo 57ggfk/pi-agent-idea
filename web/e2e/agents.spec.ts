@@ -34,6 +34,16 @@ test("lists the four locations in pi load order with scope badges (T119)", async
 
   // the third subdir's file is missing in the default fixture → create button
   await expect(rows.nth(3).getByTestId("agents-create")).toBeVisible();
+
+  // T1509: responsive path line — full on wide panels, the ~ short form narrow.
+  const globalRow = rows.nth(0);
+  await expect(globalRow.locator(".skill-path-full")).toContainText("/tmp/mock-home/.pi/agent/AGENTS.md");
+  await expect(globalRow.locator(".skill-path-short")).toContainText("~/.pi/agent/AGENTS.md");
+  await expect(globalRow.locator(".skill-path-short")).toBeHidden();
+  await page.setViewportSize({ width: 480, height: 800 });
+  await expect(globalRow.locator(".skill-path-short")).toBeVisible();
+  await expect(globalRow.locator(".skill-path-full")).toBeHidden();
+  await page.setViewportSize({ width: 1280, height: 720 });
 });
 
 test("untrusted project shows the visible reason banner, not a blank list (T119)", async ({ page }) => {

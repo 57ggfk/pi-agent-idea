@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.5.9 — 2026-11-16
+
+**新增**
+- Pi Agent 工具窗现在可以同时打开最多 4 个独立标签页，每个标签页有各自的会话；关闭正在回复的标签页时会先弹出确认
+- 上下文将满自动压缩时，消息流会显示压缩开始与完成提示（原先完全静默）
+- pi 现在知道 IDE 的构建环境：项目 SDK、语言级别与构建相关变量会进入系统提示词，且随 IDE 改动即时生效，无需重启
+- 包管理重做：已安装清单变为可操作表格，可看逐包版本、状态（未安装 / 文件缺失）与作用域，支持一键版本检查和单包升级；新增 pi.dev 官方市场页签，可搜索浏览 pi.dev/packages 库，带分页、下载量与一键安装（已安装的会标注）；npm registry 可选跟随 npm 配置、官方源、国内镜像或自定义私有源，安装与版本检查都遵循该设置，不改 .npmrc（033）。
+- Skills 面板按来源分组（用户 .pi、~/.agents、项目 .pi/.agents 含祖先、扩展包、外接），每个技能可一键启用/禁用并显示全局/项目、仅手动调用、重名等状态；可把 ~/.claude/skills、~/.codex/skills 或任意自定义目录接入并带独立来源标记；「仅手动调用」可在面板直接切换并一键重载 pi，不再需要手改 SKILL.md（034）。
+
+**修复**
+- 中文界面下压缩上下文的开始、完成与失败提示改为中文，失败原因保留原文
+- 修复单包「更新」在 pi 1.5.0 上必然失败的问题：先查最新版再按固定版本重装，升级未生效时给出提示；预检 registry 让安装、升级和逛市场在离线时数秒内友好失败，不再卡在 npm 重试阶梯，清单与卸载可完全离线；市场卡片的「仓库」链接归一化为可打开的 https，无法归一化时隐藏而不是给死链（033）。
+- 消息里的引用块改为左侧竖线，不再有多余的左缩进
+- 滚轮滚一格立即生效，不再排队等动画
+
+**Added**
+- The Pi Agent tool window can now hold up to 4 independent tabs, each with its own session; closing a tab that is still replying asks for confirmation
+- Automatic compaction now shows start and done notices in the transcript instead of staying silent
+- pi now knows the IDE's build context: project SDK, language level and build variables are injected into the system prompt, refreshing live without a restart
+- Package management reworked: the installed list is now an operable table with per-package versions, status (not installed / files missing) and scope, one-click version checks and single-package upgrades; a new pi.dev marketplace tab browses the pi.dev/packages gallery with search, pagination, download counts and one-click install (installed packages are marked); npm registries can follow npm config, the official source, a China mirror or a custom private source, and installs and version checks honor the choice without touching .npmrc (033).
+- The Skills panel groups skills by source (user .pi and ~/.agents, project .pi/.agents including ancestors, packages, external), lets each skill be enabled/disabled in one click with global/project, manual-only and duplicate-name status; ~/.claude/skills, ~/.codex/skills or any custom directory can be wired in with a distinct source marker; manual-only invocation can be toggled in place with a one-click pi reload instead of editing SKILL.md (034).
+
+**Fixed**
+- Compaction start, done and failed notices now follow the UI language; failure reasons stay verbatim
+- The per-package Update button no longer always fails on pi 1.5.0: it checks the latest version and reinstalls pinned, warning when the upgrade does not take effect; registry preflight makes installs, upgrades and market browsing fail fast with a friendly message offline instead of hanging in npm's retry ladder, while listing and uninstalling work fully offline; marketplace repository links are normalized to openable https, or hidden when normalization fails instead of becoming dead links (033).
+- Quoted text in messages now shows a left bar instead of extra left indentation
+- A wheel notch now scrolls immediately instead of queuing behind an animation
+
 ## 0.5.8 — 2026-11-12
 
 **新增**

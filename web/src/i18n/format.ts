@@ -26,6 +26,21 @@ export function formatRelative(ms: number, language: string, now = Date.now()): 
   return new Intl.RelativeTimeFormat(bcp47(language), { numeric: "auto" }).format(diffSeconds, "second");
 }
 
+/**
+ * Publish-time of a gallery card (033): "5 days ago" / "5 天前" at day or
+ * hour granularity. Unparseable input comes back untouched instead of "Invalid
+ * Date" — a broken timestamp must not eat a whole card.
+ */
+export function formatRelativeDay(iso: string, language: string, now = Date.now()): string {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return iso;
+  const diffMs = ms - now;
+  const rtf = new Intl.RelativeTimeFormat(bcp47(language), { numeric: "auto" });
+  if (Math.abs(diffMs) >= 86_400_000) return rtf.format(Math.round(diffMs / 86_400_000), "day");
+  if (Math.abs(diffMs) >= 3_600_000) return rtf.format(Math.round(diffMs / 3_600_000), "hour");
+  return rtf.format(Math.round(diffMs / 60_000), "minute");
+}
+
 function bcp47(language: string): string {
   return LANGUAGES.find((l) => l.code === language)?.bcp47 ?? language;
 }

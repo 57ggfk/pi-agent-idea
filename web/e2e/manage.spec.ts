@@ -43,7 +43,7 @@ test.describe("manage view (MockBridge)", () => {
     await expect(page.getByTestId("package-row")).toHaveCount(1);
     await page.locator(".packages-input").fill("npm:@example/pi-extra");
     await page.getByTestId("package-install").click();
-    await expect(page.getByTestId("outcome-banner")).toContainText("✓");
+    await expect(page.getByTestId("update-result")).toContainText("✓");
   });
 
   test("skills panel lists and creates skills", async ({ page }) => {
@@ -72,6 +72,40 @@ test.describe("manage view (MockBridge)", () => {
     await editor.fill('{\n  "theme": "dark",\n  "quietStartup": true\n}');
     await page.getByTestId("settings-save").click();
     await expect(page.getByTestId("outcome-banner")).toContainText("✓");
+  });
+
+  // -- 032 Q6-b: the read-only IDE environment snapshot viewer ---------------
+
+  test("the environment snapshot viewer shows what would be injected (zh)", async ({ page }) => {
+    await page.goto("/?locale=zh");
+    await expect(page.getByTestId("empty-state")).toBeVisible();
+    await page.getByTestId("tab-manage").click();
+    await page.getByTestId("manage-tab-settings").click();
+    await page.getByTestId("env-snapshot-btn").click();
+    await expect(page.getByTestId("env-snapshot-text")).toContainText("# IDE environment snapshot");
+    await expect(page.getByTestId("env-snapshot-text")).toContainText("Oracle JDK 21");
+    await expect(page.getByTestId("env-snapshot-text")).toContainText("JAVA_HOME=/opt/jdk-21");
+    await expect(page.getByTestId("env-snapshot-text")).not.toContainText("⟦");
+    await expect(page.getByText("查看环境快照")).toBeVisible();
+  });
+
+  test("a disabled injection shows the off hint instead of a snapshot body", async ({ page }) => {
+    await page.goto("/?envsnapshot=off");
+    await expect(page.getByTestId("empty-state")).toBeVisible();
+    await page.getByTestId("tab-manage").click();
+    await page.getByTestId("manage-tab-settings").click();
+    await page.getByTestId("env-snapshot-btn").click();
+    await expect(page.getByTestId("env-snapshot-off")).toBeVisible();
+    await expect(page.getByTestId("env-snapshot-text")).toHaveCount(0);
+  });
+
+  test("an empty snapshot (no message sent yet) shows the empty hint", async ({ page }) => {
+    await page.goto("/?envsnapshot=empty");
+    await expect(page.getByTestId("empty-state")).toBeVisible();
+    await page.getByTestId("tab-manage").click();
+    await page.getByTestId("manage-tab-settings").click();
+    await page.getByTestId("env-snapshot-btn").click();
+    await expect(page.getByTestId("env-snapshot-empty")).toBeVisible();
   });
 
   // -- MCP enable / disable (spec 001 US1) ---------------------------------
@@ -131,31 +165,49 @@ test.describe("manage view (MockBridge)", () => {
     await expect(page.getByTestId("mcp-server-row").first()).toHaveAttribute("data-enabled", "true");
   });
 
-  // -- Package update (spec 001 US2) ----------------------------------------
+  // -- Package check + upgrade (spec 033 US2/US3; the old `pi update <source>`
+  //    row button is gone — pi 1.5.0 rejects it, upgrades are pinned installs) --
 
-  test("package update refreshes the version in the list", async ({ page }) => {
+  test("check reports up-to-date by default and the upgrade button stays disabled", async ({ page }) => {
     await page.getByTestId("manage-tab-packages").click();
-    await expect(page.getByTestId("package-row")).toContainText("1.0.0");
+    await expect(page.getByTestId("package-version-0")).toContainText("1.0.0");
 
-    await page.getByTestId("package-update-0").click();
-
-    await expect(page.getByTestId("update-result")).toContainText(
-      "updated npm:@example/pi-tools@1.0.0 -> npm:@example/pi-tools@1.1.0",
-    );
-    await expect(page.getByTestId("package-row")).toContainText("1.1.0");
+    await page.getByTestId("package-check-0").click();
+    await expect(page.getByTestId("package-check-verdict-0")).toContainText("Up to date (1.0.0)");
+    await expect(page.getByTestId("package-upgrade-0")).toBeDisabled();
   });
 
-  test("a failed package update shows the raw output and the stale-version note", async ({ page }) => {
-    await openManage(page, "fail=update");
+  test("check → upgrade moves the version in the list", async ({ page }) => {
+    await openManage(page, "pkgold=1");
     await page.getByTestId("manage-tab-packages").click();
-    await page.getByTestId("package-update-0").click();
+    await expect(page.getByTestId("package-version-0")).toContainText("1.0.0");
+
+    await page.getByTestId("package-check-0").click();
+    await expect(page.getByTestId("package-check-verdict-0")).toContainText("Upgrade available: 1.0.0 → 1.1.0");
+    await expect(page.getByTestId("package-upgrade-0")).toBeEnabled();
+
+    await page.getByTestId("package-upgrade-0").click();
+    await expect(page.getByTestId("update-result")).toContainText("✓");
+    await expect(page.getByTestId("package-version-0")).toContainText("1.1.0");
+  });
+
+  test("a failed upgrade shows a friendly headline and keeps the raw npm output in details", async ({ page }) => {
+    await openManage(page, "pkgold=1&fail=update");
+    await page.getByTestId("manage-tab-packages").click();
+
+    await page.getByTestId("package-check-0").click();
+    await expect(page.getByTestId("package-check-verdict-0")).toContainText("Upgrade available");
+    await page.getByTestId("package-upgrade-0").click();
 
     const result = page.getByTestId("update-result");
-    await expect(result).toContainText("npm error 404");
-    await expect(result).toContainText("exit code 1");
-    await expect(result).toContainText("may still be the old one");
-    // A failed update must not silently bump the listed version.
-    await expect(page.getByTestId("package-row")).toContainText("1.0.0");
+    await expect(result).toContainText("✗");
+    // FR-014: the npm error wall must not be the headline…
+    await expect(page.getByTestId("update-result-headline")).not.toContainText("npm error");
+    // …and the raw output stays reachable in the collapsed details.
+    await page.getByTestId("cli-details").locator("summary").click();
+    await expect(page.getByTestId("cli-details")).toContainText("npm error 404");
+    // A failed upgrade must not silently bump the listed version.
+    await expect(page.getByTestId("package-version-0")).toContainText("1.0.0");
   });
 
   // -- pi self-update (spec 001 US3) -----------------------------------------
@@ -314,7 +366,7 @@ test.describe("project trust (MockBridge)", () => {
 
     const userRow = page.locator('[data-testid="skill-row"][data-scope="user"]');
     await expect(userRow).toHaveAttribute("data-active", "true", { timeout: 5_000 });
-    await expect(userRow.getByTestId("skill-scope")).toContainText("用户级");
+    await expect(userRow.getByTestId("skill-scope")).toContainText("user");
   });
 
 });
@@ -326,16 +378,17 @@ test.describe("packages panel 018", () => {
     await openManage(page, "pkgs=2");
     await page.getByTestId("manage-tab-packages").click();
     await expect(page.getByTestId("package-row")).toHaveCount(2);
-    await expect(page.getByTestId("package-row").first()).toContainText("1.0.0");
+    await expect(page.getByTestId("package-version-0")).toContainText("1.0.0");
 
     await page.getByTestId("packages-update-all").click();
     await expect(page.getByTestId("update-result")).toContainText("✓");
-    // pi-style per-package lines, verbatim
-    await expect(page.getByTestId("update-result")).toContainText("updated npm:@example/pi-tools@1.0.0 -> npm:@example/pi-tools@1.1.0");
-    await expect(page.getByTestId("update-result")).toContainText("updated git:github.com/example/pi-git-pkg@0.3.0 -> git:github.com/example/pi-git-pkg@0.4.0");
+    // pi-style per-package lines stay verbatim — in the collapsed details now.
+    await page.getByTestId("cli-details").locator("summary").click();
+    await expect(page.getByTestId("cli-details")).toContainText("updated npm:@example/pi-tools@1.0.0 -> npm:@example/pi-tools@1.1.0");
+    await expect(page.getByTestId("cli-details")).toContainText("updated git:github.com/example/pi-git-pkg@0.3.0 -> git:github.com/example/pi-git-pkg@0.4.0");
     // the list refreshed: both rows show the bumped versions
-    await expect(page.getByTestId("package-row").first()).toContainText("1.1.0");
-    await expect(page.getByTestId("package-row").nth(1)).toContainText("0.4.0");
+    await expect(page.getByTestId("package-version-0")).toContainText("1.1.0");
+    await expect(page.getByTestId("package-version-1")).toContainText("0.4.0");
   });
 
   test("update all is disabled with nothing installed", async ({ page }) => {
@@ -362,6 +415,322 @@ test.describe("packages panel 018", () => {
     await page.getByTestId("package-remove-0").click();
     await page.getByTestId("confirm-ok").click();
     await expect(page.getByTestId("confirm-dialog")).toHaveCount(0);
-    await expect(page.getByTestId("outcome-banner")).toContainText("✓");
+    await expect(page.getByTestId("update-result")).toContainText("✓");
+  });
+});
+
+// -- 033: structured list, broken rows, offline fast-fail, registry, market ----
+
+test.describe("packages panel 033", () => {
+  test("rows show version, scope and a broken entry with reinstall", async ({ page }) => {
+    await openManage(page, "pkgbroken=1");
+    await page.getByTestId("manage-tab-packages").click();
+    await expect(page.getByTestId("package-row")).toHaveCount(2);
+    await expect(page.getByTestId("package-version-0")).toContainText("1.0.0");
+    await expect(page.getByTestId("package-row").first()).toContainText("global");
+    await expect(page.getByTestId("package-broken-1")).toContainText("not installed / files missing");
+    await expect(page.getByTestId("package-reinstall-1")).toBeVisible();
+    await expect(page.getByTestId("package-check-1")).toHaveCount(0);
+
+    await page.getByTestId("package-reinstall-1").click();
+    await expect(page.getByTestId("update-result")).toContainText("✓");
+  });
+
+  test("a version check degrades gracefully when the registry is unreachable", async ({ page }) => {
+    await openManage(page, "check=offline");
+    await page.getByTestId("manage-tab-packages").click();
+    await page.getByTestId("package-check-0").click();
+    await expect(page.getByTestId("package-check-verdict-0")).toContainText("Latest unknown: network unreachable");
+    await expect(page.getByTestId("package-upgrade-0")).toBeDisabled();
+  });
+
+  test("an authenticated private registry degrades the check with a reason", async ({ page }) => {
+    await openManage(page, "check=auth");
+    await page.getByTestId("manage-tab-packages").click();
+    await page.getByTestId("package-check-0").click();
+    await expect(page.getByTestId("package-check-verdict-0")).toContainText("registry requires authentication");
+  });
+
+  test("market: cards render with fields, pager and the installed state", async ({ page }) => {
+    await openManage(page, "");
+    await page.getByTestId("manage-tab-packages").click();
+    await page.getByTestId("packages-tab-market").click();
+
+    await expect(page.getByTestId("market-open-pidev")).toHaveAttribute("href", "https://pi.dev/packages");
+    await expect(page.getByTestId("market-card").first()).toContainText("billion-context");
+    await expect(page.getByTestId("market-card").first()).toContainText("v0.1.213");
+    await expect(page.getByTestId("market-downloads").first()).toContainText("3,257,276");
+    // 137 fixtures / 50 per page = 3 pages
+    await expect(page.getByTestId("market-pageinfo")).toHaveText("1 / 3");
+    // raw repository values are git schemes; the card must show a browsable https link
+    await expect(page.locator('[data-testid="market-card"] a[href^="git"]')).toHaveCount(0);
+    await expect(page.locator('[data-testid="market-card"] a[href="https://github.com/ranxianglei/billion-context"]')).toHaveCount(1);
+
+    // P21 type filter: server-side keyword refinement via the chips row.
+    await page.getByTestId("market-type-extension").click();
+    await expect(page.getByTestId("market-card").first()).toContainText("pi-web-access");
+    const badges = await page.locator('[data-testid="market-card"] .pkg-badge').allInnerTexts();
+    await expect(page.getByTestId("market-card")).toHaveCount(badges.length);
+    for (const badge of badges) await expect(badge === "extension").toBe(true);
+    await page.getByTestId("market-type-all").click();
+    await expect(page.getByTestId("market-pageinfo")).toHaveText("1 / 3");
+
+    await page.getByTestId("market-next").click();
+    await expect(page.getByTestId("market-pageinfo")).toHaveText("2 / 3");
+    await expect(page.getByTestId("market-card").first()).toContainText("pi-sample-051");
+
+    // The pre-installed mock package disables its market card (no such card in
+    // the fixture, so install openwiki and watch the badge appear instead).
+    await page.getByTestId("market-search").fill("openwiki");
+    await page.getByTestId("market-search-btn").click();
+    await expect(page.getByTestId("market-card")).toHaveCount(1);
+    await page.getByTestId("market-install-openwiki").click();
+    await expect(page.getByTestId("confirm-dialog")).toBeVisible();
+    await page.getByTestId("confirm-ok").click();
+    await expect(page.getByTestId("market-installed")).toContainText("Installed");
+    await expect(page.getByTestId("market-install-openwiki")).toHaveCount(0);
+  });
+
+  test("market fails fast and friendly when offline", async ({ page }) => {
+    await openManage(page, "market=offline");
+    await page.getByTestId("manage-tab-packages").click();
+    await page.getByTestId("packages-tab-market").click();
+
+    await expect(page.getByTestId("market-error")).toContainText("Network unreachable");
+    await expect(page.getByTestId("market-card")).toHaveCount(0);
+  });
+
+  test("market explains a registry without a search endpoint", async ({ page }) => {
+    await openManage(page, "market=unavailable");
+    await page.getByTestId("manage-tab-packages").click();
+    await page.getByTestId("packages-tab-market").click();
+
+    await expect(page.getByTestId("market-error")).toContainText("does not support search");
+  });
+
+  test("market explains an authenticated registry", async ({ page }) => {
+    await openManage(page, "market=auth");
+    await page.getByTestId("manage-tab-packages").click();
+    await page.getByTestId("packages-tab-market").click();
+
+    await expect(page.getByTestId("market-error")).toContainText("authentication");
+  });
+
+  test("market shows the fuzzy-match hint on degraded registries and the empty state", async ({ page }) => {
+    await openManage(page, "market=degraded");
+    await page.getByTestId("manage-tab-packages").click();
+    await page.getByTestId("packages-tab-market").click();
+    await expect(page.getByTestId("market-degraded")).toBeVisible();
+
+    await openManage(page, "market=empty");
+    await page.getByTestId("manage-tab-packages").click();
+    await page.getByTestId("packages-tab-market").click();
+    await expect(page.getByTestId("market-empty")).toBeVisible();
+  });
+
+  test("the registry choice persists across a reload", async ({ page }) => {
+    await openManage(page, "");
+    await page.getByTestId("manage-tab-packages").click();
+    await expect(page.getByTestId("package-registry-follow")).toBeChecked();
+
+    await page.getByTestId("package-registry-china").click();
+    await expect(page.getByTestId("package-registry-china")).toBeChecked();
+
+    await page.reload();
+    await expect(page.getByTestId("empty-state")).toBeVisible();
+    await page.getByTestId("tab-manage").click();
+    await page.getByTestId("manage-tab-packages").click();
+    await expect(page.getByTestId("package-registry-china")).toBeChecked();
+  });
+
+  test("the row in flight shows its own progress while other rows just wait", async ({ page }) => {
+    await openManage(page, "pkgs=2&pkgspeed=slow");
+    await page.getByTestId("manage-tab-packages").click();
+    await expect(page.getByTestId("package-row")).toHaveCount(2);
+
+    await page.getByTestId("package-remove-1").click();
+    await page.getByTestId("confirm-ok").click();
+
+    // FR-020: the row being removed is highlighted and carries its own bar…
+    const activeRow = page.getByTestId("package-row").nth(1);
+    await expect(activeRow).toHaveClass(/pkg-row-active/);
+    await expect(page.getByTestId("package-progress-1")).toContainText("Removing");
+    // …while the other row stays clickable: clicking would just enqueue (035).
+    await expect(page.getByTestId("package-remove-0")).toBeEnabled();
+    await expect(page.getByTestId("package-progress-0")).toHaveCount(0);
+
+    await expect(page.getByTestId("package-progress-1")).toHaveCount(0, { timeout: 10_000 });
+    await expect(page.getByTestId("update-result")).toContainText("✓");
+  });
+
+  test("toolbar install and update-all show the toolbar-level progress", async ({ page }) => {
+    await openManage(page, "pkgspeed=slow");
+    await page.getByTestId("manage-tab-packages").click();
+
+    await page.locator(".packages-input").fill("npm:@example/pi-extra");
+    await page.getByTestId("package-install").click();
+    await expect(page.getByTestId("package-progress-toolbar")).toContainText("Installing");
+    await expect(page.getByTestId("package-progress-toolbar")).toHaveCount(0, { timeout: 10_000 });
+    await expect(page.getByTestId("update-result")).toContainText("✓");
+
+    await page.getByTestId("packages-update-all").click();
+    await expect(page.getByTestId("packages-progress-all")).toContainText("Updating all");
+    await expect(page.getByTestId("packages-progress-all")).toHaveCount(0, { timeout: 10_000 });
+    await expect(page.getByTestId("update-result")).toContainText("✓");
+  });
+
+  test("an invalid custom registry is refused with an inline reason", async ({ page }) => {
+    await openManage(page, "");
+    await page.getByTestId("manage-tab-packages").click();
+    await page.getByTestId("package-registry-custom-input").fill("not a registry");
+    await page.getByTestId("package-registry-custom").click();
+    await expect(page.getByTestId("package-registry-invalid")).toBeVisible();
+    // follow mode untouched
+    await expect(page.getByTestId("package-registry-follow")).toBeChecked();
+  });
+});
+
+// -- 034: skills management ---------------------------------------------------
+
+test.describe("skills panel 034", () => {
+  test("groups by source and flags duplicates, manual-only and disabled rows", async ({ page }) => {
+    await openManage(page, "skills=rich");
+    await page.getByTestId("manage-tab-skills").click();
+
+    await expect(page.getByTestId("skill-source-user-pi")).toBeVisible();
+    await expect(page.getByTestId("skill-source-user-agents")).toBeVisible();
+    await expect(page.getByTestId("skill-source-package")).toBeVisible();
+
+    // The hard switch: an excluded row shows the disabled badge and dims.
+    const betaRow = page.locator('[data-testid="skill-row"]').filter({ hasText: "beta-skill" });
+    await expect(betaRow).toHaveClass(/skill-row-off/);
+    await expect(page.getByTestId("skill-disabled-1")).toContainText("Disabled");
+
+    // The soft switch state shows as a badge, not a state change.
+    await expect(page.getByTestId("skill-manual-2")).toContainText("Manual only");
+
+    // Duplicate names are flagged beyond the first discovery.
+    await expect(page.getByTestId("skill-dup-3")).toContainText("Duplicate");
+  });
+
+  test("the hard switch disables a skill and offers the reload bar", async ({ page }) => {
+    await openManage(page, "");
+    await page.getByTestId("manage-tab-skills").click();
+    await expect(page.getByTestId("skills-reload-bar")).toHaveCount(0);
+
+    await page.getByTestId("skill-enable-0").click();
+    await expect(page.getByTestId("skill-disabled-0")).toContainText("Disabled");
+    await expect(page.getByTestId("skills-reload-bar")).toContainText("reload");
+
+    await page.getByTestId("skills-reload-btn").click();
+    await expect(page.getByTestId("skills-reload-bar")).toHaveCount(0);
+  });
+
+  test("the soft switch toggles manual-only without touching the hard state", async ({ page }) => {
+    await openManage(page, "");
+    await page.getByTestId("manage-tab-skills").click();
+
+    await page.getByTestId("skill-soft-0").click();
+    await expect(page.getByTestId("skill-manual-0")).toContainText("Manual only");
+    await expect(page.getByTestId("skill-disabled-0")).toHaveCount(0);
+  });
+
+  test("external sources wire Claude-style dirs with presets and custom input", async ({ page }) => {
+    await openManage(page, "");
+    await page.getByTestId("manage-tab-skills").click();
+
+    await expect(page.getByTestId("skill-external-claude")).toContainText(".claude");
+    // T1509-followup: the preset label renders the ~-shortened form.
+    await expect(page.getByTestId("skill-external-claude")).toContainText("~/.claude/skills");
+    await expect(page.getByTestId("skill-external-claude").locator(".mono")).not.toContainText("/tmp/mock-home");
+    await page.getByTestId("skill-external-claude").click();
+
+    // The mock mirrors what the reload discovers in the wired dir.
+    await expect(page.getByTestId("skill-source-external")).toBeVisible();
+    await expect(page.getByTestId("skill-row").filter({ hasText: "claude-skill" })).toHaveCount(1);
+
+    await page.getByTestId("skill-external-input").fill("/tmp/mock-home/.codex/skills");
+    await page.getByTestId("skill-external-add").click();
+    await expect(page.getByTestId("skill-external-codex")).toContainText("Disable");
+  });
+});
+
+// -- 034 T1507: skills layout rework --------------------------------------------
+
+test.describe("skills layout rework", () => {
+  test("groups collapse, remember the state and show short/long paths responsively", async ({ page }) => {
+    await openManage(page, "skills=rich");
+    await page.getByTestId("manage-tab-skills").click();
+
+    // Collapse the user-agents group: its rows disappear…
+    const agentsHeader = page.getByTestId("skill-source-user-agents");
+    await agentsHeader.click();
+    await expect(page.getByTestId("skill-row").filter({ hasText: "beta-skill" })).toHaveCount(0);
+    // …and the choice survives a reload.
+    await page.reload();
+    await expect(page.getByTestId("empty-state")).toBeVisible();
+    await page.getByTestId("tab-manage").click();
+    await page.getByTestId("manage-tab-skills").click();
+    await expect(page.getByTestId("skill-row").filter({ hasText: "beta-skill" })).toHaveCount(0);
+
+    // Wide viewport shows the full path; the short ~ form exists in the DOM.
+    const pdfRow = page.getByTestId("skill-row").filter({ hasText: "pdf-tools" }).first();
+    await expect(pdfRow.locator(".skill-path-full")).toBeVisible();
+    await expect(pdfRow.locator(".skill-path-short")).toBeHidden();
+
+    // Narrow panel: the shortened ~ form takes over.
+    await page.setViewportSize({ width: 480, height: 800 });
+    await expect(pdfRow.locator(".skill-path-short")).toBeVisible();
+    await expect(pdfRow.locator(".skill-path-full")).toBeHidden();
+    await page.setViewportSize({ width: 1280, height: 720 });
+
+    // Expand again for the next tests.
+    await agentsHeader.click();
+    await expect(page.getByTestId("skill-row").filter({ hasText: "beta-skill" })).toHaveCount(1);
+  });
+
+  test("the edit button opens SKILL.md in the IDE editor", async ({ page }) => {
+    await openManage(page, "");
+    await page.getByTestId("manage-tab-skills").click();
+    await page.getByTestId("skill-edit-0").click();
+    // The mock handles ide.openFile; no failure banner may appear.
+    await expect(page.getByTestId("outcome-banner")).toHaveCount(0);
+    await expect(page.getByTestId("skills-panel")).toBeVisible();
+  });
+});
+
+// -- 035: serial management queue ------------------------------------------------
+
+test.describe("management queue 035", () => {
+  test("two ops enqueue and run in FIFO order with visible queue states", async ({ page }) => {
+    await openManage(page, "pkgs=2&pkgspeed=slow");
+    await page.getByTestId("manage-tab-packages").click();
+    await expect(page.getByTestId("package-row")).toHaveCount(2);
+
+    // Two quick clicks: the second op must enqueue, not be blocked.
+    await page.getByTestId("package-remove-1").click();
+    await page.getByTestId("confirm-ok").click();
+    await page.getByTestId("package-remove-0").click();
+    await page.getByTestId("confirm-ok").click();
+
+    // The first op runs (active), the second waits with its queue position.
+    await expect(page.getByTestId("package-progress-1")).toBeVisible();
+    await expect(page.getByTestId("package-queued-0")).toContainText("Queued");
+
+    // FIFO drain: both finish, no leftover queue badges.
+    await expect(page.getByTestId("package-progress-1")).toHaveCount(0, { timeout: 15_000 });
+    await expect(page.getByTestId("package-queued-0")).toHaveCount(0, { timeout: 15_000 });
+    await expect(page.getByTestId("update-result")).toContainText("✓");
+  });
+
+  test("skills ops share the same queue across panels (US3)", async ({ page }) => {
+    await openManage(page, "pkgspeed=slow&skills=rich");
+    await page.getByTestId("manage-tab-skills").click();
+
+    await page.getByTestId("skill-enable-0").click();
+    await expect(page.getByTestId("skills-reload-bar")).toBeVisible();
+    // Q4-a: the bar clears only after an explicit reload click.
+    await page.getByTestId("skills-reload-btn").click();
+    await expect(page.getByTestId("skills-reload-bar")).toHaveCount(0, { timeout: 15_000 });
   });
 });

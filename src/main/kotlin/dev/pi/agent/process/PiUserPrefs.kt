@@ -50,10 +50,28 @@ class PiUserPrefs(private val project: Project) {
         properties.setValue(KEY_LANGUAGE, value)
     }
 
+    /**
+     * Explicit npm registry for package metadata and installs (spec 033
+     * FR-016): null means "follow npm's own configuration" — no override is
+     * passed anywhere. A URL here is validated by the caller
+     * ([dev.pi.agent.manage.PiEnvironment.normalizeCustomRegistry]) before it
+     * is stored; installs then carry it to npm as `NPM_CONFIG_REGISTRY`.
+     */
+    fun registryOverride(): String? = properties.getValue(KEY_REGISTRY_OVERRIDE)
+
+    fun setRegistryOverride(value: String?) {
+        if (value.isNullOrBlank()) {
+            properties.unsetValue(KEY_REGISTRY_OVERRIDE)
+        } else {
+            properties.setValue(KEY_REGISTRY_OVERRIDE, value)
+        }
+    }
+
     companion object {
         private const val KEY_AUTO_RETRY = "dev.pi.agent.autoRetry"
         private const val KEY_THEME = "dev.pi.agent.themePreference"
         private const val KEY_LANGUAGE = "dev.pi.agent.languagePreference"
+        private const val KEY_REGISTRY_OVERRIDE = "dev.pi.agent.registryOverride"
 
         @JvmStatic
         fun getInstance(project: Project): PiUserPrefs =

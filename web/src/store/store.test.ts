@@ -70,6 +70,7 @@ import {
   SWITCH_ABORT_TIMEOUT_MS,
   SWITCH_READ_TIMEOUT_MS,
 } from "./store";
+import { setLanguage } from "../i18n";
 
 /** Commands actually sent to pi, in order, flattened to their type. */
 function commandTypes(): string[] {
@@ -1899,5 +1900,107 @@ describe("session list fork (024 US2/US3)", () => {
     expect(usePiStore.getState().forkingFile).toBeNull();
     // No ghost row: the refresh after failure reports the unchanged list.
     expect(usePiStore.getState().sessions.some((s) => s.file === "/s/forked.jsonl")).toBe(false);
+  });
+});
+
+describe("transcript notices through i18n (031)", () => {
+  beforeEach(async () => {
+    h.state.calls.length = 0;
+    h.state.rpc.clear();
+    h.state.methods.clear();
+    resetSwitchGate(); // 030: relay gate is module state, not store state
+    await usePiStore.getState().init();
+    h.state.calls.length = 0;
+    usePiStore.setState({ items: [], isStreaming: false });
+  });
+  afterEach(async () => {
+    await setLanguage("en");
+  });
+
+  /** Text of the last transcript item (the notice under test). */
+  const lastText = () => {
+    const items = usePiStore.getState().items;
+    const last = items[items.length - 1];
+    return last?.blocks
+      .filter((b) => b.kind === "text")
+      .map((b) => (b as { text: string }).text)
+      .join("");
+  };
+
+  it("a successful compact keeps the en notice verbatim, tokens grouped (US5)", async () => {
+    h.state.rpc.set("compact", () => ({ tokensBefore: 12000, estimatedTokensAfter: 3400 }));
+    h.state.rpc.set("get_session_stats", () => ({}));
+    await usePiStore.getState().compact();
+    expect(lastText()).toBe("Context compacted: 12,000 → 3,400 tokens.");
+    expect(usePiStore.getState().items.at(-1)?.isError).toBeUndefined();
+  });
+
+  it("a failed compact keeps the en failure notice with the raw pi message (US5)", async () => {
+    h.state.rpc.set("compact", () => {
+      throw new Error("boom");
+    });
+    await usePiStore.getState().compact();
+    expect(lastText()).toBe("compact failed: boom");
+    expect(usePiStore.getState().items.at(-1)?.isError).toBe(true);
+  });
+
+  it("under zh compact success and failure are Chinese (US1/US2)", async () => {
+    await setLanguage("zh");
+    h.state.rpc.set("compact", () => ({ tokensBefore: 12000, estimatedTokensAfter: 3400 }));
+    h.state.rpc.set("get_session_stats", () => ({}));
+    await usePiStore.getState().compact();
+    expect(lastText()).toBe("上下文已压缩：12,000 → 3,400 tokens。");
+
+    h.state.rpc.set("compact", () => {
+      throw new Error("预算超限");
+    });
+    await usePiStore.getState().compact();
+    expect(lastText()).toBe("压缩失败：预算超限");
+    expect(usePiStore.getState().items.at(-1)?.isError).toBe(true);
+  });
+
+  it("the same-family failure notices land localized under zh (FR-011)", async () => {
+    await setLanguage("zh");
+    h.state.rpc.set("prompt", () => {
+      throw new Error("no provider");
+    });
+    await usePiStore.getState().send("hi", "auto");
+    expect(lastText()).toBe("发送失败：no provider");
+
+    h.state.rpc.set("set_session_name", () => {
+      throw new Error("bad name");
+    });
+    await usePiStore.getState().renameSession("x");
+    expect(lastText()).toBe("重命名失败：bad name");
+
+    h.state.methods.set("sessions.exportHtml", () => Promise.reject(new Error("no file")));
+    await usePiStore.getState().exportSession("/f.html");
+    expect(lastText()).toBe("导出失败：no file");
+
+    h.state.rpc.set("set_model", () => {
+      throw new Error("no such model");
+    });
+    await usePiStore.getState().setModel("p", "m");
+    expect(lastText()).toBe("切换模型失败：no such model");
+
+    h.state.rpc.set("set_thinking_level", () => {
+      throw new Error("bad level");
+    });
+    await usePiStore.getState().setThinkingLevel("off");
+    expect(lastText()).toBe("设置思考等级失败：bad level");
+  });
+
+  it("en wording for the same family stays verbatim with the old strings (US5)", async () => {
+    h.state.rpc.set("prompt", () => {
+      throw new Error("no provider");
+    });
+    await usePiStore.getState().send("hi", "auto");
+    expect(lastText()).toBe("Failed to send: no provider");
+
+    h.state.rpc.set("set_model", () => {
+      throw new Error("no such model");
+    });
+    await usePiStore.getState().setModel("p", "m");
+    expect(lastText()).toBe("set_model failed: no such model");
   });
 });

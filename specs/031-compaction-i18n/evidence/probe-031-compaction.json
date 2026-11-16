@@ -1,0 +1,91 @@
+{
+  "when": "2026-11-12T17:14:57.926Z",
+  "pageUrl": "http://127.0.0.1:49904/?token=<redacted>",
+  "results": [
+    {
+      "n": "UI language is Chinese (tab=聊天)",
+      "ok": true,
+      "d": {}
+    },
+    {
+      "n": "fresh empty session",
+      "ok": true,
+      "d": {}
+    },
+    {
+      "n": "two model replies arrived",
+      "ok": true,
+      "d": {
+        "assistants": 2
+      }
+    },
+    {
+      "n": "compact button label is zh (压缩)",
+      "ok": true,
+      "d": {
+        "label": "压缩"
+      }
+    },
+    {
+      "n": "zh compact notice with grouped tokens (US1)",
+      "ok": false,
+      "d": {
+        "zhText": "压缩失败：Nothing to compact (session too small)",
+        "zhMs": 545
+      }
+    },
+    {
+      "n": "zh notice has no English residue",
+      "ok": true,
+      "d": {
+        "zhText": "压缩失败：Nothing to compact (session too small)"
+      }
+    },
+    {
+      "n": "zh notice has no missing-key marker",
+      "ok": true,
+      "d": {
+        "zhText": "压缩失败：Nothing to compact (session too small)"
+      }
+    },
+    {
+      "n": "UI language is English (tab=Chat)",
+      "ok": true,
+      "d": {
+        "label": "Compact"
+      }
+    },
+    {
+      "n": "compact button label is en (Compact)",
+      "ok": true,
+      "d": {
+        "label": "Compact"
+      }
+    },
+    {
+      "n": "en compact notice verbatim pre-031 wording (US5)",
+      "ok": false,
+      "d": {
+        "enText": "compact failed: Nothing to compact (session too small)",
+        "enMs": 562
+      }
+    },
+    {
+      "n": "en notice has no missing-key marker",
+      "ok": true,
+      "d": {
+        "enText": "compact failed: Nothing to compact (session too small)"
+      }
+    },
+    {
+      "n": "earlier zh notice is not retranslated after switching to en (FR-005)",
+      "ok": true,
+      "d": {
+        "zhText": "压缩失败：Nothing to compact (session too small)",
+        "finalCount": 6
+      }
+    }
+  ],
+  "pass": 10,
+  "total": 12
+}

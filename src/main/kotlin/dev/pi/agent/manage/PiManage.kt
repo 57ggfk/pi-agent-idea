@@ -119,21 +119,129 @@ object PiManage {
 
     // -- Packages (extensions) ----------------------------------------------
 
+    /**
+     * Installed packages, structured (033 FR-001/FR-002). `pi list` prints a
+     * section header per scope, the source line, and — for resolved installs —
+     * the path; the version is read from that path's package.json. A source
+     * line without a path line is the "declared but not installed / files
+     * missing" shape (probe P13/P18).
+     */
     fun packagesList(): JsonObject {
         val result = PiCliRunner.run(listOf("list"))
-        val lines = result.stdout.lines().filter { it.isNotBlank() }
+        val entries = PiPackages.parsePiList(result.stdout)
         return buildJsonObject {
             put("ok", result.success)
-            put("lines", JsonArray(lines.map { JsonPrimitive(it) }))
-            put("error", if (result.success) "" else result.stderr)
+            put("entries", buildJsonArray {
+                entries.forEach { entry ->
+                    add(buildJsonObject {
+                        put("source", entry.source)
+                        put("scope", entry.scope)
+                        put("broken", entry.broken)
+                        entry.path?.let { put("path", it) }
+                        PiPackages.readInstalledVersion(entry.path)?.let { put("version", it) }
+                    })
+                }
+            })
+            put("error", if (result.success) "" else cliOutput(result))
         }
     }
 
-    fun packageInstall(params: JsonObject): JsonObject {
+    /**
+     * One-shot version check (033 FR-003): installed version from the resolved
+     * path (local, always available) plus the registry's latest for npm
+     * sources. The installed side re-runs `pi list` instead of trusting the
+     * panel's cached rows — a stale path is worse than 0.7s of latency.
+     *
+     * [listStdout]/[preflight]/[latest] are test seams; production uses the
+     * real CLI and HTTP adapters.
+     */
+    fun packageCheck(
+        params: JsonObject,
+        listStdout: () -> String = { PiCliRunner.run(listOf("list")).stdout },
+        preflight: (String) -> PiPackages.Preflight = { PiPackages.preflight(it) },
+        latest: (registry: String, name: String) -> PiPackages.Latest = { registry, name ->
+            PiPackages.latestVersion(registry, name)
+        },
+    ): JsonObject {
         val source = params.string("source") ?: return error("missing source")
-        val args = mutableListOf("install", source)
-        if (params.boolean("local") == true) args += "--local"
-        return cliToElement(PiCliRunner.run(args, timeoutSeconds = 300))
+        val entry = PiPackages.parsePiList(listStdout()).firstOrNull { it.source == source }
+        val installed = entry?.let { PiPackages.readInstalledVersion(it.path) }
+
+        fun result(state: String, reason: String, latest: String?): JsonObject = buildJsonObject {
+            put("ok", true)
+            put("source", source)
+            installed?.let { put("installed", it) }
+            latest?.let { put("latest", it) }
+            put("state", state)
+            put("reason", reason)
+        }
+
+        val name = PiPackages.npmName(source)
+        if (name == null) {
+            // git sources reconcile to their ref; local paths have no version.
+            val reason = if (source.startsWith("git:")) "git-ref" else "local"
+            return result("unknown", reason, null)
+        }
+
+        val registry = PiPackages.registryChain(PiEnvironment.normalizeCustomRegistry(params.string("registry")))
+        val check = preflight(registry)
+        if (!check.reachable) return result("unknown", check.code, null)
+
+        val latestResult = latest(registry, name)
+        PiPackages.LOG.info(
+            "pi-packages check: source=$source name=$name registry=$registry " +
+                "installed=$installed state-reason=${latestResult.reason} latest=${latestResult.version}",
+        )
+        if (latestResult.reason != "" || latestResult.version == null) {
+            return result("unknown", latestResult.reason.ifEmpty { "bad-response" }, null)
+        }
+        // Plain string inequality: pi installs resolve to dist-tags.latest, so
+        // "different" always means "the pinned reinstall can move it" (P10/P11).
+        val state = if (installed != null && installed == latestResult.version) "up-to-date" else "upgradable"
+        return result(state, "", latestResult.version)
+    }
+
+    /** Market gallery search (033 FR-005/FR-018); [PiPackages.marketSearch] owns the logic. */
+    fun marketSearch(params: JsonObject): JsonObject {
+        val registry = PiPackages.registryChain(PiEnvironment.normalizeCustomRegistry(params.string("registry")))
+        val preflight = PiPackages.preflight(registry)
+        if (!preflight.reachable) {
+            return buildJsonObject { put("ok", false); put("code", preflight.code); put("error", "registry unreachable") }
+        }
+        val query = params.string("query")?.takeIf { it.isNotBlank() }
+        val page = params.int("page")?.coerceAtLeast(1) ?: 1
+        val pageSize = params.int("pageSize")?.coerceIn(1, 50) ?: 50
+        val type = params.string("type")?.takeIf { it.isNotBlank() }
+        val result = PiPackages.marketSearch(registry, query, page, pageSize, type)
+        PiPackages.LOG.info(
+            "pi-packages market: registry=$registry query=$query page=$page code=${result.code} " +
+                "total=${result.total} degraded=${result.degraded} size=${result.packages.size}",
+        )
+        if (result.code.isNotEmpty()) {
+            return buildJsonObject { put("ok", false); put("code", result.code); put("error", "market search failed") }
+        }
+        return buildJsonObject {
+            put("ok", true)
+            put("total", result.total)
+            put("page", page)
+            put("pageSize", pageSize)
+            put("degraded", result.degraded)
+            put("packages", buildJsonArray {
+                result.packages.forEach { pkg ->
+                    add(buildJsonObject {
+                        put("name", pkg.name)
+                        put("version", pkg.version)
+                        put("description", pkg.description)
+                        put("author", pkg.author)
+                        put("downloads", pkg.downloads)
+                        put("updated", pkg.updated)
+                        put("badges", buildJsonArray { pkg.badges.forEach { add(JsonPrimitive(it)) } })
+                        put("linkNpm", pkg.linkNpm)
+                        put("linkRepo", pkg.linkRepo)
+                    })
+                }
+            })
+        }
     }
 
     fun packageRemove(params: JsonObject): JsonObject {
@@ -142,76 +250,108 @@ object PiManage {
     }
 
     /**
-     * `pi update <source>` — the TUI command already reports the outcome
-     * ("updated to x.y.z" / "already up to date") in its own output, so the
-     * plugin forwards stdout+stderr verbatim instead of diffing install state
-     * to guess whether anything changed. Timeout matches [packageInstall].
+     * The single upgrade path for npm packages (033 FR-004): pi 1.5.0's
+     * `pi update <source>` is broken for every notation (probe P8), but a
+     * version-pinned `pi install npm:<name>@<latest>` moves the physical
+     * install while keeping the settings entry unpinned (P10/P11). The frontend
+     * passes the pinned source after a [packageCheck]; the backend never
+     * second-guesses it.
      */
-    fun packageUpdate(
+    fun packageInstall(
         params: JsonObject,
-        runner: (List<String>, Long) -> CliResult = ::defaultRunner,
+        runner: (List<String>, Long, Map<String, String>) -> CliResult = { a, t, env ->
+            PiCliRunner.run(a, timeoutSeconds = t, extraEnv = env)
+        },
+        preflight: (String) -> PiPackages.Preflight = { PiPackages.preflight(it) },
     ): JsonObject {
         val source = params.string("source") ?: return error("missing source")
-        return cliToElement(runner(packageUpdateArgs(source), UPDATE_TIMEOUT_SECONDS))
+        val args = mutableListOf("install", source)
+        if (params.boolean("local") == true) args += "--local"
+        return networkedCli(params, args, INSTALL_TIMEOUT_SECONDS, runner, preflight)
     }
 
     /**
      * `pi update --extensions` — one CLI call updates every installed package
      * (spec 018 US6; the flag is native, see spec 001 调研). Same
-     * verbatim-output contract as [packageUpdate]: pi reports the per-package
-     * outcomes in its own output, so the plugin never diffs install state.
+     * verbatim-output contract as the pinned reinstall: pi reports the
+     * per-package outcomes in its own output, so the plugin never diffs
+     * install state.
      */
     fun packageUpdateAll(
-        runner: (List<String>, Long) -> CliResult = ::defaultRunner,
+        params: JsonObject = JsonObject(emptyMap()),
+        runner: (List<String>, Long, Map<String, String>) -> CliResult = { a, t, env ->
+            PiCliRunner.run(a, timeoutSeconds = t, extraEnv = env)
+        },
+        preflight: (String) -> PiPackages.Preflight = { PiPackages.preflight(it) },
     ): JsonObject {
-        return cliToElement(runner(packageUpdateAllArgs(), UPDATE_TIMEOUT_SECONDS))
+        return networkedCli(params, packageUpdateAllArgs(), UPDATE_TIMEOUT_SECONDS, runner, preflight)
+    }
+
+    /**
+     * Shared path for every package command that needs the registry: preflight
+     * first (FR-008 — npm spends 72s+ inside its retry ladder before failing
+     * offline, so the plugin refuses to spawn it when the registry is
+     * unreachable), then the CLI with the explicit-override env (FR-017).
+     */
+    private fun networkedCli(
+        params: JsonObject,
+        args: List<String>,
+        timeoutSeconds: Long,
+        runner: (List<String>, Long, Map<String, String>) -> CliResult = { a, t, env ->
+            PiCliRunner.run(a, timeoutSeconds = t, extraEnv = env)
+        },
+        preflight: (String) -> PiPackages.Preflight = { PiPackages.preflight(it) },
+    ): JsonObject {
+        val registryOverride = PiEnvironment.normalizeCustomRegistry(params.string("registry"))
+        val registry = PiPackages.registryChain(registryOverride)
+        val check = preflight(registry)
+        if (!check.reachable) {
+            return buildJsonObject {
+                put("ok", false)
+                put("code", check.code)
+                put("error", "registry unreachable before running: ${args.joinToString(" ")}")
+            }
+        }
+        return cliToElement(runner(args, timeoutSeconds, PiPackages.registryEnv(registryOverride)))
     }
 
     // -- Skills --------------------------------------------------------------
 
     /**
-     * Lists skills from the user dir and — when [projectBasePath] is known —
-     * from the project's own `.pi/skills` and `.agents/skills`.
-     *
-     * The project dirs used to be resolved as `File(".pi/skills")`, i.e.
-     * relative to the *IDE process* working directory rather than the project
-     * root: multi-project windows listed the wrong project's skills (or none).
+     * Lists skills across all six sources with attribution, enable state and
+     * duplicates (spec 034, T1501). Delegates to [PiSkills]; trust only gates
+     * the write paths, the listing marks untrusted projects for the UI.
      */
     fun skillsList(projectBasePath: String? = null): JsonObject {
-        data class Source(val dir: File, val scope: String)
-
-        val sources = buildList {
-            add(Source(File(PiCliRunner.agentDir(), "skills"), "user"))
-            projectBasePath?.takeIf { it.isNotBlank() }?.let { base ->
-                val root = File(base)
-                add(Source(File(root, ".pi/skills"), "project"))
-                add(Source(File(root, ".agents/skills"), "project"))
-            }
-        }
-        val skills = mutableListOf<JsonObject>()
-        // The same directory can be reachable twice (symlinked .agents/skills);
-        // dedupe on the resolved SKILL.md so it is listed once.
-        val seen = mutableSetOf<String>()
-        for (source in sources) {
-            if (!source.dir.isDirectory) continue
-            source.dir.walkTopDown()
-                .filter { it.name == "SKILL.md" && it.isFile }
-                .forEach { file ->
-                    val key = runCatching { file.canonicalPath }.getOrElse { file.absolutePath }
-                    if (!seen.add(key)) return@forEach
-                    val front = parseFrontmatter(file)
-                    skills.add(buildJsonObject {
-                        put("name", front["name"] ?: file.parentFile.name)
-                        put("description", front["description"] ?: "")
-                        put("path", file.parentFile.absolutePath)
-                        put("scope", source.scope)
-                        put("disableModelInvocation", front["disable-model-invocation"] == "true")
-                    })
-                }
-        }
+        val listing = PiSkills.list(
+            agentDir = PiCliRunner.agentDir(),
+            userHome = File(System.getProperty("user.home")),
+            projectBasePath = projectBasePath,
+        )
         return buildJsonObject {
             put("ok", true)
-            put("skills", JsonArray(skills))
+            put("skills", buildJsonArray {
+                listing.entries.forEach { e ->
+                    add(buildJsonObject {
+                        put("name", e.name)
+                        put("description", e.description)
+                        put("path", e.path)
+                        put("displayPath", e.displayPath)
+                        put("scope", e.scope)
+                        put("source", e.source)
+                        put("disableModelInvocation", e.disableModelInvocation)
+                        put("enabled", e.enabled)
+                        put("duplicate", e.duplicate)
+                    })
+                }
+            })
+            put("externalSources", buildJsonArray { listing.externalSources.forEach { add(JsonPrimitive(it)) } })
+            put("externalPresets", buildJsonObject {
+                put("claude", listing.claudeDir)
+                put("codex", listing.codexDir)
+            })
+            put("homeDir", listing.homeDir)
+            projectBasePath?.takeIf { it.isNotBlank() }?.let { put("projectBasePath", it) }
         }
     }
 
@@ -233,26 +373,118 @@ object PiManage {
         return buildJsonObject { put("ok", true); put("path", dir.absolutePath) }
     }
 
-    private fun parseFrontmatter(file: File): Map<String, String> {
+    // -- Skills 034: enable/disable + external sources + soft switch ----------
+
+    /** Hard switch (FR-003): settings exclusion entries. Project scope writes
+     *  `.pi/settings.json` and is refused while untrusted (Q1-b). */
+    fun skillSetEnabled(params: JsonObject, projectBasePath: String?, trusted: Boolean): JsonObject {
+        val path = params.string("path") ?: return error("missing path")
+        val enabled = params.boolean("enabled") ?: return error("missing enabled")
+        val scope = params.string("scope") ?: "user"
+        return PiSkills.setEnabled(path, enabled, scope, PiCliRunner.agentDir(), projectBasePath, trusted)
+    }
+
+    /** External source wiring (Q2): plain dir entries in user settings. */
+    fun skillSetSourceEnabled(params: JsonObject): JsonObject {
+        val dir = params.string("dir") ?: return error("missing dir")
+        val enabled = params.boolean("enabled") ?: return error("missing enabled")
+        return PiSkills.setSourceEnabled(dir, enabled, PiCliRunner.agentDir())
+    }
+
+    /** Soft per-skill switch (Q3-b): frontmatter toggle in SKILL.md. */
+    fun skillToggleModelInvocation(params: JsonObject): JsonObject {
+        val path = params.string("path") ?: return error("missing path")
+        val disable = params.boolean("disable") ?: return error("missing disable")
+        return PiSkills.toggleModelInvocation(path, disable)
+    }
+
+    /**
+     * Frontmatter parser with YAML block-scalar support (034 T1513): a value
+     * of `|` / `>` (with optional -/+ chomping) collects the indented lines
+     * that follow — literal keeps newlines, folded joins them with spaces.
+     * Real packages use these (`pi-subagents`, `orchestration`), and the old
+     * line-by-line parser reduced them to the bare indicator (`>-`) or empty.
+     */
+    internal fun parseFrontmatter(file: File): Map<String, String> {
         val map = mutableMapOf<String, String>()
         try {
-            file.useLines { lines ->
-                var inFront = false
-                for (line in lines.take(40)) {
-                    val trimmed = line.trim()
-                    if (trimmed == "---") {
-                        if (!inFront) inFront = true else break
-                        continue
-                    }
-                    if (!inFront) {
-                        if (trimmed.isEmpty()) continue else break
-                    }
-                    val idx = trimmed.indexOf(':')
-                    if (idx > 0) {
-                        map[trimmed.substring(0, idx).trim()] = trimmed.substring(idx + 1).trim().trim('"')
+            val lines = file.readLines()
+            var i = 0
+            while (i < lines.size && lines[i].isBlank()) i++
+            if (i >= lines.size || lines[i].trim() != "---") return map
+            i++
+
+            var key: String? = null
+            var blockKind: Char? = null   // '|' literal, '>' folded, or ' ' plain multiline
+            var keyIndent = 0
+            var blockIndent = -1
+            val block = mutableListOf<String>()
+
+            fun flushBlock() {
+                val k = key ?: return
+                if (blockKind != null && block.isNotEmpty()) {
+                    map[k] = when (blockKind) {
+                        '|' -> block.joinToString("\n").trim()
+                        else -> {
+                            // folded: lines join with spaces; blank lines are
+                            // paragraph breaks (kept as \n\n, T1514)
+                            val paras = mutableListOf<String>()
+                            val cur = mutableListOf<String>()
+                            for (l in block) {
+                                if (l.isBlank()) {
+                                    if (cur.isNotEmpty()) { paras += cur.joinToString(" "); cur.clear() }
+                                } else {
+                                    cur += l
+                                }
+                            }
+                            if (cur.isNotEmpty()) paras += cur.joinToString(" ")
+                            paras.joinToString("\n\n").trim()
+                        }
                     }
                 }
+                key = null
+                blockKind = null
+                blockIndent = -1
+                block.clear()
             }
+
+            while (i < lines.size) {
+                val line = lines[i]
+                val trimmed = line.trim()
+                if (trimmed == "---") break
+                if (trimmed.isEmpty()) {
+                    if (key != null && blockKind != null) block += ""
+                    i++
+                    continue
+                }
+                val indent = line.indexOfFirst { it != ' ' }.let { if (it < 0) 0 else it }
+
+                if (key != null && blockKind != null && indent > keyIndent) {
+                    // Inside a block scalar: deeper content continues the value.
+                    if (blockIndent < 0) blockIndent = indent
+                    block += if (indent >= blockIndent) line.substring(blockIndent).trimEnd() else trimmed
+                    i++
+                    continue
+                }
+
+                flushBlock()
+                val idx = trimmed.indexOf(':')
+                if (idx <= 0) { i++; continue } // stray line inside frontmatter
+                val k = trimmed.substring(0, idx).trim()
+                val v = trimmed.substring(idx + 1).trim().trim('"')
+                val blockMatch = Regex("^[|>]([+-]?\\d*)$").find(v)
+                if (blockMatch != null) {
+                    key = k
+                    blockKind = v[0]
+                    keyIndent = indent
+                    blockIndent = -1
+                    block.clear()
+                } else {
+                    map[k] = v
+                }
+                i++
+            }
+            flushBlock()
         } catch (_: Exception) {
         }
         return map
@@ -527,10 +759,10 @@ object PiManage {
 
     // -- helpers -------------------------------------------------------------
 
-    /** Updates can legitimately take minutes (npm registry round-trips). */
+    /** Installs/updates can legitimately take minutes (npm registry round-trips). */
     internal const val UPDATE_TIMEOUT_SECONDS = 300L
 
-    internal fun packageUpdateArgs(source: String): List<String> = listOf("update", source)
+    internal const val INSTALL_TIMEOUT_SECONDS = 300L
 
     internal fun packageUpdateAllArgs(): List<String> = listOf("update", "--extensions")
 
@@ -564,6 +796,9 @@ object PiManage {
 
     private fun JsonObject.string(key: String): String? =
         (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
+
+    private fun JsonObject.int(key: String): Int? =
+        (this[key] as? JsonPrimitive)?.content?.toIntOrNull()
 
     private fun JsonObject.boolean(key: String): Boolean? =
         (this[key] as? JsonPrimitive)?.content?.toBooleanStrictOrNull()

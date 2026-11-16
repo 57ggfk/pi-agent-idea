@@ -1,16 +1,29 @@
 package dev.pi.agent.toolwindow;
 
+import com.intellij.openapi.actionSystem.AnAction;
+import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.ui.Messages;
 import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowFactory;
+import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.ui.content.Content;
 import com.intellij.ui.content.ContentFactory;
+import com.intellij.ui.content.ContentManagerEvent;
+import com.intellij.ui.content.ContentManagerListener;
 import dev.pi.agent.ui.PiUiErrorPanel;
+import dev.pi.agent.PiAgentBundle;
+import dev.pi.agent.bridge.BridgeService;
+import dev.pi.agent.process.PiConnectionState;
+import dev.pi.agent.process.PiProcessManager;
 
 import javax.swing.JComponent;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import org.jetbrains.annotations.NotNull;
 
 /**
  * Deliberately written in Java: {@code ToolWindowFactory} is a Kotlin
@@ -32,18 +45,142 @@ public class PiAgentToolWindowFactory implements ToolWindowFactory {
     private static final String JCEF_BROWSER = "com.intellij.ui.jcef.JBCefBrowser";
     private static final String JCEF_APP = "com.intellij.ui.jcef.JBCefApp";
 
+    /** 019 D8: at most four pi instances per project (the "+" greys out past this). */
+    private static final int MAX_INSTANCES = 4;
+
     @Override
     public void createToolWindowContent(Project project, ToolWindow toolWindow) {
-        JComponent content = buildContent(project);
-        Content toolWindowContent = ContentFactory.getInstance().createContent(content, "", false);
+        // 019 D2: the first Content is the default instance (1).
+        createInstanceContent(project, toolWindow, 1);
+        toolWindow.getContentManager().addContentManagerListener(new CloseGuard(project));
+        // 019 D7/D8: the "+" action lives in the tool window header. Pass the
+        // project explicitly — title actions do not reliably carry one in their
+        // AnActionEvent data context, which used to leave "+" disabled.
+        toolWindow.setTitleActions(List.of(new NewInstanceAction(project)));
+    }
+
+    /**
+     * Builds and installs one instance Content (019 D7). Shared by the initial
+     * open and the "+" action; [instanceId] names the pi instance the panel is
+     * bound to and is echoed on the tab ({@code Pi N}).
+     */
+    private void createInstanceContent(Project project, ToolWindow toolWindow, int instanceId) {
+        // Reserve the slot before the page starts polling so rapid "+" clicks
+        // cannot allocate the same id twice.
+        PiProcessManager.getInstance(project).stateOf(instanceId);
+        JComponent content = buildContent(project, instanceId);
+        Content toolWindowContent = ContentFactory.getInstance().createContent(
+                content, "Pi " + instanceId, true);
+        toolWindowContent.setCloseable(true);
         // Without this the panel's dispose() never runs and the JCEF browser leaks.
         if (content instanceof PiAgentPanel) {
             Disposer.register(toolWindowContent, (PiAgentPanel) content);
         }
         toolWindow.getContentManager().addContent(toolWindowContent);
+        toolWindow.getContentManager().setSelectedContent(toolWindowContent);
     }
 
-    private JComponent buildContent(Project project) {
+    /**
+     * 019 D8: the header "+" action. Greys out at [MAX_INSTANCES] live
+     * instances; ids are the smallest unused number, so closing Pi 2 and
+     * reopening gives Pi 2 again.
+     *
+     * <p>Both the enabled state and the next id are derived from the ACTUAL
+     * Content tabs, not from the process registry: a closed tab can leave a
+     * stale slot behind (a late long-poll re-registers listeners for that id),
+     * which made {@code liveInstanceIds().size()} stay at 4 forever and left
+     * "+" permanently disabled after closing any tab (C3, 2026-11-15).
+     */
+    private final class NewInstanceAction extends AnAction {
+        private final Project project;
+
+        NewInstanceAction(Project project) {
+            super(PiAgentBundle.message("toolwindow.new.instance"),
+                    PiAgentBundle.message("toolwindow.new.instance.tooltip"), null);
+            this.project = project;
+        }
+
+        @Override
+        public void update(@NotNull AnActionEvent e) {
+            ToolWindow toolWindow = toolWindowOf(project);
+            e.getPresentation().setEnabled(
+                    toolWindow != null
+                            && toolWindow.getContentManager().getContentCount() < MAX_INSTANCES);
+        }
+
+        @Override
+        public void actionPerformed(@NotNull AnActionEvent e) {
+            ToolWindow toolWindow = toolWindowOf(project);
+            if (toolWindow == null) return;
+            createInstanceContent(project, toolWindow, nextInstanceId(toolWindow));
+        }
+    }
+
+    /**
+     * 019 D7: closing a Content stops its pi instance. When the instance is
+     * mid-run, an IDE-native confirmation guards the close (the web ConfirmDialog
+     * cannot answer here — the page is going away with the Content).
+     */
+    private final class CloseGuard implements ContentManagerListener {
+        private final Project project;
+
+        CloseGuard(Project project) {
+            this.project = project;
+        }
+
+        @Override
+        public void contentRemoved(@NotNull ContentManagerEvent event) {
+            Content removed = event.getContent();
+            if (!(removed.getComponent() instanceof PiAgentPanel panel)) return;
+            if (project.isDisposed()) return;
+
+            int id = panel.getId();
+            var manager = PiProcessManager.getInstance(project);
+            boolean running = BridgeService.getInstance(project).isStreaming(id);
+            if (running) {
+                int answer = Messages.showYesNoDialog(
+                        project,
+                        PiAgentBundle.message("toolwindow.close.confirm"),
+                        PiAgentBundle.message("toolwindow.close.confirm.title"),
+                        Messages.getWarningIcon());
+                if (answer == Messages.NO) {
+                    // Content removal has already disposed the old panel. Build
+                    // a fresh panel instead of reusing its dead JCEF browser.
+                    ToolWindow toolWindow = toolWindowOf(project);
+                    if (toolWindow != null) {
+                        createInstanceContent(project, toolWindow, id);
+                    }
+                    return;
+                }
+            }
+            // The panel owns only browser resources. The process lifecycle is
+            // decided here so cancellation above leaves the instance alive.
+            // Every Content owns a pi process — including the default instance
+            // 1. The old `id != 1` exemption leaked that process, its event
+            // bucket and its queue mirror when the first tab was closed.
+            manager.stopInstance(id);
+            BridgeService.getInstance(project).closeInstance(id);
+        }
+    }
+
+    private static ToolWindow toolWindowOf(Project project) {
+        return ToolWindowManager.getInstance(project).getToolWindow("Pi Agent");
+    }
+
+    /** 019 D1/D8: smallest unused id taken from the real Content tabs. */
+    private static int nextInstanceId(ToolWindow toolWindow) {
+        Set<Integer> used = new HashSet<>();
+        for (Content content : toolWindow.getContentManager().getContents()) {
+            if (content.getComponent() instanceof PiAgentPanel panel) {
+                used.add(panel.getId());
+            }
+        }
+        int n = 1;
+        while (used.contains(n)) n++;
+        return n;
+    }
+
+    private JComponent buildContent(Project project, int instanceId) {
         if (!canLoad(JCEF_BROWSER) || !canLoad(JCEF_APP)) {
             LOG.warn("JCEF classes are not available; Pi Agent cannot embed its UI");
             return new PiUiErrorPanel(
@@ -58,7 +195,7 @@ public class PiAgentToolWindowFactory implements ToolWindowFactory {
                     null);
         }
         try {
-            return new PiAgentPanel(project);
+            return new PiAgentPanel(project, instanceId);
         } catch (Throwable t) {
             // Class-level failures (NoClassDefFoundError, JCEF init) must not
             // escape into the platform: the tool window would stay blank.

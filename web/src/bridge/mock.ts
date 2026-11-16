@@ -93,6 +93,137 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// -- 033 package fixtures -----------------------------------------------------
+
+/** `npm:name` vs `npm:name@1.2.3` compare on the name part only. */
+function sameNpmSource(line: string, source: string): boolean {
+  return stripVersionSuffix(line) === stripVersionSuffix(source);
+}
+
+/** `npm:x@1.2.3` → `npm:x`; other schemes keep their tail (mock-only aid). */
+function stripVersionSuffix(source: string): string {
+  const at = source.lastIndexOf("@");
+  return at > source.indexOf(":") + 1 && /@[\w.+-]+$/.test(source)
+    ? source.slice(0, at)
+    : source;
+}
+
+/** `npm:x@1.2.3` → `1.2.3`, else undefined. */
+function versionSuffix(source: string): string | undefined {
+  const m = /@([\w.+-]+)$/.exec(source);
+  return m?.[1];
+}
+
+/** TS twin of PiPackages.webRepoUrl — the mock mirrors backend shaping. */
+function webRepoUrl(raw: string): string {
+  let url = raw.trim();
+  const sh = /^(github|gitlab|bitbucket):(.+)$/.exec(url);
+  if (sh) url = `https://${sh[1]}.com/${sh[2]}`;
+  else if (url.startsWith('git@') && url.includes(':')) return '';
+  url = url.replace(/^git\+/, '');
+  if (url.startsWith('git://')) url = 'https://' + url.slice('git://'.length);
+  else if (url.startsWith('ssh://')) {
+    const body = url.slice('ssh://'.length);
+    const host = body.split('/')[0].split('@').pop() ?? '';
+    const path = body.includes('/') ? body.slice(body.indexOf('/') + 1) : '';
+    if (!host || !path) return '';
+    url = `https://${host}/${path}`;
+  } else if (!url.startsWith('https://') && !url.startsWith('http://')) return '';
+  return url.replace(/\.git$/, '');
+}
+function bumpVersion(version: string): string {
+  const m = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
+  if (!m) return version;
+  return `${m[1]}.${Number(m[2]) + 1}.0`;
+}
+
+/** The gallery the market tab renders: 137 deterministic entries (P15 shape). */
+function marketFixture(): Array<{
+  name: string;
+  version: string;
+  description: string;
+  author: string;
+  downloads: number;
+  updated: string;
+  badges: string[];
+  linkNpm: string;
+  linkRepo: string;
+}> {
+  const curated = [
+    {
+      name: "billion-context",
+      version: "0.1.213",
+      description: "A context-compression plugin for pi and other agents",
+      author: "ranxianglei",
+      downloads: 3257276,
+      updated: "2026-11-13T16:02:38.501Z",
+      badges: ["package"],
+      linkNpm: "https://www.npmjs.com/package/billion-context",
+      linkRepo: "git+https://github.com/ranxianglei/billion-context.git",
+    },
+    {
+      name: "pi-mcp-adapter",
+      version: "7.0.1",
+      description: "Bridge MCP servers into pi sessions",
+      author: "nicobailon",
+      downloads: 41230,
+      updated: "2026-11-10T08:00:00.000Z",
+      badges: ["package"],
+      linkNpm: "https://www.npmjs.com/package/pi-mcp-adapter",
+      linkRepo: "git+https://github.com/nicobailon/pi-mcp-adapter.git",
+    },
+    {
+      name: "pi-web-access",
+      version: "0.47.0",
+      description: "Give pi web search and fetch tools",
+      author: "nicobailon",
+      downloads: 128004,
+      updated: "2026-11-12T09:30:00.000Z",
+      badges: ["extension"],
+      linkNpm: "https://www.npmjs.com/package/pi-web-access",
+      linkRepo: "git+https://github.com/nicobailon/pi-web-access.git",
+    },
+    {
+      name: "pi-subagents",
+      version: "0.88.1",
+      description: "Spawn focused subagents from a pi session",
+      author: "nicobailon",
+      downloads: 96012,
+      updated: "2026-11-11T21:00:00.000Z",
+      badges: ["package"],
+      linkNpm: "https://www.npmjs.com/package/pi-subagents",
+      linkRepo: "git+https://github.com/nicobailon/pi-subagents.git",
+    },
+    {
+      name: "openwiki",
+      version: "0.9.0",
+      description: "Wikipedia research skills for pi",
+      author: "langchain-ai",
+      downloads: 2561,
+      updated: "2026-11-05T12:00:00.000Z",
+      badges: ["package"],
+      linkNpm: "https://www.npmjs.com/package/openwiki",
+      linkRepo: "git+https://github.com/langchain-ai/openwiki.git",
+    },
+  ];
+  const filler = Array.from({ length: 132 }, (_, i) => {
+    const n = i + 6;
+    const name = `pi-sample-${String(n).padStart(3, "0")}`;
+    return {
+      name,
+      version: `1.${n}.0`,
+      description: `Sample gallery package number ${n} for pagination tests`,
+      author: `mock-author-${n % 5}`,
+      downloads: n * 1000,
+      updated: "2026-11-01T00:00:00.000Z",
+      badges: n % 7 === 0 ? ["extension"] : ["package"],
+      linkNpm: `https://www.npmjs.com/package/${name}`,
+      linkRepo: `git+https://github.com/mock/${name}.git`,
+    };
+  });
+  return [...curated, ...filler].map((p) => ({ ...p, linkRepo: webRepoUrl(p.linkRepo) }));
+}
+
 /** bridge method / rpc command → the source id it feeds (spec 003). */
 const METHOD_SOURCE: Record<string, string> = {
   "files.list": "files",
@@ -284,14 +415,113 @@ export class MockBridge implements Bridge {
   private readonly mcpOverride = query()?.get("mcpoverride") === "1";
   /** Reported by manage.env; bumped by a successful manage.envUpdate. */
   private piVersion = "1.4.0-mock";
-  /** Installed packages as `pi list` lines; packageUpdate bumps the version.
-   *  `?pkgs=2` adds a second package and `?pkgs=0` empties the list, so the
-   *  update-all flow (018 US6) has both an "all" of two rows and the empty
-   *  state its button must refuse. */
+  /** Installed packages as `pi list` source lines; the structured entries the
+   *  panel consumes are derived per call (033). A version-pinned install moves
+   *  the line's version. `?pkgs=2` adds a git package, `?pkgs=0` empties the
+   *  list (the empty state its button must refuse), and `?pkgbroken=1` adds a
+   *  source line without a resolved path — the "declared but not installed /
+   *  files missing" shape (probe P13/P18). */
   private packages = [
     ...(query()?.get("pkgs") === "0" ? [] : ["npm:@example/pi-tools@1.0.0"]),
     ...(query()?.get("pkgs") === "2" ? ["git:github.com/example/pi-git-pkg@0.3.0"] : []),
+    ...(query()?.get("pkgbroken") === "1" ? ["npm:@example/pi-broken"] : []),
   ];
+  /** 034: skill fixture state — grouped sources, switches and external dirs. */
+  private mockSkills: Array<{
+    name: string;
+    description: string;
+    path: string;
+    displayPath?: string;
+    scope: "user" | "project";
+    source: "user-pi" | "user-agents" | "project-pi" | "project-agents" | "package" | "external";
+    disableModelInvocation: boolean;
+    enabled: boolean;
+    duplicate: boolean;
+  }> = [
+    {
+      name: "pdf-tools",
+      description: "Extract text and tables from PDF files.",
+      path: "/tmp/mock-home/.pi/agent/skills/pdf-tools",
+      scope: "user",
+      source: "user-pi",
+      disableModelInvocation: false,
+      enabled: true,
+      duplicate: false,
+    },
+    ...(query()?.get("skills") === "rich"
+      ? [
+          {
+            name: "beta-skill",
+            description: "Excluded via a settings entry (the hard switch demo).",
+            path: "/tmp/mock-home/.pi/agent/skills/beta-skill",
+            displayPath: "~/.pi/agent/skills/beta-skill",
+            scope: "user" as const,
+            source: "user-agents" as const,
+            disableModelInvocation: false,
+            enabled: false,
+            duplicate: false,
+          },
+          {
+            name: "manual-skill",
+            description: "Only reachable through /skill:manual-skill.",
+            path: "/tmp/mock-home/.agents/skills/manual-skill",
+            displayPath: "~/.agents/skills/manual-skill",
+            scope: "user" as const,
+            source: "user-agents" as const,
+            disableModelInvocation: true,
+            enabled: true,
+            duplicate: false,
+          },
+          {
+            name: "pdf-tools",
+            description: "Same name as the user skill — pi keeps the first.",
+            path: "/tmp/mock-home/.agents/skills/pdf-tools",
+            displayPath: "~/.agents/skills/pdf-tools",
+            scope: "user" as const,
+            source: "user-agents" as const,
+            disableModelInvocation: false,
+            enabled: true,
+            duplicate: true,
+          },
+          {
+            name: "pkg-skill",
+            description: "Carried by an installed pi package.",
+            path: "/tmp/mock-home/.pi/agent/npm/node_modules/openwiki/skills/pkg-skill",
+            displayPath: "openwiki/skills/pkg-skill",
+            scope: "user" as const,
+            source: "package" as const,
+            disableModelInvocation: false,
+            enabled: true,
+            duplicate: false,
+          },
+        ]
+      : []),
+    {
+      name: "project-conventions",
+      description: "House rules for this repository.",
+      path: `${MOCK_PROJECT_PATH}/.pi/skills/project-conventions`,
+      scope: "project",
+      source: "project-pi",
+      disableModelInvocation: false,
+      enabled: true,
+      duplicate: false,
+    },
+  ];
+  /** 034: positive dir entries in the user settings `skills` array. */
+  private externalSkillSources: string[] = query()?.get("skillext") === "1" ? ["/tmp/mock-home/.claude/skills"] : [];
+  /** 033: explicit npm registry override, mirroring PiUserPrefs (null = follow
+   *  npm). PiUserPrefs survives IDE restarts, so the mock keeps the value in
+   *  sessionStorage across reloads; `?regoverride=<url|none>` seeds it for e2e. */
+  private registryOverride: string | null = (() => {
+    const knob = query()?.get("regoverride");
+    if (knob === "none") return null;
+    if (knob) return knob;
+    try {
+      return globalThis.sessionStorage?.getItem("pi-mock-registry-override") ?? null;
+    } catch {
+      return null;
+    }
+  })();
   /** `?models=broken|missing` — the models.json world the Auth panel must explain.
    *  `?models=now|many20|providers55` — 020 model-scale fixtures (see
    *  `pickerModels`); they only change the catalog size, the auth panels ignore
@@ -698,6 +928,8 @@ export class MockBridge implements Bridge {
         theme: this.themePreference,
         language: this.languagePreference,
         providerSetupSkipped: this.providerSetupSkipped,
+        // 033: explicit npm registry override; absent = follow npm config.
+        ...(this.registryOverride == null ? {} : { registryOverride: this.registryOverride }),
       } as T);
     }
     if (method === "config.setPrefs") {
@@ -706,6 +938,7 @@ export class MockBridge implements Bridge {
         theme?: string;
         language?: string;
         providerSetupSkipped?: boolean;
+        registryOverride?: string | null;
       } | undefined;
       if (typeof prefs?.autoRetry === "boolean") this.autoRetryEnabled = prefs.autoRetry;
       if (prefs?.theme === "system" || prefs?.theme === "light" || prefs?.theme === "dark") {
@@ -713,6 +946,20 @@ export class MockBridge implements Bridge {
       }
       if (typeof prefs?.language === "string") this.languagePreference = prefs.language;
       if (typeof prefs?.providerSetupSkipped === "boolean") this.providerSetupSkipped = prefs.providerSetupSkipped;
+      if (prefs && "registryOverride" in prefs) {
+        this.registryOverride = typeof prefs.registryOverride === "string" && prefs.registryOverride.trim()
+          ? prefs.registryOverride.trim()
+          : null;
+        try {
+          if (this.registryOverride == null) {
+            globalThis.sessionStorage?.removeItem("pi-mock-registry-override");
+          } else {
+            globalThis.sessionStorage?.setItem("pi-mock-registry-override", this.registryOverride);
+          }
+        } catch {
+          // node test env has no sessionStorage
+        }
+      }
       return Promise.resolve({ ok: true } as T);
     }
     if (method === "approval.getPolicy") {
@@ -724,6 +971,14 @@ export class MockBridge implements Bridge {
       return Promise.resolve({ ok: true } as T);
     }
     if (method.startsWith("manage.") || method.startsWith("trust.")) {
+      // `?pkgspeed=slow` stretches the package mutations so the per-row
+      // progress UI has something observable to assert against.
+      if (
+        query()?.get("pkgspeed") === "slow" &&
+        /^manage\.(packageInstall|packageRemove|packageUpdateAll)$/.test(method)
+      ) {
+        return delay(1200).then(() => this.handleManage(method, params) as T);
+      }
       return Promise.resolve(this.handleManage(method, params) as T);
     }
     if (method.startsWith("queue.")) {
@@ -750,6 +1005,20 @@ export class MockBridge implements Bridge {
     }
     await this.commandDelay(commandType);
     return this.handleCommand(command) as T;
+  }
+
+  /** Assembles the 034 skills payload: grouped entries + external sources. */
+  private skillsState() {
+    return {
+      skills: this.mockSkills.map((s) => ({ ...s })),
+      externalSources: [...this.externalSkillSources],
+      externalPresets: {
+        claude: "/tmp/mock-home/.claude/skills",
+        codex: "/tmp/mock-home/.codex/skills",
+      },
+      homeDir: "/tmp/mock-home",
+      projectBasePath: MOCK_PROJECT_PATH,
+    };
   }
 
   private handleManage(method: string, params?: unknown): unknown {
@@ -925,11 +1194,10 @@ export class MockBridge implements Bridge {
       case "manage.mcpRemove":
       case "manage.mcpLogin":
       case "manage.mcpLogout":
-      case "manage.packageInstall":
       case "manage.packageRemove":
       case "manage.skillCreate":
         return { ok: true, output: "mock: done" };
-      case "manage.packageUpdate": {
+      case "manage.packageInstall": {
         const p = (params ?? {}) as { source?: string };
         if (!p.source) return { ok: false, error: "missing source" };
         if (this.shouldFail("update")) {
@@ -937,19 +1205,74 @@ export class MockBridge implements Bridge {
             ok: false,
             exitCode: 1,
             output:
-              "npm error code E404\nnpm error 404 '@example/pi-extra@latest' is not in the npm registry",
+              "npm error code E404\nnpm error 404 '@example/pi-extra' is not in the npm registry",
           };
         }
-        const idx = this.packages.findIndex((l) => l.includes(p.source!));
-        if (idx < 0) return { ok: false, exitCode: 1, output: `not installed: ${p.source}` };
-        // A successful update changes the version the list reports, so the
-        // "update refreshes the version" e2e can assert on the row text.
-        const bumped = this.packages[idx].replace(
-          /(\d+)\.(\d+)\.(\d+)/,
-          (_m, a: string, b: string, c: string) => `${a}.${Number(b) + 1}.${c}`,
-        );
-        this.packages[idx] = bumped;
-        return { ok: true, exitCode: 0, output: `updated ${p.source} -> ${bumped}` };
+        // 033: upgrades arrive as version-pinned installs. One that names an
+        // installed package moves its version (the physical reinstall, P10/P11);
+        // a new source appends, so the market-install e2e sees the row appear.
+        const idx = this.packages.findIndex((l) => sameNpmSource(l, p.source!));
+        const pinned = versionSuffix(p.source!) ?? "";
+        if (idx >= 0) {
+          if (pinned) this.packages[idx] = stripVersionSuffix(this.packages[idx]) + "@" + pinned;
+          return { ok: true, exitCode: 0, output: `changed 1 package in 2s\nInstalled ${p.source}` };
+        }
+        this.packages.push(p.source);
+        return { ok: true, exitCode: 0, output: `added 1 package in 5s\nInstalled ${p.source}` };
+      }
+      case "manage.packageCheck": {
+        const p = (params ?? {}) as { source?: string };
+        if (!p.source) return { ok: false, error: "missing source" };
+        const checkKnob = query()?.get("check");
+        if (checkKnob === "offline") return { ok: true, source: p.source, state: "unknown", reason: "offline" };
+        if (checkKnob === "auth") return { ok: true, source: p.source, state: "unknown", reason: "auth" };
+        if (!p.source.startsWith("npm:")) {
+          return {
+            ok: true,
+            source: p.source,
+            state: "unknown",
+            reason: p.source.startsWith("git:") ? "git-ref" : "local",
+          };
+        }
+        const idx = this.packages.findIndex((l) => sameNpmSource(l, p.source!));
+        if (idx < 0) return { ok: true, source: p.source, state: "unknown", reason: "not-found" };
+        const installed = versionSuffix(this.packages[idx]) ?? "1.0.0";
+        const latest =
+          query()?.get("pkgold") === "1" ? bumpVersion(installed) : installed;
+        return {
+          ok: true,
+          source: p.source,
+          installed,
+          latest,
+          state: latest === installed ? "up-to-date" : "upgradable",
+          reason: "",
+        };
+      }
+      case "manage.marketSearch": {
+        const p = (params ?? {}) as { query?: string; page?: number; pageSize?: number; type?: string };
+        const knob = query()?.get("market");
+        if (knob === "offline") return { ok: false, code: "offline", error: "registry unreachable" };
+        if (knob === "unavailable") return { ok: false, code: "unavailable", error: "market search failed" };
+        if (knob === "auth") return { ok: false, code: "auth", error: "market search failed" };
+        const page = Math.max(1, Number(p.page ?? 1) || 1);
+        const pageSize = Math.min(50, Math.max(1, Number(p.pageSize ?? 50) || 50));
+        if (knob === "empty") return { ok: true, total: 0, page, pageSize, degraded: false, packages: [] };
+        // P21: mirror the backend's server-side type refinement.
+        const type = (p.type ?? "").trim();
+        const all = marketFixture().filter((pkg) => !type || pkg.badges.includes(type));
+        const needle = (p.query ?? "").trim().toLowerCase();
+        const filtered = needle
+          ? all.filter((m) => (m.name + " " + m.description).toLowerCase().includes(needle))
+          : all;
+        const start = (page - 1) * pageSize;
+        return {
+          ok: true,
+          total: filtered.length,
+          page,
+          pageSize,
+          degraded: knob === "degraded",
+          packages: filtered.slice(start, start + pageSize),
+        };
       }
       case "manage.packageUpdateAll": {
         // Mirrors `pi update --extensions`: pi reports one line per package in
@@ -1007,8 +1330,26 @@ export class MockBridge implements Bridge {
         this.piVersion = "1.5.0-mock";
         return { ok: true, exitCode: 0, output: "pi updated to 1.5.0-mock", version: this.piVersion };
       }
-      case "manage.packagesList":
-        return { ok: true, lines: [...this.packages, "No packages installed."] };
+      case "manage.packagesList": {
+        const brokenLine = "npm:@example/pi-broken";
+        return {
+          ok: true,
+          entries: this.packages.map((line) => {
+            if (line === brokenLine) {
+              // The probe-P13 shape: a source line with no resolved path.
+              return { source: line, scope: "user", broken: true };
+            }
+            const name = stripVersionSuffix(line);
+            return {
+              source: line,
+              scope: "user",
+              path: `/tmp/mock-agent/npm/node_modules/${name.replace(/^[a-z]+:/, "")}`,
+              version: versionSuffix(line) ?? undefined,
+              broken: false,
+            };
+          }),
+        };
+      }
       case "manage.agentsList":
         return agentsListFixture(this.agentsKnob);
       case "manage.agentsOpen":
@@ -1018,25 +1359,47 @@ export class MockBridge implements Bridge {
         return { ok: true, path, created: this.agentsKnob !== "exists" };
       }
       case "manage.skillsList":
-        return {
-          ok: true,
-          skills: [
-            {
-              name: "pdf-tools",
-              description: "Extract text and tables from PDF files.",
-              path: "/tmp/mock-home/.pi/agent/skills/pdf-tools/SKILL.md",
+        return { ok: true, ...this.skillsState() };
+      case "manage.skillSetEnabled": {
+        const p = (params ?? {}) as { path?: string; enabled?: boolean };
+        const skill = this.mockSkills.find((s) => s.path === p.path);
+        if (!skill) return { ok: false, error: `unknown skill: ${p.path}` };
+        skill.enabled = p.enabled === true;
+        return { ok: true, changed: true, enabled: skill.enabled };
+      }
+      case "manage.skillSetSourceEnabled": {
+        const p = (params ?? {}) as { dir?: string; enabled?: boolean };
+        if (!p.dir) return { ok: false, error: "missing dir" };
+        const dir = p.dir.replace(/\\/g, "/").replace(/\/+$/, "");
+        if (p.enabled) {
+          if (!this.externalSkillSources.includes(dir)) this.externalSkillSources.push(dir);
+          // Enabling a preset mirrors what the reload would discover.
+          if (dir.includes(".claude")) {
+            this.mockSkills.push({
+              name: "claude-skill",
+              description: "Skill discovered from the external dir.",
+              displayPath: dir.replace("/tmp/mock-home", "~") + "/claude-skill",
+              path: `${dir}/claude-skill`,
               scope: "user",
+              source: "external",
               disableModelInvocation: false,
-            },
-            {
-              name: "project-conventions",
-              description: "House rules for this repository.",
-              path: `${MOCK_PROJECT_PATH}/.pi/skills/project-conventions`,
-              scope: "project",
-              disableModelInvocation: false,
-            },
-          ],
-        };
+              enabled: true,
+              duplicate: false,
+            });
+          }
+        } else {
+          this.externalSkillSources = this.externalSkillSources.filter((d) => d !== dir);
+          this.mockSkills = this.mockSkills.filter((s) => s.source !== "external" || !s.path.startsWith(`${dir}/`));
+        }
+        return { ok: true, enabled: p.enabled === true };
+      }
+      case "manage.skillToggleModelInvocation": {
+        const p = (params ?? {}) as { path?: string; disable?: boolean };
+        const skill = this.mockSkills.find((s) => s.path === p.path);
+        if (!skill) return { ok: false, error: `unknown skill: ${p.path}` };
+        skill.disableModelInvocation = p.disable === true;
+        return { ok: true, changed: true, disable: skill.disableModelInvocation };
+      }
       case "manage.authOverview": {
         // 027: models.json customs join the provider list (no credentials —
         // their key lives in models.json and never crosses the bridge).
@@ -1282,6 +1645,26 @@ export class MockBridge implements Bridge {
         return { ok: true, path: "/tmp/mock-home/.pi/agent/settings.json", text: "{\n  \"theme\": \"dark\"\n}" };
       case "manage.settingsWrite":
         return { ok: true, output: "saved" };
+      // 032 Q6-b: ?envsnapshot=off|empty|fail rotates the viewer's three
+      // states; default returns a realistic snapshot body.
+      case "manage.envSnapshot": {
+        const knob = query()?.get("envsnapshot");
+        if (knob === "fail") return { ok: false, error: "snapshot unavailable (mock)" };
+        if (knob === "off") return { ok: true, enabled: false, collectedAt: "", text: "", file: "/tmp/pi-ide-env.json" };
+        if (knob === "empty") return { ok: true, enabled: true, collectedAt: "", text: "", file: "/tmp/pi-ide-env.json" };
+        return {
+          ok: true,
+          enabled: true,
+          collectedAt: "2026-11-13T03:30:00Z",
+          text:
+            "# IDE environment snapshot\n" +
+            "Provided by the Pi Agent JetBrains plugin. Collected: 2026-11-13T03:30:00Z.\n" +
+            "Sources present: sdk, shell-env.\n\n" +
+            "## Project SDK (tier: sdk)\n- Project SDK: Oracle JDK 21 (21.0.1)\n- SDK home: /opt/jdk-21\n\n" +
+            "## Build-relevant environment (tier: shell-env)\n- JAVA_HOME=/opt/jdk-21\n",
+          file: "/tmp/pi-ide-env.json",
+        };
+      }
       case "trust.get": {
         if (this.trustBroken) {
           return {
@@ -1847,6 +2230,10 @@ export class MockBridge implements Bridge {
       case "set_auto_compaction":
         this.autoCompactionEnabled = command["enabled"] !== false;
         return { success: true };
+      case "compact":
+        // 031: realistic figures so the compacted notice shows a
+        // locale-formatted before → after comparison.
+        return { success: true, data: { tokensBefore: 12000, estimatedTokensAfter: 3400 } };
       case "set_auto_retry":
         return { success: true };
       default:
@@ -2533,6 +2920,7 @@ function agentsListFixture(knob: string | null | undefined): {
     {
       scope: "global",
       dir: "/tmp/mock-home/.pi/agent",
+      displayPath: "~/.pi/agent/AGENTS.md",
       fileName: "AGENTS.md",
       path: "/tmp/mock-home/.pi/agent/AGENTS.md",
       exists: knob === "deep" || knob === "none" ? false : true,
@@ -2541,6 +2929,7 @@ function agentsListFixture(knob: string | null | undefined): {
     {
       scope: "root",
       dir: "/tmp/mock-project",
+      displayPath: "AGENTS.md",
       fileName: "AGENTS.md",
       path: "/tmp/mock-project/AGENTS.md",
       exists: knob !== "none",
@@ -2576,6 +2965,7 @@ type AgentsEntryShape = {
   scope: string;
   dir: string;
   relativePath?: string;
+  displayPath?: string;
   fileName: string;
   path: string;
   exists: boolean;

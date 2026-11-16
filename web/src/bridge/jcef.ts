@@ -9,6 +9,13 @@ const TOKEN =
   typeof window === "undefined" ? "" : (new URLSearchParams(window.location.search).get("token") ?? "");
 const AUTH_HEADERS: Record<string, string> = TOKEN ? { "X-Pi-Token": TOKEN } : {};
 
+// 019 D4: which pi instance this page is bound to (multi-Content tool window).
+// Read once at load; every bridge request carries it as a query param and
+// defaults to instance 1, so single-instance pages behave exactly as before.
+const INSTANCE_ID =
+  typeof window === "undefined" ? 1 : (new URLSearchParams(window.location.search).get("instance") ?? "1");
+const INSTANCE_PARAM = `&instance=${INSTANCE_ID}`;
+
 /**
  * Upper bound for one long-poll request. The server holds the request for at
  * most 20s (`timeout=20000`), so anything past 35s is a broken transport, not
@@ -63,7 +70,7 @@ export class JcefBridge implements Bridge {
       const controller = new AbortController();
       const abortTimer = setTimeout(() => controller.abort(), POLL_TIMEOUT_MS);
       try {
-        const resp = await fetch(`/bridge/poll?cursor=${this.cursor}&timeout=20000`, {
+        const resp = await fetch(`/bridge/poll?cursor=${this.cursor}&timeout=20000${INSTANCE_PARAM}`, {
           headers: AUTH_HEADERS,
           signal: controller.signal,
         });
@@ -130,7 +137,7 @@ export class JcefBridge implements Bridge {
         // platform disables CEF's own logging, so without this the reload
         // leaves no trace at all. keepalive lets it finish across the reload.
         const silentMs = Date.now() - lastOk;
-        void fetch("/bridge", {
+        void fetch(`/bridge?instance=${INSTANCE_ID}`, {
           method: "POST",
           headers: { "Content-Type": "application/json", ...AUTH_HEADERS },
           body: JSON.stringify({ t: "ui.reload", id: `watchdog-${Date.now()}`, p: { silentMs } }),
@@ -167,7 +174,7 @@ export class JcefBridge implements Bridge {
     const controller = new AbortController();
     const abortTimer = setTimeout(() => controller.abort(), POST_TIMEOUT_MS);
     try {
-      const resp = await fetch("/bridge", {
+      const resp = await fetch(`/bridge?instance=${INSTANCE_ID}`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...AUTH_HEADERS },
         body: JSON.stringify({ t: method, id, p: params ?? {} }),

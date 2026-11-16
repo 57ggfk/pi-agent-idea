@@ -64,12 +64,13 @@ class LocalUiServer private constructor() {
     private val healthProbeSeen = java.util.concurrent.atomic.AtomicBoolean(false)
     private val pollConnectedSeen = java.util.concurrent.atomic.AtomicBoolean(false)
 
-    /** Load URL for a project's tool window panel; carries its bridge token. */
-    fun uiUrlFor(project: Project): String {
+    /** Load URL for a project's tool window panel; carries its bridge token.
+     *  [instanceId] binds the page to a pi instance (019 D4). */
+    fun uiUrlFor(project: Project, instanceId: Int = 1): String {
         pruneDisposed()
         val existing = projectTokens.entries.firstOrNull { it.value === project }?.key
         val token = existing ?: generateToken().also { projectTokens[it] = project }
-        return "$baseUrl?token=$token"
+        return "$baseUrl?token=$token&instance=$instanceId"
     }
 
     private fun pruneDisposed() {
@@ -139,7 +140,7 @@ class LocalUiServer private constructor() {
                         respondJson(exchange, 413, buildJsonObject { put("ok", false); put("error", "payload too large") })
                         return
                     }
-                BridgeService.getInstance(project).handleEnvelope(body)
+                BridgeService.getInstance(project).handleEnvelope(body, queryInt(exchange, "instance"))
                 respondJson(exchange, 202, buildJsonObject { put("queued", true) })
             }
 
@@ -150,7 +151,8 @@ class LocalUiServer private constructor() {
                     return
                 }
                 val service = BridgeService.getInstance(project)
-                service.ensureWired()
+                val instance = queryInt(exchange, "instance")
+                service.ensureWired(instance)
                 if (pollConnectedSeen.compareAndSet(false, true)) {
                     LOG.info("bridge poll connected — the frontend is authenticated and polling")
                 }
@@ -163,7 +165,7 @@ class LocalUiServer private constructor() {
                     .map { it.split("=", limit = 2) }
                     .firstOrNull { it[0] == "timeout" }
                     ?.get(1)?.toLongOrNull()?.coerceIn(0, 25_000) ?: 20_000L
-                val entries = service.pollEvents(cursor, timeoutMs)
+                val entries = service.pollEvents(cursor, timeoutMs, instance)
                 val lastSeq = entries.lastOrNull()?.seq ?: cursor
                 val payload = buildJsonObject {
                     put("events", buildJsonArray {
@@ -175,7 +177,7 @@ class LocalUiServer private constructor() {
                         }
                     })
                     put("cursor", lastSeq)
-                    put("oldest", service.oldestSeq())
+                    put("oldest", service.oldestSeq(instance))
                 }
                 respondJson(exchange, 200, payload)
             }
@@ -188,6 +190,13 @@ class LocalUiServer private constructor() {
             }
         }
     }
+
+    /** Parses an int query parameter (019 D4); falls back to [fallback]. */
+    private fun queryInt(exchange: HttpExchange, name: String, fallback: Int = 1): Int =
+        exchange.requestURI.rawQuery?.split("&")
+            ?.firstOrNull { it.startsWith("$name=") }
+            ?.substringAfter('=')
+            ?.toIntOrNull() ?: fallback
 
     private fun serveResource(exchange: HttpExchange, uriPath: String) {
         // Serve /webui/* from the classloader; fall back to index.html (SPA).

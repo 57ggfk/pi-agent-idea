@@ -29,6 +29,7 @@ import {
   applyEvent,
   approvalFromEvent,
   emptyItem,
+  formatTokens,
   itemToMarkdownSource,
   itemsFromMessages,
   quoteMarkdownSource,
@@ -1682,7 +1683,7 @@ export const usePiStore = create<PiStore>((set, get) => {
         await rpc(bridge, command);
       } catch (e) {
         const errorItem = emptyItem("system", [
-          { kind: "text", text: `Failed to send: ${(e as Error).message}`, done: true },
+          { kind: "text", text: t("notice.send.failed", { msg: (e as Error).message }), done: true },
         ]);
         errorItem.done = true;
         errorItem.isError = true;
@@ -1881,7 +1882,11 @@ export const usePiStore = create<PiStore>((set, get) => {
         const item = emptyItem("system", [
           {
             kind: "text",
-            text: `Context compacted: ${result.tokensBefore ?? "?"} → ${result.estimatedTokensAfter ?? "?"} tokens.`,
+            // 031: copy snapshotted at generation time; tokens grouped per locale (FR-005/010).
+            text: t("notice.compaction.end", {
+              before: formatTokens(result.tokensBefore),
+              after: formatTokens(result.estimatedTokensAfter),
+            }),
             done: true,
           },
         ]);
@@ -1890,7 +1895,7 @@ export const usePiStore = create<PiStore>((set, get) => {
         await get().refreshStats();
       } catch (e) {
         const item = emptyItem("system", [
-          { kind: "text", text: `compact failed: ${(e as Error).message}`, done: true },
+          { kind: "text", text: t("notice.compaction.failed", { msg: (e as Error).message }), done: true },
         ]);
         item.done = true;
         item.isError = true;
@@ -2112,7 +2117,7 @@ export const usePiStore = create<PiStore>((set, get) => {
         return true;
       } catch (e) {
         const item = emptyItem("system", [
-          { kind: "text", text: `rename failed: ${(e as Error).message}`, done: true },
+          { kind: "text", text: t("notice.rename.failed", { msg: (e as Error).message }), done: true },
         ]);
         item.done = true;
         item.isError = true;
@@ -2368,7 +2373,7 @@ export const usePiStore = create<PiStore>((set, get) => {
         await bridge.request("sessions.exportHtml", { file });
       } catch (e) {
         const item = emptyItem("system", [
-          { kind: "text", text: `export failed: ${(e as Error).message}`, done: true },
+          { kind: "text", text: t("notice.export.failed", { msg: (e as Error).message }), done: true },
         ]);
         item.done = true;
         item.isError = true;
@@ -2398,7 +2403,7 @@ export const usePiStore = create<PiStore>((set, get) => {
         void bridge.request("config.setLastModel", { provider, model: modelId }).catch(() => undefined);
       } catch (e) {
         const item = emptyItem("system", [
-          { kind: "text", text: `set_model failed: ${(e as Error).message}`, done: true },
+          { kind: "text", text: t("notice.setModel.failed", { msg: (e as Error).message }), done: true },
         ]);
         item.done = true;
         item.isError = true;
@@ -2413,7 +2418,7 @@ export const usePiStore = create<PiStore>((set, get) => {
         set({ thinkingLevel: level });
       } catch (e) {
         const item = emptyItem("system", [
-          { kind: "text", text: `set_thinking_level failed: ${(e as Error).message}`, done: true },
+          { kind: "text", text: t("notice.thinking.failed", { msg: (e as Error).message }), done: true },
         ]);
         item.done = true;
         item.isError = true;

@@ -38,6 +38,7 @@ object PiCliRunner {
         timeoutSeconds: Long = 60,
         stdinText: String? = null,
         workingDir: File? = null,
+        extraEnv: Map<String, String> = emptyMap(),
     ): CliResult {
         val pi = PiLocator.locate()?.path
             ?: return CliResult(-1, "", "pi executable not found")
@@ -52,6 +53,9 @@ object PiCliRunner {
         })
         // Management commands must not try to talk to a TUI.
         pb.environment()["PI_NO_COLOR"] = "1"
+        // Explicit registry override travels as npm's own env var (033 FR-017);
+        // the user's .npmrc is never rewritten.
+        extraEnv.forEach { (key, value) -> pb.environment()[key] = value }
 
         LOG.info("pi cli: ${args.joinToString(" ")}${if (stdinText != null) " (stdin: ${stdinText.length} chars)" else ""}")
         return runProcess(pb, timeoutSeconds, stdinText)

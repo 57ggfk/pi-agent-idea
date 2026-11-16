@@ -79,8 +79,58 @@ export interface McpSetEnabledResult extends CliOutcome {
   warning?: string;
 }
 
+/** One configured package, structured from `pi list` output (033 FR-001/FR-002). */
+export interface PackageEntry {
+  source: string;
+  /** "user" | "project" — the section header pi printed, lowercased. */
+  scope: string;
+  /** Resolved install path; absent = declared but not installed / files missing. */
+  path?: string;
+  /** From the path's package.json; absent = unknown (unreadable or broken). */
+  version?: string;
+  /** Source line without a path line (probe P13/P18): offer a reinstall. */
+  broken: boolean;
+}
+
 export interface PackagesListResult extends CliOutcome {
-  lines?: string[];
+  entries?: PackageEntry[];
+}
+
+/**
+ * One-shot version check (033 FR-003). `state` is the three-way verdict;
+ * `reason` explains an "unknown": offline | auth | not-found | bad-response |
+ * git-ref | local.
+ */
+export interface PackageCheckResult extends CliOutcome {
+  source?: string;
+  installed?: string;
+  latest?: string;
+  state?: "up-to-date" | "upgradable" | "unknown";
+  reason?: string;
+}
+
+/** One gallery card from the npm `pi-package` search (033 FR-006). */
+export interface MarketPackage {
+  name: string;
+  version: string;
+  description: string;
+  author: string;
+  downloads: number;
+  updated: string;
+  badges: string[];
+  linkNpm: string;
+  linkRepo: string;
+}
+
+export interface MarketSearchResult extends CliOutcome {
+  total?: number;
+  page?: number;
+  pageSize?: number;
+  /** True when the registry ignored the `keywords:` filter (npmmirror, P19). */
+  degraded?: boolean;
+  packages?: MarketPackage[];
+  /** Set with ok:false: offline | auth | unavailable (endpoint missing). */
+  code?: "offline" | "auth" | "unavailable";
 }
 
 /** `pi update` reports the outcome itself; the plugin only relays it. */
@@ -165,6 +215,8 @@ export interface AgentsEntry {
   scope: string;
   dir: string;
   relativePath?: string;
+  /** Short display form (034 T1509): ~ for global, project-relative otherwise. */
+  displayPath?: string;
   /** The candidate that wins in this directory (pi's per-dir order). */
   fileName: string;
   path: string;
@@ -179,13 +231,35 @@ export interface AgentsListResult extends CliOutcome {
   entries?: AgentsEntry[];
 }
 
+/** Where a skill was discovered (034 FR-001). */
+export type SkillSource = "user-pi" | "user-agents" | "project-pi" | "project-agents" | "package" | "external";
+
 export interface SkillInfo {
   name: string;
   description: string;
   path: string;
+  /** Shortened path (T1507): `~` for home, project/package-relative. */
+  displayPath?: string;
   /** User skills always load; project skills only when the project is trusted. */
   scope: Scope;
+  source: SkillSource;
+  /** Soft switch: hidden from automatic model selection, /skill:name still works. */
   disableModelInvocation: boolean;
+  /** Hard switch: false = excluded from discovery via a settings entry (034 FR-003). */
+  enabled: boolean;
+  /** Same effective name as an earlier entry — pi keeps the first. */
+  duplicate: boolean;
+}
+
+export interface SkillsListResult extends CliOutcome {
+  skills?: SkillInfo[];
+  /** Positive dir entries in the user settings `skills` array (034 FR-005). */
+  externalSources?: string[];
+  /** Preset external dirs derived from the real home (Q2). */
+  externalPresets?: { claude: string; codex: string };
+  /** Real user home — the UI shortens external preset labels to ~. */
+  homeDir?: string;
+  projectBasePath?: string;
 }
 
 export interface AuthOverviewResult extends CliOutcome {
@@ -301,6 +375,14 @@ export interface SettingsReadResult extends CliOutcome {
   text?: string;
 }
 
+/** 032: what the IDE would append to pi's system prompt this turn (Q6-b). */
+export interface EnvSnapshotResult extends CliOutcome {
+  enabled?: boolean;
+  collectedAt?: string;
+  text?: string;
+  file?: string;
+}
+
 /** Typed helpers over the bridge for management operations. */
 export function manageApi(bridge: Bridge) {
   const call = <T>(method: BridgeMethod, params?: unknown, timeoutMs?: number) =>
@@ -328,11 +410,21 @@ export function manageApi(bridge: Bridge) {
      */
     mcpSetEnabled: (p: { name: string; scope: string; enabled: boolean }) =>
       call<McpSetEnabledResult>("manage.mcpSetEnabled", p),
+    /**
+     * 033: the explicit registry override travels with the network-touching
+     * calls; empty/absent = "follow npm config" (the backend resolves the
+     * chain and never rewrites .npmrc).
+     */
     packagesList: () => call<PackagesListResult>("manage.packagesList"),
-    packageInstall: (p: { source: string }) => call<CliOutcome>("manage.packageInstall", p),
+    packageInstall: (p: { source: string; registry?: string }) => call<CliOutcome>("manage.packageInstall", p),
     packageRemove: (p: { source: string }) => call<CliOutcome>("manage.packageRemove", p),
-    packageUpdate: (p: { source: string }) => call<CliOutcome>("manage.packageUpdate", p),
-    packageUpdateAll: () => call<CliOutcome>("manage.packageUpdateAll"),
+    packageCheck: (p: { source: string; registry?: string }) => call<PackageCheckResult>("manage.packageCheck", p),
+    marketSearch: (p: { query?: string; page?: number; pageSize?: number; registry?: string; type?: string }) =>
+      call<MarketSearchResult>("manage.marketSearch", p),
+    packageUpdateAll: (p?: { registry?: string }) => call<CliOutcome>("manage.packageUpdateAll", p ?? {}),
+    prefsGet: () =>
+      call<{ autoRetry?: boolean; theme?: string; language?: string; registryOverride?: string }>("config.getPrefs"),
+    prefsSet: (p: { registryOverride?: string | null }) => call<{ ok: boolean }>("config.setPrefs", p),
     envUpdate: () => call<EnvUpdateResult>("manage.envUpdate"),
     modelsReadProvider: (p: { name: string }) => call<ProviderInfoResult>("manage.modelsReadProvider", p),
     /** 027: custom provider definition (models.json form). The key never
@@ -346,6 +438,8 @@ export function manageApi(bridge: Bridge) {
     modelsOpenFile: (p: { provider: string }) => call<ModelsOpenResult>("manage.modelsOpenFile", p),
     /** Forces a full JCEF frame repaint (OSR frame-lag workaround, 0.5.4
      *  real-machine find): call after view-level DOM swaps. */
+    /** 034: open a file (e.g. a skill SKILL.md) in the IDE editor. */
+    openInEditor: (p: { path: string }) => call<{ ok: boolean }>("ide.openFile", p),
     repaint: () => call<{ ok: boolean }>("ide.repaint"),
     agentsList: () => call<AgentsListResult>("manage.agentsList"),
     /** Writes a provider credential. Responses carry the provider name only —
@@ -361,7 +455,15 @@ export function manageApi(bridge: Bridge) {
       call<CliOutcome & { provider?: string }>("manage.providerSetKey", p),
     agentsOpen: (p: { path: string }) => call<CliOutcome>("manage.agentsOpen", p),
     agentsCreate: (p: { path: string }) => call<ModelsOpenResult>("manage.agentsCreate", p),
-    skillsList: () => call<{ ok: boolean; skills: SkillInfo[] }>("manage.skillsList"),
+    skillsList: () => call<SkillsListResult>("manage.skillsList"),
+    /** 034: hard switch — a settings exclusion entry, project scope needs trust. */
+    skillSetEnabled: (p: { path: string; enabled: boolean; scope: string }) =>
+      call<CliOutcome>("manage.skillSetEnabled", p),
+    /** 034: external source wiring (presets + custom dirs). */
+    skillSetSourceEnabled: (p: { dir: string; enabled: boolean }) => call<CliOutcome>("manage.skillSetSourceEnabled", p),
+    /** 034: soft switch — frontmatter `disable-model-invocation` toggle. */
+    skillToggleModelInvocation: (p: { path: string; disable: boolean }) =>
+      call<CliOutcome>("manage.skillToggleModelInvocation", p),
     skillCreate: (p: { name: string; description: string; body?: string }) => call<CliOutcome>("manage.skillCreate", p),
     authOverview: () => call<AuthOverviewResult>("manage.authOverview"),
     /**
@@ -375,6 +477,9 @@ export function manageApi(bridge: Bridge) {
     authCheck: (p: { provider: string }) => call<{ ok: boolean; status: string; detail?: unknown }>("manage.authCheck", p),
     settingsRead: () => call<SettingsReadResult>("manage.settingsRead"),
     settingsWrite: (p: { text: string }) => call<CliOutcome>("manage.settingsWrite", p),
+    // 032 Q6-b: read-only view of the environment snapshot; the call also
+    // refreshes it, so what the user sees is what the next turn injects.
+    envSnapshot: () => call<EnvSnapshotResult>("manage.envSnapshot"),
     trustGet: () => call<TrustState>("trust.get"),
     // `confirmed` is mandatory: an unconfirmed write must be refused by the
     // backend, not merely hidden in the UI.
