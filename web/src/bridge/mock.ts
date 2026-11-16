@@ -2449,10 +2449,18 @@ export class MockBridge implements Bridge {
     const text =
       this.mdKnob === "table"
         ? "| Column A | Column B |\n| --- | --- |\n| one | two |\n| three | four |"
-        : `Here is my plan for **${prompt.slice(0, 60)}**:\n\n` +
-          "1. Inspect the repository layout\n" +
-          "2. Run a quick sanity check\n\n" +
-          "Let me start with a shell command.";
+        : this.mdKnob === "diff"
+          ? // 038: a ```diff block plus GFM footnotes — the two "easy" format
+            // extensions asserted end-to-end.
+            "Applied the change[^1] with a diff:\n\n" +
+            "```diff\n--- a/src/main.tsx\n+++ b/src/main.tsx\n@@ -1,2 +1,2 @@\n-console.log(\"old\");\n+console.log(\"new\");\n context stays\n```\n\n" +
+            "More notes[^2].\n\n" +
+            "[^1]: The change record.\n" +
+            "[^2]: Follow-up notes."
+          : `Here is my plan for **${prompt.slice(0, 60)}**:\n\n` +
+            "1. Inspect the repository layout\n" +
+            "2. Run a quick sanity check\n\n" +
+            "Let me start with a shell command.";
     await sleep(30);
     emit({ type: "message_update", usage: {}, assistantMessageEvent: { type: "text_start", contentIndex: 1 } });
     for (const chunk of chunkWords(text)) {

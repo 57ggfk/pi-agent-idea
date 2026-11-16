@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, type MouseEvent } from "react";
 import { marked } from "marked";
+import markedFootnote from "marked-footnote";
 import DOMPurify from "dompurify";
 import hljs from "highlight.js/lib/common";
 import { usePiStore } from "../store/store";
@@ -7,18 +8,28 @@ import { i18n } from "../i18n";
 import { copyText } from "../lib/clipboard";
 
 marked.setOptions({ gfm: true, breaks: true });
+// 038 US2: marked ^15 has no GFM footnote support of its own (measured:
+// `[^1]` passes through as literal text). This extension is the sanctioned
+// add — one dependency, marked >=7 peer, renders sup refs + a footnotes
+// section with in-page anchors.
+marked.use(markedFootnote());
 
 // Links must never navigate the SPA: the IDE (Kotlin) intercepts the click and
 // opens the system browser; standalone the browser opens a new tab. The hook
 // runs for every sanitize call, so it is registered exactly once at module load.
+// Pure-hash links (footnote refs/backrefs, 038) are exempt: they must jump
+// inside the page, and a target=_blank on them would pop a second window.
 let hooksRegistered = false;
 function registerPurifyHooks() {
   if (hooksRegistered) return;
   hooksRegistered = true;
   DOMPurify.addHook("afterSanitizeAttributes", (node) => {
     if (node.tagName === "A") {
-      node.setAttribute("target", "_blank");
-      node.setAttribute("rel", "noopener noreferrer");
+      const href = node.getAttribute("href") ?? "";
+      if (!href.startsWith("#")) {
+        node.setAttribute("target", "_blank");
+        node.setAttribute("rel", "noopener noreferrer");
+      }
     }
   });
 }
