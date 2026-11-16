@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { usePiStore } from "../../store/store";
 import type { Bridge } from "../../bridge/types";
-import { manageApi, type EnvUpdateResult, type EnvironmentResult } from "../../manage";
+import { manageApi, type EnvUpdateResult, type EnvironmentResult, type ToolStatus } from "../../manage";
 import { useT } from "../../i18n/useT";
+import { shortPath } from "../../lib/shortPath";
 import {
   SOURCE_IDS,
   SOURCE_LABELS,
@@ -19,6 +20,32 @@ const STATUS_LABEL: Record<SourceStatus, string> = {
   unsupported: "Not supported",
   idle: "Not loaded",
 };
+
+/**
+ * One tool line in the environment card (036 FR-001/FR-002): `node vX.Y.Z`
+ * plus its path — full path on wide panels, `~/`-shortened on narrow ones
+ * (the shared .skill-path-* CSS switch). A missing tool is an explicit
+ * "not found", never a blank.
+ */
+function ToolLine({ label, tool, homeDir, testid }: { label: string; tool?: ToolStatus; homeDir?: string; testid: string }) {
+  const { t } = useT();
+  return (
+    <span className="diag-env-row" data-testid={testid}>
+      <span className="diag-env-label">{label}</span>
+      {tool?.found ? (
+        <>
+          <b data-testid={`${testid}-version`}>{tool.version || t("manage.env.unknown")}</b>
+          <span className="diag-env-path mono">
+            <span className="skill-path-full" data-testid={`${testid}-path-full`}>{tool.path}</span>
+            <span className="skill-path-short" data-testid={`${testid}-path-short`}>{shortPath(tool.path, homeDir)}</span>
+          </span>
+        </>
+      ) : (
+        <span className="manage-env-missing" data-testid={`${testid}-missing`}>{t("manage.env.notFound")}</span>
+      )}
+    </span>
+  );
+}
 
 /**
  * One place to answer "what is the plugin actually unhappy about?" (spec 003
@@ -131,6 +158,20 @@ export default function DiagnosticsPanel({ api, bridge }: { api: ReturnType<type
           <span>{t("manage.env.detecting")}</span>
         )}
         {env?.agentDir ? <span className="mono diag-env-dir">~/.pi/agent</span> : null}
+        {/* 036 US1/US2: the card answers the full "what is on this machine?" question. */}
+        {env ? <ToolLine label="node" tool={env.node} homeDir={env.homeDir} testid="env-node" /> : null}
+        {env ? <ToolLine label="npm" tool={env.npm} homeDir={env.homeDir} testid="env-npm" /> : null}
+        {env ? (
+          <span className="diag-env-row" data-testid="env-plugin">
+            <span className="diag-env-label">{t("manage.env.plugin")}</span>
+            <b data-testid="plugin-version">{env.pluginVersion || t("manage.env.unknown")}</b>
+            <span className="diag-env-path" data-testid="plugin-build">
+              {t("manage.env.built")} {env.buildTime || t("manage.env.unknown")}
+              {" · "}
+              {env.commitId || t("manage.env.unknown")}
+            </span>
+          </span>
+        ) : null}
         {env?.found ? (
           <button className="btn diag-env-update" data-testid="pi-update" disabled={updating} onClick={requestEnvUpdate}>
             {updating ? t("manage.env.updating") : t("manage.env.update")}

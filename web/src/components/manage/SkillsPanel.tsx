@@ -3,6 +3,7 @@ import { useT } from "../../i18n/useT";
 import { OutcomeBanner } from "../ManageView";
 import { restartPiProcess } from "../../manage";
 import { managementQueueSubscribe, managementQueueSnapshot } from "../../lib/opQueue";
+import { shortPath } from "../../lib/shortPath";
 import type { Bridge } from "../../bridge/types";
 import type { manageApi, SkillInfo, SkillsListResult } from "../../manage";
 
@@ -30,12 +31,8 @@ const SOURCES: Array<{
   { key: "external", titleKey: "skill.source.external" },
 ];
 
-function shortPath(path: string, homeDir?: string): string {
-  if (!homeDir) return path;
-  const home = homeDir.replace(/\\/g, "/").replace(/\/+$/, "");
-  const target = path.replace(/\\/g, "/");
-  return target.toLowerCase().startsWith(home.toLowerCase()) ? "~" + target.slice(home.length) : path;
-}
+// shortPath moved to lib/shortPath.ts (036 FR-007) — diagnostics and settings
+// reuse the exact 034 implementation.
 
 export default function SkillsPanel({
   api,

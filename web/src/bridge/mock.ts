@@ -1030,14 +1030,28 @@ export class MockBridge implements Bridge {
 
   private handleManage(method: string, params?: unknown): unknown {
     switch (method) {
-      case "manage.env":
+      case "manage.env": {
+        // 036: the diagnostics card also renders node/npm + plugin/build info.
+        // `?envdegrade=1` reports the tools as missing and blanks the build
+        // info, so the degrade rows have something deterministic to assert.
+        const degrade = query()?.get("envdegrade") === "1";
+        const home = "/tmp/mock-home";
+        const tool = (path: string) =>
+          degrade ? { found: false, path: "", version: "" } : { found: true, path, version: "v22.19.0" };
         return {
           ok: true,
           found: true,
           path: "/usr/local/bin/pi",
           version: this.piVersion,
-          agentDir: "/tmp/mock-home/.pi/agent",
+          agentDir: `${home}/.pi/agent`,
+          node: tool(`${home}/tools/node`),
+          npm: tool(`${home}/tools/npm`),
+          homeDir: home,
+          pluginVersion: degrade ? "" : "0.5.10-mock",
+          buildTime: degrade ? "" : "2026-11-16 20:15",
+          commitId: degrade ? "" : "abc1234",
         };
+      }
       // Standalone/mock runs already have pi unless the e2e suite asks for a
       // broken machine via `?setup=missing|nonode`; the setup card's states are
       // otherwise exercised by the dedicated component tests instead.
@@ -1649,7 +1663,12 @@ export class MockBridge implements Bridge {
         return { ok: true, wasActive };
       }
       case "manage.settingsRead":
-        return { ok: true, path: "/tmp/mock-home/.pi/agent/settings.json", text: "{\n  \"theme\": \"dark\"\n}" };
+        return {
+          ok: true,
+          path: "/tmp/mock-home/.pi/agent/settings.json",
+          text: "{\n  \"theme\": \"dark\"\n}",
+          homeDir: "/tmp/mock-home",
+        };
       case "manage.settingsWrite":
         return { ok: true, output: "saved" };
       // 032 Q6-b: ?envsnapshot=off|empty|fail rotates the viewer's three
