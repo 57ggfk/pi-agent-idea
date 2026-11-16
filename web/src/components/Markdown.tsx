@@ -107,19 +107,25 @@ function stripDecorativeNewlines(html: string): string {
 }
 
 /**
- * Adds a Copy button in the top-right corner of every fenced code block.
- * The ✓ feedback lives in `copiedUntil` (keyed by pre index): React replaces
- * the whole innerHTML on every streaming delta, so the freshly injected button
- * must restore the "✓" state itself until the flash window expires.
+ * Adds the block action bar in the top-right corner of every fenced code
+ * block: Copy + "open in IDE" (041 FR-001, side by side in one container so
+ * they never overlap). The ✓/✗ feedback lives in `copiedUntil` (keyed by pre
+ * index): React replaces the whole innerHTML on every streaming delta, so the
+ * freshly injected button must restore the "✓" state itself until the flash
+ * window expires. The IDE button reads `code.textContent` and the
+ * `language-*` class at click time (041 US3: streaming, several blocks).
  */
-function addCopyButtons(root: ParentNode, copiedUntil: Map<number, number>) {
+function addCopyButtons(root: ParentNode, copiedUntil: Map<number, number>, openSnippet: (language: string, text: string) => Promise<boolean>) {
   const now = Date.now();
   const copyLabel = i18n.t("common.copy");
+  const ideLabel = i18n.t("markdown.openInIde");
   for (const [idx, until] of copiedUntil) {
     if (until <= now) copiedUntil.delete(idx);
   }
   Array.from(root.querySelectorAll("pre")).forEach((pre, idx) => {
     if (pre.querySelector(".code-copy-btn")) return;
+    const actions = document.createElement("div");
+    actions.className = "code-actions";
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "code-copy-btn";
@@ -142,7 +148,26 @@ function addCopyButtons(root: ParentNode, copiedUntil: Map<number, number>) {
         }, COPY_FLASH_MS);
       });
     });
-    pre.appendChild(btn);
+    const ideBtn = document.createElement("button");
+    ideBtn.type = "button";
+    ideBtn.className = "code-ide-btn";
+    ideBtn.textContent = ideLabel;
+    ideBtn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      // Read at click time: the block may still be streaming (041 US3).
+      const code = pre.querySelector("code");
+      const lang = /language-([\w+#-]+)/.exec(code?.className ?? "")?.[1] ?? "";
+      void openSnippet(lang, code?.textContent ?? "").then((ok) => {
+        if (ok) return;
+        ideBtn.textContent = "✗";
+        setTimeout(() => {
+          ideBtn.textContent = i18n.t("markdown.openInIde");
+        }, COPY_FLASH_MS);
+      });
+    });
+    actions.appendChild(btn);
+    actions.appendChild(ideBtn);
+    pre.appendChild(actions);
   });
 }
 
@@ -155,6 +180,7 @@ export default function Markdown({ text }: { text: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const copiedUntil = useRef<Map<number, number>>(new Map());
   const openFile = usePiStore((s) => s.openFile);
+  const openSnippet = usePiStore((s) => s.openSnippet);
 
   useEffect(() => {
     const root = ref.current;
@@ -162,7 +188,7 @@ export default function Markdown({ text }: { text: string }) {
     root.querySelectorAll("pre code:not(.hljs)").forEach((el) => {
       hljs.highlightElement(el as HTMLElement);
     });
-    addCopyButtons(root, copiedUntil.current);
+    addCopyButtons(root, copiedUntil.current, openSnippet);
     // Inline code tokens (`path.ts:12`) become clickable file links.
     root.querySelectorAll("code").forEach((el) => {
       if (el.closest("pre") || el.classList.contains("file-link")) return;
@@ -172,7 +198,7 @@ export default function Markdown({ text }: { text: string }) {
     });
     // Plain-text path references outside code blocks too.
     linkifyTextNodes(root);
-  }, [html]);
+  }, [html, openSnippet]);
 
   // One delegated handler covers links rendered via dangerouslySetInnerHTML.
   const onContainerClick = (e: MouseEvent<HTMLDivElement>) => {

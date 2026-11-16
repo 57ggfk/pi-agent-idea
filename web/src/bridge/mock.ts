@@ -843,6 +843,17 @@ export class MockBridge implements Bridge {
     if (method === "ide.openFile") {
       return Promise.resolve({ ok: true } as T);
     }
+    if (method === "ide.openSnippet") {
+      // 041: echo the received params through sessionStorage so an e2e can
+      // assert language/text; `?openSnippet=fail` exercises the ✗ flash.
+      const p = params as { language?: string; text?: string } | undefined;
+      if (query()?.get("openSnippet") === "fail") return { ok: false, error: "mock failure" } as T;
+      globalThis.sessionStorage?.setItem(
+        "pi-mock-open-snippet",
+        JSON.stringify({ language: p?.language ?? "", text: (p?.text ?? "").slice(0, 200) }),
+      );
+      return Promise.resolve({ ok: true } as T);
+    }
     if (method === "ide.showFileDiff") {
       return Promise.resolve({ ok: true } as T);
     }

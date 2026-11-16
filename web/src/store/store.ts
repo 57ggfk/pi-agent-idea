@@ -590,6 +590,8 @@ interface PiStore {
    * caller keeps the folded chip (nothing is lost).
    */
   savePasteToTempFile(text: string): Promise<{ ok: boolean; path?: string; error?: string }>;
+  /** 041 FR-002: opens a code-block snippet in a read-only in-memory IDE tab. */
+  openSnippet(language: string, text: string): Promise<boolean>;
   /**
    * Takes the paths of the file/folder drag that just entered the panel from
    * the IDE side (spec 016) — the only place the real absolute paths exist.
@@ -1724,6 +1726,19 @@ export const usePiStore = create<PiStore>((set, get) => {
         // Write failure must not lose the content — the caller keeps the
         // folded chip and the user can retry or send inline (FR-013).
         return { ok: false, error: (e as Error).message };
+      }
+    },
+
+    /** 041 FR-002/FR-007: snippet → read-only IDE tab; false lets the button flash ✗. */
+    async openSnippet(language, text) {
+      if (!bridge) return false;
+      try {
+        // The mock resolves `{ok:false}`; the JCEF transport rejects. Handle
+        // both so the failure flash behaves identically everywhere.
+        const res = await bridge.request<{ ok?: boolean }>("ide.openSnippet", { language, text });
+        return res?.ok !== false;
+      } catch {
+        return false;
       }
     },
 

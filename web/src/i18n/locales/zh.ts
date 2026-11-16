@@ -11,6 +11,7 @@ export const zh: Dict = {
   "common.dismiss": "忽略",
   "common.close": "关闭",
   "common.copy": "复制",
+  "markdown.openInIde": "在 IDE 打开",
   "common.loading": "加载中…",
 
   // -- tooltips（012 US2）------------------------------------------------------
