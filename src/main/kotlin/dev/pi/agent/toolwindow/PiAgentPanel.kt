@@ -20,6 +20,7 @@ import org.cef.browser.CefFrame
 import org.cef.callback.CefDragData
 import org.cef.handler.CefDisplayHandlerAdapter
 import org.cef.handler.CefDragHandler
+import org.cef.handler.CefLifeSpanHandlerAdapter
 import org.cef.handler.CefLoadHandler
 import org.cef.handler.CefLoadHandlerAdapter
 import org.cef.handler.CefRequestHandlerAdapter
@@ -92,6 +93,27 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
             if (url.startsWith("http://127.0.0.1:") || url.startsWith("http://localhost:")) return false
             BrowserUtil.browse(url)
             return true // cancel in-IDE navigation
+        }
+    }
+
+    /**
+     * `target="_blank"` links (marketplace npm/repo cards) open a popup browser
+     * before any navigation happens, so [linkHandler] alone cancels the
+     * navigation and leaves an empty white window behind. Catching the popup
+     * itself routes the target URL to the system browser and cancels the
+     * popup — no white window, same channel as every other external link.
+     */
+    private val popupHandler = object : CefLifeSpanHandlerAdapter() {
+        override fun onBeforePopup(
+            browser: CefBrowser?,
+            frame: CefFrame?,
+            targetUrl: String?,
+            frameName: String?,
+        ): Boolean {
+            val url = targetUrl ?: return false
+            if (url.startsWith("http://127.0.0.1:") || url.startsWith("http://localhost:")) return false
+            BrowserUtil.browse(url)
+            return true // cancel the popup browser
         }
     }
 
@@ -331,6 +353,7 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
             val created = JBCefBrowser()
             browser = created
             created.jbCefClient.addRequestHandler(linkHandler, created.cefBrowser)
+            created.jbCefClient.addLifeSpanHandler(popupHandler, created.cefBrowser)
             created.jbCefClient.addLoadHandler(loadHandler, created.cefBrowser)
             created.jbCefClient.addDisplayHandler(consoleHandler, created.cefBrowser)
             created.jbCefClient.addDragHandler(dragHandler, created.cefBrowser)
@@ -487,6 +510,7 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
         val current = browser ?: return
         browser = null
         runCatching { current.jbCefClient.removeRequestHandler(linkHandler, current.cefBrowser) }
+        runCatching { current.jbCefClient.removeLifeSpanHandler(popupHandler, current.cefBrowser) }
         runCatching { current.jbCefClient.removeLoadHandler(loadHandler, current.cefBrowser) }
         runCatching { current.jbCefClient.removeDisplayHandler(consoleHandler, current.cefBrowser) }
         runCatching { current.jbCefClient.removeDragHandler(dragHandler, current.cefBrowser) }

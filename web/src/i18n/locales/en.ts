@@ -490,6 +490,7 @@ export const en = {
   "package.remove": "Remove",
   "package.updateAll": "Update all",
   "package.empty": "No packages installed.",
+  "package.listLoading": "Loading packages…",
   "package.placeholder": "npm:@scope/pkg · git:github.com/user/repo · ./local/path",
   "package.removeTitle": "Remove package",
   "package.removeMessage": "Remove {{pkg}}?",

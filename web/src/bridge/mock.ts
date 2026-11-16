@@ -979,6 +979,13 @@ export class MockBridge implements Bridge {
       ) {
         return delay(1200).then(() => this.handleManage(method, params) as T);
       }
+      // 037 US2: `?pkgload=800` holds every packagesList back so the loading
+      // state — first entry AND the explicit-refresh flow — can be asserted
+      // deterministically instead of racing an instant mock answer.
+      const pkgLoadMs = Number(query()?.get("pkgload") ?? 0);
+      if (method === "manage.packagesList" && Number.isFinite(pkgLoadMs) && pkgLoadMs > 0) {
+        return delay(pkgLoadMs).then(() => this.handleManage(method, params) as T);
+      }
       return Promise.resolve(this.handleManage(method, params) as T);
     }
     if (method.startsWith("queue.")) {
