@@ -41,3 +41,33 @@ describe("marked-footnote pipeline (038)", () => {
     expect(html).not.toContain("footnotes");
   });
 });
+
+import { normalizeFootnoteDefs } from "./footnotePreprocess";
+
+/** Real-machine finding (0.5.10 probe r1): definitions glued to the sentence
+ *  above must still render — the pre-pass splits them into their own block. */
+describe("normalizeFootnoteDefs (038 real-machine robustness)", () => {
+  it("splits a single-newline definition into its own block so it renders", () => {
+    const src = "This is a sentence.[^n1]\n[^n1]: body text\n";
+    const fixed = normalizeFootnoteDefs(src);
+    expect(fixed).toBe("This is a sentence.[^n1]\n\n[^n1]: body text\n");
+    const html = marked.parse(fixed) as string;
+    expect(html).toContain("data-footnote-ref");
+    expect(html).not.toContain("[^n1]");
+  });
+
+  it("leaves well-formed input unchanged", () => {
+    const src = "ref[^a]\n\n[^a]: ok\n";
+    expect(normalizeFootnoteDefs(src)).toBe(src);
+  });
+
+  it("never touches definition-like lines inside fenced code", () => {
+    const src = "```text\n[^x]: not a footnote\n```";
+    expect(normalizeFootnoteDefs(src)).toBe(src);
+  });
+
+  it("handles CRLF; a definition at the very start is already a block", () => {
+    expect(normalizeFootnoteDefs("[^a]: first\r\nline2")).toBe("[^a]: first\nline2");
+    expect(normalizeFootnoteDefs("text[^a]\r\n[^a]: body")).toBe("text[^a]\n\n[^a]: body");
+  });
+});

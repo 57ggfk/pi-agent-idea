@@ -7,6 +7,7 @@ import hljs from "highlight.js/lib/common";
 import { usePiStore } from "../store/store";
 import { i18n } from "../i18n";
 import { copyText } from "../lib/clipboard";
+import { normalizeFootnoteDefs } from "../lib/footnotePreprocess";
 
 marked.setOptions({ gfm: true, breaks: true });
 // 038 US2: marked ^15 has no GFM footnote support of its own (measured:
@@ -181,7 +182,9 @@ export default function Markdown({ text }: { text: string }) {
   const html = useMemo(
     () =>
       stripDecorativeNewlines(
-        DOMPurify.sanitize(marked.parse(text, { async: false }) as string, {
+        DOMPurify.sanitize(
+          marked.parse(normalizeFootnoteDefs(text), { async: false }) as string,
+          {
           // 039 FR-002 (explicit whitelist posture): inline SVG renders via
           // DOMPurify's default svg profile; these two are forbidden even if
           // a future DOMPurify default ever loosened them. Measured with
