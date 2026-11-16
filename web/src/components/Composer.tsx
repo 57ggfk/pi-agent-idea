@@ -4,7 +4,18 @@ import { needsRefresh } from "../store/sources";
 import { autosize, autosizeAndReveal, clampComposerHeight, resetComposerHeight } from "../lib/autosize";
 import { collectPathRefs, type PathRef } from "../lib/clipboardRefs";
 import { findTokens, removeRange, tokenBackspaceAt } from "../lib/inlineChips";
+import {
+  countLines,
+  detectPasteKind,
+  expandPastes,
+  PASTE_FILE_LINES_THRESHOLD,
+  pasteToken,
+  replaceToken,
+  shouldCollapse,
+  type PasteKind,
+} from "../lib/pasteCollapse";
 import { useT } from "../i18n/useT";
+import type { TFunction } from "i18next";
 import ModelPicker from "./ModelPicker";
 import SendButton from "./SendButton";
 import ThinkingPicker from "./ThinkingPicker";
@@ -59,6 +70,27 @@ type Density = 0 | 1 | 2;
 // `看@src` works — requiring a space broke the menu for CJK input — while
 // `user@example.com` still reads as an email, not as a file token.
 const AT_QUERY_RE = /(?:^|[^\w@])@([^\s@]*)$/;
+
+// 044: paste chips in the draft. The token wording is language-neutral by
+// design (restore key = the id), so the scan regex mirrors pasteCollapse's.
+const PASTE_TOKEN_SCAN = /\[Pasted ([A-Za-z]+) #(\d+) \+(\d+) lines\]/g;
+
+/** Hover preview body cap (FR-005): enough to judge, small enough to read. */
+const PASTE_PREVIEW_MAX = 400;
+
+/** Localized kind name for chip labels (FR-003): Markdown/JSON are universal. */
+function pasteKindLabel(t: TFunction, kind: PasteKind): string {
+  switch (kind) {
+    case "code":
+      return t("composer.pasteKind.code");
+    case "log":
+      return t("composer.pasteKind.log");
+    case "text":
+      return t("composer.pasteKind.text");
+    default:
+      return kind;
+  }
+}
 
 type MenuState = "list" | "loading" | "failed" | "empty";
 
@@ -131,6 +163,23 @@ export default function Composer() {
   const [text, setText] = useState("");
   const [mode, setMode] = useState<SendMode>("auto");
   const [images, setImages] = useState<PendingImage[]>([]);
+  // 044: folded pastes — the textarea carries the language-neutral token,
+  // this map holds the full original per token id, and doSend expands it
+  // (FR-007). `expandedPaste` is the last chip the user expanded and has not
+  // edited since: while the content is still intact in the box, a collapse
+  // affordance can fold it back (US2 再折回).
+  const [pastes, setPastes] = useState<Map<number, string>>(new Map());
+  const [expandedPaste, setExpandedPaste] = useState<
+    { id: number; content: string; kind: PasteKind; lines: number; start: number; end: number } | null
+  >(null);
+  // Hover preview for a paste chip (FR-005): read-only, never changes the box.
+  const [pastePreview, setPastePreview] = useState<{ id: number; content: string; kind: PasteKind; lines: number } | null>(null);
+  // FR-011: pastes beyond the file threshold are offered a save-as-file route.
+  const [bigPasteHint, setBigPasteHint] = useState<{ id: number; content: string; kind: PasteKind; lines: number } | null>(null);
+  const nextPasteIdRef = useRef(1);
+  // FR-006: ClipboardEvent carries no modifier state in Chromium/JCEF, so the
+  // Shift gesture is tracked at the window level and read at paste time.
+  const shiftDownRef = useRef(false);
   const [dropActive, setDropActive] = useState(false);
   const [highlightIndex, setHighlightIndex] = useState(0);
   // Menus dismissed with Escape stay closed until the text changes.
@@ -155,6 +204,7 @@ export default function Composer() {
   const composerResetSeq = usePiStore((s) => s.composerResetSeq);
   const clearPendingPrompt = usePiStore((s) => s.clearPendingPrompt);
   const resolveRefs = usePiStore((s) => s.resolveRefs);
+  const savePasteToTempFile = usePiStore((s) => s.savePasteToTempFile);
   const takeDroppedRefs = usePiStore((s) => s.takeDroppedRefs);
   const openComposerPreview = usePiStore((s) => s.openComposerPreview);
   const editing = usePiStore((s) => s.editing);
@@ -204,40 +254,131 @@ export default function Composer() {
   // Spec 018 US1: the text is the single source of truth — a reference is the
   // `@path` text itself, and the mirror overlay paints a pill over each token.
   const tokens = useMemo(() => findTokens(text), [text]);
+
+  /** The full content of the paste a chip stands for — used for expand and preview. */
+  const pasteContent = useCallback(
+    (id: number) => {
+      const direct = pastes.get(id);
+      if (direct !== undefined) return direct;
+      // An expanded chip's entry is gone from the map; the content lives in
+      // expandedPaste until edited.
+      return expandedPaste?.id === id ? expandedPaste.content : undefined;
+    },
+    [pastes, expandedPaste],
+  );
+
+  /** Click on a chip: the token becomes the full original text, selected so
+   *  it is immediately editable/copyable; the collapse affordance appears
+   *  while it stays untouched (FR-004). Declared before the mirror memo —
+   *  the memo's chip pills call it during render. */
+  const expandPaste = useCallback(
+    (id: number, kind: PasteKind, lines: number, start: number, end: number) => {
+      const content = pastes.get(id);
+      if (content === undefined) return;
+      const ta = taRef.current;
+      const next = text.slice(0, start) + content + text.slice(end);
+      applyText(next);
+      setPastes((prev) => {
+        const m = new Map(prev);
+        m.delete(id);
+        return m;
+      });
+      setPastePreview(null);
+      setExpandedPaste({ id, content, kind, lines, start, end: start + content.length });
+      requestAnimationFrame(() => {
+        if (ta) {
+          ta.focus();
+          ta.setSelectionRange(start, start + content.length);
+        }
+      });
+    },
+    [applyText, pastes, text],
+  );
+
   /** The mirror's children: the full text (identical flow → identical
    *  wrapping), with each token span styled as a pill whose padding is
    *  cancelled by negative margins so line-break decisions stay byte-equal
-   *  to the textarea's. A trailing newline gets a visible extra line. */
+   *  to the textarea's. A trailing newline gets a visible extra line.
+   *  044: paste tokens paint the same-byte chip pill (click = expand, hover =
+   *  preview); 044 tokens carry no `@`, so the two scanners never collide. */
   const mirrorContent = useMemo(() => {
     const parts: ReactNode[] = [];
     let pos = 0;
+    const events: Array<{
+      start: number;
+      end: number;
+      render: (key: string) => ReactNode;
+    }> = [];
     for (const tok of tokens) {
-      if (tok.start > pos) parts.push(text.slice(pos, tok.start));
-      parts.push(
-        <span
-          key={`tok-${tok.start}`}
-          className="ref-token"
-          data-testid="ref-token"
-          data-path={tok.path}
-          // Click selects the whole token (then Backspace/typing replaces it).
-          onMouseDown={(e) => {
-            e.preventDefault();
-            const ta = taRef.current;
-            if (ta) {
-              ta.focus();
-              ta.setSelectionRange(tok.start, tok.end);
-            }
-          }}
-        >
-          {`@${tok.path}`}
-        </span>,
-      );
-      pos = tok.end;
+      events.push({
+        start: tok.start,
+        end: tok.end,
+        render: (key) => (
+          <span
+            key={key}
+            className="ref-token"
+            data-testid="ref-token"
+            data-path={tok.path}
+            // Click selects the whole token (then Backspace/typing replaces it).
+            onMouseDown={(e) => {
+              e.preventDefault();
+              const ta = taRef.current;
+              if (ta) {
+                ta.focus();
+                ta.setSelectionRange(tok.start, tok.end);
+              }
+            }}
+          >
+            {`@${tok.path}`}
+          </span>
+        ),
+      });
+    }
+    PASTE_TOKEN_SCAN.lastIndex = 0;
+    for (let m = PASTE_TOKEN_SCAN.exec(text); m; m = PASTE_TOKEN_SCAN.exec(text)) {
+      // Scan groups: 1 = kind, 2 = id, 3 = lines (mirror of pasteToken's text).
+      const id = Number(m[2]);
+      const kind = m[1] as PasteKind;
+      const lines = Number(m[3]);
+      const start = m.index;
+      const end = start + m[0].length;
+      events.push({
+        start,
+        end,
+        render: (key) => (
+          <span
+            key={key}
+            className="paste-chip"
+            data-testid="paste-chip"
+            data-paste-id={id}
+            role="button"
+            aria-label={t("composer.pasteChip", { kind: pasteKindLabel(t, kind), count: lines })}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              expandPaste(id, kind, lines, start, end);
+            }}
+            onMouseEnter={() => {
+              const content = pasteContent(id);
+              if (content !== undefined) setPastePreview({ id, content, kind, lines });
+            }}
+            onMouseLeave={() => setPastePreview(null)}
+          >
+            {m[0]}
+          </span>
+        ),
+      });
+    }
+    events.sort((a, b) => a.start - b.start);
+    for (const ev of events) {
+      if (ev.start > pos) parts.push(text.slice(pos, ev.start));
+      parts.push(ev.render(`ev-${ev.start}`));
+      pos = ev.end;
     }
     parts.push(text.slice(pos));
     if (text.endsWith("\n")) parts.push("\n");
     return parts;
-  }, [text, tokens]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text, tokens, pastes, expandedPaste, pasteContent]);
 
   /** Keeps the mirror aligned when the capped textarea scrolls internally. */
   const syncMirrorScroll = useCallback(() => {
@@ -248,6 +389,96 @@ export default function Composer() {
       mirror.scrollLeft = ta.scrollLeft;
     }
   }, []);
+
+  /** FR-006: track Shift at the window level (ClipboardEvent has no modifiers
+   *  in Chromium/JCEF); paste reads this instead of the event. */
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.key === "Shift") shiftDownRef.current = true;
+    };
+    const up = (e: KeyboardEvent) => {
+      if (e.key === "Shift") shiftDownRef.current = false;
+    };
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+    };
+  }, []);
+
+  /** US2 再折回: the expanded content is only collapsible while untouched —
+   *  any edit invalidates the affordance (the text is plain prose again). */
+  useEffect(() => {
+    if (!expandedPaste) return;
+    if (text.slice(expandedPaste.start, expandedPaste.end) !== expandedPaste.content) {
+      setExpandedPaste(null);
+    }
+  }, [text, expandedPaste]);
+
+  /** Folds the expanded content back into its chip (US2), keeping the same
+   *  token id so the paste map entry round-trips. */
+  const collapseExpanded = useCallback(() => {
+    if (!expandedPaste) return;
+    const { id, content, kind, lines, start, end } = expandedPaste;
+    const token = pasteToken(id, kind, lines);
+    applyText(text.slice(0, start) + token + text.slice(end));
+    setPastes((prev) => new Map(prev).set(id, content));
+    setExpandedPaste(null);
+  }, [applyText, expandedPaste, text]);
+
+  /** Folds a paste in at the current selection (FR-001/FR-002). */
+  const foldPastedText = useCallback(
+    (plain: string) => {
+      const ta = taRef.current;
+      const id = nextPasteIdRef.current++;
+      const kind = detectPasteKind(plain);
+      const lines = countLines(plain.replace(/\r\n/g, "\n"));
+      const token = pasteToken(id, kind, lines);
+      const start = ta?.selectionStart ?? text.length;
+      const end = ta?.selectionEnd ?? text.length;
+      applyText(text.slice(0, start) + token + text.slice(end));
+      setPastes((prev) => new Map(prev).set(id, plain));
+      if (lines > PASTE_FILE_LINES_THRESHOLD) {
+        setBigPasteHint({ id, content: plain, kind, lines });
+      }
+      requestAnimationFrame(() => {
+        if (ta) {
+          ta.focus();
+          ta.setSelectionRange(start + token.length, start + token.length);
+        }
+      });
+    },
+    [applyText, text],
+  );
+
+  /** FR-011/FR-012: swap a folded chip for an `@path` reference to a temp
+   * file holding the full content. Write failure keeps the chip intact
+   * (FR-013); the content is never lost either way. */
+  const savePasteAsFile = useCallback(
+    async (info: { id: number; content: string; kind: PasteKind; lines: number }) => {
+      setBigPasteHint(null);
+      const res = await savePasteToTempFile(info.content);
+      if (!res.ok || !res.path) {
+        // Folded chip stays; surface the failure through the paste preview so
+        // it is perceivable without a second toast system.
+        setPastePreview(null);
+        setBigPasteHint(null);
+        return;
+      }
+      const r = replaceToken(text, info.id, `@${res.path} `);
+      if (r) {
+        applyText(r.text);
+        setPastes((prev) => {
+          const m = new Map(prev);
+          m.delete(info.id);
+          return m;
+        });
+        setExpandedPaste(null);
+      }
+    },
+    [applyText, savePasteToTempFile, text],
+  );
 
   /** Picks the densest level that still fits on one line — measured, so a long
    *  model name collapses the pickers instead of pushing the row to wrap. */
@@ -508,7 +739,9 @@ export default function Composer() {
     // 021: the send path is gated on the switch, not just the button (a
     // keyboard shortcut must not slip through a disabled button).
     if (pendingSwitch != null) return;
-    const body = text.trim();
+    // 044 FR-007: pi receives the full original content, never the chip
+    // tokens — the transcript stays fully viewable and copyable.
+    const body = expandPastes(text, pastes).trim();
     // Tokens live inline in the text (018 US1) — a message of only references
     // is non-empty text, so "text or images" is the whole sendability rule.
     if (!body && images.length === 0) return;
@@ -516,6 +749,10 @@ export default function Composer() {
     // must branch the old version off rather than append to it.
     const isEditing = editing != null;
     setText("");
+    setPastes(new Map());
+    setExpandedPaste(null);
+    setPastePreview(null);
+    setBigPasteHint(null);
     setImages([]);
     setHighlightIndex(0);
     setFileHighlight(0);
@@ -875,6 +1112,34 @@ export default function Composer() {
           </button>
         </div>
       ) : null}
+      {/* 044 FR-011: pastes beyond the file threshold are offered the
+          save-as-file route — a suggestion, never forced (044 Q7). */}
+      {bigPasteHint ? (
+        <div className="paste-big-hint" data-testid="paste-big-hint">
+          <span>
+            {t("composer.pasteBigHint", {
+              count: bigPasteHint.lines,
+              kind: pasteKindLabel(t, bigPasteHint.kind),
+            })}
+          </span>
+          <button
+            type="button"
+            className="btn btn-sm"
+            data-testid="paste-save-file"
+            onClick={() => void savePasteAsFile(bigPasteHint)}
+          >
+            {t("composer.pasteSaveFile")}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm"
+            data-testid="paste-big-hint-dismiss"
+            onClick={() => setBigPasteHint(null)}
+          >
+            {t("common.dismiss")}
+          </button>
+        </div>
+      ) : null}
       <div className="composer-box">
         <input
           ref={fileRef}
@@ -894,6 +1159,46 @@ export default function Composer() {
           <div className="composer-mirror" data-testid="composer-mirror" aria-hidden="true" ref={mirrorRef}>
             {mirrorContent}
           </div>
+          {/* 044 FR-004: the collapse affordance — shown only while the
+              expanded content is still untouched at its exact range. */}
+          {expandedPaste ? (
+            <button
+              type="button"
+              className="paste-collapse-btn"
+              data-testid="paste-collapse"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={collapseExpanded}
+            >
+              {t("composer.pasteCollapse")}
+            </button>
+          ) : null}
+          {/* 044 FR-005: read-only hover preview for a paste chip. The "save
+              as file" affordance lives here too (FR-011): the chip pill itself
+              must stay byte-equal to the textarea, so its interactive extras
+              surface in the preview. */}
+          {pastePreview ? (
+            <div className="paste-preview" data-testid="paste-preview">
+              <div className="paste-preview-head">
+                {t("composer.pasteChip", {
+                  kind: pasteKindLabel(t, pastePreview.kind),
+                  count: pastePreview.lines,
+                })}
+                {pastePreview.content.length > PASTE_PREVIEW_MAX ? t("composer.pastePreviewMore") : ""}
+              </div>
+              <pre className="paste-preview-body">{pastePreview.content.slice(0, PASTE_PREVIEW_MAX)}</pre>
+              <div className="paste-preview-actions">
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  data-testid="paste-preview-save"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => void savePasteAsFile(pastePreview)}
+                >
+                  {t("composer.pasteSaveFile")}
+                </button>
+              </div>
+            </div>
+          ) : null}
           <textarea
           ref={taRef}
           data-testid="composer-input"
@@ -929,14 +1234,19 @@ export default function Composer() {
             // (015), but 018 US3 tightened the text flavour: only a whole
             // payload of one whitespace-free path counts. Multi-line markdown
             // pastes are text now — the default browser insertion runs.
-            const dropped = collectPathRefs(
-              sweepFiles(cb),
-              cb.getData("text/uri-list") ?? "",
-              cb.getData("text/plain") ?? "",
-            );
+            const plain = cb.getData("text/plain") ?? "";
+            const dropped = collectPathRefs(sweepFiles(cb), cb.getData("text/uri-list") ?? "", plain);
             if (dropped.length > 0) {
               e.preventDefault();
               void resolveAndInsert(dropped);
+              return;
+            }
+            // 044 FR-001: a large plain-text paste folds into a chip (the full
+            // content stays in the paste map, restored at send). Shift+paste
+            // (FR-006) and short pastes (US6) take the default insertion.
+            if (plain && !shiftDownRef.current && shouldCollapse(plain)) {
+              e.preventDefault();
+              foldPastedText(plain);
             }
           }}
           onKeyDown={(e) => {

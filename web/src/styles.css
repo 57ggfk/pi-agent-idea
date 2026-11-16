@@ -2671,6 +2671,95 @@ button {
   margin: 0 -3px;
 }
 
+/* 044: folded paste chip — same pill geometry as .ref-token (byte-equal
+   text keeps the mirror flow aligned), distinct hue so a fold is not
+   mistaken for an @reference. */
+.paste-chip {
+  pointer-events: auto;
+  cursor: pointer;
+  border-radius: 5px;
+  background: var(--bg-tertiary, var(--bg-secondary));
+  color: var(--text-secondary);
+  box-shadow: 0 0 0 1px var(--border-strong, var(--border));
+  padding: 0 3px;
+  margin: 0 -3px;
+}
+
+/* 044 FR-004: the collapse affordance sits on the input wrap's top-right. */
+.paste-collapse-btn {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  z-index: 3;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  padding: 1px 8px;
+  cursor: pointer;
+}
+
+.paste-collapse-btn:hover {
+  color: var(--text);
+  border-color: var(--border-strong, var(--border));
+}
+
+/* 044 FR-005: read-only hover preview floating above the input wrap. */
+.paste-preview {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 4;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  padding: 8px 10px;
+  max-height: 220px;
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+.paste-preview-head {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.paste-preview-body {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  max-height: 150px;
+  overflow: hidden;
+}
+
+.paste-preview-actions {
+  margin-top: 6px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* 044 FR-011: the >2000-line suggestion bar above the composer. */
+.paste-big-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
 .composer-controls {
   display: flex;
   align-items: center;

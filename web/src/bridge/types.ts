@@ -26,6 +26,7 @@ export type BridgeMethod =
   | "sessions.fork"
   | "sessions.exportHtml"
   | "files.list"
+  | "files.saveTemp"
   | "ide.repaint"
   | "ide.openFile"
   | "ide.showFileDiff"
