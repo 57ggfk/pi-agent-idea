@@ -142,6 +142,8 @@ class BridgeService(private val project: Project) : Disposable {
                 "files.takeDrop" -> filesTakeDrop()
                 // 044 FR-012: large paste text → temp file → @path reference.
                 "files.saveTemp" -> filesSaveTemp(params, instanceId)
+                // 044 FR-014: existence check for temp paste references.
+                "files.exist" -> filesExist(params)
                 "ide.repaint" -> repaintBrowser()
                 "ui.reload" -> uiReloaded(params)
                 "ide.openFile" -> openFileInEditor(params)
@@ -1294,6 +1296,21 @@ class BridgeService(private val project: Project) : Disposable {
     /** 044 FR-013: temp paste dirs per instance, deleted when the instance closes. */
     private val pasteTempFiles =
         java.util.concurrent.ConcurrentHashMap<Int, java.util.concurrent.CopyOnWriteArrayList<java.nio.file.Path>>()
+
+    /**
+     * 044 FR-014: existence check for a batch of paths (session-level cleanup
+     * means a historical `@pi-paste-…` reference can go stale). Pure reads —
+     * missing files are an expected outcome, not an error.
+     */
+    private fun filesExist(params: JsonObject): JsonObject {
+        val inputs = params["paths"] as? JsonArray ?: JsonArray(emptyList())
+        val flags = inputs.mapNotNull { (it as? JsonPrimitive)?.content }.map { path ->
+            runCatching { java.nio.file.Files.exists(java.nio.file.Path.of(path)) }.getOrDefault(false)
+        }
+        return buildJsonObject {
+            put("exists", buildJsonArray { flags.forEach { add(it) } })
+        }
+    }
 
     /** Deletes a tool-window instance's temp paste files (FR-013); failures are logged, never thrown. */
     private fun cleanupPasteTempFiles(instanceId: Int) {

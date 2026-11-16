@@ -14,6 +14,7 @@ import {
   shouldCollapse,
   type PasteKind,
 } from "../lib/pasteCollapse";
+import { findTempRefPaths } from "../lib/tempRefs";
 import { useT } from "../i18n/useT";
 import type { TFunction } from "i18next";
 import ModelPicker from "./ModelPicker";
@@ -176,6 +177,8 @@ export default function Composer() {
   const [pastePreview, setPastePreview] = useState<{ id: number; content: string; kind: PasteKind; lines: number } | null>(null);
   // FR-011: pastes beyond the file threshold are offered a save-as-file route.
   const [bigPasteHint, setBigPasteHint] = useState<{ id: number; content: string; kind: PasteKind; lines: number } | null>(null);
+  // 044 FR-014: temp paste files referenced by the draft but already cleaned.
+  const [tempRefWarning, setTempRefWarning] = useState<string[] | null>(null);
   const nextPasteIdRef = useRef(1);
   // FR-006: ClipboardEvent carries no modifier state in Chromium/JCEF, so the
   // Shift gesture is tracked at the window level and read at paste time.
@@ -205,6 +208,7 @@ export default function Composer() {
   const clearPendingPrompt = usePiStore((s) => s.clearPendingPrompt);
   const resolveRefs = usePiStore((s) => s.resolveRefs);
   const savePasteToTempFile = usePiStore((s) => s.savePasteToTempFile);
+  const checkTempRefs = usePiStore((s) => s.checkTempRefs);
   const takeDroppedRefs = usePiStore((s) => s.takeDroppedRefs);
   const openComposerPreview = usePiStore((s) => s.openComposerPreview);
   const editing = usePiStore((s) => s.editing);
@@ -735,10 +739,22 @@ export default function Composer() {
     if (needsRefresh(usePiStore.getState().sources.files)) void loadFiles();
   }, [atOpen, loadFiles]);
 
-  const doSend = () => {
+  const doSend = async () => {
     // 021: the send path is gated on the switch, not just the button (a
     // keyboard shortcut must not slip through a disabled button).
     if (pendingSwitch != null) return;
+    // 044 FR-014: a temp paste file may have been cleaned while a draft or a
+    // restored edit still references it — never submit a stale @path silently.
+    const tempPaths = findTempRefPaths(text);
+    if (tempPaths.length > 0) {
+      const exists = await checkTempRefs(tempPaths);
+      const missing = tempPaths.filter((p) => !exists[p]);
+      if (missing.length > 0) {
+        setTempRefWarning(missing);
+        return;
+      }
+    }
+    setTempRefWarning(null);
     // 044 FR-007: pi receives the full original content, never the chip
     // tokens — the transcript stays fully viewable and copyable.
     const body = expandPastes(text, pastes).trim();
@@ -1109,6 +1125,24 @@ export default function Composer() {
             onClick={cancelEdit}
           >
             Esc
+          </button>
+        </div>
+      ) : null}
+      {/* 044 FR-014: the draft references a temp paste file that the
+          session-level cleanup has already removed — sending is blocked until
+          the reference is removed or edited. */}
+      {tempRefWarning ? (
+        <div className="paste-big-hint" data-testid="temp-ref-warning">
+          <span>
+            {t("composer.tempRefGone", { paths: tempRefWarning.join("、") })}
+          </span>
+          <button
+            type="button"
+            className="btn btn-sm"
+            data-testid="temp-ref-warning-dismiss"
+            onClick={() => setTempRefWarning(null)}
+          >
+            {t("common.dismiss")}
           </button>
         </div>
       ) : null}
