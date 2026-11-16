@@ -17,6 +17,8 @@ async function sendDiffReply(page: import("@playwright/test").Page, extra = "") 
   const code = page.locator(".markdown pre code.language-diff");
   await expect(code).toHaveCount(1, { timeout: 30_000 });
   const pre = page.locator(".markdown pre").filter({ has: page.locator("code.language-diff") });
+  // Settled = the reply's trailing footnote section arrived (end of stream).
+  await expect(page.locator(".markdown section.footnotes")).toContainText("Follow-up notes.", { timeout: 30_000 });
   return pre;
 }
 
