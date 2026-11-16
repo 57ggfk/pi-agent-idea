@@ -2499,10 +2499,18 @@ export class MockBridge implements Bridge {
             "More notes[^2].\n\n" +
             "[^1]: The change record.\n" +
             "[^2]: Follow-up notes."
-          : `Here is my plan for **${prompt.slice(0, 60)}**:\n\n` +
-            "1. Inspect the repository layout\n" +
-            "2. Run a quick sanity check\n\n" +
-            "Let me start with a shell command.";
+          : this.mdKnob === "svg"
+            ? // 039: a legal inline SVG plus a malicious one — the sanitizer
+              // must render the first and strip the second's vectors.
+              "Icon:\n\n" +
+              '<svg viewBox="0 0 20 20" width="20" height="20"><circle cx="10" cy="10" r="8" fill="#1a7f37"></circle></svg>\n\n' +
+              "Danger:\n\n" +
+              '<svg viewBox="0 0 20 20" width="20"><script>alert(1)</script><foreignObject><body>x</body></foreignObject><a xlink:href="http://evil.example"><rect width="10" height="10"></rect></a></svg>\n\n' +
+              'Malformed: <svg viewBox="0 0 20 20"><rect width="10" '
+              : `Here is my plan for **${prompt.slice(0, 60)}**:\n\n` +
+                "1. Inspect the repository layout\n" +
+                "2. Run a quick sanity check\n\n" +
+                "Let me start with a shell command.";
     await sleep(30);
     emit({ type: "message_update", usage: {}, assistantMessageEvent: { type: "text_start", contentIndex: 1 } });
     for (const chunk of chunkWords(text)) {

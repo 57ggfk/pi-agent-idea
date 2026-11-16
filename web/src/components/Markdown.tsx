@@ -174,7 +174,17 @@ function addCopyButtons(root: ParentNode, copiedUntil: Map<number, number>, open
 export default function Markdown({ text }: { text: string }) {
   registerPurifyHooks();
   const html = useMemo(
-    () => stripDecorativeNewlines(DOMPurify.sanitize(marked.parse(text, { async: false }) as string)),
+    () =>
+      stripDecorativeNewlines(
+        DOMPurify.sanitize(marked.parse(text, { async: false }) as string, {
+          // 039 FR-002 (explicit whitelist posture): inline SVG renders via
+          // DOMPurify's default svg profile; these two are forbidden even if
+          // a future DOMPurify default ever loosened them. Measured with
+          // DOMPurify 3.x: script / on* / foreignObject / remote href were
+          // already stripped — this pins the guarantee at our call site.
+          FORBID_TAGS: ["script", "foreignObject"],
+        }),
+      ),
     [text],
   );
   const ref = useRef<HTMLDivElement>(null);

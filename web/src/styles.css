@@ -1113,6 +1113,13 @@ button {
   margin-left: 4px;
 }
 
+/* 039 FR-001: inline SVG stays inside the message bubble — scale down to the
+   container instead of overflowing the tool window. */
+.markdown svg {
+  max-width: 100%;
+  height: auto;
+}
+
 /* Manage view */
 .manage-view-full {
   flex: 1;
