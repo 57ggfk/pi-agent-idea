@@ -149,7 +149,7 @@ test("pastes beyond 2000 lines are offered the save-as-file route and get an @re
   await expect(page.getByTestId("paste-chip")).toHaveCount(0);
   await expect(page.getByTestId("ref-token")).toHaveCount(1);
   const value = await page.evaluate(() => (document.querySelector('[data-testid="composer-input"]') as HTMLTextAreaElement).value);
-  expect(value).toContain("@/tmp/mock-home/.pi/pastes/pasted-1.txt");
+  expect(value).toContain("@/tmp/mock-home/pi-paste-1-x/pasted-1.txt");
   expect(value).not.toContain("[Pasted");
 });
 

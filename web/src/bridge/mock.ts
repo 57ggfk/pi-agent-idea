@@ -799,7 +799,15 @@ export class MockBridge implements Bridge {
         return { ok: false, error: "temp write failed (mock)" } as T;
       }
       const n = (this.saveTempSeq += 1);
-      return { ok: true, path: `/tmp/mock-home/.pi/pastes/pasted-${n}.txt` } as T;
+      return { ok: true, path: `/tmp/mock-home/pi-paste-1-x/pasted-${n}.txt` } as T;
+    }
+    if (method === "files.exist") {
+      // 044 FR-014 mock: temp paste paths exist unless `?temprefs=gone`
+      // simulates the session-level cleanup having removed them.
+      const gone = query()?.get("temprefs") === "gone";
+      const p = params as { paths?: string[] } | undefined;
+      const exists = (p?.paths ?? []).map((path) => !gone && path.includes("pi-paste-"));
+      return { exists } as T;
     }
     if (method === "files.relpath") {
       // Spec 015: drop/paste references get resolved to project-relative

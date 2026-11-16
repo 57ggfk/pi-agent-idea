@@ -27,6 +27,7 @@ export type BridgeMethod =
   | "sessions.exportHtml"
   | "files.list"
   | "files.saveTemp"
+  | "files.exist"
   | "ide.repaint"
   | "ide.openFile"
   | "ide.openSnippet"

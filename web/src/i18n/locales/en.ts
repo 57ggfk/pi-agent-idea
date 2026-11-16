@@ -81,6 +81,7 @@ export const en = {
   "composer.pastePreviewMore": " · …expand to see everything",
   "composer.pasteSaveFile": "Save as file",
   "composer.pasteBigHint": "Large paste ({{count}} lines) — save it as a file reference instead?",
+  "composer.tempRefGone": "The referenced temp file has been cleaned up, so the message cannot be sent: {{paths}}. Remove or edit the reference.",
 
   // -- send button & queue modes ---------------------------------------------
   "send.label": "Send",

@@ -593,6 +593,13 @@ interface PiStore {
   /** 041 FR-002: opens a code-block snippet in a read-only in-memory IDE tab. */
   openSnippet(language: string, text: string): Promise<boolean>;
   /**
+   * 044 FR-014: existence check for a batch of paths (session temp files can
+   * be cleaned while a historical @path reference still mentions them).
+   * Returns a map path → exists; unreachable transport maps everything to
+   * true (fail-open: a broken checker must not block sending).
+   */
+  checkTempRefs(paths: string[]): Promise<Record<string, boolean>>;
+  /**
    * Takes the paths of the file/folder drag that just entered the panel from
    * the IDE side (spec 016) — the only place the real absolute paths exist.
    * Empty when the drag carried no files or the bridge is too old.
@@ -1739,6 +1746,19 @@ export const usePiStore = create<PiStore>((set, get) => {
         return res?.ok !== false;
       } catch {
         return false;
+      }
+    },
+
+    /** 044 FR-014: batch existence check; fail-open on transport errors. */
+    async checkTempRefs(paths) {
+      if (paths.length === 0) return {};
+      if (!bridge) return Object.fromEntries(paths.map((p) => [p, true]));
+      try {
+        const res = await bridge.request<{ exists?: boolean[] }>("files.exist", { paths });
+        const flags = res.exists ?? [];
+        return Object.fromEntries(paths.map((p, i) => [p, flags[i] !== false]));
+      } catch {
+        return Object.fromEntries(paths.map((p) => [p, true]));
       }
     },
 
