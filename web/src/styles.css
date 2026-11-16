@@ -409,6 +409,38 @@ button {
   opacity: 0.85;
 }
 
+/* 041 FR-001: Copy + "open in IDE" sit side by side in one anchored
+   container, so the second button never overlaps the first. */
+.code-actions {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  gap: 4px;
+  z-index: 1;
+}
+
+.code-actions .code-copy-btn,
+.code-actions .code-ide-btn {
+  position: static;
+}
+
+.code-ide-btn {
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 10px;
+  cursor: pointer;
+  opacity: 0.85;
+}
+
+.code-ide-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
 .code-copy-btn:hover {
   border-color: var(--accent);
   color: var(--text);

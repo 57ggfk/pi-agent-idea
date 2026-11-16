@@ -145,6 +145,8 @@ class BridgeService(private val project: Project) : Disposable {
                 "ide.repaint" -> repaintBrowser()
                 "ui.reload" -> uiReloaded(params)
                 "ide.openFile" -> openFileInEditor(params)
+                // 041 FR-002: open a code-block snippet in a read-only, in-memory editor.
+                "ide.openSnippet" -> openSnippetInEditor(params)
                 "ide.showFileDiff" -> showFileDiff(params)
                 "ide.openTerminal" -> dev.pi.agent.bridge.PiIdeTerminal.open(
                     project,
@@ -789,6 +791,27 @@ class BridgeService(private val project: Project) : Disposable {
             ?: throw IllegalArgumentException("file not found: $path")
         com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
             com.intellij.openapi.fileEditor.OpenFileDescriptor(project, vf, line - 1, 0).navigate(true)
+        }
+        return buildJsonObject { put("ok", true) }
+    }
+
+    /** 041: in-memory snippet tab counter (dedupes the tab names). */
+    private val snippetSeq = java.util.concurrent.atomic.AtomicInteger(1)
+
+    /**
+     * 041 FR-003/FR-004: opens a fenced code block in the IDE editor as an
+     * in-memory, read-only file with the best matching language. Nothing is
+     * written to disk; an unknown language degrades to plain text instead of
+     * an error (US2).
+     */
+    private fun openSnippetInEditor(params: JsonObject): JsonObject {
+        val text = (params["text"] as? JsonPrimitive)?.content
+            ?: return buildJsonObject { put("ok", false); put("error", "missing text") }
+        val language = (params["language"] as? JsonPrimitive)?.content ?: ""
+        val vf = SnippetFiles.buildVirtualFile(language, text, snippetSeq.getAndIncrement())
+        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
+            if (project.isDisposed) return@invokeLater
+            com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).openFile(vf, true)
         }
         return buildJsonObject { put("ok", true) }
     }

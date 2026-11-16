@@ -10,6 +10,7 @@ export const en = {
   "common.dismiss": "Dismiss",
   "common.close": "Close",
   "common.copy": "Copy",
+  "markdown.openInIde": "Open in IDE",
   "common.delete": "Delete",
   "common.loading": "Loading…",
 
