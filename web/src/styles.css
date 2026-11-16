@@ -1120,6 +1120,18 @@ button {
   height: auto;
 }
 
+/* 040 US2: rendered mermaid diagrams — same container constraint, centered,
+   with the hidden source kept selectable for the copy button. */
+.markdown .mermaid-figure {
+  text-align: center;
+  overflow: hidden;
+}
+
+.markdown .mermaid-figure svg {
+  max-width: 100%;
+  height: auto;
+}
+
 /* Manage view */
 .manage-view-full {
   flex: 1;
