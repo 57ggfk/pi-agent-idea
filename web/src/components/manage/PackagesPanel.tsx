@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { managementQueueRun, managementQueueSnapshot, managementQueueSubscribe } from "../../lib/opQueue";
+import { packagesListState } from "../../lib/packagesState";
 import { useT } from "../../i18n/useT";
 import { usePiStore } from "../../store/store";
 import { OutcomeBanner } from "../ManageView";
@@ -154,7 +155,11 @@ export default function PackagesPanel({ api }: { api: ReturnType<typeof manageAp
       setResult(res);
       return res;
     } catch (e) {
-      setOutcome({ ok: false, error: (e as Error).message });
+      const error = (e as Error).message;
+      setOutcome({ ok: false, error });
+      // 037 FR-005: a transport-level failure must surface as the error state,
+      // not linger as "loading" (the old code left `result` null here).
+      setResult({ ok: false, error });
       return null;
     } finally {
       setBusy(false);
@@ -369,7 +374,17 @@ export default function PackagesPanel({ api }: { api: ReturnType<typeof manageAp
             >
               {t("package.updateAll")}
             </button>
-            <button className="btn" data-testid="packages-refresh" onClick={() => void refresh()} disabled={busy}>
+            <button
+              className="btn"
+              data-testid="packages-refresh"
+              onClick={() => {
+                // 037 US2: an explicit refresh goes back to the loading state
+                // first (action-triggered reloads keep the old list visible).
+                setResult(null);
+                void refresh();
+              }}
+              disabled={busy}
+            >
               {t("package.refresh")}
             </button>
           </div>
@@ -386,11 +401,35 @@ export default function PackagesPanel({ api }: { api: ReturnType<typeof manageAp
             );
           })()}
 
-          {entries.length === 0 ? (
-            <div className="panel-empty" data-testid="packages-empty">
-              {result?.error ? result.error : t("package.empty")}
-            </div>
-          ) : (
+          {(() => {
+            // 037 FR-004/FR-005: loading (null) vs error vs empty are three
+            // different states; the pre-037 code rendered the empty copy for
+            // all of them while the first list was still in flight.
+            switch (packagesListState(result)) {
+              case "loading":
+                return (
+                  <div className="panel-empty" data-testid="packages-loading">
+                    {t("package.listLoading")}
+                  </div>
+                );
+              case "error":
+                return (
+                  <div className="panel-empty" data-testid="packages-error">
+                    {result?.error}
+                  </div>
+                );
+              case "empty":
+                return (
+                  <div className="panel-empty" data-testid="packages-empty">
+                    {t("package.empty")}
+                  </div>
+                );
+              case "list":
+                return null;
+            }
+          })()}
+
+          {packagesListState(result) === "list" &&
             entries.map((entry, i) => (
               <PackageRow
                 key={`${entry.source}-${i}`}
@@ -420,8 +459,7 @@ export default function PackagesPanel({ api }: { api: ReturnType<typeof manageAp
                   })
                 }
               />
-            ))
-          )}
+            ))}
         </>
       )}
     </div>

@@ -480,6 +480,7 @@ export const zh: Dict = {
   "package.remove": "移除",
   "package.updateAll": "全部升级",
   "package.empty": "未安装任何扩展包。",
+  "package.listLoading": "正在加载扩展包…",
   "package.placeholder": "npm:@scope/pkg · git:github.com/user/repo · ./本地路径",
   "package.removeTitle": "移除扩展包",
   "package.removeMessage": "移除 {{pkg}}？",
