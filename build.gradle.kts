@@ -1,5 +1,7 @@
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 
 plugins {
     id("java")
@@ -145,17 +147,44 @@ val syncWebUi = tasks.register<Sync>("syncWebUi") {
     into(webUiStaging.map { it.dir("webui") })
 }
 
+// 036 FR-005: build time + commit id, generated at build time and shipped in
+// the plugin jar. The diagnostics page degrades to "unknown" when either is
+// missing (e.g. the git call fails), so the values may be empty by design.
+val buildInfoDir = layout.buildDirectory.dir("generated/buildinfo")
+val generateBuildInfo = tasks.register("generateBuildInfo") {
+    outputs.dir(buildInfoDir)
+    doLast {
+        val commit = try {
+            val proc = ProcessBuilder("git", "rev-parse", "--short", "HEAD")
+                .redirectErrorStream(true)
+                .start()
+            val out = proc.inputStream.readBytes().toString(Charsets.UTF_8).trim()
+            if (proc.waitFor() == 0) out else ""
+        } catch (_: Exception) {
+            ""
+        }
+        val time = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
+        val props = buildInfoDir.get().asFile.resolve("pi-build.properties")
+        props.parentFile.mkdirs()
+        props.writeText(
+            "# Generated at build time; empty values degrade to unknown in the UI.\n" +
+                "buildTime=$time\ncommitId=$commit\n",
+        )
+    }
+}
+
 sourceSets {
     main {
         resources {
             srcDir(webUiStaging)
+            srcDir(generateBuildInfo)
         }
     }
 }
 
 tasks {
     processResources {
-        dependsOn(syncWebUi)
+        dependsOn(syncWebUi, generateBuildInfo)
     }
 
     test {

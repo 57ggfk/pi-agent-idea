@@ -297,4 +297,38 @@ class PiEnvironmentTest {
         assertEquals("", fine["installBlocker"]!!.jsonPrimitive.content)
         assertTrue(fine["canInstall"]!!.jsonPrimitive.boolean)
     }
+
+    @Test
+    fun `detectTools reports the node and npm pair (036 FR-001)`() {
+        val full = PiEnvironment.detectTools(
+            nodePath = { "/usr/bin/node" },
+            npmPath = { "/usr/bin/npm" },
+            versionOf = { _, c -> if (c.contains("-v")) "v24.1.0" else null },
+        )
+        assertTrue(full.first["found"]!!.jsonPrimitive.boolean)
+        assertEquals("/usr/bin/node", full.first["path"]!!.jsonPrimitive.content)
+        assertEquals("v24.1.0", full.first["version"]!!.jsonPrimitive.content)
+        assertTrue(full.second["found"]!!.jsonPrimitive.boolean)
+        assertEquals("/usr/bin/npm", full.second["path"]!!.jsonPrimitive.content)
+
+        // FR-002: a missing tool is a clear found=false, not a blank.
+        val none = PiEnvironment.detectTools(
+            nodePath = { null }, npmPath = { null }, versionOf = { _, _ -> null },
+        )
+        assertFalse(none.first["found"]!!.jsonPrimitive.boolean)
+        assertEquals("", none.first["path"]!!.jsonPrimitive.content)
+        assertFalse(none.second["found"]!!.jsonPrimitive.boolean)
+    }
+
+    @Test
+    fun `buildInfo and pluginVersion never throw and degrade gracefully (036 FR-003 FR-004)`() {
+        // On the gradle test classpath the generated resource exists; without
+        // it (dev runIde, missing resource) the read degrades to empty. Both
+        // shapes must hold without throwing.
+        val (time, commit) = PiManage.buildInfo()
+        assertTrue(time.isEmpty() || Regex("""\d{4}-\d{2}-\d{2} \d{2}:\d{2}""").matches(time))
+        assertTrue(commit.isEmpty() || Regex("""^[0-9a-f]{7,40}$""").matches(commit))
+        // Outside the IDE runtime there is no plugin descriptor — empty, never a throw.
+        assertEquals("", PiManage.pluginVersion())
+    }
 }

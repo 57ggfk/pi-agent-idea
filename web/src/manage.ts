@@ -314,6 +314,13 @@ export interface EnvironmentResult extends CliOutcome {
   path?: string;
   version?: string;
   agentDir?: string;
+  /** 036: the diagnostics card adds the node/npm pair + plugin/build info. */
+  node?: ToolStatus;
+  npm?: ToolStatus;
+  homeDir?: string;
+  pluginVersion?: string;
+  buildTime?: string;
+  commitId?: string;
 }
 
 /** One detected tool: node, npm or pi. */
@@ -373,6 +380,8 @@ export interface EnvInstallResult extends CliOutcome {
 export interface SettingsReadResult extends CliOutcome {
   path?: string;
   text?: string;
+  /** 036: lets the panel shorten home-prefixed paths for display only. */
+  homeDir?: string;
 }
 
 /** 032: what the IDE would append to pi's system prompt this turn (Q6-b). */

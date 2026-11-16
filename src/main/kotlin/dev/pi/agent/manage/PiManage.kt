@@ -580,6 +580,9 @@ object PiManage {
             put("path", file.absolutePath)
             put("text", text)
             put("json", parsed)
+            // 036 FR-006: the settings panel shortens home-prefixed paths for
+            // display; the raw path above remains the value everything else uses.
+            put("homeDir", System.getProperty("user.home") ?: "")
         }
     }
 
@@ -601,14 +604,47 @@ object PiManage {
 
     // -- Environment ---------------------------------------------------------
 
+    /**
+     * 036 FR-004: the plugin's own version from the runtime descriptor (public
+     * API). Empty outside the IDE (plain unit tests) — the UI degrades.
+     */
+    internal fun pluginVersion(): String = runCatching {
+        com.intellij.ide.plugins.PluginManagerCore.getPlugin(
+            com.intellij.openapi.extensions.PluginId.getId("dev.pi.agent"),
+        )?.version ?: ""
+    }.getOrDefault("")
+
+    /**
+     * 036 FR-005: the build-time stamp + commit id gradle wrote into
+     * [pi-build.properties] (see build.gradle.kts generateBuildInfo). Empty
+     * when the resource is absent (runIde dev runs) — degrade, never throw.
+     */
+    internal fun buildInfo(): Pair<String, String> {
+        val props = java.util.Properties()
+        val stream = PiManage::class.java.classLoader.getResourceAsStream("pi-build.properties") ?: return "" to ""
+        stream.use { props.load(it) }
+        return (props.getProperty("buildTime") ?: "") to (props.getProperty("commitId") ?: "")
+    }
+
     fun environment(): JsonObject {
         val install = dev.pi.agent.process.PiLocator.locate(forceRefresh = true)
+        val (node, npm) = PiEnvironment.detectTools()
+        val (buildTime, commitId) = buildInfo()
         return buildJsonObject {
             put("ok", true)
             put("found", install != null)
             put("path", install?.path ?: "")
             put("version", install?.version ?: "")
             put("agentDir", PiCliRunner.agentDir().absolutePath)
+            // 036 FR-001: the diagnostics card surfaces what the setup probing
+            // already computes — no second detection path to drift.
+            put("node", node)
+            put("npm", npm)
+            // 036 FR-006: the UI shortens home-prefixed paths for display only.
+            put("homeDir", System.getProperty("user.home") ?: "")
+            put("pluginVersion", pluginVersion())
+            put("buildTime", buildTime)
+            put("commitId", commitId)
         }
     }
 

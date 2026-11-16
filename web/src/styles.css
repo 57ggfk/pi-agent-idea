@@ -4050,6 +4050,28 @@ button {
   flex: 0 0 auto;
 }
 
+/* 036: node/npm/plugin rows in the environment card; paths reuse the
+   .skill-path-full/.skill-path-short responsive switch (FR-008). */
+.diag-env-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.diag-env-label {
+  flex: 0 0 auto;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.diag-env-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .diag-env-update {
   flex: 0 0 auto;
 }
