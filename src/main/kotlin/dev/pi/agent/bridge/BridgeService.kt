@@ -140,6 +140,8 @@ class BridgeService(private val project: Project) : Disposable {
                 "files.list" -> filesList(params)
                 "files.relpath" -> filesRelPath(params)
                 "files.takeDrop" -> filesTakeDrop()
+                // 044 FR-012: large paste text → temp file → @path reference.
+                "files.saveTemp" -> filesSaveTemp(params, instanceId)
                 "ide.repaint" -> repaintBrowser()
                 "ui.reload" -> uiReloaded(params)
                 "ide.openFile" -> openFileInEditor(params)
@@ -1136,6 +1138,8 @@ class BridgeService(private val project: Project) : Disposable {
         synchronized(wiredLock) { wiredInstances.remove(instanceId) }
         messageQueues.remove(instanceId)?.shutdown()
         transport.clearInstance(instanceId)
+        // 044 FR-013: session-level cleanup of the instance's paste temp files.
+        cleanupPasteTempFiles(instanceId)
     }
 
     fun isStreaming(instanceId: Int = 1): Boolean =
@@ -1239,6 +1243,47 @@ class BridgeService(private val project: Project) : Disposable {
         return buildJsonObject { put("refs", refsJson(refs)) }
     }
 
+    /**
+     * 044 FR-012: writes folded paste text to the system temp directory —
+     * one `pi-paste-<instanceId>` subdir per tool-window instance, tracked
+     * for the session-level cleanup (FR-013: cleanup failure never throws).
+     * pi reads the file itself when the message is sent, so the model still
+     * receives the full content.
+     */
+    private fun filesSaveTemp(params: JsonObject, instanceId: Int): JsonObject {
+        val text = (params["text"] as? JsonPrimitive)?.content
+            ?: return buildJsonObject { put("ok", false); put("error", "missing text") }
+        return try {
+            val dir = java.nio.file.Files.createTempDirectory("pi-paste-$instanceId-")
+            val file = dir.resolve("pasted-${System.currentTimeMillis()}.txt")
+            java.nio.file.Files.writeString(file, text, Charsets.UTF_8)
+            val list = pasteTempFiles.computeIfAbsent(instanceId) { java.util.concurrent.CopyOnWriteArrayList() }
+            list.add(dir)
+            buildJsonObject { put("ok", true); put("path", file.toString()) }
+        } catch (e: Exception) {
+            // FR-013: a failed write keeps the folded chip on the JS side —
+            // the content is still in the paste map, nothing is lost.
+            LOG.warn("Pi Agent saveTemp failed: ${e.message}")
+            buildJsonObject { put("ok", false); put("error", e.message ?: "temp write failed") }
+        }
+    }
+
+    /** 044 FR-013: temp paste dirs per instance, deleted when the instance closes. */
+    private val pasteTempFiles =
+        java.util.concurrent.ConcurrentHashMap<Int, java.util.concurrent.CopyOnWriteArrayList<java.nio.file.Path>>()
+
+    /** Deletes a tool-window instance's temp paste files (FR-013); failures are logged, never thrown. */
+    private fun cleanupPasteTempFiles(instanceId: Int) {
+        val dirs = pasteTempFiles.remove(instanceId) ?: return
+        dirs.forEach { dir ->
+            runCatching {
+                java.nio.file.Files.walk(dir).use { stream ->
+                    stream.sorted(java.util.Comparator.reverseOrder()).forEach { java.nio.file.Files.deleteIfExists(it) }
+                }
+            }.onFailure { LOG.warn("Pi Agent paste cleanup failed for ${dir.fileName}: ${it.message}") }
+        }
+    }
+
     private fun refsJson(refs: List<DropRef>) = buildJsonArray {
         refs.forEach { ref ->
             add(buildJsonObject {
@@ -1255,6 +1300,8 @@ class BridgeService(private val project: Project) : Disposable {
         // 019 D12: every instance's queue mirror shuts down with the service.
         messageQueues.values.forEach { it.shutdown() }
         messageQueues.clear()
+        // 044 FR-013: whatever instances remain also lose their paste temp files.
+        pasteTempFiles.keys.forEach { cleanupPasteTempFiles(it) }
         scope.cancel()
     }
 

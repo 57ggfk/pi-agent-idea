@@ -7,6 +7,7 @@
 export const en = {
   // -- common ---------------------------------------------------------------
   "common.cancel": "Cancel",
+  "common.dismiss": "Dismiss",
   "common.close": "Close",
   "common.copy": "Copy",
   "common.delete": "Delete",
@@ -71,6 +72,14 @@ export const en = {
   "composer.dropHint": "Release to reference this file or folder",
   "composer.editNote": "Editing message · sending replaces it and the reply below",
   "composer.editCancel": "Cancel editing",
+  "composer.pasteChip": "Pasted {{kind}} ({{count}} lines)",
+  "composer.pasteKind.code": "code",
+  "composer.pasteKind.log": "log",
+  "composer.pasteKind.text": "text",
+  "composer.pasteCollapse": "Collapse",
+  "composer.pastePreviewMore": " · …expand to see everything",
+  "composer.pasteSaveFile": "Save as file",
+  "composer.pasteBigHint": "Large paste ({{count}} lines) — save it as a file reference instead?",
 
   // -- send button & queue modes ---------------------------------------------
   "send.label": "Send",

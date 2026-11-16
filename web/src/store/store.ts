@@ -584,6 +584,13 @@ interface PiStore {
   /** Resolves dropped/copied paths to project-relative references (spec 015). */
   resolveRefs(inputs: Array<{ path: string; dir: boolean }>): Promise<PendingRef[]>;
   /**
+   * 044 FR-012: writes large paste text to a temp file (instance-scoped,
+   * cleaned up when the tool-window instance closes) and returns an absolute
+   * path to insert as an `@path` reference. ok=false carries the error; the
+   * caller keeps the folded chip (nothing is lost).
+   */
+  savePasteToTempFile(text: string): Promise<{ ok: boolean; path?: string; error?: string }>;
+  /**
    * Takes the paths of the file/folder drag that just entered the panel from
    * the IDE side (spec 016) — the only place the real absolute paths exist.
    * Empty when the drag carried no files or the bridge is too old.
@@ -1704,6 +1711,19 @@ export const usePiStore = create<PiStore>((set, get) => {
         // An older IDE side without the RPC: the raw paths still work —
         // pi reads absolute paths just fine. This is only cosmetic.
         return inputs;
+      }
+    },
+
+    /** 044 FR-012: text → temp file → insertable absolute path. */
+    async savePasteToTempFile(text) {
+      if (!bridge) return { ok: false, error: "no bridge" };
+      try {
+        const res = await bridge.request<{ path?: string }>("files.saveTemp", { text });
+        return res.path ? { ok: true, path: res.path } : { ok: false, error: "no path returned" };
+      } catch (e) {
+        // Write failure must not lose the content — the caller keeps the
+        // folded chip and the user can retry or send inline (FR-013).
+        return { ok: false, error: (e as Error).message };
       }
     },
 

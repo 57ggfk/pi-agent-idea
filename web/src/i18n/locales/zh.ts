@@ -8,6 +8,7 @@ import type { Dict } from "./en";
 export const zh: Dict = {
   // -- common ---------------------------------------------------------------
   "common.cancel": "取消",
+  "common.dismiss": "忽略",
   "common.close": "关闭",
   "common.copy": "复制",
   "common.loading": "加载中…",
@@ -72,6 +73,14 @@ export const zh: Dict = {
   "composer.dropHint": "松开即把这个文件 / 目录加为引用",
   "composer.editNote": "正在编辑消息 · 发送将替换它及其下方的回复",
   "composer.editCancel": "取消编辑",
+  "composer.pasteChip": "已粘贴{{kind}}（{{count}} 行）",
+  "composer.pasteKind.code": "代码",
+  "composer.pasteKind.log": "日志",
+  "composer.pasteKind.text": "文本",
+  "composer.pasteCollapse": "折回",
+  "composer.pastePreviewMore": " · …点击展开查看全部",
+  "composer.pasteSaveFile": "存为文件",
+  "composer.pasteBigHint": "粘贴内容较大（{{count}} 行）——要改存为文件引用吗？",
 
   // -- send button & queue modes ---------------------------------------------
   "send.label": "发送",

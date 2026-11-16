@@ -395,6 +395,8 @@ export class MockBridge implements Bridge {
   /** `?files=volatile` — the file list loses one entry after the first read. */
   private readonly volatileFiles = query()?.get("files") === "volatile";
   private fileReads = 0;
+  /** 044: fake temp-file sequence for files.saveTemp. */
+  private saveTempSeq = 0;
   /** `?drop=a,b` — the first `files.takeDrop` returns these, then nothing. */
   private dropConsumed = false;
   /** `?install=hang` — the in-flight install, resolvable only by a cancel. */
@@ -788,6 +790,16 @@ export class MockBridge implements Bridge {
         })
         .filter((r) => r.path.length > 0);
       return { refs } as T;
+    }
+    if (method === "files.saveTemp") {
+      // 044 FR-012 mock: no real filesystem — a stable fake path so the e2e
+      // can assert the @ref insertion. `?saveTemp=fail` exercises the write
+      // failure path (the chip must stay intact).
+      if (query()?.get("saveTemp") === "fail") {
+        return { ok: false, error: "temp write failed (mock)" } as T;
+      }
+      const n = (this.saveTempSeq += 1);
+      return { ok: true, path: `/tmp/mock-home/.pi/pastes/pasted-${n}.txt` } as T;
     }
     if (method === "files.relpath") {
       // Spec 015: drop/paste references get resolved to project-relative
