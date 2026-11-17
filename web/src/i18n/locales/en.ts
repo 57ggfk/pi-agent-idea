@@ -11,6 +11,7 @@ export const en = {
   "common.close": "Close",
   "common.copy": "Copy",
   "markdown.openInIde": "Open in IDE",
+  "markdown.copyAsImage": "Copy as image",
   "common.delete": "Delete",
   "common.loading": "Loading…",
 

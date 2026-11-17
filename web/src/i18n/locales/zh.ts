@@ -12,6 +12,7 @@ export const zh: Dict = {
   "common.close": "关闭",
   "common.copy": "复制",
   "markdown.openInIde": "在 IDE 打开",
+  "markdown.copyAsImage": "复制为图片",
   "common.loading": "加载中…",
 
   // -- tooltips（012 US2）------------------------------------------------------

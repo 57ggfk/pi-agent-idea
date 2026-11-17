@@ -2756,6 +2756,36 @@ button {
   border-color: var(--border-strong, var(--border));
 }
 
+/* 047: the graphic render blocks get a hover-revealed 「复制为图片」 button.
+   The frame keeps the block's layout (inline-block shrink-wrap) and hosts the
+   button in its corner; the button must NOT swallow clicks aimed at the block. */
+.copyable-frame {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+
+.copyable-frame > .copy-image-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 2;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text);
+  font-size: 11px;
+  padding: 2px 8px;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.12s ease-in-out;
+  cursor: pointer;
+}
+
+.copyable-frame:hover > .copy-image-btn {
+  opacity: 1;
+}
+
 /* 044 FR-005: read-only hover preview floating above the input wrap.
    044 #1/#3: flush against the input wrap (no gap) — the 4px dead zone used
    to snap the preview shut while the pointer crossed into it. */

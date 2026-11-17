@@ -844,8 +844,12 @@ export class MockBridge implements Bridge {
       return Promise.resolve({ ok: true, path: `/tmp/mock-home/Downloads/${p?.suggestedName ?? "image.png"}` } as T);
     }
     if (method === "ide.copyImage") {
-      const knob = query()?.get("saveimg");
+      // 047: echo the data URL (prefix only) so an e2e can assert a PNG went
+      // through the bridge; `?copyimg=fail` exercises the ✗ flash.
+      const knob = query()?.get("copyimg") ?? query()?.get("saveimg");
       if (knob === "fail") return Promise.resolve({ ok: false, error: "the clipboard is unavailable (mock)" } as T);
+      const p = params as { data?: string } | undefined;
+      globalThis.sessionStorage?.setItem("pi-mock-copy-image", (p?.data ?? "").slice(0, 64));
       return Promise.resolve({ ok: true } as T);
     }
     if (method === "ide.openFile") {

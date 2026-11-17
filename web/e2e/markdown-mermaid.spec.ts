@@ -37,6 +37,11 @@ async function sendMermaidReply(page: import("@playwright/test").Page) {
     expect(s.figures).toBe(1);
     expect(s.hiddenBroken).toBe(0);
   }).toPass({ timeout: 20_000 });
+  // AND wait for the whole stream (text + tool calls) to end: the trailing
+  // message_update events still wipe .markdown, which swallows clicks that
+  // land in that window.
+  await expect(page.getByTestId("status-dot")).toHaveClass(/busy/, { timeout: 20_000 });
+  await expect(page.getByTestId("status-dot")).not.toHaveClass(/busy/, { timeout: 30_000 });
 }
 
 test("a valid mermaid block renders as a diagram (040 US2)", async ({ page }) => {
@@ -112,7 +117,9 @@ test("zero regression: the copy button still works on the mermaid source (040 FR
     .filter({ has: page.locator("code.language-mermaid", { hasText: "A --> ];" }) })
     .locator(".code-copy-btn");
   await brokenCopy.click();
-  await expect(brokenCopy).toHaveText("✓");
+  // The stale-figure heal may reflow the bar right at click time; give the
+  // flash a wider window.
+  await expect(brokenCopy).toHaveText("✓", { timeout: 10_000 });
   const clip = await page.evaluate(() => navigator.clipboard.readText());
   expect(clip).toContain("A --> ];");
 });
