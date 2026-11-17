@@ -90,6 +90,23 @@ pi 回复含 ```` ```mermaid ```` 代码块时，渲染为对应流程图/时序
 | 真机 | JCEF 下公式与图表消息 | 显示正确、主题适配、滚动无卡顿 |
 | 静态 | verifyPlugin | 无 internal API；构建体积/e2e 基线变化已评估 |
 
+## 反馈批次修订（2026-11-17，0.5.10 内测）
+
+### #5 Mermaid 语法错误时布局下方溢出 `Syntax error in text` 区域（对应 FR-004）
+
+- **现象**：pi 回复含语法错误的 mermaid 块时，消息区下方多出一片空白/区域，显示一条或多条 `Syntax error in text`，且随流式重渲染可能累积多条。
+- **根因（读码核实）**：`mermaidRender.ts:49-50` 调用 `mermaid.render(id, text)`；mermaid 在 `parse`/`render` 抛错前会**自行向 `document.body`（或 SVG 容器）注入一个 error div**（mermaid 默认 error 渲染），这段 DOM 不受我们的 `.mermaid-figure` 容器约束、也不随 source 变化回收。我们的 `catch`（`:59-63`）只把失败缓存为 null 后原块降级，**没有清理 mermaid 注入的游离 error 节点**——于是每次不同 source 的失败各留一个错误块，堆积在布局下方；`root.querySelectorAll` 只遍历消息内的 code 块，管不到 body 上的注入。
+- **期望**：Mermaid 渲染失败（语法错/超时/依赖异常）时，① 不向消息容器之外注入任何可见 DOM，② 已有 error 节点被清理，③ 多块/流式重渲染不累积错误区域，④ 就地降级为源码块（FR-004 原义不变）。
+- **实现方向（plan 决定具体）**：渲染前用 `mermaid.parse(text)` 预校验，失败即跳过 `render` 不触发其错误渲染；或渲染后按 id 清除 mermaid 注入的 error 节点（`div[id^=d]` / `.error-icon` 等，以实测为准）；两者择一或并用，须真机复现闭环。
+- **回归判据**：vitest/e2e mock 多块语法错误 mermaid，断言 `document.body` 与消息区无 `Syntax error` 文本节点、错误块数恒为 0/1 不随重渲染递增；正常图表渲染零回归。
+
+- **真机取证（2026-11-17，探针 `web/probe-feedback-0517.mjs mermaid`，0.5.9 构建 / JCEF CDP 9222）**：
+  - 触发方式：经 composer 让 pi 输出一个语法错误的 ```` ```mermaid ```` 块（源码 `graph TD / A[start] --> B( bad syntax >>>`）。
+  - **坐实泄漏**：`document.body` 出现 **3 个直接子 `DIV`**——第 1 个是 React app 根，第 2、3 个是 mermaid 注入的游离节点（各约 2520 字符、含 `Syntax error in text`），**均不在 `[data-testid="message-list"]` 内**。每个游离 DIV 内含一个 `<svg>`（id 前缀 `pi-mermaid-N`），error 文本在 `<g><text>Syntax error in textmermaid version 12.3.0Parse error on line 4…`。
+  - **坐实累积**：同一次会话里出现 `pi-mermaid-1`、`pi-mermaid-4` 等多个错误 SVG（编号随渲染递增），证明不同 source 的失败各留一份、`catch` 未回收——与上文读码根因一致。
+  - 对实现方向的修正：清理目标确定为**按 `id^=pi-mermaid-` 的游离 `<div>`/`<svg>`**（不是泛化的 `div[id^=d]`），且 `mermaid.parse()` 预校验可从根本上避免触发错误渲染；清除时注意只删 body 直属的游离节点，勿碰 `.mermaid-figure` 内的正常图。
+  - 证据文件：`%TEMP%/fb-probe-mermaid.json`（`leakage.outsideMessageList=8`、`bodyKids[1/2].hasSyntax=true`）。
+
 ## 开放问题
 
 无阻塞项。拆分档位、依赖口径、Mermaid 探针前置、IDE 能力复用结论均已拍板/核实。

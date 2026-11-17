@@ -84,6 +84,27 @@ pi 返回一段代码块（如 ```` ```rust ````、```` ```solidity ```` 等前�
 | 真机 JCEF | 点按钮打开 ` ```rust ` 等冷门语言 | IDE 弹出只读标签页并按语言高亮；磁盘无新文件；关闭即弃 |
 | 真机 | 工作区/版本控制 | 打开前后 `git status` 无变化，项目树无新增节点 |
 
+## 反馈批次修订（2026-11-17，0.5.10 内测）
+
+### #10 「在 IDE 打开」代码片段只识别为纯文本（对应 FR-004）
+
+- **现象**：用户反馈代码块点「在 IDE 打开」后只按纯文本显示，没有语法高亮。
+- **根因（读码核实）**：`SnippetFiles.kt:17-44` 的 `ideLanguageId` 别名表只覆盖常见语言，冷门/变体语言 id（如 `sol`、`protobuf`、`vue`、`bash` 之外的 shell 变体等）落到 `else -> null`；`buildVirtualFile`（`:81-87`）随后把 `mapped` 兜为 raw id 再 `Language.findLanguageByID`——IDE 的语言 id 常与 fence id 不同（大小写/命名差异，如 fence `shell` vs 语言 `Shell Script`），找不到就 `PlainTextFileType.INSTANCE` 降级（US2 允许，但覆盖不足成了实质缺陷）。
+- **期望**：扩展语言识别命中率——① 扩充别名表（覆盖 IDE 实际注册的 `Language.findLanguageByID` 可用 id）；② 增加按扩展名反查 fileType 的兜底（已有 `extensionFor`，但当前只对 mapped 命中才用 language 关联）；③ 仍是"找不到才降级纯文本"（US2 不变），但不得因别名表缺项把 IDE 本就支持的语言误降为纯文本。
+- **回归判据**：Kotlin 单测扩展示例（含 `sol`/`vue`/`text` 等）断言 fileType 非 PlainText；真机冷门语言打开有高亮；未知语言仍成功降级为纯文本、零回归。
+
+### #9 生成的 SVG 文件点击「在 IDE 打开」失败（对应 FR-004 / 与 015 openFile 相邻）
+
+- **现象**：pi 生成/引用一个 `.svg` 文件，用户点击打开时无法从 IDE 打开。
+- **根因（待实现期真机确认，读码初判）**：两条候选——① `SnippetFiles.extensionFor`（`:47-74`）别名表**没有 `svg`**，且 `ideLanguageId` 也无 `svg`，内联 svg 代码块走纯文本（与 #10 同源）；② 若为磁盘上的 `.svg` 文件走 `openFileInEditor`（`BridgeService.kt:788-798`）→ `resolveFile(path)`，则需确认 `resolveFile` 对 svg 扩展名/路径的解析与 `FileTypeManager` 是否识别 SVG 文件类型。真机复现前不锁死根因。
+- **期望**：SVG（内联代码块与磁盘文件两种形态）都能在 IDE 中打开查看——内联走扩展别名 + fileType 反查命中 SVG/XML 类型；磁盘文件走 `resolveFile` 正常定位并以 IDE 识别的类型打开；失败不得静默，按 FR-007 返回可感知错误。
+- **回归判据**：vitest 断言 `SnippetFiles` 对 svg 返回可用 fileType；e2e/真机点击生成的 `.svg` 文件成功打开、有内容；`resolveFile` 对 svg 路径测试通过。
+- **真机取证（2026-11-17，隔离实例 / 0.5.9 构建）——两条常见路径均未复现"打不开"**：
+  - 磁盘 svg 文件（untitled/circle.svg）双击 → IDE 原生打开，以 XML 文本呈现 + 右侧 SVG 预览窗格，正常。
+  - 内联 svg 代码块（让 pi 输出 ```svg，点"在 IDE 打开"）→ 走 `openSnippet` 生成 `pi-snippet-1.svg`，IDE 以 XML 类型打开成功（含"阅读器模式"按钮）；代码块高亮为 `hljs language-xml`。说明 `extensionFor` 的 else 分支返回 `"svg"` 已能让 IDE 识别类型，候选①（无 svg 别名导致纯文本）在真机上**未成立**。
+  - **结论**：用户反馈的"生成 svg 文件点击打不开"未能在常见路径复现，两条候选中的①（无 svg 别名导致纯文本）在真机上未成立。
+  - **用户补充的确切复现路径（2026-11-17 口述，仅记录、本轮不探测）**：在会话中让 pi **绘制/生成一个 SVG 文件**，消息里会出现一个**「新增文件的 diff 块」**；用户点的是**这个 diff 块里的文件**（想从 IDE 打开），而不是代码块或普通 `@path` 链接，此时打不开。→ 之前推测的"工具写磁盘文件"方向正确，但**入口应锁定为 diff 块的新增文件**，而非泛泛的 `@path` 引用；可能是 038 diff 块的文件链接未接 `openFile`/`resolveFile`，或该 diff 块走的是与 `.file-link` 不同的点击路径。plan 阶段按此路径补探针，不据本轮"两条常见路径未复现"关闭该条。
+
 ## 开放问题
 
 无阻塞项。定位/触发/文件形态三条已于 2026-11-16 拍板。
