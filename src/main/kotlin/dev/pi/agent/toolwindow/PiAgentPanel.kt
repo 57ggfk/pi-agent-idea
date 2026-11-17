@@ -484,26 +484,13 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
      * seconds to minutes — the user literally saw the previous view's remains
      * under the new one. The frontend now calls `ide.repaint` after view
      * changes; this invalidates the whole browser frame so CEF resends it.
+     *
+     * The reflection body lives in `browser/JcefFrameRepaint.kt` since 048:
+     * the browser kernel needs the same workaround (spec 048 T005), and two
+     * copies of a reflection hack are a regression waiting to happen.
      */
     fun repaintBrowser() {
-        val current = browser ?: return
-        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
-            runCatching {
-                val component = current.component
-                component.revalidate()
-                component.repaint()
-                // CefBrowser_N.wasResized forces the renderer to produce a
-                // fresh full frame even at an unchanged size — the direct fix
-                // for the stale-frame lag. The impl class is package-private,
-                // so reach it reflectively; CefBrowser.invalidate() is
-                // protected and equally unreachable from a plugin.
-                val cef = current.cefBrowser
-                cef.javaClass
-                    .getMethod("wasResized", Integer.TYPE, Integer.TYPE)
-                    .apply { isAccessible = true }
-                    .invoke(cef, component.width.coerceAtLeast(1), component.height.coerceAtLeast(1))
-            }
-        }
+        dev.pi.agent.browser.JcefFrameRepaint.forceRepaint(browser)
     }
 
     private fun disposeBrowser() {
