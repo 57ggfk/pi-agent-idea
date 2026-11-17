@@ -76,3 +76,28 @@ test("zero regression: copy button still lands on diff blocks (038 FR-005)", asy
   await expect(pre.locator("code.language-diff")).toHaveCount(1, { timeout: 30_000 });
   await expect(pre.locator(".code-copy-btn")).toHaveCount(1);
 });
+
+test("diff block header paths are clickable file links (041 #9)", async ({ page }) => {
+  await page.goto("/?md=diff");
+  await expect(page.getByTestId("empty-state")).toBeVisible();
+  await page.getByTestId("composer-input").fill("apply it");
+  await page.getByTestId("send-btn").click();
+  // Settled: the trailing footnote section is the reply's end.
+  await expect(page.locator(".markdown section.footnotes")).toContainText("Follow-up notes.", { timeout: 30_000 });
+
+  const diffCode = page.locator(".markdown pre code.language-diff");
+  await expect(diffCode).toHaveCount(1);
+  // Both header lines (--- a/… and +++ b/…) carry the file path as a link.
+  const links = page.locator(".markdown pre .file-link");
+  await expect(links).toHaveCount(2);
+  const paths = await links.evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.path));
+  expect(paths).toEqual(["src/main.tsx", "src/main.tsx"]);
+  // Click the +++ header's path → ide.openFile receives it (mock echoes).
+  await links.last().click();
+  const echoed = await page.evaluate(() => globalThis.sessionStorage.getItem("pi-mock-open-file"));
+  expect(echoed).toBe("src/main.tsx");
+  // The path text is unchanged (linkify must not alter the diff content).
+  const text = await diffCode.evaluate((el) => el.textContent || "");
+  expect(text).toContain("--- a/src/main.tsx");
+  expect(text).toContain("+++ b/src/main.tsx");
+});

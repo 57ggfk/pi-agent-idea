@@ -7,6 +7,7 @@ import hljs from "highlight.js/lib/common";
 import { usePiStore } from "../store/store";
 import { i18n } from "../i18n";
 import { copyText } from "../lib/clipboard";
+import { parseDiffHeaderPath } from "../lib/diffPaths";
 import { normalizeFootnoteDefs } from "../lib/footnotePreprocess";
 import { renderMermaid } from "../lib/mermaidRender";
 
@@ -98,6 +99,52 @@ function linkifyTextNodes(root: ParentNode) {
 }
 
 const COPY_FLASH_MS = 1200;
+
+/**
+ * 041 #9 (feedback batch): pi summarizes new/changed files as ```diff blocks
+ * in the message text, and the path in the header lines was inert text —
+ * the exact path users click to open the file in the IDE. Wrap the path in a
+ * `.file-link` span (same channel as every other file link; the delegated
+ * container click calls `ide.openFile`). Runs after hljs highlighting and
+ * splits text nodes so the surrounding token markup survives; React rebuilds
+ * the HTML on every streaming delta, so this is naturally re-applied.
+ */
+function linkifyDiffHeaders(code: HTMLElement) {
+  const text = code.textContent ?? "";
+  const ranges: { start: number; end: number; path: string }[] = [];
+  for (const m of text.matchAll(/^(?:---|\+\+\+|diff --git)\s+([^\n]*)/gm)) {
+    const line = m[1];
+    const path = parseDiffHeaderPath(line);
+    if (!path) continue;
+    const idx = line.lastIndexOf(path);
+    if (idx < 0) continue;
+    const start = m.index + m[0].length - line.length + idx;
+    ranges.push({ start, end: start + path.length, path });
+  }
+  for (const { start, end, path } of ranges) wrapTextRange(code, start, end, path);
+}
+
+/** Wraps [start, end) of `code`'s text content in a file-link span. */
+function wrapTextRange(code: HTMLElement, start: number, end: number, path: string) {
+  const walker = document.createTreeWalker(code, NodeFilter.SHOW_TEXT);
+  let offset = 0;
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const node = n as Text;
+    const len = node.textContent?.length ?? 0;
+    const s = start - offset;
+    const e = end - offset;
+    offset += len;
+    if (s >= len || e <= 0) continue;
+    const tail = s > 0 ? node.splitText(s) : node;
+    if (e - s < (tail.textContent?.length ?? 0)) tail.splitText(e - s);
+    const span = document.createElement("span");
+    span.className = "file-link";
+    span.dataset.path = path;
+    tail.parentNode?.insertBefore(span, tail);
+    span.appendChild(tail);
+    return;
+  }
+}
 
 /**
  * marked separates block-level elements with "\n" and ends the document with
@@ -217,6 +264,10 @@ export default function Markdown({ text }: { text: string }) {
     });
     // Plain-text path references outside code blocks too.
     linkifyTextNodes(root);
+    // 041 #9: ```diff block headers link their file path to ide.openFile.
+    root.querySelectorAll("pre code.language-diff").forEach((el) => {
+      linkifyDiffHeaders(el as HTMLElement);
+    });
     // 040 US2: mermaid blocks render to SVG in place; invalid source keeps
     // the code block (the degrade is the natural pre-render state).
     root.querySelectorAll("pre code.language-mermaid").forEach((el) => {

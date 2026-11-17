@@ -933,7 +933,12 @@ class BridgeService(private val project: Project) : Disposable {
 
     private fun resolveFile(path: String): com.intellij.openapi.vfs.VirtualFile? {
         val io = resolveIoFile(path) ?: return null
-        return com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByIoFile(io)
+        val fs = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
+        // 041 #9: a file pi just wrote may not be in the VFS yet —
+        // findFileByIoFile only sees cached entries, so a fresh write (the
+        // exact "pi generated an SVG and I can't open it" path) gets a
+        // refresh-and-find retry before we give up.
+        return fs.findFileByIoFile(io) ?: fs.refreshAndFindFileByIoFile(io)
     }
 
     /**
