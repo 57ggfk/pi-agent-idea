@@ -4,6 +4,7 @@ import { needsRefresh } from "../store/sources";
 import { autosize, autosizeAndReveal, clampComposerHeight, resetComposerHeight } from "../lib/autosize";
 import { collectPathRefs, type PathRef } from "../lib/clipboardRefs";
 import { findTokens, removeRange, tokenBackspaceAt } from "../lib/inlineChips";
+import { injectionTrailing, trailingFor } from "../lib/injectionTrailing";
 import {
   countLines,
   detectPasteKind,
@@ -500,11 +501,15 @@ export default function Composer() {
       if (p < end && oldChangeEnd >= start) {
         // The change touches the region (an insertion exactly at the region's
         // start counts: the caret sat on the content head — excluding it made
-        // every keystroke shift the window and lose the edit). Its head moves
-        // to the change head when the edit starts before the region, the tail
-        // always follows the delta.
+        // every keystroke shift the window and lose the edit).
         if (p < start) start = p;
-        end += delta;
+        if (end <= oldChangeEnd) {
+          // The change swallows the region tail (replace across the end): the
+          // region now ends where the inserted run ends.
+          end = p + (text.length - p - (prev.length - oldChangeEnd));
+        } else {
+          end += delta;
+        }
       } else if (oldChangeEnd < start) {
         // Change entirely before the region: shift both bounds.
         start += delta;
@@ -544,7 +549,10 @@ export default function Composer() {
 
   /** Folds a paste in at the current selection (FR-001/FR-002). 044 #4: pastes
    *  beyond the file threshold auto-save to a temp file reference — no prompt
-   *  bar any more; the folded chip is the fallback if the write fails. */
+   *  bar any more; the folded chip is the fallback if the write fails.
+   *  045: the token is followed by the unified trailing (multi-line paste →
+   *  newline, single-line → two spaces) so the caret lands on a visible spot
+   *  past the chip (044 #2a). */
   const foldPastedText = useCallback(
     (plain: string) => {
       const ta = taRef.current;
@@ -552,9 +560,10 @@ export default function Composer() {
       const kind = detectPasteKind(plain);
       const lines = countLines(plain.replace(/\r\n/g, "\n"));
       const token = pasteToken(id, kind, lines);
+      const trailing = trailingFor(plain);
       const start = ta?.selectionStart ?? text.length;
       const end = ta?.selectionEnd ?? text.length;
-      applyText(text.slice(0, start) + token + text.slice(end));
+      applyText(text.slice(0, start) + token + trailing + text.slice(end));
       setPastes((prev) => new Map(prev).set(id, plain));
       if (shouldAutoSaveAsFile(lines)) {
         void savePasteAsFile({ id, content: plain, kind, lines });
@@ -562,7 +571,8 @@ export default function Composer() {
       requestAnimationFrame(() => {
         if (ta) {
           ta.focus();
-          ta.setSelectionRange(start + token.length, start + token.length);
+          const caret = start + token.length + trailing.length;
+          ta.setSelectionRange(caret, caret);
         }
       });
     },
@@ -589,11 +599,16 @@ export default function Composer() {
         setBigPasteHint({ id: info.id, content: info.content, kind: info.kind, lines: info.lines });
         return;
       }
-      const r = replaceToken(textRef.current, info.id, `@${res.path} `);
+      const r = replaceToken(textRef.current, info.id, `@${res.path}`);
       if (r) {
         cancelPreviewClose();
         setPastePreview(null);
-        applyText(r.text);
+        // 045: the fold's own trailing sits right after the token — consume it
+        // and give the reference one canonical trailing (multi-line paste →
+        // newline, single-line → two spaces).
+        const head = r.text.slice(0, r.start + `@${res.path}`.length);
+        const consume = /^(?:\n| {1,2})/.exec(r.text.slice(head.length))?.[0].length ?? 0;
+        applyText(head + trailingFor(info.content) + r.text.slice(head.length + consume));
         setPastes((prev) => {
           const m = new Map(prev);
           m.delete(info.id);
@@ -697,11 +712,11 @@ export default function Composer() {
     const promptMode = pendingPrompt.mode ?? "replace";
     setSlashDismissed(false);
     setFileDismissed(false);
-    // An injected prompt ends with exactly one newline: the caret lands on a
-    // fresh line and the user starts typing *below* the prompt, not glued to
-    // it (0.5.6 real-machine feedback). restore/edit stay verbatim — the user
-    // is getting their own draft back.
-    const withNewline = (s: string) => `${s.replace(/\s+$/, "")}\n`;
+    // 045: the unified trailing rule applied ONCE here — multi-line content
+    // ends with one newline, single-line content with two spaces (Markdown
+    // hard break); equivalent existing trailing is never stacked. restore/edit
+    // stay verbatim — the user is getting their own draft back.
+    const withTrailing = (s: string) => injectionTrailing(s);
     // Every updater reports the length the value will have once committed, so
     // the rAF below can tell a stale frame from the real result. React may
     // run the updater *after* the first rAF (concurrent rendering defers the
@@ -716,7 +731,7 @@ export default function Composer() {
       textUpdateQueued = true;
       setText((prev) =>
         note(
-          prev.trim().length > 0 ? `${prev.replace(/\s+$/, "")}\n\n${withNewline(value)}` : withNewline(value),
+          prev.trim().length > 0 ? `${prev.replace(/\s+$/, "")}\n\n${withTrailing(value)}` : withTrailing(value),
         ),
       );
     } else if (promptMode === "restore") {
@@ -731,7 +746,7 @@ export default function Composer() {
       // replace — but a refs-only push (spec 015) arrives with an empty text
       // and must not wipe a draft the user is typing.
       textUpdateQueued = true;
-      setText(note(withNewline(value)));
+      setText(note(withTrailing(value)));
     }
     if (pendingPrompt.images && pendingPrompt.images.length > 0) {
       setImages(
@@ -745,11 +760,12 @@ export default function Composer() {
     if (pendingPrompt.refs && pendingPrompt.refs.length > 0) {
       // Spec 018 US1: injected references become tokens at the tail of
       // whatever the modes above produced (no caret semantics on injection).
-      // Each token carries a trailing space so a finished token never
-      // re-opens the @ menu (AT_QUERY_RE only matches a query at the very
-      // end); a draft not ending in whitespace gets a separator space, since
-      // a `word@src` glue would not even read as a token.
-      const toks = pendingPrompt.refs.map((r) => `@${r.path} `).join("");
+      // 045: each token carries the unified trailing (two spaces — a single-
+      // line injection) so a finished token never re-opens the @ menu
+      // (AT_QUERY_RE only matches a query at the very end); a draft not
+      // ending in whitespace gets a separator space, since a `word@src` glue
+      // would not even read as a token.
+      const toks = pendingPrompt.refs.map((r) => `@${r.path}  `).join("");
       textUpdateQueued = true;
       setText((prev) => {
         const next = prev.length === 0 ? toks : /\s$/.test(prev) ? `${prev}${toks}` : `${prev} ${toks}`;
@@ -974,15 +990,16 @@ export default function Composer() {
         };
       });
 
-  /** Inserts `@path ` tokens at the caret (at the end when unfocused) and
-   *  leaves the caret after the last one. The trailing space keeps a finished
+  /** Inserts `@path  ` tokens at the caret (at the end when unfocused) and
+   *  leaves the caret after the last one. 045: each token carries the unified
+   *  two-space trailing (single-line injection) — it also keeps a finished
    *  token from re-opening the @ menu (AT_QUERY_RE needs the query at the
    *  very end of the text). Uses the functional update so a resolve that
    *  resolved after more typing cannot clobber the newer draft. */
   const insertRefTokens = useCallback(
     (paths: string[]) => {
       if (paths.length === 0) return;
-      const toks = paths.map((p) => `@${p} `).join("");
+      const toks = paths.map((p) => `@${p}  `).join("");
       const ta = taRef.current;
       const focused = !!ta && document.activeElement === ta;
       let caretTo = -1;
@@ -1073,14 +1090,16 @@ export default function Composer() {
     })();
   };
 
-  /** Inserts dragged text where the caret is (the drop default we suppressed). */
+  /** Inserts dragged text where the caret is (the drop default we suppressed).
+   *  045: dragged text is an injection — it gets the unified trailing. */
   const insertDroppedText = (insert: string) => {
     if (!insert) return;
     const ta = taRef.current;
     const start = ta?.selectionStart ?? text.length;
     const end = ta?.selectionEnd ?? start;
-    applyText(text.slice(0, start) + insert + text.slice(end));
-    const caret = start + insert.length;
+    const withTrailing = injectionTrailing(insert);
+    applyText(text.slice(0, start) + withTrailing + text.slice(end));
+    const caret = start + withTrailing.length;
     requestAnimationFrame(() => {
       ta?.focus();
       ta?.setSelectionRange(caret, caret);

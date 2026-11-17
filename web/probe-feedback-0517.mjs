@@ -480,6 +480,99 @@ async function stage044(send) {
   return out;
 }
 
+// 045 真机效果验证：统一收尾规则。A 折叠 chip 后收尾+光标；B 消息引用（quote）
+// 单行两空格；C 文件引用 token 两空格。B 需要一条真实消息，其余不发送。
+async function stage045(send) {
+  const out = {};
+  const setComposer = () => evaluate(send, `(() => {
+    const ta = document.querySelector('[data-testid="composer-input"]');
+    const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+    set.call(ta, "");
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  })()`);
+  const state = () => evaluate(send, `(() => {
+    const ta = document.querySelector('[data-testid="composer-input"]');
+    return { value: ta?.value ?? "", caret: ta ? [ta.selectionStart, ta.selectionEnd] : null };
+  })()`);
+  const pasteText = (text) => evaluate(send, `(() => {
+    const ta = document.querySelector('[data-testid="composer-input"]');
+    const dt = new DataTransfer();
+    dt.setData('text/plain', ${JSON.stringify(text)});
+    ta.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+    return true;
+  })()`);
+
+  // ---- A: 多行粘贴折叠 → chip + \n，光标落新行
+  await setComposer();
+  await pasteText(Array.from({ length: 10 }, (_, i) => `line ${i}`).join("\n"));
+  await sleep(800);
+  out.foldMulti = await state();
+
+  // ---- A2: 单行超长粘贴折叠 → chip + 两空格
+  await setComposer();
+  await pasteText("x".repeat(900));
+  await sleep(800);
+  out.foldSingle = await state();
+  await setComposer();
+
+  // ---- B: 发一条真实短消息，落定后点用户消息的「引用」，断言 "> ...  " 两空格
+  await setComposer();
+  await evaluate(send, `(() => {
+    const ta = document.querySelector('[data-testid="composer-input"]');
+    const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+    set.call(ta, "quote probe 045");
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector('[data-testid="send-btn"]')?.click();
+    return true;
+  })()`);
+  let settledB = false;
+  for (let i = 0; i < 60; i++) {
+    await sleep(2000);
+    const dot = await evaluate(send, `document.querySelector('[data-testid="status-dot"]')?.className ?? ''`);
+    if (i > 2 && !/busy/.test(dot)) { settledB = true; break; }
+  }
+  out.settledB = settledB;
+  if (settledB) {
+    await evaluate(send, `(() => {
+      const item = document.querySelector('[data-testid="item-user"]');
+      const r = item?.getBoundingClientRect();
+      if (!r) return null;
+      return { x: r.x + Math.min(r.width / 2, 120), y: r.y + r.height / 2 };
+    })()`).then((pos) => {
+      if (!pos) return Promise.resolve();
+      return send("Input.dispatchMouseEvent", { type: "mouseMoved", x: pos.x, y: pos.y });
+    });
+    await sleep(400);
+    const qb = await evaluate(send, `(() => {
+      const item = document.querySelector('[data-testid="item-user"]');
+      const b = item?.querySelector('[data-testid="act-quote"]');
+      if (!b) return null;
+      const r = b.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    })()`);
+    out.quoteBtn = qb;
+    if (qb) {
+      await cdpMouse(send, qb.x, qb.y);
+      await sleep(600);
+      out.quoteTrailing = await state();
+    }
+  }
+
+  // ---- C: 文件引用（页面内 DragEvent drop 走 insertRefTokens）→ 两空格
+  await evaluate(send, `(() => {
+    const composer = document.querySelector('[data-testid="composer"]');
+    const dt = new DataTransfer();
+    dt.items.add(new File([], 'src', { type: '' }));
+    composer.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+    return true;
+  })()`);
+  await sleep(600);
+  out.refDrop = await state();
+  await setComposer();
+  return out;
+}
+
 (async () => {
   try {
     report.result = await withPage(async (send) => {
@@ -490,6 +583,7 @@ async function stage044(send) {
         case "svg": return stageSvg(send);
         case "041file": return stage041File(send);
         case "044": return stage044(send);
+        case "045": return stage045(send);
         case "state":
         default: return stageState(send);
       }

@@ -47,9 +47,10 @@ test("a large paste folds into a chip and the box stays compact (044 US1)", asyn
   const token = `[Pasted Markdown #1 +${BIG_LINES} lines]`;
   await expect(page.getByTestId("paste-chip")).toHaveCount(1);
   await expect(page.getByTestId("paste-chip")).toContainText(token);
-  // The full text never entered the textarea — only the token did.
+  // The full text never entered the textarea — only the token did, followed
+  // by the unified trailing (045: multi-line paste → newline).
   const value = await page.evaluate(() => (document.querySelector('[data-testid="composer-input"]') as HTMLTextAreaElement).value);
-  expect(value).toBe(token);
+  expect(value).toBe(token + "\n");
   const heightAfter = await page.evaluate(() => document.querySelector('[data-testid="composer-input"]')!.clientHeight);
   expect(heightAfter).toBeLessThan(120);
   expect(heightBefore).toBeGreaterThan(0);
@@ -64,7 +65,8 @@ test("clicking the chip expands the full content; collapse folds it back (044 US
   await page.getByTestId("paste-chip").click();
   await expect(page.getByTestId("paste-collapse")).toBeVisible();
   const value = await page.evaluate(() => (document.querySelector('[data-testid="composer-input"]') as HTMLTextAreaElement).value);
-  expect(value).toBe(BIG_MARKDOWN);
+  // The fold's trailing newline stays in the draft after the expansion.
+  expect(value).toBe(BIG_MARKDOWN + "\n");
 
   // While untouched, the affordance folds it back into the same chip.
   await page.getByTestId("paste-collapse").click();
@@ -97,17 +99,18 @@ test("expanded content stays foldable after edits; the fold captures the edited 
   await expect(page.getByTestId("paste-collapse")).toHaveCount(0);
   await expect(page.getByTestId("paste-chip")).toContainText(`[Pasted Markdown #1 +${BIG_LINES + 1} lines]`);
 
-  // Re-expand: the edited text comes back, exactly as typed.
+  // Re-expand: the edited text comes back, exactly as typed (plus the fold's
+  // trailing newline, which stays in the draft).
   await page.getByTestId("paste-chip").click();
   const value = await page.evaluate(() => (document.querySelector('[data-testid="composer-input"]') as HTMLTextAreaElement).value);
-  expect(value).toBe(`edited\n${BIG_MARKDOWN}`);
+  expect(value).toBe(`edited\n${BIG_MARKDOWN}\n`);
 
   // Several round trips stay stable.
   await page.getByTestId("paste-collapse").click();
   await expect(page.getByTestId("paste-chip")).toHaveCount(1);
   await page.getByTestId("paste-chip").click();
   const value2 = await page.evaluate(() => (document.querySelector('[data-testid="composer-input"]') as HTMLTextAreaElement).value);
-  expect(value2).toBe(`edited\n${BIG_MARKDOWN}`);
+  expect(value2).toBe(`edited\n${BIG_MARKDOWN}\n`);
 });
 
 test("a fold of sub-threshold content degenerates to plain text (044 #2b)", async ({ page }) => {
@@ -253,7 +256,7 @@ test("Esc closes the hover preview without touching the draft (044 #3)", async (
   await expect(page.getByTestId("paste-preview")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("paste-preview")).toHaveCount(0);
-  // The draft is untouched.
+  // The draft is untouched (including the fold's trailing newline).
   const value = await page.evaluate(() => (document.querySelector('[data-testid="composer-input"]') as HTMLTextAreaElement).value);
-  expect(value).toBe(`[Pasted Markdown #1 +${BIG_LINES} lines]`);
+  expect(value).toBe(`[Pasted Markdown #1 +${BIG_LINES} lines]\n`);
 });
