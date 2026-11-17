@@ -36,6 +36,9 @@ object SnippetFiles {
         "xml" -> "XML"
         "html" -> "HTML"
         "css" -> "CSS"
+        "scss" -> "SCSS"
+        "sass" -> "SASS"
+        "less" -> "LESS"
         "md", "markdown" -> "Markdown"
         "diff", "patch" -> "DIFF"
         "gradle", "groovy" -> "Groovy"
@@ -66,6 +69,9 @@ object SnippetFiles {
         "xml" -> "xml"
         "html" -> "html"
         "css" -> "css"
+        "scss" -> "scss"
+        "sass" -> "sass"
+        "less" -> "less"
         "md", "markdown" -> "md"
         "diff", "patch" -> "diff"
         "gradle", "groovy" -> "gradle"
@@ -75,15 +81,23 @@ object SnippetFiles {
 
     /**
      * Builds the read-only in-memory file for a snippet. Resolution order:
-     * alias table → raw id as a language id → file-type-by-name → plain text
-     * (041 US2: an unknown language opens fine as plain text, never throws).
+     * alias table → raw id as a language id → file-type-by-name → file type
+     * by extension → plain text (041 US2: an unknown language opens fine as
+     * plain text, never throws).
      */
     fun buildVirtualFile(raw: String, text: String, seq: Int): LightVirtualFile {
         val mapped = ideLanguageId(raw) ?: raw.takeIf { it.isNotBlank() }
         val language = mapped?.let { Language.findLanguageByID(it) }
+        val fileTypes = FileTypeManager.getInstance()
+        // 041 #10: last chance before the plain-text degrade — the IDE may
+        // register a file type for the extension even though no language id
+        // matches the fence id (vue/sol/dockerfile-style ids on IDEs that
+        // ship a type but a differently-named language). getFileTypeByExtension
+        // itself degrades to plain text for unknown extensions.
+        val byExtension = fileTypes.getFileTypeByExtension(extensionFor(raw))
         val fileType = language?.associatedFileType
-            ?: mapped?.let { FileTypeManager.getInstance().findFileTypeByName(it) }
-            ?: PlainTextFileType.INSTANCE
+            ?: mapped?.let { fileTypes.findFileTypeByName(it) }
+            ?: byExtension
         val vf = LightVirtualFile("pi-snippet-$seq.${extensionFor(raw)}", fileType, text)
         vf.isWritable = false
         return vf

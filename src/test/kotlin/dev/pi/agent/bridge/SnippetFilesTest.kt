@@ -18,6 +18,12 @@ class SnippetFilesTest {
         assertEquals("shell", SnippetFiles.ideLanguageId("bash"))
         assertEquals("JSON", SnippetFiles.ideLanguageId("json"))
         assertEquals("Markdown", SnippetFiles.ideLanguageId("md"))
+        // 041 #10: style languages the CSS plugin registers with their own
+        // ids; the fence id alone never matched them before.
+        assertEquals("SCSS", SnippetFiles.ideLanguageId("scss"))
+        assertEquals("SASS", SnippetFiles.ideLanguageId("sass"))
+        assertEquals("LESS", SnippetFiles.ideLanguageId("less"))
+        assertEquals("LESS", SnippetFiles.ideLanguageId("LESS"))
     }
 
     @Test
