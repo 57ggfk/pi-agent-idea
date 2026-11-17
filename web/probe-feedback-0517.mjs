@@ -252,6 +252,70 @@ async function stageSvg(send) {
   return { settled: false, waitedMs: 180000, last: lastSig };
 }
 
+// 041#9：让 pi 生成一个 SVG 文件，等消息里的「新增文件 diff 块 / 工具卡文件链接」
+// 出现后点击它，验证 ide.openFile 被真实调用（宿主打开 IDE 编辑器标签）。
+async function stage041File(send) {
+  const PROMPT = '请在当前项目目录下创建文件 probe-0419-circle.svg，内容为一个 48×48 的 SVG 蓝色圆形（circle cx=24 cy=24 r=20 fill=#3b82f6）。只做这一件事，创建完成后用一句话确认即可。';
+  await evaluate(send, `(() => {
+    const ta = document.querySelector('[data-testid="composer-input"]');
+    if (!ta) throw new Error("no composer");
+    const proto = ta.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+    if (setter) setter.call(ta, ${JSON.stringify(PROMPT)});
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+    return ta.value?.length ?? 0;
+  })()`);
+  await sleep(400);
+  await evaluate(send, `document.querySelector('[data-testid="send-btn"]')?.click()`);
+  const start = Date.now();
+  let clicked = null;
+  while (Date.now() - start < 180000) {
+    const s = await evaluate(send, `(() => {
+      const mds = [...document.querySelectorAll('.markdown')];
+      const mine = mds.find(e => /probe-0419-circle\\.svg/.test(e.textContent||''));
+      const toolLink = mine?.querySelector('.tool-file-link');
+      const diffLink = [...(mine?.querySelectorAll('pre .file-link') ?? [])].find(e => /probe-0419-circle\\.svg/.test(e.dataset.path||''));
+      return {
+        found: !!mine,
+        busy: !!document.querySelector('[data-testid="send-btn"][disabled]'),
+        toolLinkText: toolLink?.textContent?.slice(0, 60) ?? null,
+        diffLinkPath: diffLink?.dataset?.path ?? null,
+        diffLinkCount: mine ? [...mine.querySelectorAll('pre .file-link')].length : 0,
+      };
+    })()`);
+    if (s.found && s.diffLinkPath) {
+      // 优先点 diff 块里的文件路径（041#9 修复的入口）
+      await evaluate(send, `(() => {
+        const mds = [...document.querySelectorAll('.markdown')];
+        const mine = mds.find(e => /probe-0419-circle\\.svg/.test(e.textContent||''));
+        const link = [...(mine?.querySelectorAll('pre .file-link') ?? [])].find(e => /probe-0419-circle\\.svg/.test(e.dataset.path||''));
+        link?.click();
+        return link?.dataset.path ?? null;
+      })()`);
+      clicked = { entry: "diff-block", path: s.diffLinkPath };
+      break;
+    }
+    if (s.found && s.toolLinkText && !s.busy) {
+      // 没有文本 diff 块时点工具卡头部的文件链接
+      await evaluate(send, `(() => {
+        const mds = [...document.querySelectorAll('.markdown')];
+        const mine = mds.find(e => /probe-0419-circle\\.svg/.test(e.textContent||''));
+        mine?.querySelector('.tool-file-link')?.click();
+        return true;
+      })()`);
+      clicked = { entry: "tool-card", path: s.toolLinkText };
+      break;
+    }
+    await sleep(2500);
+  }
+  await sleep(2000);
+  const after = await evaluate(send, `(() => ({
+    fileLinks: [...document.querySelectorAll('.markdown pre .file-link')].map(e => e.dataset.path),
+    toolFileLinks: [...document.querySelectorAll('.tool-file-link')].map(e => e.textContent.slice(0, 60)),
+  }))()`);
+  return { clicked, waitedMs: Date.now() - start, after };
+}
+
 (async () => {
   try {
     report.result = await withPage(async (send) => {
@@ -260,6 +324,7 @@ async function stageSvg(send) {
         case "capture": return stageCapture(send);
         case "feed": return stageFeed(send);
         case "svg": return stageSvg(send);
+        case "041file": return stage041File(send);
         case "state":
         default: return stageState(send);
       }
