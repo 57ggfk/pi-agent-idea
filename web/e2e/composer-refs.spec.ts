@@ -40,7 +40,7 @@ test("ide refs events become inline tokens, in order, without dedupe", async ({ 
   });
   const input = page.getByTestId("composer-input");
   // Tokens appended at the tail, each followed by a separator space.
-  await expect(input).toHaveValue("@src @README.md ");
+  await expect(input).toHaveValue("@src  @README.md  ");
   const tokens = page.getByTestId("ref-token");
   await expect(tokens).toHaveCount(2);
   await expect(tokens.first()).toHaveText("@src");
@@ -64,7 +64,7 @@ test("a refs-only push keeps the draft and separates itself from it", async ({ p
   await pushIde(page, { kind: "refs", files: [{ path: "src", dir: true }] });
   // A space separates the draft from the token — a glued `draft@src` would
   // not even read as a token.
-  await expect(input).toHaveValue("my draft @src ");
+  await expect(input).toHaveValue("my draft @src  ");
   await expect(page.getByTestId("ref-token")).toHaveCount(1);
 });
 
@@ -78,9 +78,9 @@ test("one Backspace after a token removes the whole token", async ({ page }) => 
       { path: "README.md", dir: false },
     ],
   });
-  await expect(input).toHaveValue("@src @README.md ");
+  await expect(input).toHaveValue("@src  @README.md  ");
   await input.press("Backspace");
-  await expect(input).toHaveValue("@src ");
+  await expect(input).toHaveValue("@src  ");
   await expect(page.getByTestId("ref-token")).toHaveCount(1);
   await input.press("Backspace");
   await expect(input).toHaveValue("");
@@ -98,7 +98,8 @@ test("clicking a token selects it, typing replaces it", async ({ page }) => {
   expect(start).toBe(0);
   expect(end).toBe("@src".length);
   await input.press("x");
-  await expect(input).toHaveValue("x ");
+  // The token's two-space trailing (045) survives the replacement.
+  await expect(input).toHaveValue("x  ");
 });
 
 test("sending keeps tokens inline at their position", async ({ page }) => {
@@ -112,7 +113,7 @@ test("sending keeps tokens inline at their position", async ({ page }) => {
     ],
   });
   // Injected refs land AFTER the draft, separated by a space.
-  await expect(input).toHaveValue("summarize these @src @README.md ");
+  await expect(input).toHaveValue("summarize these @src  @README.md  ");
   await page.getByTestId("send-btn").click();
 
   await expect(page.getByTestId("item-user")).toHaveCount(1);
@@ -133,10 +134,10 @@ test("references alone are sendable", async ({ page }) => {
   await expect(page.getByTestId("item-user").first()).toContainText("@README.md");
 });
 
-test("an injected prompt ends with exactly one newline (caret on a fresh line)", async ({ page }) => {
+test("an injected prompt ends with the unified trailing (045: single-line → two spaces)", async ({ page }) => {
   const input = page.getByTestId("composer-input");
   await pushIde(page, { kind: "prompt", text: "Look at `src/a.ts`. Summarize what it does." });
-  await expect(input).toHaveValue("Look at `src/a.ts`. Summarize what it does.\n");
+  await expect(input).toHaveValue("Look at `src/a.ts`. Summarize what it does.  ");
 });
 
 test("the composer grows with an injected prompt and collapses after sending", async ({ page }) => {
@@ -170,7 +171,7 @@ test("a project-tree drag (uri-list) becomes a project-relative token", async ({
 
   const input = page.getByTestId("composer-input");
   // The mock bridge resolved the absolute path under /tmp/mock-project.
-  await expect(input).toHaveValue("@src/store/store.ts ");
+  await expect(input).toHaveValue("@src/store/store.ts  ");
   const token = page.getByTestId("ref-token");
   await expect(token).toHaveCount(1);
   await expect(token).toHaveAttribute("data-path", "src/store/store.ts");
@@ -204,7 +205,7 @@ test("a file drag shows the drop hint and takes the IDE's real path", async ({ p
   await composer.dispatchEvent("drop", { dataTransfer });
   await expect(page.getByTestId("composer-drop")).toHaveCount(0);
   const input = page.getByTestId("composer-input");
-  await expect(input).toHaveValue("@src/store/store.ts ");
+  await expect(input).toHaveValue("@src/store/store.ts  ");
   await expect(page.getByTestId("ref-token")).toHaveCount(1);
 });
 
@@ -220,7 +221,7 @@ test("a folder drag becomes a token at the caret", async ({ page }) => {
   });
   await page.getByTestId("composer").dispatchEvent("drop", { dataTransfer });
 
-  await expect(page.getByTestId("composer-input")).toHaveValue("@src ");
+  await expect(page.getByTestId("composer-input")).toHaveValue("@src  ");
   await expect(page.getByTestId("ref-token").first()).toHaveText("@src");
 });
 
@@ -236,19 +237,19 @@ test("a drop with no Files flavour still takes the IDE's real path", async ({ pa
     return dt;
   });
   await page.getByTestId("composer").dispatchEvent("drop", { dataTransfer });
-  await expect(page.getByTestId("composer-input")).toHaveValue("@src/store/store.ts ");
+  await expect(page.getByTestId("composer-input")).toHaveValue("@src/store/store.ts  ");
 });
 
 test("an IDE-pushed drop batch is not duplicated by a later HTML5 drop", async ({ page }) => {
   await pushIde(page, { kind: "refs", files: [{ path: "src", dir: true }], fromDrop: true });
-  await expect(page.getByTestId("composer-input")).toHaveValue("@src ");
+  await expect(page.getByTestId("composer-input")).toHaveValue("@src  ");
   const dataTransfer = await page.evaluateHandle(() => {
     const dt = new DataTransfer();
     dt.items.add(new File(["x"], "src", { type: "" }));
     return dt;
   });
   await page.getByTestId("composer").dispatchEvent("drop", { dataTransfer });
-  await expect(page.getByTestId("composer-input")).toHaveValue("@src ");
+  await expect(page.getByTestId("composer-input")).toHaveValue("@src  ");
   await expect(page.getByTestId("ref-token")).toHaveCount(1);
 });
 
@@ -260,7 +261,7 @@ test("dragged code lands as text, not as a bogus reference token", async ({ page
   });
   await page.getByTestId("composer").dispatchEvent("drop", { dataTransfer });
 
-  await expect(page.getByTestId("composer-input")).toHaveValue("const answer = 42;");
+  await expect(page.getByTestId("composer-input")).toHaveValue("const answer = 42;  ");
   await expect(page.getByTestId("ref-token")).toHaveCount(0);
 });
 
