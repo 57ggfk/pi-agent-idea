@@ -2512,9 +2512,11 @@ export class MockBridge implements Bridge {
               // the sanitizer must keep the math but strip script vectors.
               "Energy:\n\n$E=mc^2$ inline, and a block:\n\n$$\\sum_{i=1}^{n} x_i$$\n\nNow a nasty one: $\\text{<script>alert(1)</script>}$\n"
             : this.mdKnob === "mermaid"
-            ? // 040 US2: one valid diagram + one broken diagram — the valid
-              // one renders, the broken one degrades to its source block.
-              "Valid:\n\n```mermaid\ngraph TD;\n  A[Start] --> B{Q?};\n  B -- yes --> C[End];\n```\n\nBroken:\n\n```mermaid\ngraph TD;\n  A --> ];\n```\n"
+            ? // 040 US2: one valid diagram + two broken diagrams (distinct
+              // sources = distinct failure keys) — the valid one renders, the
+              // broken ones degrade to their source blocks, and 040 #5
+              // asserts neither leaks an error node into <body>.
+              "Valid:\n\n```mermaid\ngraph TD;\n  A[Start] --> B{Q?};\n  B -- yes --> C[End];\n```\n\nBroken:\n\n```mermaid\ngraph TD;\n  A --> ];\n```\n\nBroken 2:\n\n```mermaid\ngraph TD\n  A[start] --> B( bad syntax >>>\n```\n"
             : this.mdKnob === "svg"
             ? // 039: a legal inline SVG plus a malicious one — the sanitizer
               // must render the first and strip the second's vectors.
