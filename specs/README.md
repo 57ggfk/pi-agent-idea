@@ -442,6 +442,7 @@ C1 与 C3 无依赖可并行立项；拍板哪几条我就开 spec。
 | 049 | [代码块「渲染 ⇄ 源码」模式切换（换行只在源码模式生效）](./049-code-block-view-mode/spec.md) | 需求 | ```svg / ```mermaid 块标题栏加模式开关，两种模式来回切；换行开关只在源码模式生效 | 已实现（2026-11-20 用户新需求；Q1–Q5 已拍板；e2e 7 条新增 + 4 项负向验证变红；顺带修掉 mermaid 图形被并发 null 请求拆掉的老账） |
 | 050 | [CSV / TSV 代码块渲染成表格](./050-csv-tsv-table/spec.md) | 需求 | ```csv / ```tsv 围栏默认渲染成表格（表头进 thead、单元格与原文逐字一致）；超 200 行截断渲染并标注；宽表横向滚动；可切回源码 | 已实现（2026-11-24 用户新需求；Q1–Q5 已拍板；需求单 GitHub issue #3（中英双语）；e2e 11 条全绿；纯前端、零新依赖，Kotlin 与桥接协议未动） |
 | 051 | [provider 被删后 pi 起不来（校验 + 兜底 + 病因上屏）](./051-stale-model-provider/spec.md) | 缺陷 | 项目记住的 provider 被删 → pi 以 `Unknown provider` 拒绝启动 → 面板对该项目彻底瘫痪且无法自救（真机：cmfc-fis）；改为：启动前用 `pi auth check` 校验（分得清「provider 没了」与「没登录」）、pi 拒绝时兜底重启一次、退出横幅直接显示 pi 的真实报错 | 已实现（2026-11-25 用户报障；判据=pi 自己的 `provider_not_found` vs `credentials_not_configured`，本地配置文件分不开；偏好不销毁、provider 加回来自动用回；Kotlin 新增 `PiModelPreflight`/`PiExitDiagnostics`，桥接多两个字段） |
+| 048-B | [内置浏览器 P0（预览基座）](./048-in-app-browser-p0/spec.md)（[plan](./048-in-app-browser-p0/plan.md) / [tasks](./048-in-app-browser-p0/tasks.md)） | 需求 | 042 P0 可实施规格：地址栏页签（可编辑+回显+历史）、本地 HTML 一次性预览路由、外链三态设置（默认系统浏览器不变）、弹窗同视口接续、下载落盘通知、默认严格证书+043 hook、崩溃自愈；编辑器呈现 D 轨可滑出 | **spec/plan/tasks 齐备（2026-11-18）**，探针证据 P-1～P-12 已实证（弹窗拦截点/证书 Continue 通路/下载原生路径/cookie 不隔离/HealthMonitor 243 缺失/HWND 错位）；24 task 五阶段，T001 起开发 |
 
 **0.5.10 反馈批次修订（2026-11-17，用户拍板「全部进 0.5.10」）**：内测 10 条反馈统一梳理——3 条并入现有 spec 修订、2 条新建 spec、1 条调研归档：
 
