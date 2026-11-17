@@ -70,11 +70,64 @@ test("clicking the chip expands the full content; collapse folds it back (044 US
   await page.getByTestId("paste-collapse").click();
   await expect(page.getByTestId("paste-chip")).toHaveCount(1);
   await expect(page.getByTestId("paste-collapse")).toHaveCount(0);
+});
 
-  // Editing the expanded content retires the affordance (plain prose again).
+test("expanded content stays foldable after edits; the fold captures the edited text (044 #2b)", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByTestId("empty-state")).toBeVisible();
+  await pasteText(page, BIG_MARKDOWN);
+  await expect(page.getByTestId("paste-chip")).toHaveCount(1);
+
+  // Expand, then edit inside the content — the affordance STAYS now.
   await page.getByTestId("paste-chip").click();
-  await page.keyboard.type("edited ");
+  await expect(page.getByTestId("paste-collapse")).toBeVisible();
+  await page.evaluate(() => {
+    const ta = document.querySelector('[data-testid="composer-input"]') as HTMLTextAreaElement;
+    ta.focus();
+    ta.setSelectionRange(0, 0);
+  });
+  // Shift+Enter inserts the newline WITHOUT sending (plain Enter sends).
+  await page.keyboard.type("edited");
+  await page.keyboard.press("Shift+Enter");
+  await expect(page.getByTestId("paste-collapse")).toBeVisible();
+
+  // Fold: the chip token carries the EDITED line count (+11 lines).
+  await page.getByTestId("paste-collapse").click();
+  await expect(page.getByTestId("paste-chip")).toHaveCount(1);
   await expect(page.getByTestId("paste-collapse")).toHaveCount(0);
+  await expect(page.getByTestId("paste-chip")).toContainText(`[Pasted Markdown #1 +${BIG_LINES + 1} lines]`);
+
+  // Re-expand: the edited text comes back, exactly as typed.
+  await page.getByTestId("paste-chip").click();
+  const value = await page.evaluate(() => (document.querySelector('[data-testid="composer-input"]') as HTMLTextAreaElement).value);
+  expect(value).toBe(`edited\n${BIG_MARKDOWN}`);
+
+  // Several round trips stay stable.
+  await page.getByTestId("paste-collapse").click();
+  await expect(page.getByTestId("paste-chip")).toHaveCount(1);
+  await page.getByTestId("paste-chip").click();
+  const value2 = await page.evaluate(() => (document.querySelector('[data-testid="composer-input"]') as HTMLTextAreaElement).value);
+  expect(value2).toBe(`edited\n${BIG_MARKDOWN}`);
+});
+
+test("a fold of sub-threshold content degenerates to plain text (044 #2b)", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByTestId("empty-state")).toBeVisible();
+  await pasteText(page, BIG_MARKDOWN);
+  await page.getByTestId("paste-chip").click();
+  await expect(page.getByTestId("paste-collapse")).toBeVisible();
+  // Select the whole expanded content and overwrite it with a short line.
+  await page.evaluate(() => {
+    const ta = document.querySelector('[data-testid="composer-input"]') as HTMLTextAreaElement;
+    ta.focus();
+    ta.setSelectionRange(0, ta.value.length);
+  });
+  await page.keyboard.type("just a short line");
+  // Folding short prose retires the affordance and keeps it as plain text.
+  await page.getByTestId("paste-collapse").click();
+  await expect(page.getByTestId("paste-chip")).toHaveCount(0);
+  const value = await page.evaluate(() => (document.querySelector('[data-testid="composer-input"]') as HTMLTextAreaElement).value);
+  expect(value).toBe("just a short line");
 });
 
 test("hovering a chip shows a read-only preview (044 US3)", async ({ page }) => {
@@ -136,34 +189,71 @@ test("sending a folded paste delivers the full original to the transcript (044 U
   expect(raw).not.toContain("[Pasted Markdown #1");
 });
 
-test("pastes beyond 2000 lines are offered the save-as-file route and get an @ref (044 US7)", async ({ page }) => {
+test("pastes beyond 2000 lines auto-save to a temp file reference (044 #4)", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByTestId("empty-state")).toBeVisible();
   const huge = Array.from({ length: 2100 }, (_, i) => `line ${i}`).join("\n");
   await pasteText(page, huge);
 
-  await expect(page.getByTestId("paste-big-hint")).toBeVisible();
-  await page.getByTestId("paste-save-file").click();
-
-  // The chip is replaced by an @path reference; pi will read the file itself.
-  await expect(page.getByTestId("paste-chip")).toHaveCount(0);
-  await expect(page.getByTestId("ref-token")).toHaveCount(1);
+  // No suggestion bar any more — the save happens on its own and swaps the
+  // chip for the @path reference (mock resolves immediately, so the chip may
+  // already be gone by the first poll).
+  await expect(page.getByTestId("paste-big-hint")).toHaveCount(0);
+  await expect(page.getByTestId("paste-save-failed")).toHaveCount(0);
+  await expect(page.getByTestId("ref-token")).toHaveCount(1, { timeout: 10_000 });
   const value = await page.evaluate(() => (document.querySelector('[data-testid="composer-input"]') as HTMLTextAreaElement).value);
   expect(value).toContain("@/tmp/mock-home/pi-paste-1-x/pasted-1.txt");
   expect(value).not.toContain("[Pasted");
 });
 
-test("a failed temp write keeps the folded chip and its content (044 FR-013)", async ({ page }) => {
+test("a failed auto temp write keeps the folded chip, shows a dismissible notice (044 #4/FR-013)", async ({ page }) => {
   await page.goto("/?saveTemp=fail");
   await expect(page.getByTestId("empty-state")).toBeVisible();
   const huge = Array.from({ length: 2100 }, (_, i) => `line ${i}`).join("\n");
   await pasteText(page, huge);
-  await expect(page.getByTestId("paste-big-hint")).toBeVisible();
-
-  await page.getByTestId("paste-save-file").click();
-  // The write failed: the chip stays, nothing is lost, no empty @ref appears.
+  // The write failed: the chip stays, nothing is lost, no empty @ref, and a
+  // perceivable (dismissible) failure notice appears.
+  await expect(page.getByTestId("paste-save-failed")).toBeVisible({ timeout: 10_000 });
   await expect(page.getByTestId("paste-chip")).toHaveCount(1);
   await expect(page.getByTestId("ref-token")).toHaveCount(0);
   const value = await page.evaluate(() => (document.querySelector('[data-testid="composer-input"]') as HTMLTextAreaElement).value);
   expect(value).toContain("[Pasted");
+  await page.getByTestId("paste-save-failed-dismiss").click();
+  await expect(page.getByTestId("paste-save-failed")).toHaveCount(0);
+});
+
+test("hover preview survives the chip→overlay trip and the save button works (044 #1/#3)", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByTestId("empty-state")).toBeVisible();
+  await pasteText(page, BIG_MARKDOWN);
+  await expect(page.getByTestId("paste-chip")).toHaveCount(1);
+
+  await page.getByTestId("paste-chip").hover();
+  await expect(page.getByTestId("paste-preview")).toBeVisible();
+  // Real mouse path across the (former) gap into the overlay's save button —
+  // a synthetic click cannot prove the hover keeps the overlay alive.
+  const btn = page.getByTestId("paste-preview-save");
+  const box = await btn.boundingBox();
+  expect(box).not.toBeNull();
+  await page.mouse.move(box!.x + box!.width / 2, box!.y - 8); // just above the button, inside the overlay
+  await expect(page.getByTestId("paste-preview")).toBeVisible();
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await btn.click();
+  // The save went through: the chip is replaced by the @path reference.
+  await expect(page.getByTestId("ref-token")).toHaveCount(1, { timeout: 10_000 });
+  await expect(page.getByTestId("paste-preview")).toHaveCount(0);
+});
+
+test("Esc closes the hover preview without touching the draft (044 #3)", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByTestId("empty-state")).toBeVisible();
+  await pasteText(page, BIG_MARKDOWN);
+  await expect(page.getByTestId("paste-chip")).toHaveCount(1);
+  await page.getByTestId("paste-chip").hover();
+  await expect(page.getByTestId("paste-preview")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("paste-preview")).toHaveCount(0);
+  // The draft is untouched.
+  const value = await page.evaluate(() => (document.querySelector('[data-testid="composer-input"]') as HTMLTextAreaElement).value);
+  expect(value).toBe(`[Pasted Markdown #1 +${BIG_LINES} lines]`);
 });

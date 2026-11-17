@@ -80,7 +80,7 @@ export const en = {
   "composer.pasteCollapse": "Collapse",
   "composer.pastePreviewMore": " · …expand to see everything",
   "composer.pasteSaveFile": "Save as file",
-  "composer.pasteBigHint": "Large paste ({{count}} lines) — save it as a file reference instead?",
+  "composer.pasteSaveFailed": "Auto-saving to a file failed ({{kind}}, {{count}} lines) — the content stayed in the folded chip; try again later.",
   "composer.tempRefGone": "The referenced temp file has been cleaned up, so the message cannot be sent: {{paths}}. Remove or edit the reference.",
 
   // -- send button & queue modes ---------------------------------------------

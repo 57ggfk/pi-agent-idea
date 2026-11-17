@@ -21,6 +21,15 @@ export function countLines(text: string): number {
   return text.split("\n").length;
 }
 
+/**
+ * 044 #4 (feedback batch): pastes beyond the file threshold auto-save to a
+ * temp file reference (no prompt) — the chip is the fallback when the write
+ * fails. Boundary-inclusive: exactly 2000 lines stays a chip.
+ */
+export function shouldAutoSaveAsFile(lines: number): boolean {
+  return lines > PASTE_FILE_LINES_THRESHOLD;
+}
+
 export function shouldCollapse(text: string): boolean {
   return countLines(text) > PASTE_LINE_THRESHOLD || text.length > PASTE_CHAR_THRESHOLD;
 }

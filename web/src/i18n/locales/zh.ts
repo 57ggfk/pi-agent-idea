@@ -81,7 +81,7 @@ export const zh: Dict = {
   "composer.pasteCollapse": "折回",
   "composer.pastePreviewMore": " · …点击展开查看全部",
   "composer.pasteSaveFile": "存为文件",
-  "composer.pasteBigHint": "粘贴内容较大（{{count}} 行）——要改存为文件引用吗？",
+  "composer.pasteSaveFailed": "自动转存为文件失败（{{kind}}，{{count}} 行）——内容已保留在折叠块中，可稍后重试。",
   "composer.tempRefGone": "引用的临时文件已被清理，无法发送：{{paths}}。请删除或修改该引用。",
 
   // -- send button & queue modes ---------------------------------------------
