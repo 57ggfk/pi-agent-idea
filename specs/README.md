@@ -438,6 +438,7 @@ C1 与 C3 无依赖可并行立项；拍板哪几条我就开 spec。
 | 045 | [注入内容统一收尾换行规则](./045-injection-trailing-newline/spec.md) | 需求 | 所有注入通路（粘贴折叠/编辑器引用/文件引用）统一收尾：多行追加 `\n`、单行追加两个空格；在统一收口点实现一次、判重不叠加 | spec 定稿（Draft，范围/规则/独立 spec/版本四条已拍板 2026-11-17）；plan/tasks 待后续 |
 | 046 | [关闭仅剩实例时自动重建](./046-instance-recreate-on-last-close/spec.md) | 缺陷 | 关闭最后一个 Pi Agent Content 时自动新建干净 Content（等价刷新），避免空白工具窗与强关 IDE 重开"一直加载不出来"；遵守 019 两条硬教训 | spec 定稿（Draft，触发时机/重建形态/独立 spec/版本四条已拍板 2026-11-17）；根因待真机取证；plan/tasks 待后续 |
 | 047 | [渲染内容复制为图片](./047-copy-rendered-as-image/spec.md) | 需求 | SVG/Mermaid/KaTeX 三类渲染块加「复制为图片」，PNG 写系统剪贴板；不预设取图手段（不要求转 SVG），分格式独立交付、探针判做不了的格式可先搁置（Q5） | spec 定稿（Draft，范围/独立 spec/搁置策略/版本 0.5.10 已定 2026-11-17）；**真机已探：SVG→PNG 通、JCEF 有 async clipboard（旧"必须走桥接"作废），Q3 剪贴板通道待写图往返探针复核**；plan/tasks 待后续 |
+| 048 | [内置浏览器 P0（预览基座）](./048-in-app-browser-p0/spec.md)（[plan](./048-in-app-browser-p0/plan.md) / [tasks](./048-in-app-browser-p0/tasks.md)） | 需求 | 042 P0 可实施规格：地址栏页签（可编辑+回显+历史）、本地 HTML 一次性预览路由、外链三态设置（默认系统浏览器不变）、弹窗同视口接续、下载落盘通知、默认严格证书+043 hook、崩溃自愈；编辑器呈现 D 轨可滑出 | **spec/plan/tasks 齐备（2026-11-18）**，探针证据 P-1～P-12 已实证（弹窗拦截点/证书 Continue 通路/下载原生路径/cookie 不隔离/HealthMonitor 243 缺失/HWND 错位）；24 task 五阶段，T001 起开发 |
 
 **0.5.10 反馈批次修订（2026-11-17，用户拍板「全部进 0.5.10」）**：内测 10 条反馈统一梳理——3 条并入现有 spec 修订、2 条新建 spec、1 条调研归档：
 
