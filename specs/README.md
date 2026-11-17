@@ -443,3 +443,5 @@ C1 与 C3 无依赖可并行立项；拍板哪几条我就开 spec。
 **关键既有事实**（写进 spec 可行性结论）：node/npm 的 path+version 在 `PiEnvironment.detect()` 已探测；`shortPath` 缩写与 `.skill-path-full/.short` 响应式 CSS 均已存在；插件版本运行时无现成读取、构建时间/commit ID 需构建期生成——故本条无技术难题，风险集中在降级显示与缩写边界。
 
 **042 内置浏览器方向（2026-11-16 轻量调研）**：Codex App / Cursor Design Mode / VS Code 浏览器工具 / 华为云码道 Doer 的共识是「浏览器=渲染验证/反馈面，非通用浏览器」；差异化在批注回流会话携带**结构化上下文**（选择器+样式+截图），各家普遍回避登录态/cookie。据此把 042 定为**方向性 spec**：P0 预览基座 → P1 开发交互(DevTools/日志) → P2 批注回流会话 → P3 agent 自主浏览(仅登记方向)；实现前 7 项探针（JCEF 多实例 OSR / DevTools 可用性 / 元素选取+CSP / 批注覆盖层 / 双形态承载 / URL 安全边界 / 批注数据形状）。**037 外链仍走系统浏览器、014 OAuth 仍系统浏览器，均不改**；可复用 019 多 Content 基建但须隔离 instance 计数。
+
+**042 探索稿并入（2026-11-17）**：更早的技术方案探索（原 `031-embedded-browser` 分支，2026-11-13，占位号 031 已被 compaction-i18n 占用）rebase 至本分支后移入 [042 目录 exploration.md](./042-in-app-browser/exploration.md)，并按本批已拍板口径重梳理（探索稿 Q1–Q6 全部关闭，Q1/Q4 被 042 更广口径取代）。技术基座吸收进 042 spec：**安全硬约束 6 条**（token 永不进内置浏览器 URL、P0 零桥接、CEF 状态隔离待证、file:// 不走主路径、出站通道默认为零、日志脱敏）+ **渲染 windowed 结论** + **崩溃判定差异**（`JBCefHealthMonitor`/`onLoadError`）+ **新失败面**（下载/弹窗）+ **补充探针 4 项**（合计 11 项，见 exploration.md §8 合并清单）；本机 CDP 常开（9222）+ `probe-033-cdp.mjs` 裸 CDP 先例可直接复用为探针工具。
