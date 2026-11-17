@@ -64,6 +64,43 @@ test("a malformed SVG degrades without breaking the message (039 FR-004)", async
   await expect(page.locator(".markdown", { hasText: "Icon:" })).toContainText("Danger:");
 });
 
+test("fenced SVG source stays a code block while bare SVG renders (039 #6 boundary)", async ({ page }) => {
+  await page.goto("/?md=svg");
+  await expect(page.getByTestId("empty-state")).toBeVisible();
+  await page.getByTestId("composer-input").fill("show icons");
+  await page.getByTestId("send-btn").click();
+  // Tail-anchored: both fenced blocks are the reply's final chunks.
+  const fenced = page.locator(".markdown pre code.language-svg");
+  await expect(fenced).toHaveCount(2, { timeout: 30_000 });
+
+  // Bare legal SVG rendered exactly once as a graphic — the fenced copy of
+  // the SAME markup must not render a second one (boundary: fence = source).
+  await expect(page.locator(".markdown svg circle[r='8']")).toHaveCount(1);
+  const fencedAudit = await page.evaluate(() => {
+    const blocks = Array.from(document.querySelectorAll(".markdown pre code.language-svg"));
+    return {
+      legal: blocks.some((b) => (b.textContent ?? "").includes('<circle cx="10"')),
+      evilText: blocks.some((b) => (b.textContent ?? "").includes("<script>alert(1)</script>")),
+      scripts: document.querySelectorAll(".markdown script").length,
+      foreignObjects: document.querySelectorAll(".markdown foreignObject").length,
+      renderedFromFence: blocks.filter((b) => b.closest("pre")!.querySelector("svg")).length,
+    };
+  });
+  // Fenced legal markup stays copyable source text; the fenced malicious
+  // sample stays inert text — nothing executes or renders from either.
+  expect(fencedAudit.legal).toBe(true);
+  expect(fencedAudit.evilText).toBe(true);
+  expect(fencedAudit.scripts).toBe(0);
+  expect(fencedAudit.foreignObjects).toBe(0);
+  expect(fencedAudit.renderedFromFence).toBe(0);
+
+  // "源码可复制" is user-reachable: the shared action bar (Copy + open in IDE)
+  // is injected on the fenced source block too.
+  const sourcePre = page.locator(".markdown pre", { hasText: 'circle cx="10"' });
+  await expect(sourcePre.locator(".code-copy-btn")).toHaveCount(1);
+  await expect(sourcePre.locator(".code-ide-btn")).toHaveCount(1);
+});
+
 test("zero regression: file links and code blocks still work with SVG enabled (039 FR-005)", async ({ page }) => {
   await page.goto("/?md=svg");
   await expect(page.getByTestId("empty-state")).toBeVisible();

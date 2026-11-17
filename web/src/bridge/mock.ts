@@ -2518,11 +2518,23 @@ export class MockBridge implements Bridge {
             : this.mdKnob === "svg"
             ? // 039: a legal inline SVG plus a malicious one — the sanitizer
               // must render the first and strip the second's vectors.
+              // 039 #6 (feedback batch): the same markup inside a ```svg fence
+              // is SOURCE — it must stay a code block (copyable / open-in-IDE,
+              // 041) and never render as a graphic; the fenced malicious sample
+              // must stay inert text too.
               "Icon:\n\n" +
               '<svg viewBox="0 0 20 20" width="20" height="20"><circle cx="10" cy="10" r="8" fill="#1a7f37"></circle></svg>\n\n' +
               "Danger:\n\n" +
               '<svg viewBox="0 0 20 20" width="20"><script>alert(1)</script><foreignObject><body>x</body></foreignObject><a xlink:href="http://evil.example"><rect width="10" height="10"></rect></a></svg>\n\n' +
-              'Malformed: <svg viewBox="0 0 20 20"><rect width="10" '
+              'Malformed: <svg viewBox="0 0 20 20"><rect width="10" ' +
+              "\n\nSource (fenced):\n\n" +
+              "```svg\n" +
+              '<svg viewBox="0 0 20 20" width="20" height="20"><circle cx="10" cy="10" r="8" fill="#1a7f37"></circle></svg>\n' +
+              "```\n\n" +
+              "Fenced danger:\n\n" +
+              "```svg\n" +
+              '<svg viewBox="0 0 20 20" width="20"><script>alert(1)</script></svg>\n' +
+              "```"
               : `Here is my plan for **${prompt.slice(0, 60)}**:\n\n` +
                 "1. Inspect the repository layout\n" +
                 "2. Run a quick sanity check\n\n" +
