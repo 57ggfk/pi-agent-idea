@@ -2756,10 +2756,12 @@ button {
   border-color: var(--border-strong, var(--border));
 }
 
-/* 044 FR-005: read-only hover preview floating above the input wrap. */
+/* 044 FR-005: read-only hover preview floating above the input wrap.
+   044 #1/#3: flush against the input wrap (no gap) — the 4px dead zone used
+   to snap the preview shut while the pointer crossed into it. */
 .paste-preview {
   position: absolute;
-  bottom: calc(100% + 4px);
+  bottom: 100%;
   left: 0;
   right: 0;
   z-index: 4;

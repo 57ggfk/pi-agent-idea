@@ -8,9 +8,9 @@ import {
   countLines,
   detectPasteKind,
   expandPastes,
-  PASTE_FILE_LINES_THRESHOLD,
   pasteToken,
   replaceToken,
+  shouldAutoSaveAsFile,
   shouldCollapse,
   type PasteKind,
 } from "../lib/pasteCollapse";
@@ -175,6 +175,35 @@ export default function Composer() {
   >(null);
   // Hover preview for a paste chip (FR-005): read-only, never changes the box.
   const [pastePreview, setPastePreview] = useState<{ id: number; content: string; kind: PasteKind; lines: number } | null>(null);
+  // 044 #1/#3: closing the hover preview is deferred ~200ms so the pointer can
+  // cross from the chip into the overlay (and its buttons) without the gap
+  // snapping it shut; entering the overlay cancels the timer.
+  const previewCloseTimer = useRef<number | null>(null);
+  // 044 #2b: mirrors the latest draft for callbacks that must read "current
+  // text" after their own applyText (auto-save replaces the token).
+  const textRef = useRef(text);
+  textRef.current = text;
+  // 044 #2b region tracking: expand/collapse's own applyText writes exact
+  // bounds; this flag tells the tracking effect to skip those transitions.
+  const selfChangeRef = useRef(false);
+  const prevDraftRef = useRef(text);
+
+  /** 044 #1/#3: the preview must survive the chip→overlay pointer trip, so
+   *  leaving the chip only schedules a close (~200ms) and entering the
+   *  overlay cancels it. */
+  const cancelPreviewClose = useCallback(() => {
+    if (previewCloseTimer.current !== null) {
+      window.clearTimeout(previewCloseTimer.current);
+      previewCloseTimer.current = null;
+    }
+  }, []);
+  const schedulePreviewClose = useCallback(() => {
+    cancelPreviewClose();
+    previewCloseTimer.current = window.setTimeout(() => {
+      previewCloseTimer.current = null;
+      setPastePreview(null);
+    }, 200);
+  }, [cancelPreviewClose]);
   // FR-011: pastes beyond the file threshold are offered a save-as-file route.
   const [bigPasteHint, setBigPasteHint] = useState<{ id: number; content: string; kind: PasteKind; lines: number } | null>(null);
   // 044 FR-014: temp paste files referenced by the draft but already cleaned.
@@ -238,6 +267,10 @@ export default function Composer() {
    *  here so the height is recomputed after React commits the new value. */
   const applyText = useCallback((next: string) => {
     setText(next);
+    // 044 #2b: keep the mirror ref in sync synchronously — callbacks fired in
+    // the same tick (auto-save after a fold) must read the applied draft, not
+    // the pre-render one.
+    textRef.current = next;
     requestAnimationFrame(() => {
       const ta = taRef.current;
       if (ta && !composingRef.current) autosize(ta, ta.closest(".app") as HTMLElement | null);
@@ -280,17 +313,24 @@ export default function Composer() {
       const content = pastes.get(id);
       if (content === undefined) return;
       const ta = taRef.current;
+      // Snapshot the selection before expanding: the deferred select-all below
+      // must not fire if the caret moved on in the meantime (044 #2b e2e find:
+      // a late rAF re-selected the box and the next keystroke ate the text
+      // the user had just typed).
+      const selBefore = ta ? [ta.selectionStart, ta.selectionEnd] : null;
       const next = text.slice(0, start) + content + text.slice(end);
+      selfChangeRef.current = true;
       applyText(next);
       setPastes((prev) => {
         const m = new Map(prev);
         m.delete(id);
         return m;
       });
+      cancelPreviewClose();
       setPastePreview(null);
       setExpandedPaste({ id, content, kind, lines, start, end: start + content.length });
       requestAnimationFrame(() => {
-        if (ta) {
+        if (ta && selBefore && ta.selectionStart === selBefore[0] && ta.selectionEnd === selBefore[1]) {
           ta.focus();
           ta.setSelectionRange(start, start + content.length);
         }
@@ -362,10 +402,11 @@ export default function Composer() {
               expandPaste(id, kind, lines, start, end);
             }}
             onMouseEnter={() => {
+              cancelPreviewClose();
               const content = pasteContent(id);
               if (content !== undefined) setPastePreview({ id, content, kind, lines });
             }}
-            onMouseLeave={() => setPastePreview(null)}
+            onMouseLeave={schedulePreviewClose}
           >
             {m[0]}
           </span>
@@ -411,27 +452,99 @@ export default function Composer() {
     };
   }, []);
 
-  /** US2 再折回: the expanded content is only collapsible while untouched —
-   *  any edit invalidates the affordance (the text is plain prose again). */
+  /** 044 #1/#3: explicit close paths beyond the hover timer — Esc and any
+   *  scroll (capture phase, the whole window) dismiss the preview so it can
+   *  never linger. */
   useEffect(() => {
-    if (!expandedPaste) return;
-    if (text.slice(expandedPaste.start, expandedPaste.end) !== expandedPaste.content) {
-      setExpandedPaste(null);
+    if (!pastePreview) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        cancelPreviewClose();
+        setPastePreview(null);
+      }
+    };
+    const onScroll = () => {
+      cancelPreviewClose();
+      setPastePreview(null);
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [pastePreview, cancelPreviewClose]);
+
+  /** 044 #2b: while a paste is expanded, edits inside its range grow/shrink
+   *  the region so 「折回」 always folds the CURRENT text — the old "one edit
+   *  and the affordance is gone" behavior is retired. expand/collapse's own
+   *  applyText already wrote exact bounds and is skipped via selfChangeRef. */
+  useEffect(() => {
+    const prev = prevDraftRef.current;
+    prevDraftRef.current = text;
+    if (selfChangeRef.current) {
+      selfChangeRef.current = false;
+      return;
     }
+    if (!expandedPaste || prev === text) return;
+    let p = 0;
+    const minLen = Math.min(prev.length, text.length);
+    while (p < minLen && prev[p] === text[p]) p++;
+    let s = 0;
+    while (s < minLen - p && prev[prev.length - 1 - s] === text[text.length - 1 - s]) s++;
+    const oldChangeEnd = prev.length - s;
+    const delta = text.length - prev.length;
+    setExpandedPaste((ep) => {
+      if (!ep) return ep;
+      let { start, end } = ep;
+      if (p < end && oldChangeEnd >= start) {
+        // The change touches the region (an insertion exactly at the region's
+        // start counts: the caret sat on the content head — excluding it made
+        // every keystroke shift the window and lose the edit). Its head moves
+        // to the change head when the edit starts before the region, the tail
+        // always follows the delta.
+        if (p < start) start = p;
+        end += delta;
+      } else if (oldChangeEnd < start) {
+        // Change entirely before the region: shift both bounds.
+        start += delta;
+        end += delta;
+      }
+      if (end <= start) return null;
+      return start === ep.start && end === ep.end ? ep : { ...ep, start, end };
+    });
   }, [text, expandedPaste]);
 
-  /** Folds the expanded content back into its chip (US2), keeping the same
-   *  token id so the paste map entry round-trips. */
+  /** Folds the expanded content back into its chip (044 #2b): the CURRENT
+   *  edited text is stored as the paste content (edits survive the round
+   *  trip). If the edited content no longer exceeds the fold thresholds the
+   *  affordance just retires — it degrades to plain text. */
   const collapseExpanded = useCallback(() => {
     if (!expandedPaste) return;
-    const { id, content, kind, lines, start, end } = expandedPaste;
-    const token = pasteToken(id, kind, lines);
-    applyText(text.slice(0, start) + token + text.slice(end));
-    setPastes((prev) => new Map(prev).set(id, content));
+    const { id, start, end } = expandedPaste;
+    const current = text.slice(start, end);
     setExpandedPaste(null);
+    if (!shouldCollapse(current)) {
+      // Degenerate: what remains is short prose — keep it as plain text and
+      // drop the map entry (no token references it any more).
+      setPastes((prev) => {
+        const m = new Map(prev);
+        m.delete(id);
+        return m;
+      });
+      return;
+    }
+    const kind = detectPasteKind(current);
+    const lines = countLines(current.replace(/\r\n/g, "\n"));
+    const token = pasteToken(id, kind, lines);
+    selfChangeRef.current = true;
+    applyText(text.slice(0, start) + token + text.slice(end));
+    setPastes((prev) => new Map(prev).set(id, current));
   }, [applyText, expandedPaste, text]);
 
-  /** Folds a paste in at the current selection (FR-001/FR-002). */
+  /** Folds a paste in at the current selection (FR-001/FR-002). 044 #4: pastes
+   *  beyond the file threshold auto-save to a temp file reference — no prompt
+   *  bar any more; the folded chip is the fallback if the write fails. */
   const foldPastedText = useCallback(
     (plain: string) => {
       const ta = taRef.current;
@@ -443,8 +556,8 @@ export default function Composer() {
       const end = ta?.selectionEnd ?? text.length;
       applyText(text.slice(0, start) + token + text.slice(end));
       setPastes((prev) => new Map(prev).set(id, plain));
-      if (lines > PASTE_FILE_LINES_THRESHOLD) {
-        setBigPasteHint({ id, content: plain, kind, lines });
+      if (shouldAutoSaveAsFile(lines)) {
+        void savePasteAsFile({ id, content: plain, kind, lines });
       }
       requestAnimationFrame(() => {
         if (ta) {
@@ -453,25 +566,33 @@ export default function Composer() {
         }
       });
     },
+    // savePasteAsFile intentionally omitted: it reads the draft through
+    // textRef, so the stale closure below cannot affect it (same-tick call).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [applyText, text],
   );
 
   /** FR-011/FR-012: swap a folded chip for an `@path` reference to a temp
    * file holding the full content. Write failure keeps the chip intact
-   * (FR-013); the content is never lost either way. */
+   * (FR-013) and surfaces a dismissible notice — never a silent no-op. The
+   * draft is read through textRef so the token replacement always lands on
+   * the latest text (044 #4: the auto path runs in the same tick as the
+   * fold that created the token). */
   const savePasteAsFile = useCallback(
     async (info: { id: number; content: string; kind: PasteKind; lines: number }) => {
       setBigPasteHint(null);
       const res = await savePasteToTempFile(info.content);
       if (!res.ok || !res.path) {
-        // Folded chip stays; surface the failure through the paste preview so
-        // it is perceivable without a second toast system.
+        // Folded chip stays; the failure is perceivable (003) without a
+        // second toast system.
         setPastePreview(null);
-        setBigPasteHint(null);
+        setBigPasteHint({ id: info.id, content: info.content, kind: info.kind, lines: info.lines });
         return;
       }
-      const r = replaceToken(text, info.id, `@${res.path} `);
+      const r = replaceToken(textRef.current, info.id, `@${res.path} `);
       if (r) {
+        cancelPreviewClose();
+        setPastePreview(null);
         applyText(r.text);
         setPastes((prev) => {
           const m = new Map(prev);
@@ -481,7 +602,7 @@ export default function Composer() {
         setExpandedPaste(null);
       }
     },
-    [applyText, savePasteToTempFile, text],
+    [applyText, savePasteToTempFile],
   );
 
   /** Picks the densest level that still fits on one line — measured, so a long
@@ -1146,12 +1267,12 @@ export default function Composer() {
           </button>
         </div>
       ) : null}
-      {/* 044 FR-011: pastes beyond the file threshold are offered the
-          save-as-file route — a suggestion, never forced (044 Q7). */}
+      {/* 044 #4: auto-saving a huge paste to a temp file failed — the folded
+          chip kept the content; this is the perceivable failure notice. */}
       {bigPasteHint ? (
-        <div className="paste-big-hint" data-testid="paste-big-hint">
+        <div className="paste-big-hint" data-testid="paste-save-failed">
           <span>
-            {t("composer.pasteBigHint", {
+            {t("composer.pasteSaveFailed", {
               count: bigPasteHint.lines,
               kind: pasteKindLabel(t, bigPasteHint.kind),
             })}
@@ -1159,15 +1280,7 @@ export default function Composer() {
           <button
             type="button"
             className="btn btn-sm"
-            data-testid="paste-save-file"
-            onClick={() => void savePasteAsFile(bigPasteHint)}
-          >
-            {t("composer.pasteSaveFile")}
-          </button>
-          <button
-            type="button"
-            className="btn btn-sm"
-            data-testid="paste-big-hint-dismiss"
+            data-testid="paste-save-failed-dismiss"
             onClick={() => setBigPasteHint(null)}
           >
             {t("common.dismiss")}
@@ -1193,8 +1306,8 @@ export default function Composer() {
           <div className="composer-mirror" data-testid="composer-mirror" aria-hidden="true" ref={mirrorRef}>
             {mirrorContent}
           </div>
-          {/* 044 FR-004: the collapse affordance — shown only while the
-              expanded content is still untouched at its exact range. */}
+          {/* 044 FR-004 + #2b: the collapse affordance — lives while the paste
+              is expanded; folding captures the edited current text. */}
           {expandedPaste ? (
             <button
               type="button"
@@ -1211,7 +1324,12 @@ export default function Composer() {
               must stay byte-equal to the textarea, so its interactive extras
               surface in the preview. */}
           {pastePreview ? (
-            <div className="paste-preview" data-testid="paste-preview">
+            <div
+              className="paste-preview"
+              data-testid="paste-preview"
+              onMouseEnter={cancelPreviewClose}
+              onMouseLeave={schedulePreviewClose}
+            >
               <div className="paste-preview-head">
                 {t("composer.pasteChip", {
                   kind: pasteKindLabel(t, pastePreview.kind),

@@ -6,6 +6,7 @@ import {
   hasPasteTokens,
   pasteToken,
   replaceToken,
+  shouldAutoSaveAsFile,
   shouldCollapse,
 } from "./pasteCollapse";
 
@@ -26,6 +27,20 @@ describe("pasteCollapse thresholds", () => {
     expect(countLines("a\nb\nc")).toBe(3);
     expect(countLines("a\r\nb")).toBe(2);
     expect(countLines("")).toBe(1);
+  });
+});
+
+/** 044 #4 (feedback batch): the auto-save boundary is 2000 lines exactly. */
+describe("pasteCollapse auto-save threshold", () => {
+  it("2000 lines stays a folded chip; 2001 auto-saves to a file", () => {
+    expect(shouldAutoSaveAsFile(2000)).toBe(false);
+    expect(shouldAutoSaveAsFile(2001)).toBe(true);
+    expect(shouldAutoSaveAsFile(5000)).toBe(true);
+  });
+
+  it("short pastes never auto-save", () => {
+    expect(shouldAutoSaveAsFile(0)).toBe(false);
+    expect(shouldAutoSaveAsFile(3)).toBe(false);
   });
 });
 
