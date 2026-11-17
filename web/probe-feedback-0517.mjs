@@ -316,6 +316,170 @@ async function stage041File(send) {
   return { clicked, waitedMs: Date.now() - start, after };
 }
 
+// 044 真机效果验证（反馈批修订：#4 自动转存 / #1#3 hover 浮层 / #2b 折回）。
+// 全程只动 composer，不发送消息。CDP Input.dispatchMouseEvent 走真实鼠标路径。
+async function cdpMouse(send, x, y) {
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+  await send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
+  await send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
+}
+async function stage044(send) {
+  const out = {};
+  const setComposer = () => evaluate(send, `(() => {
+    const ta = document.querySelector('[data-testid="composer-input"]');
+    const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+    set.call(ta, "");
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  })()`);
+  const paste = (text) => evaluate(send, `(() => {
+    const ta = document.querySelector('[data-testid="composer-input"]');
+    const dt = new DataTransfer();
+    dt.setData('text/plain', ${JSON.stringify(text)});
+    ta.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+    return true;
+  })()`);
+  const dom = () => evaluate(send, `(() => ({
+    value: (document.querySelector('[data-testid="composer-input"]')?.value ?? ''),
+    chips: [...document.querySelectorAll('[data-testid="paste-chip"]')].map(e => e.textContent),
+    refs: document.querySelectorAll('[data-testid="ref-token"]').length,
+    preview: !!document.querySelector('[data-testid="paste-preview"]'),
+    saveFailed: !!document.querySelector('[data-testid="paste-save-failed"]'),
+    collapse: !!document.querySelector('[data-testid="paste-collapse"]'),
+  }))()`);
+
+  // ---- A: >2000 行自动转存
+  await setComposer();
+  const huge = Array.from({ length: 2100 }, (_, i) => `line ${i}`).join("\n");
+  await paste(huge);
+  for (let i = 0; i < 20; i++) {
+    await sleep(500);
+    const s = await dom();
+    if (s.refs >= 1 || s.saveFailed) { out.autoSave = { refs: s.refs, saveFailed: s.saveFailed, value: s.value.slice(0, 80) }; break; }
+  }
+  if (!out.autoSave) out.autoSave = { timeout: true, ...(await dom()) };
+
+  // ---- B: hover 浮层跨缝 + 「存为文件」真实鼠标路径
+  await setComposer();
+  const big = Array.from({ length: 40 }, (_, i) => `## line ${i}`).join("\n");
+  await paste(big);
+  await sleep(500);
+  const chipBox = await evaluate(send, `(() => {
+    const chip = document.querySelector('[data-testid="paste-chip"]');
+    if (!chip) return null;
+    const r = chip.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width, h: r.height };
+  })()`);
+  out.chipBox = chipBox;
+  if (chipBox) {
+    // 移入 chip → 浮层出现
+    await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: chipBox.x, y: chipBox.y });
+    await sleep(400);
+    const previewBox = await evaluate(send, `(() => {
+      const pv = document.querySelector('[data-testid="paste-preview"]');
+      if (!pv) return null;
+      const r = pv.getBoundingClientRect();
+      return { x: r.x + r.width / 2, top: r.y, bottom: r.y + r.height, h: r.height };
+    })()`);
+    out.previewAppeared = !!previewBox;
+    if (previewBox) {
+      // 沿真实路径跨进浮层内部——缝隙即关的场景
+      await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: previewBox.x, y: previewBox.bottom - previewBox.h / 2 });
+      await sleep(400);
+      const still1 = await evaluate(send, `!!document.querySelector('[data-testid="paste-preview"]')`);
+      out.previewSurvivesTrip = still1;
+      // 找「存为文件」按钮并真实点击
+      const btn = await evaluate(send, `(() => {
+        const b = document.querySelector('[data-testid="paste-preview-save"]');
+        if (!b) return null;
+        const r = b.getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      })()`);
+      out.saveBtn = btn;
+      if (btn) {
+        await cdpMouse(send, btn.x, btn.y);
+        await sleep(800);
+        const s = await dom();
+        out.hoverSave = { refs: s.refs, previewAfterSave: s.preview };
+      }
+    }
+  }
+
+  // ---- C: Esc 关闭浮层 + 草稿不动
+  await setComposer();
+  await paste(big);
+  await sleep(400);
+  const chip2 = await evaluate(send, `(() => {
+    const chip = document.querySelector('[data-testid="paste-chip"]');
+    if (!chip) return null;
+    const r = chip.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  })()`);
+  if (chip2) {
+    await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: chip2.x, y: chip2.y });
+    await sleep(400);
+    out.escPreviewOpen = await evaluate(send, `!!document.querySelector('[data-testid="paste-preview"]')`);
+    await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+    await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+    await sleep(300);
+    out.escResult = await evaluate(send, `(() => ({
+      preview: !!document.querySelector('[data-testid="paste-preview"]'),
+      value: (document.querySelector('[data-testid="composer-input"]')?.value ?? ''),
+    }))()`);
+  }
+
+  // ---- D: #2b 展开编辑折回
+  await setComposer();
+  await paste(big);
+  await sleep(400);
+  const chip3 = await evaluate(send, `(() => {
+    const chip = document.querySelector('[data-testid="paste-chip"]');
+    if (!chip) return null;
+    const r = chip.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  })()`);
+  if (chip3) {
+    await cdpMouse(send, chip3.x, chip3.y);
+    await sleep(400);
+    await evaluate(send, `(() => {
+      const ta = document.querySelector('[data-testid="composer-input"]');
+      ta.focus();
+      ta.setSelectionRange(0, 0);
+      return true;
+    })()`);
+    await send("Input.insertText", { text: "edited " });
+    await sleep(400);
+    out.afterEdit = await dom();
+    const collapseBtn = await evaluate(send, `(() => {
+      const b = document.querySelector('[data-testid="paste-collapse"]');
+      if (!b) return null;
+      const r = b.getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    })()`);
+    out.collapseVisibleAfterEdit = !!collapseBtn;
+    if (collapseBtn) {
+      await cdpMouse(send, collapseBtn.x, collapseBtn.y);
+      await sleep(400);
+      const s = await dom();
+      out.afterFold = { chips: s.chips, value: s.value.slice(0, 60) };
+      // 再展开：内容应是编辑后文本
+      const chip4 = await evaluate(send, `(() => {
+        const chip = document.querySelector('[data-testid="paste-chip"]');
+        if (!chip) return null;
+        const r = chip.getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      })()`);
+      if (chip4) {
+        await cdpMouse(send, chip4.x, chip4.y);
+        await sleep(400);
+        out.reExpand = await evaluate(send, `(() => (document.querySelector('[data-testid="composer-input"]')?.value ?? '').slice(0, 40))()`);
+      }
+    }
+  }
+  await setComposer();
+  return out;
+}
+
 (async () => {
   try {
     report.result = await withPage(async (send) => {
@@ -325,6 +489,7 @@ async function stage041File(send) {
         case "feed": return stageFeed(send);
         case "svg": return stageSvg(send);
         case "041file": return stage041File(send);
+        case "044": return stage044(send);
         case "state":
         default: return stageState(send);
       }
