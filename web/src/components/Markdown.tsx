@@ -4,9 +4,11 @@ import markedFootnote from "marked-footnote";
 import markedKatex from "marked-katex-extension";
 import DOMPurify from "dompurify";
 import hljs from "highlight.js/lib/common";
+import { getBridge } from "../bridge";
 import { usePiStore } from "../store/store";
 import { i18n } from "../i18n";
 import { copyText } from "../lib/clipboard";
+import { rasterizeElement } from "../lib/copyAsImage";
 import { parseDiffHeaderPath } from "../lib/diffPaths";
 import { normalizeFootnoteDefs } from "../lib/footnotePreprocess";
 import { renderMermaid } from "../lib/mermaidRender";
@@ -101,6 +103,84 @@ function linkifyTextNodes(root: ParentNode) {
 const COPY_FLASH_MS = 1200;
 
 /**
+ * 047 FR-001: a "copy as image" affordance on every graphic render block that
+ * passed the probe (SVG / Mermaid figure / KaTeX display). The button hides
+ * until the block is hovered; the click rasterizes the SANITIZED rendered DOM
+ * (039/040 FR-002/003 — no second render path) and hands the PNG data URL to
+ * the 012 `ide.copyImage` bridge (Q3 复核: the machine-verified channel — a
+ * direct clipboard write cannot pass the focus check under CDP). ✗ flash on
+ * failure — never a silent no-op (003). React rebuilds the HTML per streaming
+ * delta, so the per-render injection is naturally idempotent (FR-007).
+ */
+function addImageCopyButtons(root: ParentNode) {
+  const label = i18n.t("markdown.copyAsImage");
+  const targets: Element[] = [];
+  root.querySelectorAll(".markdown svg").forEach((el) => {
+    if (el.closest(".copyable-frame") || el.closest("pre")) return;
+    try {
+      // A degraded (malformed) SVG paints nothing — no entry for it (FR-007).
+      const bbox = (el as SVGGraphicsElement).getBBox();
+      if (bbox.width === 0 || bbox.height === 0) return;
+    } catch {
+      // getBBox needs a rendered tree — wrap anyway and let the click report.
+    }
+    targets.push(el);
+  });
+  root.querySelectorAll(".katex-display").forEach((el) => {
+    if (!el.closest(".copyable-frame")) targets.push(el);
+  });
+  for (const el of targets) wrapWithImageCopy(el, label);
+}
+
+/** Builds the shared 「复制为图片」 button. `getTarget` reads the graphic at
+ * click time; failures flash ✗ and recover — never a silent no-op (003). */
+function makeImageCopyButton(label: string, getTarget: () => Element | null) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "copy-image-btn";
+  btn.dataset.testid = "copy-image-btn";
+  btn.textContent = label;
+  const recover = () => {
+    setTimeout(() => {
+      btn.textContent = i18n.t("markdown.copyAsImage");
+    }, COPY_FLASH_MS);
+  };
+  btn.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    void (async () => {
+      const target = getTarget();
+      if (!target) throw new Error("the graphic has not rendered yet");
+      const data = await rasterizeElement(target);
+      const api = (await getBridge()) as unknown as {
+        request: (m: string, p?: unknown) => Promise<{ ok: boolean; error?: string }>;
+      };
+      const res = await api.request("ide.copyImage", { data });
+      if (!res.ok) throw new Error(res.error ?? "copy failed");
+    })().then(
+      () => {
+        btn.textContent = "✓";
+        recover();
+      },
+      () => {
+        btn.textContent = "✗";
+        recover();
+      },
+    );
+  });
+  return btn;
+}
+
+/** Wraps ONE rendered block with the hover copy-as-image button (047). */
+function wrapWithImageCopy(el: Element, label: string) {
+  if (el.closest(".copyable-frame")) return;
+  const frame = document.createElement("span");
+  frame.className = "copyable-frame";
+  el.parentNode?.insertBefore(frame, el);
+  frame.appendChild(el);
+  frame.appendChild(makeImageCopyButton(label, () => frame.firstElementChild));
+}
+
+/**
  * 041 #9 (feedback batch): pi summarizes new/changed files as ```diff blocks
  * in the message text, and the path in the header lines was inert text —
  * the exact path users click to open the file in the IDE. Wrap the path in a
@@ -110,15 +190,20 @@ const COPY_FLASH_MS = 1200;
  * the HTML on every streaming delta, so this is naturally re-applied.
  */
 function linkifyDiffHeaders(code: HTMLElement) {
+  // Idempotent: StrictMode (dev) double-invokes effects — a second pass over
+  // already-wrapped text would nest .file-link spans inside each other.
+  if (code.querySelector(".file-link")) return;
   const text = code.textContent ?? "";
   const ranges: { start: number; end: number; path: string }[] = [];
   for (const m of text.matchAll(/^(?:---|\+\+\+|diff --git)\s+([^\n]*)/gm)) {
-    const line = m[1];
-    const path = parseDiffHeaderPath(line);
+    // parseDiffHeaderPath expects the FULL header line (marker included) —
+    // feeding it m[1] (marker stripped) always returned null, which made the
+    // whole linkify dead until the 047-window re-verification caught it.
+    const path = parseDiffHeaderPath(m[0]);
     if (!path) continue;
-    const idx = line.lastIndexOf(path);
+    const idx = m[0].lastIndexOf(path);
     if (idx < 0) continue;
-    const start = m.index + m[0].length - line.length + idx;
+    const start = m.index + idx;
     ranges.push({ start, end: start + path.length, path });
   }
   for (const { start, end, path } of ranges) wrapTextRange(code, start, end, path);
@@ -268,6 +353,8 @@ export default function Markdown({ text }: { text: string }) {
     root.querySelectorAll("pre code.language-diff").forEach((el) => {
       linkifyDiffHeaders(el as HTMLElement);
     });
+    // 047: 「复制为图片」 on the graphic render blocks.
+    addImageCopyButtons(root);
     // 040 US2: mermaid blocks render to SVG in place; invalid source keeps
     // the code block (the degrade is the natural pre-render state).
     root.querySelectorAll("pre code.language-mermaid").forEach((el) => {
@@ -276,9 +363,27 @@ export default function Markdown({ text }: { text: string }) {
       if (!source.trim() || code.dataset.mermaidDone === source) return;
       code.dataset.mermaidDone = source;
       void renderMermaid(source).then((svg) => {
-        if (!svg) return;
         const pre = code.closest("pre");
         if (!pre || !pre.isConnected) return;
+        // The rendered source must still be the block's CURRENT text: a late
+        // resolution for an older streaming prefix must not paint its (wrong)
+        // diagram over the grown block, nor heal a figure it does not own.
+        const current = pre.querySelector("code.language-mermaid")?.textContent ?? "";
+        if (current !== source) return;
+        if (!svg) {
+          // 047 找到的 040 流式遗留：a VALID streaming prefix rendered a
+          // figure whose block later grew into a broken source — nothing
+          // removed the stale figure, so the user saw a WRONG diagram with
+          // the source hidden. The final (broken) render heals it: drop the
+          // stale figure and show the source again (the action-bar button is
+          // never appended for null renders, FR-007).
+          const stale = pre.querySelector(".mermaid-figure");
+          if (stale) {
+            stale.remove();
+            code.style.display = "";
+          }
+          return;
+        }
         let fig = pre.querySelector<HTMLDivElement>(".mermaid-figure");
         if (!fig) {
           fig = document.createElement("div");
@@ -287,6 +392,12 @@ export default function Markdown({ text }: { text: string }) {
           code.style.display = "none";
         }
         fig.innerHTML = svg;
+        // 047: the figure landed after the effect ran — ride its pre's shared
+        // action bar (degraded blocks never get a figure, hence no entry).
+        const actions = pre.querySelector(".code-actions");
+        if (actions && !actions.querySelector(".copy-image-btn")) {
+          actions.appendChild(makeImageCopyButton(i18n.t("markdown.copyAsImage"), () => fig.querySelector("svg")));
+        }
       });
     });
   }, [html, openSnippet]);
