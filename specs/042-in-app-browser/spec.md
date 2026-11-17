@@ -5,6 +5,7 @@
 **Created**: 2026-11-16
 
 **Status**: Draft — **方向性 spec**。本次只记录愿景、竞品画像、能力分层、架构契合与探针清单；**不拆 plan/tasks、不实现、不锁定技术方案**。后续按能力分层逐条另立可实施 spec。
+**2026-11-17 并入**：技术方案探索稿（原 `031-embedded-browser` 分支，2026-11-13）rebase 至本版本分支后并入本目录 [exploration.md](./exploration.md)；其安全硬约束、渲染/生命周期决策点与本机 CDP 调试事实已吸收进 §三/§五/§六，探索稿 Q1–Q6 已全部被本 spec 与 043 关闭（映射见 exploration.md §9）。
 
 **Input**: 用户提出（2026-11-16，「内置浏览器需求」，经澄清）
 > 内置浏览器需求。
@@ -39,6 +40,12 @@
 - **桥接通道**：`BridgeService.kt` 有 `ide.openFile` / `ide.showFileDiff` / `ide.openTerminal` 等现成方法；浏览器页签的 URL 导航、批注回流可走同类 bridge 扩展（具体方法签名留给实施 spec）。
 - **会话注入**：pi 消息经现有 Composer / 队列通路发送；"批注添加到会话"应复用该通路（与 041「代码块在 IDE 打开」同属「UI → 会话/IDE」出口族），**不新造一套消息通道**。
 - **缺口**：前进后退/地址栏/控制台/DevTools/元素选取/截图/批注覆盖层/跨域与 CSP 处理——当前**全部没有**，属于新建能力。
+- **技术基座补充（2026-11-17 探索稿并入，详见 exploration.md）**：
+  - **渲染模式**：windowed（官方交互型内容默认；本机有 stale-frame 史且已有 `wasResized` 重绘 workaround，OSR 帧滞后更重）；Swing 弹层叠放靠平台 HwFacade 默认兜底。P2 批注覆盖层若需叠自绘 UI 再评估 OSR。
+  - **P0 零桥接硬约束**：内置浏览器实例无 JSQuery 注入、无 drag/drop handler、不注册 `BridgeService`——JS→Java 通道为零则「JSQuery 池耗尽 → UI 冻结」（第三方 JCEF 插件头号失败模式）整类不存在；标题/地址用 Java 侧 `CefDisplayHandler` 回调取，不进页面。P1/P2 需 JS→Java（console/网络采集、批注上下文）时走独立受控通道（Java 侧回调优先；确需 JSQuery 创建前设池大小），仍不复用 pi 桥接、不携 token。
+  - **崩溃判定差异**：聊天面板靠前端 20s 长轮询静默判死；内置浏览器无此心跳 → `CefLoadHandler.onLoadError` + `JBCefHealthMonitor` TOPIC → 错误卡 + 重载（复用 `PiUiErrorPanel` 形态）。TOPIC 在 233–263 全线的存在性是探针项。
+  - **通用网页新失败面**：下载（无 `CefDownloadHandler` 时静默失败，须显式转交）、`target="_blank"`（`onBeforePopup` 显式定夺，禁 CEF 默认弹独立 Chromium 窗）、HTTP 认证弹窗——聊天 SPA 从未面对，须逐条定夺。
+  - **本机 CDP 调试事实**：vmoptions 常开 `-Dide.browser.jcef.debug.port=9222`；`scripts/probe-033-cdp.mjs` 已验证页面级裸 CDP 探针路径（Node ≥22 原生 WebSocket；playwright `connectOverCDP` 在 CEF 122 不可用）——本 spec 的 DevTools/渲染/元素采集探针直接复用。
 
 ## 四、能力分层路线图（后续逐层另立 spec，本 spec 不承诺排期）
 
@@ -58,6 +65,11 @@
 - **承载形态**：工具窗 Content 与编辑器 Editor 两种呈现各自的实现路径与切换语义；URL 地址栏在两种形态下的一致性。
 - **安全**：URL 白名单/黑名单（本地优先、外部 URL 是否需要确认）、iframe/跨域、下载处理、是否隔离存储、与 037 系统浏览器策略的边界。**其中 HTTP / 不安全 HTTPS / 证书配置策略已由配套 spec [043 浏览器协议与证书策略](./../043-browser-protocol-cert/spec.md) 单独定义**（用户 2026-11-16 拍板仅覆盖内置浏览器 JCEF 面）；本探针的相关结论应回填 043。
 - **会话注入数据形状**：批注作为文本消息还是结构化上下文（附件）进入 pi；大截图与 DOM 数据的体积/截断策略。
+- **补充探针（2026-11-17 探索稿并入，与上 7 项合并执行）**：
+  - `JBCefHealthMonitor.TOPIC` 在 233–263 全线的 API 存在性与行为（崩溃判定依赖它）；
+  - 独立 request context / cookie 隔离的 API 可行性——`JBCefBrowser` 默认共享 CEF 全局 cookie/缓存，须确认能否隔离（对应上条「隔离存储」）；
+  - `onBeforePopup` / 下载 / 证书错误的默认行为（证书结论回填 043）；
+  - 渲染模式实测：windowed vs OSR 本机帧滞后对比（stale-frame 史，选 windowed 的实证）。
 
 ## 六、不做的事（本版本）
 
@@ -66,6 +78,15 @@
 - 不做通用浏览器：不追求登录态、cookie profile、扩展、用户浏览器配置继承（竞品普遍回避）。
 - 不在本 spec 承诺 P1–P3 的排期或技术方案；每层另立 spec 时再澄清与拍板。
 - 不与 OAuth（014）混用——登录仍走系统浏览器；内置浏览器不承载认证流程。
+
+### 安全硬约束（2026-11-17 探索稿并入；各层实施 spec 不得违反）
+
+1. **token 永不进内置浏览器 URL**：token 在 URL query 上（`LocalUiServer.kt:67-73`），被加载页面 JS 读 `location` 即得 = agent 控制权泄露。这也是探索稿否决「复用主面板导航」的根因，对内置浏览器同样成立。
+2. **与桥接物理隔离**：独立 `JBCefBrowser` 实例；P0 零 JSQuery/零 handler 注入；P1/P2 的 JS→Java 通道按 exploration.md §5.2 受控规则引入，不复用 pi 桥接。
+3. **CEF 全局状态隔离待证**：默认共享 cookie/缓存，探针确认独立 request context 的可行性与必要性。
+4. **file:// 不进主加载路径**：本地 HTML 预览优先走 LocalUiServer 一次性只读路由（随机短时效 token）或 data: URL。
+5. **出站通道默认为零**：浏览器→IDE 仅限用户显式动作（地址栏导航、P2 批注/日志回流会话——走现有 Composer/队列通路）；无任何自动化直驱 agent/IDE 的通道。
+6. **日志卫生**：浏览 URL / 页面 console 不以明文进 idea.log（沿用 022 脱敏口径）。
 
 ## 七、与既有规格的关系
 
@@ -91,3 +112,5 @@
 3. DevTools 在 JCEF 下的可行形态与降级方案。
 4. 批注回流是「纯文本 + 截图附件」还是「结构化上下文」——取决于 pi 当前消息/附件能力。
 5. 会话与浏览器页签的生命周期绑定：会话切换时页签是否跟随、多个浏览器页签如何管理。
+
+> **探索稿 Q1–Q6 关闭记录（2026-11-17）**：2026-11-13 的技术探索稿原有 6 个开放问题，已全部被本 spec 与 043 的拍板关闭——Q1 入口范围 / Q4 地址栏被本 spec Q1/Q3 更广口径取代（三者都要、地址栏可编辑）；Q2 默认去向与本 spec Q2 同向；Q3 载体拍板为双形态（019 已实现使工具窗页签现成）；Q5 多标签归入 P3；Q6 因 019 已实现（0.5.9 `7147df2`）消解。逐条映射见 [exploration.md §9](./exploration.md)。
