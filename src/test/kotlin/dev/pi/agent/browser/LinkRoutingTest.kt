@@ -77,4 +77,47 @@ class LinkRoutingTest {
         // locks the decision side so the popup wiring cannot shift routing.
         assertEquals(LinkRoute.AskUser, LinkRouting.routeExternalLink("https://example.com/page", LinkTarget.ASK))
     }
+
+    // ---- 049 origin-aware routing (dev-server links must not be swallowed) ----
+
+    private val own = "http://127.0.0.1:53451"
+
+    @Test
+    fun `spa origin stays in the chat regardless of setting`() {
+        val urls = listOf(
+            "http://127.0.0.1:53451/?token=x&instance=1",
+            "http://127.0.0.1:53451/bridge/poll",
+            "http://127.0.0.1:53451",
+        )
+        for (target in LinkTarget.entries) {
+            for (url in urls) {
+                assertEquals(LinkRoute.CefDefault, LinkRouting.routeExternalLink(url, target, own), "$target $url")
+            }
+        }
+    }
+
+    @Test
+    fun `dev server loopback on another port follows the setting`() {
+        // 049 真机缺陷回归: host-only loopback 检查把 AI 分享的本地服务链接
+        // (http://127.0.0.1:8931/…) 误判为 SPA，其 target=_blank popup 裸开成白窗。
+        val url = "http://127.0.0.1:8931/probe-browser.html"
+        assertEquals(LinkRoute.SystemBrowser, LinkRouting.routeExternalLink(url, LinkTarget.SYSTEM, own))
+        assertEquals(LinkRoute.Embedded, LinkRouting.routeExternalLink(url, LinkTarget.EMBEDDED, own))
+        assertEquals(LinkRoute.AskUser, LinkRouting.routeExternalLink(url, LinkTarget.ASK, own))
+    }
+
+    @Test
+    fun `own origin match is port exact`() {
+        // Prefix must not leak across ports: :5345 is a different origin than :53451.
+        assertTrue(LinkRouting.isOwnOrigin("http://127.0.0.1:53451/x", own))
+        assertFalse(LinkRouting.isOwnOrigin("http://127.0.0.1:5345/x", own))
+        assertFalse(LinkRouting.isOwnOrigin("http://127.0.0.1:534512/x", own))
+        assertFalse(LinkRouting.isOwnOrigin("http://localhost:53451/x", own))
+    }
+
+    @Test
+    fun `origin overload without origin falls back to legacy loopback rule`() {
+        assertEquals(LinkRoute.CefDefault, LinkRouting.routeExternalLink("http://127.0.0.1:8931/x", LinkTarget.SYSTEM, null))
+        assertEquals(LinkRoute.SystemBrowser, LinkRouting.routeExternalLink("https://example.com/", LinkTarget.SYSTEM, null))
+    }
 }

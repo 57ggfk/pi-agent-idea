@@ -4,14 +4,22 @@ import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.Disposable
 
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.ide.CopyPasteManager
+import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.intellij.ui.SimpleListCellRenderer
+import com.intellij.ui.awt.RelativePoint
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
 import com.intellij.icons.AllIcons
 import com.intellij.util.ui.JBUI
 import dev.pi.agent.PiAgentBundle
+import dev.pi.agent.browser.LinkOption
+import dev.pi.agent.browser.LinkRouting
 import dev.pi.agent.ui.PiUiErrorPanel
 import java.awt.BorderLayout
 import java.awt.Dimension
+import java.awt.MouseInfo
+import java.awt.datatransfer.StringSelection
 import java.awt.event.ActionEvent
 import java.awt.event.InputEvent
 import java.awt.event.KeyEvent
@@ -50,6 +58,9 @@ class BrowserPanel(private val project: Project, offscreen: Boolean = false) : J
 
     /** 049 US5: hand the current page to the system default browser. */
     private val openExternalButton = navButton("browser.open.external.tooltip", AllIcons.Actions.MoveToTopRight)
+
+    /** 049 易用性：加载卡住时可中止（真实用户走查项）。 */
+    private val stopButton = navButton("browser.stop.tooltip", AllIcons.Actions.Suspend)
     private val echoLabel = JLabel(" ")
 
     /** Center host swaps between the browser component and the error card. */
@@ -62,6 +73,7 @@ class BrowserPanel(private val project: Project, offscreen: Boolean = false) : J
     private var titleText: String = ""
     private var lastEchoUrl: String = ""
     private var showingError = false
+    private var loadingHint = false
 
     init {
         border = JBUI.Borders.empty()
@@ -72,6 +84,7 @@ class BrowserPanel(private val project: Project, offscreen: Boolean = false) : J
         navRow.add(backButton)
         navRow.add(forwardButton)
         navRow.add(reloadButton)
+        navRow.add(stopButton)
         navRow.add(Box.createHorizontalStrut(4))
         navRow.add(openExternalButton)
         navRow.add(Box.createHorizontalStrut(6))
@@ -86,7 +99,7 @@ class BrowserPanel(private val project: Project, offscreen: Boolean = false) : J
         // 真机反馈「按钮太宽」：BoxLayout 把多余宽度摊给 max 未约束的组件
         // （JButton 默认无 max），五个按钮全被拉宽、之间出现大空隙。锁死
         // max=pref + 收紧 margin，按钮保持图标原始紧凑宽度，剩余宽度全部归地址栏。
-        for (button in listOf(backButton, forwardButton, reloadButton, openExternalButton, goButton)) {
+        for (button in listOf(backButton, forwardButton, reloadButton, stopButton, openExternalButton, goButton)) {
             button.margin = JBUI.insets(2, 4)
             button.maximumSize = button.preferredSize
         }
@@ -124,6 +137,10 @@ class BrowserPanel(private val project: Project, offscreen: Boolean = false) : J
             if (url.isNotBlank()) BrowserUtil.browse(url)
         }
         openExternalButton.isEnabled = false // nothing loaded yet
+        stopButton.addActionListener { kernel.stop() }
+        stopButton.isEnabled = false
+        // 049: right-click a link inside the page → same destination selector.
+        kernel.onLinkContextMenu = { url -> SwingUtilities.invokeLater { showLinkSelector(url) } }
 
         kernel.addStateListener { state -> SwingUtilities.invokeLater { onStateChanged(state) } }
         kernel.onAddressChanged = { url -> SwingUtilities.invokeLater { updateEcho(url) } }
@@ -140,6 +157,51 @@ class BrowserPanel(private val project: Project, offscreen: Boolean = false) : J
         button.toolTipText = PiAgentBundle.message(tooltipKey)
         button.isFocusable = false
         return button
+    }
+
+    /**
+     * 049: right-click a link INSIDE the loaded page → the same
+     * three-destination selector the chat uses, with one difference: EMBEDDED
+     * navigates THIS kernel in place (the editor carrier must not hijack to
+     * the tool window the way [PiBrowserManager.open] would).
+     */
+    private fun showLinkSelector(url: String) {
+        val icons = mapOf(
+            LinkOption.SYSTEM_BROWSER to AllIcons.Actions.MoveToTopRight,
+            LinkOption.EMBEDDED to AllIcons.General.Web,
+            LinkOption.COPY to AllIcons.Actions.Copy,
+        )
+        val renderer = object : SimpleListCellRenderer<LinkOption>() {
+            override fun customize(
+                list: javax.swing.JList<out LinkOption>,
+                value: LinkOption,
+                index: Int,
+                selected: Boolean,
+                hasFocus: Boolean,
+            ) {
+                icon = icons[value]
+                text = value.label()
+            }
+        }
+        val popup = JBPopupFactory.getInstance()
+            .createPopupChooserBuilder(LinkRouting.linkOptions())
+            .setTitle(PiAgentBundle.message("browser.link.selector.title"))
+            .setRenderer(renderer)
+            .setAdText(url)
+            .setItemChosenCallback { option ->
+                when (option) {
+                    LinkOption.SYSTEM_BROWSER -> BrowserUtil.browse(url)
+                    LinkOption.EMBEDDED -> load(url)
+                    LinkOption.COPY -> CopyPasteManager.getInstance().setContents(StringSelection(url))
+                }
+            }
+            .createPopup()
+        val at = MouseInfo.getPointerInfo()?.location
+        if (at != null) {
+            popup.show(RelativePoint(at))
+        } else {
+            popup.showInFocusCenter()
+        }
     }
 
     private fun showPlaceholder() {
@@ -198,6 +260,9 @@ class BrowserPanel(private val project: Project, offscreen: Boolean = false) : J
     private fun onStateChanged(state: PiBrowserState) {
         backButton.isEnabled = kernel.canGoBack()
         forwardButton.isEnabled = kernel.canGoForward()
+        loadingHint = state == PiBrowserState.LOADING
+        stopButton.isEnabled = state == PiBrowserState.LOADING
+        updateEcho(lastEchoUrl)
         when (state) {
             PiBrowserState.FAILED -> showErrorCard(
                 PiAgentBundle.message("browser.error.title"),
@@ -233,7 +298,8 @@ class BrowserPanel(private val project: Project, offscreen: Boolean = false) : J
     private fun updateEcho(url: String) {
         val previous = lastEchoUrl
         lastEchoUrl = url
-        echoLabel.text = if (titleText.isBlank()) url else "$titleText  —  $url"
+        val loadingPrefix = if (loadingHint) PiAgentBundle.message("browser.loading.prefix") else ""
+        echoLabel.text = loadingPrefix + if (titleText.isBlank()) url else "$titleText  —  $url"
         // 049 US5: external hand-off only makes sense once a page is up.
         openExternalButton.isEnabled = url.isNotBlank() || lastUrl.isNotBlank()
         // US1: echo navigation into the address bar. Update unless the user

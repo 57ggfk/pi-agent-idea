@@ -4,8 +4,11 @@ import com.intellij.openapi.diagnostic.Logger
 import org.cef.browser.CefBrowser
 import org.cef.browser.CefFrame
 import org.cef.callback.CefBeforeDownloadCallback
+import org.cef.callback.CefContextMenuParams
 import org.cef.callback.CefDownloadItemCallback
 import org.cef.callback.CefDownloadItem
+import org.cef.callback.CefMenuModel
+import org.cef.handler.CefContextMenuHandlerAdapter
 import org.cef.handler.CefDisplayHandlerAdapter
 import org.cef.handler.CefDownloadHandler
 import org.cef.handler.CefFocusHandlerAdapter
@@ -122,6 +125,29 @@ internal class PiBrowserHandlers(private val kernel: PiBrowserKernel) {
     val focusHandler = object : CefFocusHandlerAdapter() {
         override fun onGotFocus(browser: CefBrowser) {
             log.debug("browser: got focus")
+        }
+    }
+
+    // ---- context menu (049: right-click a link → destination selector) ----
+
+    /**
+     * Link right-clicks replace the default edit menu with the carrier's
+     * destination selector ([PiBrowserKernel.onLinkContextMenu]); non-link
+     * right-clicks leave the model untouched, so the platform copy/paste menu
+     * keeps working. Model cleared here because both handlers run — ours plus
+     * the platform default — and only the model controls what actually shows.
+     */
+    val contextMenuHandler = object : CefContextMenuHandlerAdapter() {
+        override fun onBeforeContextMenu(
+            browser: CefBrowser,
+            frame: CefFrame?,
+            params: CefContextMenuParams,
+            model: CefMenuModel,
+        ) {
+            val url = params.linkUrl ?: return
+            if (url.isBlank()) return
+            model.clear()
+            kernel.onLinkContextMenuArrived(url)
         }
     }
 

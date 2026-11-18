@@ -58,12 +58,34 @@ object LinkRouting {
     )
 
     /**
+     * The scheme+authority of [url] (e.g. `http://127.0.0.1:53451`), or null
+     * when the URL has no parseable http(s) authority.
+     */
+    fun originOf(url: String?): String? {
+        if (url == null) return null
+        val m = Regex("^https?://[^/?#]+").find(url) ?: return null
+        return m.value
+    }
+
+    /**
+     * True when [url] points at the chat SPA's own origin [ownOrigin]. Only a
+     * full scheme+authority match counts: 049 真机实证 the host-only loopback
+     * check made every dev-server link (`http://127.0.0.1:8931/…`) read as the
+     * SPA, so its target=_blank popup fell through to a raw white CEF window.
+     */
+    fun isOwnOrigin(url: String?, ownOrigin: String?): Boolean {
+        if (url.isNullOrBlank() || ownOrigin.isNullOrBlank()) return false
+        return originOf(url) == originOf(ownOrigin)
+    }
+
+    /**
      * Loopback pages are the chat SPA's own origin — they must always stay
      * in the chat browser, whatever the setting says (037 hard rule).
      *
-     * Host-based on purpose: the old prefix check (`http://localhost:`) missed
-     * the port-less `http://localhost/` form, and any port/slash combination
-     * should read as loopback, not just the ones the prefix happens to cover.
+     * Host-based on purpose for the LEGACY callers that have no own-origin
+     * context; the routing entry point should prefer [routeExternalLink]'s
+     * origin-aware overload, because a host-only check also swallows the AI's
+     * dev-server links (`http://127.0.0.1:8931/`) — 049 真机缺陷。
      */
     fun isLoopback(url: String): Boolean {
         if (!url.startsWith("http://")) return false
@@ -79,10 +101,27 @@ object LinkRouting {
     fun routeExternalLink(url: String?, target: LinkTarget): LinkRoute {
         if (url.isNullOrBlank()) return LinkRoute.CefDefault
         if (isLoopback(url)) return LinkRoute.CefDefault
-        return when (target) {
-            LinkTarget.SYSTEM -> LinkRoute.SystemBrowser
-            LinkTarget.EMBEDDED -> LinkRoute.Embedded
-            LinkTarget.ASK -> LinkRoute.AskUser
-        }
+        return routeBySetting(url, target)
+    }
+
+    /**
+     * Origin-aware routing (049): the chat SPA's own origin stays in the chat
+     * browser (037 hard rule, now port-exact); every other URL — including
+     * loopback dev servers on OTHER ports — follows the setting.
+     *
+     * @param ownOrigin the chat SPA's `http://127.0.0.1:<port>` origin; when
+     *   unknown, falls back to the legacy host-only loopback exemption.
+     */
+    fun routeExternalLink(url: String?, target: LinkTarget, ownOrigin: String?): LinkRoute {
+        if (url.isNullOrBlank()) return LinkRoute.CefDefault
+        if (ownOrigin.isNullOrBlank()) return routeExternalLink(url, target)
+        if (isOwnOrigin(url, ownOrigin)) return LinkRoute.CefDefault
+        return routeBySetting(url, target)
+    }
+
+    private fun routeBySetting(url: String, target: LinkTarget): LinkRoute = when (target) {
+        LinkTarget.SYSTEM -> LinkRoute.SystemBrowser
+        LinkTarget.EMBEDDED -> LinkRoute.Embedded
+        LinkTarget.ASK -> LinkRoute.AskUser
     }
 }
