@@ -51,4 +51,30 @@ class LinkRoutingTest {
         assertTrue(LinkRouting.routeExternalLink("https://127.0.0.1/x", LinkTarget.SYSTEM) == LinkRoute.SystemBrowser)
         assertFalse(LinkRouting.isLoopback("https://localhost:8080"))
     }
+
+    // ---- 049 A1: ask-mode selector options ----
+
+    @Test
+    fun `selector offers exactly three options in spec Q3 order`() {
+        assertEquals(
+            listOf(LinkOption.SYSTEM_BROWSER, LinkOption.EMBEDDED, LinkOption.COPY),
+            LinkRouting.linkOptions(),
+        )
+    }
+
+    @Test
+    fun `option labels resolve from the bundle`() {
+        // Smoke: every option's label key exists and is non-empty (i18n pair
+        // completeness is asserted by the bundle grep in A2).
+        for (option in LinkOption.entries) {
+            assertTrue(option.label().isNotBlank(), option.name)
+        }
+    }
+
+    @Test
+    fun `ask decision still routes through AskUser unchanged`() {
+        // The selector changes the ASK execution, not the decision — this
+        // locks the decision side so the popup wiring cannot shift routing.
+        assertEquals(LinkRoute.AskUser, LinkRouting.routeExternalLink("https://example.com/page", LinkTarget.ASK))
+    }
 }

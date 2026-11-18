@@ -25,7 +25,37 @@ sealed class LinkRoute {
     object AskUser : LinkRoute()
 }
 
+/**
+ * One destination in the ask-mode link selector (spec 049 US1). Purely a
+ * decision marker — the popup menu (icons, display) lives in the panel layer.
+ */
+enum class LinkOption {
+    /** System default browser — "external = system default" stays verbatim (037). */
+    SYSTEM_BROWSER,
+
+    /** The in-app browser tab. */
+    EMBEDDED,
+
+    /** Copy the raw URL to the clipboard; the only uncluttered way to get it out of a rich chat. */
+    COPY;
+
+    /** Localized display name for the selector row. */
+    fun label(): String = dev.pi.agent.PiAgentBundle.message("browser.link.option." + name)
+}
+
 object LinkRouting {
+
+    /**
+     * Ask-mode selector rows, display order locked by spec 049 Q3: system
+     * browser first (the dominant intent for an external link — docs, issues,
+     * npm pages), embedded second, copy third. Three is the ceiling: a menu
+     * the user scans, not reads; each extra row dilutes the first two.
+     */
+    fun linkOptions(): List<LinkOption> = listOf(
+        LinkOption.SYSTEM_BROWSER,
+        LinkOption.EMBEDDED,
+        LinkOption.COPY,
+    )
 
     /**
      * Loopback pages are the chat SPA's own origin — they must always stay
