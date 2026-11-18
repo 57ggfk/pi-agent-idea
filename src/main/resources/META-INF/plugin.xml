@@ -104,6 +104,8 @@
             <action id="PiAgent.AddDirectory" class="dev.pi.agent.editor.AddDirectoryToPi"/>
             <action id="PiAgent.SendFile" class="dev.pi.agent.editor.SendFileToPi"/>
             <action id="PiAgent.ExplainFile" class="dev.pi.agent.editor.ExplainFileWithPi"/>
+            <!-- 048 (spec US3): preview an HTML file in the in-app browser tab. -->
+            <action id="PiAgent.OpenHtmlInBrowser" class="dev.pi.agent.browser.OpenInPiBrowserAction"/>
         </group>
 
         <!-- Commit panel: generate the commit message with a headless one-shot

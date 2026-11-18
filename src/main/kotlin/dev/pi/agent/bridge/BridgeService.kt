@@ -712,6 +712,22 @@ class BridgeService(private val project: Project) : Disposable {
                 dev.pi.agent.PiAgentBundle.message("export.done.body", path),
                 NotificationType.INFORMATION,
             )
+            .addAction(object : com.intellij.openapi.actionSystem.AnAction(
+                dev.pi.agent.PiAgentBundle.message("export.preview.action"),
+            ) {
+                // 048 (spec US3): "Preview" re-renders the session into the
+                // one-shot preview route at click time — a fresh token per
+                // click, never a stale one baked into the notification.
+                override fun actionPerformed(e: com.intellij.openapi.actionSystem.AnActionEvent) {
+                    if (project.isDisposed) return
+                    val dir = dev.pi.agent.browser.PiBrowserPreviews.previewRoot()
+                    val copy = java.nio.file.Files.createTempFile(dir, "session-", ".html")
+                    java.nio.file.Files.write(copy, rendered.html.toByteArray(Charsets.UTF_8))
+                    val token = dev.pi.agent.browser.PiBrowserPreviews.register(copy)
+                    val url = dev.pi.agent.ui.LocalUiServer.getInstance().baseUrl + "preview/" + token
+                    dev.pi.agent.browser.PiBrowserManager.getInstance(project).open(url)
+                }
+            })
             .notify(project)
         return buildJsonObject { put("ok", true); put("path", path) }
     }

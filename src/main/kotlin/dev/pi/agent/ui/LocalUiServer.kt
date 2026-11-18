@@ -13,6 +13,7 @@ import kotlinx.serialization.json.add
 import java.io.InputStream
 import java.net.InetAddress
 import java.net.InetSocketAddress
+import java.nio.file.Files
 import java.security.SecureRandom
 import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
@@ -117,8 +118,37 @@ class LocalUiServer private constructor() {
         respondJson(exchange, 403, buildJsonObject { put("ok", false); put("error", "unauthorized") })
     }
 
-    private fun handle(exchange: HttpExchange) {
-        val uriPath = exchange.requestURI.path ?: "/"
+    /**
+     * `/preview/<token>` — one-shot local-HTML preview (spec 048 T016 /
+     * plan D10). The [dev.pi.agent.browser.PiBrowserPreviews] registry owns
+     * the security model: unguessable token, single use, 5-minute TTL, served
+     * path locked to the preview temp root. No bridge auth applies and
+     * NOTHING here is logged — the token is a capability, and capability
+     * URLs do not belong in a log file users paste into bug reports.
+     */
+    private fun servePreview(exchange: HttpExchange, uriPath: String) {
+        val token = uriPath.removePrefix("/preview/").takeWhile { it != '?' }
+        val file = dev.pi.agent.browser.PiBrowserPreviews.take(token)
+        if (file == null) {
+            exchange.sendResponseHeaders(404, -1)
+            exchange.close()
+            return
+        }
+        try {
+            val bytes = Files.readAllBytes(file)
+            exchange.responseHeaders.add("Content-Type", "text/html; charset=utf-8")
+            exchange.responseHeaders.add("Cache-Control", "no-store")
+            exchange.sendResponseHeaders(200, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+            Files.deleteIfExists(file)
+        } catch (e: Exception) {
+            LOG.warn("preview serve failed", e)
+            exchange.sendResponseHeaders(500, -1)
+            exchange.close()
+        }
+    }
+
+    private fun handle(exchange: HttpExchange) {        val uriPath = exchange.requestURI.path ?: "/"
         val method = exchange.requestMethod
 
         when {
@@ -181,6 +211,8 @@ class LocalUiServer private constructor() {
                 }
                 respondJson(exchange, 200, payload)
             }
+
+            uriPath.startsWith("/preview/") && method == "GET" -> servePreview(exchange, uriPath)
 
             method == "GET" || method == "HEAD" -> serveResource(exchange, uriPath)
 
