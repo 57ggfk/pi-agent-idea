@@ -77,11 +77,16 @@
 | C2 独立工具窗（如 `Pi Browser`） | 新 toolWindow，用户可自由 anchor | 生命周期完全独立；实现路径与 PiAgentPanel 同构 | 与 042 拍板的双形态重复；多占一个工具窗按钮 | 降为备选（若双形态都受阻再启用） |
 | C4 浮动 Dialog / JBPopup | 一次性弹窗看一眼 | 实现最轻 | 不能长驻、不能与 IDE 布局共存 | 不推荐做主载体 |
 
-### 渲染模式：windowed（与聊天面板一致）
+### 渲染模式：windowed（与聊天面板一致）——⚠️ 2026-11-18 真机发现该前提在本机不成立，待 P0 plan 重评
 
 - 选型口诀直接命中：内置浏览器装的是**动效/交互/视频俱全的通用网页**（042 还要装 dev server 应用），OSR 的帧率上限与软渲染（进程外环境下）是下策；且本项目已在本机踩过 stale-frame 坑并留了 `wasResized` workaround，没有理由再选一条帧滞后更重的路。
 - windowed 的代价是 heavyweight 原生窗口盖住 Swing 弹层——平台的 HwFacade 已默认兜底（`ide.browser.jcef.hwfacade.enabled=true`），官方 What's New / SVG 查看器同款选择。
 - v1 不做 OSR；042 的「批注覆盖层」若需在浏览器视口上叠自绘 UI，到 P2 探针时再评估是否需要 OSR。
+
+> **⚠️ 2026-11-18 真机反证（影响 P0 架构决策，必须在 plan 前解决）**：
+> 本机 IDEA 2026.2.3 经进程命令行确认运行于 **remote / out-of-process 变体**——存在独立 `plugins/jcef-plugin/jcef/cef_server.exe` 进程（PID 39684，`--port=30000 --remote-allow-origins=*`），GPU / network / storage / renderer 全部拆为 `cef_server.exe` 子进程。
+> 而 `intellij.platform.ui.jcef.jar` 的 `JBCefBrowserBuilder` 内含字符串：「Trying to create windowed browser when remote-mode is enabled. Setting isOffScreenRendering=false will be ignored.」→ **remote 模式下 `setOffScreenRendering(false)`（windowed）会被强制忽略，实际退化为 OSR**。
+> 结论：本节「windowed」拍板在本机真实环境下可能是空谈——聊天面板当前是否真的 windowed、内置浏览器若按 windowed 建会不会静默变 OSR（进而触发 OSR 帧滞后 + stale-frame 老坑），**须在 P0 plan 前用最小原型真机验证**（建一个 `JBCefBrowser` 读其实际渲染模式、对比帧表现）。若确为强制 OSR，§3 的 windowed 选型结论与 P2 批注覆盖层方案都要重新评估。证据：`build/probe-042-api-result.md` §渲染模式、进程命令行取证。
 
 ## 4. 入口场景（探索稿原口径 → 042 P0 分层的映射）
 
@@ -164,7 +169,7 @@ P3 仅记方向（042 原文）
 - **#8 部分探明**：TOPIC 真实路径 `JBCefHealthMonitor.JBCefHealthCheckTopic.TOPIC`、Status 只有 5 值（见 §5.3 更正）；233–263 跨版本仍待测。
 - **#9 API 可行**：`CefRequestContext.createContext(CefRequestContextHandler)` 存在，`getGlobalContext`/`setPreference`/`ClearCertificateExceptions` 均在——独立 context 路径成立；**行为**（cookie 是否真隔离）仍须原型真机验证。
 - **#10 API 签名确认**：`onBeforePopup` / `CefDownloadHandler.onBeforeDownload`+`onDownloadUpdated` / `onCertificateError` 签名均已 dump；证书四类错误有对应 `ERR_CERT_*` 错误码（`AUTHORITY_INVALID`/`DATE_INVALID`/`COMMON_NAME_INVALID` 等 18 个），回填 043。**默认行为**（弹窗/下载/证书放行时实际发生什么）仍须原型真机验证。
-- **#11 风险信号**：`JBCefBrowserBuilder` 内含字符串「remote-mode 下 windowed 会被忽略、isOffScreenRendering=false 无效」→ **本机是否 remote 变体须 plan 前确认**；若 remote，§3 的 windowed 拍板需重评。另 `setEnableOpenDevToolsMenuItem(boolean)` 存在，利好 P1。
+- **#11 风险信号（已坐实）**：`JBCefBrowserBuilder` 内含字符串「remote-mode 下 windowed 会被忽略、isOffScreenRendering=false 无效」；本机进程命令行已确认**就是 remote/out-of-process 变体**（独立 `cef_server.exe` + GPU/network/storage 子进程）→ §3 的 windowed 拍板在本机可能不成立，须 P0 plan 前最小原型实测渲染模式（详见 §3 反证块）。另 `setEnableOpenDevToolsMenuItem(boolean)` 存在，利好 P1。
 
 探针工具：本机 CDP 已常开（§5.10），裸 CDP 脚本路径有先例（`scripts/probe-033-cdp.mjs`）；040 Mermaid 的挂起探针同属「JCEF 渲染行为」一族，可共用探针脚本与结论格式。
 
