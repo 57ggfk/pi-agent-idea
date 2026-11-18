@@ -5,13 +5,19 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.Messages
 import com.intellij.ui.jcef.JBCefApp
 import com.intellij.ui.jcef.JBCefBrowser
+import dev.pi.agent.PiAgentBundle
 import dev.pi.agent.bridge.BridgeService
 import dev.pi.agent.bridge.DropPaths
 import dev.pi.agent.bridge.DropRefs
 import dev.pi.agent.bridge.DropSource
+import dev.pi.agent.browser.LinkRoute
+import dev.pi.agent.browser.LinkRouting
+import dev.pi.agent.browser.PiBrowserManager
 import dev.pi.agent.process.PiProcessManager
+import dev.pi.agent.settings.PiAgentSettings
 import dev.pi.agent.ui.LocalUiServer
 import dev.pi.agent.ui.PiUiErrorPanel
 import org.cef.CefSettings
@@ -90,9 +96,43 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
             hasDevTools: Boolean,
         ): Boolean {
             val url = request?.url ?: return false
-            if (url.startsWith("http://127.0.0.1:") || url.startsWith("http://localhost:")) return false
-            BrowserUtil.browse(url)
-            return true // cancel in-IDE navigation
+            return routeExternal(url)
+        }
+    }
+
+    /**
+     * 048 (spec US4): where chat links go, per the three-state setting.
+     * SYSTEM (default) keeps the 037 semantics byte-for-byte; EMBEDDED hands
+     * the URL to the in-app browser tab; ASK asks once per click. The pure
+     * decision lives in [LinkRouting.routeExternalLink] (unit-tested); this
+     * wrapper only executes the IDE-side actions.
+     */
+    private fun routeExternal(url: String): Boolean {
+        val decision = LinkRouting.routeExternalLink(url, PiAgentSettings.getInstance().linkTarget())
+        return when (decision) {
+            is LinkRoute.CefDefault -> false // loopback SPA navigation / blank
+            is LinkRoute.SystemBrowser -> {
+                BrowserUtil.browse(url)
+                true
+            }
+            is LinkRoute.Embedded -> {
+                PiBrowserManager.getInstance(project).open(url)
+                true
+            }
+            is LinkRoute.AskUser -> {
+                val openEmbedded = Messages.showYesNoDialog(
+                    project,
+                    PiAgentBundle.message("browser.link.ask"),
+                    PiAgentBundle.message("browser.link.ask.title"),
+                    Messages.getQuestionIcon(),
+                ) == Messages.YES
+                if (openEmbedded) {
+                    PiBrowserManager.getInstance(project).open(url)
+                } else {
+                    BrowserUtil.browse(url)
+                }
+                true
+            }
         }
     }
 
@@ -111,9 +151,7 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
             frameName: String?,
         ): Boolean {
             val url = targetUrl ?: return false
-            if (url.startsWith("http://127.0.0.1:") || url.startsWith("http://localhost:")) return false
-            BrowserUtil.browse(url)
-            return true // cancel the popup browser
+            return routeExternal(url)
         }
     }
 

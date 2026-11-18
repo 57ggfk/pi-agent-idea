@@ -4,6 +4,7 @@ import com.intellij.ide.util.PropertiesComponent
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
+import dev.pi.agent.browser.LinkTarget
 
 /**
  * Plugin-level user settings (Settings → Tools → Pi Agent).
@@ -66,11 +67,26 @@ class PiAgentSettings private constructor() {
         properties.setValue(ENV_CONTEXT_KEY, value, true)
     }
 
+    /**
+     * 048 FR (US4): where chat markdown links go. Default SYSTEM keeps the
+     * 037 semantics byte-for-byte; EMBEDDED opens links in the in-app browser
+     * tab; ASK asks once per click. Stored as the enum name so unknown values
+     * from older/newer builds degrade to SYSTEM, never to an exception.
+     */
+    fun linkTarget(): LinkTarget =
+        runCatching { LinkTarget.valueOf(properties.getValue(LINK_TARGET_KEY, LinkTarget.SYSTEM.name)) }
+            .getOrDefault(LinkTarget.SYSTEM)
+
+    fun setLinkTarget(value: LinkTarget) {
+        properties.setValue(LINK_TARGET_KEY, value.name, LinkTarget.SYSTEM.name)
+    }
+
     companion object {
         private const val PI_PATH_KEY = "dev.pi.agent.piPath"
         private const val NODE_PATH_KEY = "dev.pi.agent.nodePath"
         private const val AUTO_OPEN_KEY = "dev.pi.agent.autoOpen"
         private const val ENV_CONTEXT_KEY = "dev.pi.agent.envContext"
+        private const val LINK_TARGET_KEY = "dev.pi.agent.linkTarget"
 
         @JvmStatic
         fun getInstance(): PiAgentSettings = ApplicationManager.getApplication()
