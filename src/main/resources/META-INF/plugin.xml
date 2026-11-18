@@ -34,6 +34,10 @@
                     canCloseContents="true"/>
         <postStartupActivity implementation="dev.pi.agent.toolwindow.PiAgentStartupActivity"/>
 
+        <!-- 048 (spec US9): editor-form presentation for the plugin's own
+             preview files only — never claims real project HTML files. -->
+        <fileEditorProvider implementation="dev.pi.agent.browser.PiBrowserEditorProvider"/>
+
         <!-- Balloon notifications (e.g. background run finished). -->
         <notificationGroup id="Pi Agent" displayType="BALLOON"/>
 
@@ -84,6 +88,7 @@
             <action id="PiAgent.ExplainFile" class="dev.pi.agent.editor.ExplainFileWithPi"/>
             <!-- 048 (spec US3): preview an HTML file in the in-app browser tab. -->
             <action id="PiAgent.OpenHtmlInBrowser" class="dev.pi.agent.browser.OpenInPiBrowserAction"/>
+            <action id="PiAgent.OpenHtmlInEditor" class="dev.pi.agent.browser.OpenInPiEditorAction"/>
         </group>
 
         <!-- Commit panel: generate the commit message with a headless one-shot

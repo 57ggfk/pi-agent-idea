@@ -24,11 +24,19 @@ class PiBrowserPreviewsTest {
     }
 
     @Test
-    fun `token is single use`() {
+    fun `token is refetchable within ttl, dead after expiry`() {
         val file = Files.createTempFile(PiBrowserPreviews.previewRoot(), "t2-", ".html")
         val token = PiBrowserPreviews.register(file)
-        assertEquals(file, PiBrowserPreviews.take(token))
-        assertNull(PiBrowserPreviews.take(token), "second fetch must fail")
+        // Reload semantics: the panel re-fetches the same preview URL, so the
+        // token stays alive within the TTL (048 amendment — first draft was
+        // single-use, which turned every refresh into a 404 card).
+        assertEquals(file, PiBrowserPreviews.take(token, nowMs = System.currentTimeMillis()))
+        val justBeforeExpiry = System.currentTimeMillis() + PiBrowserPreviews.TTL_MS - 1
+        assertEquals(file, PiBrowserPreviews.take(token, nowMs = justBeforeExpiry))
+        val justAfterExpiry = System.currentTimeMillis() + PiBrowserPreviews.TTL_MS + 1
+        assertNull(PiBrowserPreviews.take(token, nowMs = justAfterExpiry), "expired token must die")
+        // The snapshot file is cleaned up with the dead token.
+        assertTrue(!Files.exists(file), "expired preview file must be deleted")
     }
 
     @Test

@@ -57,13 +57,21 @@ object PiBrowserPreviews {
     }
 
     /**
-     * Single use: returns the file path once, then the token is dead. Expired
-     * or unknown tokens return null. The returned file is deleted after a
-     * successful serve so the temp root does not grow unbounded.
+     * Returns the file for [token] while the registration is alive. Amended
+     * during implementation (048 T015/T016 note): the first draft was
+     * single-use, but the browser panel's RELOAD re-fetches the same URL —
+     * a single-use token turned every refresh into a 404 error card. The
+     * token now stays valid for [TTL_MS] (re-fetchable) and dies with the
+     * file afterwards; the security model is unchanged (unguessable token,
+     * whitelist root, short window).
      */
-    fun take(token: String): Path? {
-        val entry = entries.remove(token) ?: return null
-        if (System.currentTimeMillis() - entry.createdAt > TTL_MS) return null
+    fun take(token: String, nowMs: Long = System.currentTimeMillis()): Path? {
+        val entry = entries[token] ?: return null
+        if (nowMs - entry.createdAt > TTL_MS) {
+            entries.remove(token)
+            runCatching { Files.deleteIfExists(entry.path) }
+            return null
+        }
         return entry.path.takeIf { Files.exists(it) }
     }
 

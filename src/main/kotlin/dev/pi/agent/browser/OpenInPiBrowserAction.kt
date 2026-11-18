@@ -38,19 +38,18 @@ class OpenInPiBrowserAction : AnAction() {
         PiBrowserManager.getInstance(project).open(url)
     }
 
-    /** Copy the file content into the preview root under a flat, unique name. */
-    private fun snapshotIntoPreviewRoot(file: VirtualFile): Path {
-        val root = PiBrowserPreviews.previewRoot()
-        val name = (file.nameWithoutExtension.take(60).ifBlank { "page" }) +
-            "-" + System.currentTimeMillis().toString(36) + "." +
-            (file.extension?.takeIf { it.isNotBlank() } ?: "html")
-        val target = root.resolve(name)
-        file.inputStream.use { input -> Files.copy(input, target)
-        }
-        return target
-    }
-
-    private companion object {
+    companion object {
         val HTML_EXTENSIONS = setOf("html", "htm")
+
+        /** Copy the file content into the preview root under a flat, unique name. */
+        internal fun snapshotIntoPreviewRoot(file: VirtualFile): Path {
+            val root = PiBrowserPreviews.previewRoot()
+            val name = (file.nameWithoutExtension.take(60).ifBlank { "page" }) +
+                "-" + System.currentTimeMillis().toString(36) + "." +
+                (file.extension?.takeIf { it.isNotBlank() } ?: "html")
+            val target = root.resolve(name)
+            file.inputStream.use { input -> Files.copy(input, target) }
+            return target
+        }
     }
 }

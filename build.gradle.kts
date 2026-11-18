@@ -205,8 +205,11 @@ tasks {
         // and an auto-opened tool window. With a mock path the mock pi binary is
         // injected via PI_AGENT_EXECUTABLE; with "real" the user's own pi runs.
         System.getenv("PI_IDE_E2E")?.let { mode ->
+            // CDP port parameterizable so the sandbox can coexist with a
+            // real IDE that already owns 9222 (048 automated smoke uses 9224).
+            val cdpPort = System.getenv("PI_IDE_E2E_CDP_PORT") ?: "9222"
             jvmArgs(
-                "-Dide.browser.jcef.debug.port=9222",
+                "-Dide.browser.jcef.debug.port=$cdpPort",
                 "-Dpi.agent.autoOpen=true",
                 "-Didea.trust.all.projects=true",
                 "-Djb.consents.confirmation.enabled=false",
