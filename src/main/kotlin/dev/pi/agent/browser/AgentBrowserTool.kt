@@ -22,6 +22,15 @@ object AgentBrowserTool {
     private const val LOAD_WAIT_MS = 15_000L
     private const val POLL_INTERVAL_MS = 100L
 
+    /**
+     * How long `open` waits for the browser tab to actually appear.
+     * `PiBrowserManager.open` hops to the EDT via invokeLater — on a cold IDE
+     * (tab never opened) the content is created a few ticks later, and a
+     * one-shot panel lookup races it and wrongly reports "tool window
+     * unavailable" (真机反向用例 2026-11-19 实测踩中).
+     */
+    private const val PANEL_WAIT_MS = 5_000L
+
     fun execute(project: Project, request: AgentBrowserRequest, bridgeToken: String?): JsonObject {
         val violation = AgentBrowserRequestCodec.bridgeTokenViolation(request.url, bridgeToken)
         if (violation != null) return failure(violation)
@@ -38,7 +47,7 @@ object AgentBrowserTool {
             ?: return failure("not a usable url: ${LogSafe.url(url)}")
         val manager = PiBrowserManager.getInstance(project)
         manager.open(normalized) // hops to EDT internally, creates/selects the tab
-        val panel = manager.browserPanel()
+        val panel = pollUntil(PANEL_WAIT_MS) { manager.browserPanel() }
             ?: return failure("browser tool window is unavailable", normalized)
         // Wait for the navigate to at least start before polling, so a stale
         // LOADED from the previous page cannot pass as the new page's state.
@@ -104,6 +113,19 @@ object AgentBrowserTool {
             Thread.sleep(POLL_INTERVAL_MS)
         }
         return "TIMEOUT"
+    }
+
+    /**
+     * Generic bounded poll (also used by tests). Returns the first non-null
+     * [supplier] result, or null once [timeoutMs] has elapsed.
+     */
+    internal fun <T> pollUntil(timeoutMs: Long, intervalMs: Long = POLL_INTERVAL_MS, supplier: () -> T?): T? {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (true) {
+            supplier()?.let { return it }
+            if (System.currentTimeMillis() >= deadline) return null
+            Thread.sleep(intervalMs)
+        }
     }
 
     /** EDT hop for the load/attach Swing work; false when the IDE is shutting down. */
