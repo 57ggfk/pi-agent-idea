@@ -104,9 +104,16 @@ public class PiAgentToolWindowFactory implements ToolWindowFactory {
         @Override
         public void update(@NotNull AnActionEvent e) {
             ToolWindow toolWindow = toolWindowOf(project);
-            e.getPresentation().setEnabled(
-                    toolWindow != null
-                            && toolWindow.getContentManager().getContentCount() < MAX_INSTANCES);
+            // 048 (spec US8): only Pi instance tabs count against the limit —
+            // a browser Content tab shares the tool window but owns no pi
+            // process, so it must not eat an instance slot.
+            int instanceTabs = 0;
+            if (toolWindow != null) {
+                for (Content content : toolWindow.getContentManager().getContents()) {
+                    if (content.getComponent() instanceof PiAgentPanel) instanceTabs++;
+                }
+            }
+            e.getPresentation().setEnabled(toolWindow != null && instanceTabs < MAX_INSTANCES);
         }
 
         @Override

@@ -24,6 +24,7 @@ class PiAgentSettingsConfigurable : Configurable {
     private var nodePathField: TextFieldWithBrowseButton? = null
     private var autoOpenBox: JBCheckBox? = null
     private var envContextBox: JBCheckBox? = null
+    private var linkTargetCombo: javax.swing.JComboBox<dev.pi.agent.browser.LinkTarget>? = null
 
     override fun getDisplayName(): String = "Pi Agent"
 
@@ -49,6 +50,26 @@ class PiAgentSettingsConfigurable : Configurable {
         autoOpenBox = JBCheckBox(dev.pi.agent.PiAgentBundle.message("settings.autoOpen"), settings.autoOpen())
         envContextBox = JBCheckBox(dev.pi.agent.PiAgentBundle.message("settings.envContext"), settings.envContextEnabled())
 
+        // 048 (spec US4): where chat markdown links go. Enum ordinal order is
+        // the display order; SYSTEM is index 0 = the default.
+        val linkTargets = dev.pi.agent.browser.LinkTarget.entries.toTypedArray()
+        linkTargetCombo = javax.swing.JComboBox(linkTargets).apply {
+            selectedItem = settings.linkTarget()
+            renderer = object : javax.swing.DefaultListCellRenderer() {
+                override fun getListCellRendererComponent(
+                    list: javax.swing.JList<*>,
+                    value: Any?,
+                    index: Int,
+                    isSelected: Boolean,
+                    cellHasFocus: Boolean,
+                ): java.awt.Component {
+                    super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus)
+                    text = (value as? dev.pi.agent.browser.LinkTarget)?.displayName() ?: ""
+                    return this
+                }
+            }
+        }
+
         val c = GridBagConstraints()
         c.weightx = 1.0
         c.fill = GridBagConstraints.HORIZONTAL
@@ -69,6 +90,11 @@ class PiAgentSettingsConfigurable : Configurable {
         panel.add(autoOpenBox, c)
         c.gridy = 3
         panel.add(envContextBox, c)
+        c.gridy = 4
+        c.gridwidth = 1
+        panel.add(JLabel(dev.pi.agent.PiAgentBundle.message("settings.linkTarget")), c)
+        c.gridx = 1
+        panel.add(linkTargetCombo, c)
         return panel
     }
 
@@ -79,7 +105,8 @@ class PiAgentSettingsConfigurable : Configurable {
         return path != (settings.customPiPath() ?: "") ||
             nodePath != (settings.nodePath() ?: "") ||
             autoOpenBox?.isSelected != settings.autoOpen() ||
-            envContextBox?.isSelected != settings.envContextEnabled()
+            envContextBox?.isSelected != settings.envContextEnabled() ||
+            linkTargetCombo?.selectedItem != settings.linkTarget()
     }
 
     override fun apply() {
@@ -94,6 +121,7 @@ class PiAgentSettingsConfigurable : Configurable {
         settings.setNodePath(nodePath.takeIf { it.isNotBlank() }, onChanged = {})
         settings.setAutoOpen(autoOpenBox?.isSelected ?: false)
         settings.setEnvContextEnabled(envContextBox?.isSelected ?: true)
+        (linkTargetCombo?.selectedItem as? dev.pi.agent.browser.LinkTarget)?.let { settings.setLinkTarget(it) }
         if (envContextBefore != settings.envContextEnabled()) {
             // 032 FR-010: the flag reaches pi WITHOUT a restart — the snapshot
             // file is re-flagged and the extension re-reads it every turn.
@@ -118,6 +146,7 @@ class PiAgentSettingsConfigurable : Configurable {
         nodePathField?.text = settings.nodePath() ?: ""
         autoOpenBox?.isSelected = settings.autoOpen()
         envContextBox?.isSelected = settings.envContextEnabled()
+        linkTargetCombo?.selectedItem = settings.linkTarget()
     }
 
     override fun disposeUIResources() {
@@ -125,5 +154,6 @@ class PiAgentSettingsConfigurable : Configurable {
         nodePathField = null
         autoOpenBox = null
         envContextBox = null
+        linkTargetCombo = null
     }
 }
