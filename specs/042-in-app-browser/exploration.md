@@ -95,8 +95,12 @@
 ## 5. 关键技术决策点（实施 spec/plan 时逐条落）
 
 1. **实例生命周期**：懒创建（首次有 URL 才建）；建议「关闭页签即 `dispose`」，不做实例池。若真机证明反复开合太重，再加「空闲 N 分钟销毁」——每浏览器一整套 Chromium 子进程（FM-5），宁可先保守。
-2. **P0 零桥接是身份而非省略**：不注入任何 `JBCefJSQuery`、不加 drag/drop handler、不注册到 `BridgeService`。JS→Java 通道为零，则 FM-1（JSQuery 池）整类不存在；标签标题/地址用 Java 侧 `CefDisplayHandler` 回调（`onTitleChanged`/`onAddressChange`），不进页面。**P1/P2 修订**：开发交互（console/网络采集、批注上下文）需要 JS→Java 时，走**独立受控通道**（Java 侧回调优先；确需 JSQuery/CefMessageRouter 时创建前设池大小——事后设置无效），仍不复用 pi 桥接、不携 token。
-3. **崩溃判定**：聊天面板靠「前端 20s 长轮询静默」判死；内置浏览器没有这个心跳。可行替代：`CefLoadHandler.onLoadError` + `JBCefHealthMonitor` TOPIC（`GPU_PROCESS_FAILED` / `CEF_SERVER_DISCONNECTED` / `STARTUP_TEST_FAILED`）→ 错误卡 + 重载按钮（复用 `PiUiErrorPanel` 形态）。**`JBCefHealthMonitor.TOPIC` 在 233–263 全线的 API 存在性是探针项**（dev-checklist §4 的样例代码按 2026.2 写）。
+2. **P0 零桥接是身份而非省略**：不注入任何 `JBCefJSQuery`、不加 drag/drop handler、不注册到 `BridgeService`。JS→Java 通道为零，则 FM-1（JSQuery 池）整类不存在；标签标题/地址用 Java 侧 `CefDisplayHandler` 回调（`onTitleChange`/`onAddressChange`，**2026-11-18 真机更正：方法名是 `onTitleChange` 无词尾 d**），不进页面。**P1/P2 修订**：开发交互（console/网络采集、批注上下文）需要 JS→Java 时，走**独立受控通道**（Java 侧回调优先；确需 JSQuery/CefMessageRouter 时创建前设池大小——事后设置无效），仍不复用 pi 桥接、不携 token。
+3. **崩溃判定**：聊天面板靠「前端 20s 长轮询静默」判死；内置浏览器没有这个心跳。可行替代：`CefLoadHandler.onLoadError` + JCEF 健康监控 TOPIC → 错误卡 + 重载按钮（复用 `PiUiErrorPanel` 形态）。
+   **⚠️ 2026-11-18 真机更正（jar 常量池直读，IDEA 2026.2.3 / JCEF api 1.21）**：原文写的 `JBCefHealthMonitor.TOPIC` 和状态常量 `CEF_SERVER_DISCONNECTED`/`STARTUP_TEST_FAILED` **均不存在**。真实 API 是：
+   - TOPIC = 内部类 `JBCefHealthMonitor.JBCefHealthCheckTopic.TOPIC`（类型 `Topic<JBCefHealthCheckTopic>`），监听方法 `onHealthHealthStatusChanged`；
+   - `JBCefHealthMonitor.Status` 枚举**只有 5 个值**：`OK` / `UNKNOWN` / `GPU_PROCESS_FAILED` / `UNPRIVILEGED_USER_NS_DISABLED` / `RUN_UNDER_SUPER_USER`。
+   本条崩溃判定的落地形态须按真实 API 重写；233–263 全线的存在性仍须逐个 IDE 版本复核（本轮仅证 2026.2.3）。证据见 `build/probe-042-api-result.md`、脚本 `scripts/probe-042-api.py`。
 4. **导航控制**：back/forward/reload 走 `cefBrowser` 自带导航栈；地址栏展示走 `onAddressChange`，编辑导航按 042 Q3 为 P0 需求；`target="_blank"`/`onBeforePopup` 的默认行为必须显式定夺（仍在内置浏览器打开 or 交系统浏览器，二选一，**不允许 CEF 默认弹独立 Chromium 窗**）。
 5. **下载**：通用网页会触发下载，CEF 无处理时会静默失败——挂 `CefDownloadHandler` 显式转交系统默认下载（或提示用系统浏览器打开该链接）。这是聊天 SPA 从未面对过的新失败面。
 6. **证书错误 / HTTP 认证弹窗**：按 **043** 执行（`onCertificateError` 四类错误 × 三种配置形态、默认严格、放行须可见提示）——本稿不重复定义，探针结论回填 043。
@@ -151,10 +155,16 @@ P3 仅记方向（042 原文）
 | 5 | 承载双形态（工具窗 Content 与编辑器）实现路径与切换语义 | 042 |
 | 6 | URL 安全边界（白名单/确认/跨域/下载/隔离存储） | 042 |
 | 7 | 批注回流数据形状（文本+截图 vs 结构化上下文；体积/截断） | 042 |
-| 8 | `JBCefHealthMonitor.TOPIC` 在 233–263 的存在性与行为 | 本稿 |
+| 8 | `JBCefHealthMonitor` TOPIC 在 233–263 的存在性与行为 | 本稿 |
 | 9 | 独立 request context / cookie 隔离的 API 可行性 | 本稿 |
 | 10 | `onBeforePopup` / 下载 / 证书错误的默认行为（结论回填 043） | 本稿 |
 | 11 | 渲染模式实测：windowed vs OSR 本机帧滞后对比（stale-frame 史） | 本稿 |
+
+**2026-11-18 API 存在性探针进展**（jar 常量池直读，仅证 2026.2.3 / JCEF api 1.21，非全版本；详见 `build/probe-042-api-result.md`）：
+- **#8 部分探明**：TOPIC 真实路径 `JBCefHealthMonitor.JBCefHealthCheckTopic.TOPIC`、Status 只有 5 值（见 §5.3 更正）；233–263 跨版本仍待测。
+- **#9 API 可行**：`CefRequestContext.createContext(CefRequestContextHandler)` 存在，`getGlobalContext`/`setPreference`/`ClearCertificateExceptions` 均在——独立 context 路径成立；**行为**（cookie 是否真隔离）仍须原型真机验证。
+- **#10 API 签名确认**：`onBeforePopup` / `CefDownloadHandler.onBeforeDownload`+`onDownloadUpdated` / `onCertificateError` 签名均已 dump；证书四类错误有对应 `ERR_CERT_*` 错误码（`AUTHORITY_INVALID`/`DATE_INVALID`/`COMMON_NAME_INVALID` 等 18 个），回填 043。**默认行为**（弹窗/下载/证书放行时实际发生什么）仍须原型真机验证。
+- **#11 风险信号**：`JBCefBrowserBuilder` 内含字符串「remote-mode 下 windowed 会被忽略、isOffScreenRendering=false 无效」→ **本机是否 remote 变体须 plan 前确认**；若 remote，§3 的 windowed 拍板需重评。另 `setEnableOpenDevToolsMenuItem(boolean)` 存在，利好 P1。
 
 探针工具：本机 CDP 已常开（§5.10），裸 CDP 脚本路径有先例（`scripts/probe-033-cdp.mjs`）；040 Mermaid 的挂起探针同属「JCEF 渲染行为」一族，可共用探针脚本与结论格式。
 
