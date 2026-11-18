@@ -65,6 +65,9 @@
 - 「不安全放行」状态提示的 UI 形态与位置（地址栏徽标 / 页面顶部警告条），以及是否每次导航都提示。
 - 配置项在现有设置体系中的落位（新分组还是并入浏览器设置）与数据结构。
 
+> **真机探针记录（2026-11-18，CDP 层）**：在 IDEA 2026.2.3 / JCEF Chrome 144 上，`Security.setIgnoreCertificateErrors` 在页面级 CDP available（`scripts/probe-042-cdp.mjs`，结果 `build/probe-042-result.json`）。
+> 但这**只证明 CDP/DevTools 通道**可以切换证书忽略；本规格 FR-002 依赖的是 **JCEF Java 请求处理链的 `CefRequestHandler.onCertificateError` 回调**（内置浏览器独立挂接的那条链），二者是不同层。Java 层回调在四类证书错误下的行为、`getAuthCredentials`、启动参数（ignore-certificate-errors / 自定义 CA 注入）在 233–263 全线的可用性**仍未真机验证**，须在内置浏览器原型落地后单独探针。不得据本条提前判定 FR-002/FR-003 已可实施。
+
 ## 不做的事
 
 - 不改 pi 进程 / npm registry / provider / MCP 的网络与证书策略（用户 Q1）。
