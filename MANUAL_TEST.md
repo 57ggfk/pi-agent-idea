@@ -526,3 +526,33 @@
 - [ ] 项目树右键 HTML 文件 → Pi Agent 组内「在 Pi 浏览器中打开」→ 页签加载渲染；「在编辑器中打开（Pi 预览）」→ 编辑器页签出现
 - [ ] 导出会话 HTML → 通知点「预览」→ 页签打开且内容与导出文件一致；预览 URL 5 分钟后刷新 → 过期死亡（错误卡），重新发起即可
 - [ ] 无 JCEF 环境（`-Dide.browser.jcef.headless.enabled=false` 启动）→ 浏览器入口降级为错误卡，不崩溃
+
+## 049 内置浏览器 P1：agent 融合 + 链接多选项（spec 049 新增）
+
+> 真机：IDEA 2026.2.3 干净安装 049 构建（zip 2026-11-19），CDP 9222，真实鼠标键盘（win_ui.py / CDP Input dispatchMouseEvent / 剪贴板粘贴）。验证会话证据见 `specs/0.5.10-run-report.md` 049 段。
+
+### 链接选择器（US1/US2）
+
+- [x] 设置「打开时询问去向」：点击聊天外链 → 弹出选择器（标题 Open link with + 三行：系统浏览器/Pi 浏览器/复制地址 + URL ad text 预览），CEF 导航被取消（探针 `probe-049-link-selector.mjs` 断言 before==after）
+- [x] 选「复制链接地址」→ 剪贴板从哨兵值变为完整 URL（`https://example.com/pi-049-route-test`）
+- [x] 选「在 Pi 浏览器打开」→ 浏览器页签前台打开并加载目标 URL（CDP targets 新增 example.com 页）
+- [x] 选「在系统浏览器打开」→ Edge（系统默认）打开目标页
+- [x] Esc → 选择器关闭、无导航发生
+- [x] 默认态零变化回归：设置改回「系统浏览器」→ 点击外链无弹层、IDE 无新页签、Edge 直接开新页（窗口标题页数 4→5）
+
+### agent 融合（US3/US4）
+
+- [x] 离线 rpc 冒烟：真 pi 进程 + mock 端点，扩展加载/<tools> 注册/模型真调/token header/快照回流转写 7/7（`scripts/probe-049-pi-browser-rpc.mjs`）
+- [x] 完整链路正向：聊天输入「起 8931 静态服务器并用内置浏览器验证」→ AI 自主发现商店假 python 改用 miniconda → nohup 起服务 → curl 自检 200 → 调 pi_browser open → 页签前台打开加载 → 读回标题 PI-BROWSER-PROBE-TITLE + 正文前几行 → 汇报「页面正常渲染」
+- [x] 反向：pi_browser 开死端口 8933 → 页签创建、加载失败 → 工具返回 FAILED + 读回错误页文本（ERR_CONNECTION_REFUSED）→ AI 如实汇报失败原因（**此用例抓出 open 竞态 bug，已修**：pollUntil 等页签创建，见 `AgentBrowserToolPollTest`）
+- [x] pi_browser 工具卡片在聊天中正常渲染（ToolCard 通用渲染，零前端改动）
+
+### 工具条外开按钮（US5）
+
+- [x] 浏览器页签工具条新按钮 → 系统默认浏览器打开当前页（Edge 标题出现 PI-BROWSER-PROBE-TITLE）
+- [x] 空页面签时按钮置灰不误触
+
+### 真机顺手抓到的缺陷（就地修复）
+
+- [x] 窄工具窗地址栏塌缩（048 遗留，窗口宽度敏感）：BoxLayout 压字段到 ~40px 且 Go 被裁出可视区 → 字段 min 120px + max 放开吸收剩余宽度，Go 留行尾；修复后窄窗地址栏可见、可输入
+- [ ] 真人拼音 IME 在窄地址栏的候选窗行为（与 048 同款人工项，自动化不可达）
