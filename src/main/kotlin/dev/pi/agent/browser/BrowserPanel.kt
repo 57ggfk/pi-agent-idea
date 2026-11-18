@@ -1,5 +1,6 @@
 package dev.pi.agent.browser
 
+import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.Disposable
 
 import com.intellij.openapi.diagnostic.Logger
@@ -45,6 +46,9 @@ class BrowserPanel(private val project: Project, offscreen: Boolean = false) : J
     private val backButton = navButton("browser.back.tooltip", AllIcons.Actions.Back)
     private val forwardButton = navButton("browser.forward.tooltip", AllIcons.Actions.Forward)
     private val reloadButton = navButton("browser.reload.tooltip", AllIcons.Actions.Refresh)
+
+    /** 049 US5: hand the current page to the system default browser. */
+    private val openExternalButton = navButton("browser.open.external.tooltip", AllIcons.Actions.MoveToTopRight)
     private val echoLabel = JLabel(" ")
 
     /** Center host swaps between the browser component and the error card. */
@@ -67,6 +71,8 @@ class BrowserPanel(private val project: Project, offscreen: Boolean = false) : J
         navRow.add(backButton)
         navRow.add(forwardButton)
         navRow.add(reloadButton)
+        navRow.add(Box.createHorizontalStrut(4))
+        navRow.add(openExternalButton)
         navRow.add(Box.createHorizontalStrut(6))
         navRow.add(addressField)
         navRow.add(Box.createHorizontalStrut(6))
@@ -100,6 +106,11 @@ class BrowserPanel(private val project: Project, offscreen: Boolean = false) : J
         reloadButton.addActionListener {
             if (lastUrl.isNotBlank()) kernel.load(lastUrl) else kernel.reload()
         }
+        openExternalButton.addActionListener {
+            val url = kernel.lastKnownUrl.ifBlank { lastUrl }
+            if (url.isNotBlank()) BrowserUtil.browse(url)
+        }
+        openExternalButton.isEnabled = false // nothing loaded yet
 
         kernel.addStateListener { state -> SwingUtilities.invokeLater { onStateChanged(state) } }
         kernel.onAddressChanged = { url -> SwingUtilities.invokeLater { updateEcho(url) } }
@@ -210,6 +221,8 @@ class BrowserPanel(private val project: Project, offscreen: Boolean = false) : J
         val previous = lastEchoUrl
         lastEchoUrl = url
         echoLabel.text = if (titleText.isBlank()) url else "$titleText  —  $url"
+        // 049 US5: external hand-off only makes sense once a page is up.
+        openExternalButton.isEnabled = url.isNotBlank() || lastUrl.isNotBlank()
         // US1: echo navigation into the address bar. Update unless the user
         // has typed something different from the last echoed URL — nav
         // buttons are non-focusable, so hasFocus() alone would go stale after
