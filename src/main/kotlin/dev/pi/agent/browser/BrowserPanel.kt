@@ -11,6 +11,7 @@ import com.intellij.util.ui.JBUI
 import dev.pi.agent.PiAgentBundle
 import dev.pi.agent.ui.PiUiErrorPanel
 import java.awt.BorderLayout
+import java.awt.Dimension
 import java.awt.event.ActionEvent
 import java.awt.event.InputEvent
 import java.awt.event.KeyEvent
@@ -77,6 +78,11 @@ class BrowserPanel(private val project: Project, offscreen: Boolean = false) : J
         navRow.add(addressField)
         navRow.add(Box.createHorizontalStrut(6))
         navRow.add(goButton)
+        // 真机实测（049，窄工具窗）：BoxLayout 把 JTextField 压到 ~40px、Go 被裁出
+        // 可视区，地址栏导航整个不可用。字段必须至少可读（120px）且吸收剩余宽度
+        // （max 放开），Go 才能留在行尾、粘贴/输入才有着落。
+        addressField.minimumSize = JBUI.size(120, 28)
+        addressField.maximumSize = Dimension(Int.MAX_VALUE / 4, addressField.preferredSize.height)
 
         val north = JPanel(BorderLayout())
         north.add(navRow, BorderLayout.NORTH)
