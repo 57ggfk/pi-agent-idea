@@ -1,11 +1,15 @@
 package dev.pi.agent.toolwindow
 
+import com.intellij.icons.AllIcons
 import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.ui.Messages
+import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.intellij.ui.SimpleListCellRenderer
+import com.intellij.ui.awt.RelativePoint
 import com.intellij.ui.jcef.JBCefApp
 import com.intellij.ui.jcef.JBCefBrowser
 import dev.pi.agent.PiAgentBundle
@@ -13,6 +17,7 @@ import dev.pi.agent.bridge.BridgeService
 import dev.pi.agent.bridge.DropPaths
 import dev.pi.agent.bridge.DropRefs
 import dev.pi.agent.bridge.DropSource
+import dev.pi.agent.browser.LinkOption
 import dev.pi.agent.browser.LinkRoute
 import dev.pi.agent.browser.LinkRouting
 import dev.pi.agent.browser.PiBrowserManager
@@ -32,6 +37,8 @@ import org.cef.handler.CefLoadHandlerAdapter
 import org.cef.handler.CefRequestHandlerAdapter
 import org.cef.network.CefRequest
 import java.awt.BorderLayout
+import java.awt.MouseInfo
+import java.awt.datatransfer.StringSelection
 import java.awt.datatransfer.Transferable
 import java.awt.dnd.DropTarget
 import java.awt.dnd.DropTargetAdapter
@@ -103,9 +110,11 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
     /**
      * 048 (spec US4): where chat links go, per the three-state setting.
      * SYSTEM (default) keeps the 037 semantics byte-for-byte; EMBEDDED hands
-     * the URL to the in-app browser tab; ASK asks once per click. The pure
-     * decision lives in [LinkRouting.routeExternalLink] (unit-tested); this
-     * wrapper only executes the IDE-side actions.
+     * the URL to the in-app browser tab; ASK shows the 049 selector (spec
+     * US1) — a three-row popup the user picks a destination from, replacing
+     * the old binary dialog. The pure decision lives in
+     * [LinkRouting.routeExternalLink] (unit-tested); this wrapper only
+     * executes the IDE-side actions.
      */
     private fun routeExternal(url: String): Boolean {
         val decision = LinkRouting.routeExternalLink(url, PiAgentSettings.getInstance().linkTarget())
@@ -120,19 +129,58 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
                 true
             }
             is LinkRoute.AskUser -> {
-                val openEmbedded = Messages.showYesNoDialog(
-                    project,
-                    PiAgentBundle.message("browser.link.ask"),
-                    PiAgentBundle.message("browser.link.ask.title"),
-                    Messages.getQuestionIcon(),
-                ) == Messages.YES
-                if (openEmbedded) {
-                    PiBrowserManager.getInstance(project).open(url)
-                } else {
-                    BrowserUtil.browse(url)
-                }
+                // CEF navigation is cancelled right away; the selector decides
+                // the destination on the EDT (the click arrives on a CEF
+                // thread and popups must be shown there).
+                ApplicationManager.getApplication().invokeLater { showLinkSelector(url) }
                 true
             }
+        }
+    }
+
+    /**
+     * 049 US1: ask-mode selector. Three rows in the spec Q3 order (system
+     * browser / Pi browser / copy), Esc or an outside click opens nothing.
+     * The raw URL rides along as the popup's ad text so the user always sees
+     * exactly what is about to open — the chat renders links as prose and
+     * this is the only place the real target is visible before committing.
+     */
+    private fun showLinkSelector(url: String) {
+        val icons = mapOf(
+            LinkOption.SYSTEM_BROWSER to AllIcons.Actions.MoveToTopRight,
+            LinkOption.EMBEDDED to AllIcons.General.Web,
+            LinkOption.COPY to AllIcons.Actions.Copy,
+        )
+        val renderer = object : SimpleListCellRenderer<LinkOption>() {
+            override fun customize(
+                list: javax.swing.JList<out LinkOption>,
+                value: LinkOption,
+                index: Int,
+                selected: Boolean,
+                hasFocus: Boolean,
+            ) {
+                icon = icons[value]
+                text = value.label()
+            }
+        }
+        val popup = JBPopupFactory.getInstance()
+            .createPopupChooserBuilder(LinkRouting.linkOptions())
+            .setTitle(PiAgentBundle.message("browser.link.selector.title"))
+            .setRenderer(renderer)
+            .setAdText(url)
+            .setItemChosenCallback { option ->
+                when (option) {
+                    LinkOption.SYSTEM_BROWSER -> BrowserUtil.browse(url)
+                    LinkOption.EMBEDDED -> PiBrowserManager.getInstance(project).open(url)
+                    LinkOption.COPY -> CopyPasteManager.getInstance().setContents(StringSelection(url))
+                }
+            }
+            .createPopup()
+        val at = MouseInfo.getPointerInfo()?.location
+        if (at != null) {
+            popup.show(RelativePoint(at))
+        } else {
+            popup.showInFocusCenter()
         }
     }
 
