@@ -137,6 +137,26 @@ class BrowserPanel(private val project: Project, offscreen: Boolean = false) : J
         attachBrowserComponent()
     }
 
+    // ---- 049 agent entries (AgentBrowserTool; caller owns threading — EDT) ----
+
+    /**
+     * Agent navigate: same shape as [load] minus address-bar normalization —
+     * the tool endpoint sends an already-absolute URL. EDT only.
+     */
+    fun agentLoad(url: String) {
+        lastUrl = url
+        kernel.load(url)
+        attachBrowserComponent()
+    }
+
+    /** Agent reload of the last submitted URL (mirrors the reload button). EDT only. */
+    fun agentReload() {
+        if (lastUrl.isNotBlank()) kernel.load(lastUrl) else kernel.reload()
+    }
+
+    /** Kernel handle for the agent state polling and page read. */
+    fun agentKernel(): PiBrowserKernel = kernel
+
     private fun attachBrowserComponent() {
         val component = kernel.component() ?: return
         if (!showingError && centerHost.componentCount == 1 && centerHost.getComponent(0) === component) return
