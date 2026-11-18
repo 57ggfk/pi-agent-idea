@@ -1,0 +1,106 @@
+package dev.pi.agent.browser
+
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+
+/**
+ * The agent tool's view of the loaded page (spec 049 US4): a read-only text
+ * snapshot, deliberately bounded — the model needs enough to judge "did my
+ * app render", not the whole DOM dump.
+ */
+data class PageSnapshot(
+    val ok: Boolean,
+    /** Failure reason when [ok] is false (timeouts, CSP blocks, no page). */
+    val reason: String?,
+    /** Kernel-tracked scrubbed URL (host+path, query stripped — same echo as the toolbar). */
+    val url: String,
+    val title: String,
+    val readyState: String,
+    val text: String,
+) {
+    companion object {
+        fun failure(reason: String, url: String) = PageSnapshot(
+            ok = false, reason = reason, url = url, title = "", readyState = "", text = "",
+        )
+    }
+}
+
+object PageSnapshotSanitizer {
+
+    /** Same bound the injected script already applied — a second belt here. */
+    const val MAX_TEXT_CHARS = 3000
+
+    /**
+     * Control characters never help a model; they do corrupt log-adjacent
+     * surfaces and terminal rendering. Keeps \n and \t, strips the rest
+     * (C0/C1), then caps the length.
+     */
+    fun cleanText(raw: String, maxChars: Int = MAX_TEXT_CHARS): String {
+        if (raw.isEmpty()) return ""
+        val sb = StringBuilder(raw.length)
+        for (ch in raw) {
+            if (ch == '\n' || ch == '\t') {
+                sb.append(ch)
+                continue
+            }
+            if (ch < ' ') continue // C0 control characters
+            if (ch.code in 0x7F..0x9F) continue // DEL + C1 controls
+            sb.append(ch)
+        }
+        return if (sb.length > maxChars) sb.substring(0, maxChars) else sb.toString()
+    }
+
+    /**
+     * Parses the JSON the injected script produced. Any surprise (null,
+     * malformed JSON, wrong shape) degrades to a failure snapshot — never an
+     * exception into the CEF handler thread, never a hung read.
+     */
+    fun fromJs(raw: String?, url: String, kernelTitle: String): PageSnapshot {
+        val text = raw ?: return PageSnapshot.failure("empty read response", url)
+        return try {
+            val obj = Json.parseToJsonElement(text).jsonObject
+            val error = obj["error"]?.jsonPrimitive?.content
+            if (!error.isNullOrBlank()) {
+                PageSnapshot.failure(LogSafe.truncate(error), url)
+            } else {
+                PageSnapshot(
+                    ok = true,
+                    reason = null,
+                    url = url,
+                    // document.title and the display-handler title can race; the
+                    // page-side value wins when present.
+                    title = cleanText(obj["title"]?.jsonPrimitive?.content ?: kernelTitle, 200),
+                    readyState = cleanText(obj["ready"]?.jsonPrimitive?.content ?: "", 20),
+                    text = cleanText(obj["text"]?.jsonPrimitive?.content ?: ""),
+                )
+            }
+        } catch (e: Exception) {
+            PageSnapshot.failure("unreadable page response", url)
+        }
+    }
+
+    /**
+     * The injected read script. [injectStatement] comes from
+     * `JBCefJSQuery.inject("result")` and references the `result` variable
+     * this IIFE declares — the whole thing is read-only by construction
+     * (title/readyState/innerText excerpt out, nothing in, nothing written).
+     */
+    fun buildReadScript(injectStatement: String, maxChars: Int = MAX_TEXT_CHARS): String {
+        return """
+            (function() {
+              var result;
+              try {
+                result = JSON.stringify({
+                  title: String(document.title || ''),
+                  ready: String(document.readyState || ''),
+                  text: String((document.body && document.body.innerText) || '').slice(0, $maxChars)
+                });
+              } catch (e) {
+                result = JSON.stringify({ title: '', ready: 'error', text: '', error: String((e && e.message) || e) });
+              }
+              $injectStatement
+            })()
+        """.trimIndent()
+    }
+}
