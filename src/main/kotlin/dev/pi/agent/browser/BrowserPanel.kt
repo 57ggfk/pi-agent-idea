@@ -83,6 +83,13 @@ class BrowserPanel(private val project: Project, offscreen: Boolean = false) : J
         // （max 放开），Go 才能留在行尾、粘贴/输入才有着落。
         addressField.minimumSize = JBUI.size(120, 28)
         addressField.maximumSize = Dimension(Int.MAX_VALUE / 4, addressField.preferredSize.height)
+        // 真机反馈「按钮太宽」：BoxLayout 把多余宽度摊给 max 未约束的组件
+        // （JButton 默认无 max），五个按钮全被拉宽、之间出现大空隙。锁死
+        // max=pref + 收紧 margin，按钮保持图标原始紧凑宽度，剩余宽度全部归地址栏。
+        for (button in listOf(backButton, forwardButton, reloadButton, openExternalButton, goButton)) {
+            button.margin = JBUI.insets(2, 4)
+            button.maximumSize = button.preferredSize
+        }
 
         val north = JPanel(BorderLayout())
         north.add(navRow, BorderLayout.NORTH)
