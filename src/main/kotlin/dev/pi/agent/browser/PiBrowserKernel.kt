@@ -78,6 +78,14 @@ class PiBrowserKernel(
     @Volatile
     var onDownloadFinished: ((Boolean, String) -> Unit)? = null
 
+    /**
+     * 049: right-click on a link inside the loaded web page (context-menu
+     * handler in [PiBrowserHandlers]). Receives the absolute link URL; the
+     * carrier shows the destination selector. EDT-safe (hopped below).
+     */
+    @Volatile
+    var onLinkContextMenu: ((String) -> Unit)? = null
+
     /** 043 replaces this; P0 ships strict-only. */
     @Volatile
     var certPolicy: PiCertPolicy = StrictCertPolicy
@@ -126,6 +134,7 @@ class PiBrowserKernel(
         client.addLoadHandler(h.loadHandler, cef)
         client.addDisplayHandler(h.displayHandler, cef)
         client.addFocusHandler(h.focusHandler, cef)
+        client.addContextMenuHandler(h.contextMenuHandler, cef)
         jsQuery = createReadbackQuery(created)
         log.info("browser kernel: " + (if (offscreen) "OSR" else "windowed") + " browser created")
         return created
@@ -156,6 +165,17 @@ class PiBrowserKernel(
     fun reload() {
         browser?.cefBrowser?.reload() ?: return
         onEvent(PiBrowserEvent.Navigate(currentUrlOrNull() ?: ""))
+    }
+
+    /**
+     * 049: stop the in-flight load. CEF will surface ERR_ABORTED (ignored by
+     * the state machine), so fire LoadEnd explicitly — the carrier drops the
+     * LOADING hint and the partial page stays visible.
+     */
+    fun stop() {
+        val b = browser ?: return
+        b.cefBrowser.stopLoad()
+        onEvent(PiBrowserEvent.LoadEnd)
     }
 
     fun back() {
@@ -209,6 +229,11 @@ class PiBrowserKernel(
     internal fun onTitleChanged(scrubbed: String) {
         if (scrubbed.isNotBlank()) lastKnownTitle = scrubbed
         ApplicationManager.getApplication().invokeLater { onTitleChanged?.invoke(scrubbed) }
+    }
+
+    /** CEF context-menu thread → EDT hop for the page-link selector. */
+    internal fun onLinkContextMenuArrived(url: String) {
+        ApplicationManager.getApplication().invokeLater { onLinkContextMenu?.invoke(url) }
     }
 
     // ---- agent readback (049 D4; spec §五 rule 1 revision: read-only, no tokens) ----
@@ -364,6 +389,7 @@ class PiBrowserKernel(
                 client.removeLoadHandler(h.loadHandler, cef)
                 client.removeDisplayHandler(h.displayHandler, cef)
                 client.removeFocusHandler(h.focusHandler, cef)
+                client.removeContextMenuHandler(h.contextMenuHandler, cef)
             }
         }
         runCatching { current.dispose() }
