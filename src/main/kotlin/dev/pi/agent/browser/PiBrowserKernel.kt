@@ -9,7 +9,10 @@ import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.ui.jcef.JBCefApp
 import com.intellij.ui.jcef.JBCefBrowser
+import com.intellij.ui.jcef.JBCefJSQuery
 import dev.pi.agent.PiAgentBundle
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
 import javax.swing.JComponent
 
 /**
@@ -47,6 +50,16 @@ class PiBrowserKernel(
     private var browser: JBCefBrowser? = null
     private var handlers: PiBrowserHandlers? = null
 
+    /**
+     * 049 D4: the page→IDE readback channel, created once per browser (a
+     * JBCefJSQuery is client-level infrastructure; creating one per read
+     * would churn routers and log pool warnings).
+     */
+    private var jsQuery: JBCefJSQuery? = null
+
+    /** 049 readPage: the one in-flight snapshot request, or null. */
+    private var pendingRead: CompletableFuture<PageSnapshot>? = null
+
     private val listeners = java.util.concurrent.CopyOnWriteArrayList<(PiBrowserState) -> Unit>()
 
     @Volatile
@@ -68,6 +81,16 @@ class PiBrowserKernel(
     /** 043 replaces this; P0 ships strict-only. */
     @Volatile
     var certPolicy: PiCertPolicy = StrictCertPolicy
+
+    /** Last echoed address (scrubbed) — agent readback reuses the toolbar echo as one source of truth. */
+    @Volatile
+    var lastKnownUrl: String = ""
+        private set
+
+    /** Last echoed page title. */
+    @Volatile
+    var lastKnownTitle: String = ""
+        private set
 
     /** Set once the fuse blew: rebuilds stop until a carrier force-reloads. */
     @Volatile
@@ -103,6 +126,7 @@ class PiBrowserKernel(
         client.addLoadHandler(h.loadHandler, cef)
         client.addDisplayHandler(h.displayHandler, cef)
         client.addFocusHandler(h.focusHandler, cef)
+        jsQuery = createReadbackQuery(created)
         log.info("browser kernel: " + (if (offscreen) "OSR" else "windowed") + " browser created")
         return created
     }
@@ -178,11 +202,78 @@ class PiBrowserKernel(
     }
 
     internal fun onAddressChanged(scrubbed: String) {
+        lastKnownUrl = scrubbed
         ApplicationManager.getApplication().invokeLater { onAddressChanged?.invoke(scrubbed) }
     }
 
     internal fun onTitleChanged(scrubbed: String) {
+        if (scrubbed.isNotBlank()) lastKnownTitle = scrubbed
         ApplicationManager.getApplication().invokeLater { onTitleChanged?.invoke(scrubbed) }
+    }
+
+    // ---- agent readback (049 D4; spec §五 rule 1 revision: read-only, no tokens) ----
+
+    /**
+     * Read-only snapshot of the current page for the agent tool
+     * (spec 049 US4). The only JS injection the browser tab ever performs;
+     * bounded by the script itself (3000 chars) plus [timeoutMs] so a hung or
+     * CSP-locked page degrades to a failure snapshot instead of hanging the
+     * agent tool call. Returns immediately with a failure snapshot when there
+     * is no live page to read.
+     */
+    fun readPage(timeoutMs: Long = DEFAULT_READ_TIMEOUT_MS): CompletableFuture<PageSnapshot> {
+        val url = lastKnownUrl
+        val b = browser
+        if (b == null) {
+            return CompletableFuture.completedFuture(PageSnapshot.failure("browser tab is not open", url))
+        }
+        if (state == PiBrowserState.CRASHED) {
+            return CompletableFuture.completedFuture(PageSnapshot.failure("browser renderer is down", url))
+        }
+        val query = jsQuery
+        if (query == null) {
+            return CompletableFuture.completedFuture(PageSnapshot.failure("browser is still starting", url))
+        }
+        synchronized(this) {
+            if (pendingRead != null) {
+                return CompletableFuture.completedFuture(
+                    PageSnapshot.failure("another read is still in flight; retry shortly", url),
+                )
+            }
+            val future = CompletableFuture<PageSnapshot>()
+                .completeOnTimeout(
+                    PageSnapshot.failure("read timed out; the page may still be loading or blocked", url),
+                    timeoutMs, TimeUnit.MILLISECONDS,
+                )
+            pendingRead = future
+            val script = PageSnapshotSanitizer.buildReadScript(query.inject("result"))
+            try {
+                b.cefBrowser.executeJavaScript(script, null, 0)
+            } catch (e: Throwable) {
+                pendingRead = null
+                future.complete(PageSnapshot.failure("injection failed: " + LogSafe.truncate(e.message), url))
+            }
+            return future
+        }
+    }
+
+    /** CEF message-router callback (CEF browser-process thread). */
+    private fun onReadResult(request: String?): JBCefJSQuery.Response {
+        val future = pendingRead
+        if (future != null) {
+            val snapshot = PageSnapshotSanitizer.fromJs(request, lastKnownUrl, lastKnownTitle)
+            future.complete(snapshot)
+            pendingRead = null
+        }
+        return JBCefJSQuery.Response(null)
+    }
+
+    private fun createReadbackQuery(browser: JBCefBrowser): JBCefJSQuery {
+        val query = JBCefJSQuery.create(browser)
+        query.addHandler { request -> onReadResult(request) }
+        // Kernel dispose drops the query; the client-side registration dies with the client.
+        Disposer.register(this, query)
+        return query
     }
 
     internal fun continuePopupInPlace(targetUrl: String) {
@@ -259,6 +350,10 @@ class PiBrowserKernel(
         val h = handlers
         browser = null
         handlers = null
+        runCatching { pendingRead?.complete(PageSnapshot.failure("browser closed during read", lastKnownUrl)) }
+        pendingRead = null
+        runCatching { jsQuery?.dispose() }
+        jsQuery = null
         runCatching {
             val client = current.jbCefClient
             val cef = current.cefBrowser
@@ -285,5 +380,8 @@ class PiBrowserKernel(
         const val NOTIFICATION_GROUP = "Pi Agent"
         const val REBUILD_WINDOW_MS = 60_000L
         const val MAX_REBUILDS_PER_WINDOW = 2
+
+        /** Hard ceiling for one page read (spec 049 hard rule 9). */
+        const val DEFAULT_READ_TIMEOUT_MS = 10_000L
     }
 }
