@@ -29,7 +29,12 @@ import javax.swing.JComponent
  *    does not exist on the 233–263 line (P-6);
  *  - after navigation the frame is force-repainted (P-9 stale-frame residue).
  */
-class PiBrowserKernel(private val project: Project, parent: Disposable) : Disposable {
+class PiBrowserKernel(
+    private val project: Project,
+    parent: Disposable,
+    /** Editor carrier uses OSR: only ONE windowed browser may exist (P-7). */
+    private val offscreen: Boolean = false,
+) : Disposable {
 
     private val log = Logger.getInstance(PiBrowserKernel::class.java)
 
@@ -82,7 +87,11 @@ class PiBrowserKernel(private val project: Project, parent: Disposable) : Dispos
     }
 
     private fun createOnEdt(): JBCefBrowser {
-        val created = JBCefBrowser()
+        val created = if (offscreen) {
+            JBCefBrowser.createBuilder().setOffScreenRendering(true).build()
+        } else {
+            JBCefBrowser()
+        }
         val h = PiBrowserHandlers(this)
         browser = created
         handlers = h
@@ -94,7 +103,7 @@ class PiBrowserKernel(private val project: Project, parent: Disposable) : Dispos
         client.addLoadHandler(h.loadHandler, cef)
         client.addDisplayHandler(h.displayHandler, cef)
         client.addFocusHandler(h.focusHandler, cef)
-        log.info("browser kernel: windowed browser created")
+        log.info("browser kernel: " + (if (offscreen) "OSR" else "windowed") + " browser created")
         return created
     }
 

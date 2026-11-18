@@ -34,11 +34,11 @@ import javax.swing.SwingUtilities
  * (constitution III); the kernel owns exactly one windowed browser, this
  * panel adds no second one (probe P-7).
  */
-class BrowserPanel(private val project: Project) : JPanel(BorderLayout()), Disposable {
+class BrowserPanel(private val project: Project, offscreen: Boolean = false) : JPanel(BorderLayout()), Disposable {
 
     private val log = Logger.getInstance(BrowserPanel::class.java)
 
-    private val kernel = PiBrowserKernel(project, this)
+    private val kernel = PiBrowserKernel(project, this, offscreen)
 
     private val addressField = JTextField()
     private val goButton = JButton(PiAgentBundle.message("browser.go"))
@@ -131,8 +131,10 @@ class BrowserPanel(private val project: Project) : JPanel(BorderLayout()), Dispo
     fun load(rawUrl: String) {
         val url = UrlNormalizer.normalizeAddressBar(rawUrl) ?: return
         lastUrl = url
-        attachBrowserComponent()
+        // kernel.load() lazily creates the browser; attach AFTER it so the
+        // first open from an action shows the page instead of the placeholder.
         kernel.load(url)
+        attachBrowserComponent()
     }
 
     private fun attachBrowserComponent() {
@@ -185,8 +187,16 @@ class BrowserPanel(private val project: Project) : JPanel(BorderLayout()), Dispo
     }
 
     private fun updateEcho(url: String) {
+        val previous = lastEchoUrl
         lastEchoUrl = url
         echoLabel.text = if (titleText.isBlank()) url else "$titleText  —  $url"
+        // US1: echo navigation into the address bar. Update unless the user
+        // has typed something different from the last echoed URL — nav
+        // buttons are non-focusable, so hasFocus() alone would go stale after
+        // a Back/Forward.
+        if (url.isNotBlank() && (addressField.text.isBlank() || addressField.text == previous)) {
+            addressField.text = url
+        }
     }
 
     override fun dispose() {

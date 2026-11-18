@@ -140,7 +140,11 @@ class LocalUiServer private constructor() {
             exchange.responseHeaders.add("Cache-Control", "no-store")
             exchange.sendResponseHeaders(200, bytes.size.toLong())
             exchange.responseBody.use { it.write(bytes) }
-            Files.deleteIfExists(file)
+            // Do NOT delete the snapshot here: a preview URL is re-fetched on
+            // panel reload AND when a popup is intercepted in place (the same
+            // URL is loaded again with a query). Deleting on the first serve
+            // turned every such re-fetch into a 404. Lifetime belongs to
+            // PiBrowserPreviews (TTL expiry deletes both the entry and file).
         } catch (e: Exception) {
             LOG.warn("preview serve failed", e)
             exchange.sendResponseHeaders(500, -1)
