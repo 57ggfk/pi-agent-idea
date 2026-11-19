@@ -56,6 +56,15 @@ class LocalUiServer private constructor() {
     private val projectTokens = ConcurrentHashMap<String, Project>()
 
     /**
+     * 049: per-project capability tokens for the agent-browser endpoint —
+     * handed to the spawned pi process through the environment and checked
+     * on every request. Separate from [projectTokens]: the bridge token
+     * authorizes the SPA, this one authorizes the pi process, and the
+     * browser tab must never load either (048 hard rule 1).
+     */
+    private val agentBrowserTokens = ConcurrentHashMap<String, Project>()
+
+    /**
      * First-contact breadcrumbs. A panel stuck on "Connecting to pi…" is
      * otherwise indistinguishable between "the page never called us" (CEF
      * network stack wedged — the real-machine 144-vs-122 mismatch) and "we
@@ -76,7 +85,37 @@ class LocalUiServer private constructor() {
 
     private fun pruneDisposed() {
         projectTokens.entries.removeIf { it.value.isDisposed }
+        agentBrowserTokens.entries.removeIf { it.value.isDisposed }
     }
+
+    /**
+     * 049 D3: the agent-browser capability token for [project], minted on
+     * first use. `PiBrowserToolSupport` embeds it in the pi process env.
+     */
+    fun agentBrowserTokenFor(project: Project): String {
+        pruneDisposed()
+        val existing = agentBrowserTokens.entries.firstOrNull { it.value === project }?.key
+        return existing ?: generateToken().also { agentBrowserTokens[it] = project }
+    }
+
+    /** The project an agent-browser token belongs to, or null (disposed/unknown). */
+    private fun agentBrowserProject(token: String?): Project? {
+        if (token.isNullOrBlank()) return null
+        val project = agentBrowserTokens[token] ?: return null
+        if (project.isDisposed) {
+            agentBrowserTokens.remove(token)
+            return null
+        }
+        return project
+    }
+
+    /**
+     * The project's bridge token if one exists (the chat panel has been
+     * opened). `AgentBrowserTool` refuses browser-tab URLs carrying it —
+     * the 048 hard rule 1 continuation.
+     */
+    fun bridgeTokenOf(project: Project): String? =
+        projectTokens.entries.firstOrNull { it.value === project }?.key
 
     /** Resolves the authenticated project for a bridge request, or null. */
     private fun projectFor(exchange: HttpExchange): Project? {
@@ -214,6 +253,8 @@ class LocalUiServer private constructor() {
 
             uriPath.startsWith("/preview/") && method == "GET" -> servePreview(exchange, uriPath)
 
+            uriPath == "/agent-browser" && method == "POST" -> serveAgentBrowser(exchange)
+
             method == "GET" || method == "HEAD" -> serveResource(exchange, uriPath)
 
             else -> {
@@ -221,6 +262,38 @@ class LocalUiServer private constructor() {
                 exchange.close()
             }
         }
+    }
+
+    /**
+     * 049 `POST /agent-browser` — the pi_browser tool's channel into the IDE
+     * (spec 049 D2). Auth: a foreign Origin is a web-page CSRF attempt and is
+     * rejected outright (same `BridgeAuth` rule as /bridge); the caller —
+     * the pi process — carries no Origin but MUST carry the per-project
+     * capability token in `X-Pi-Browser-Token` (a cross-origin browser
+     * request cannot set custom headers, so drive-by POSTs fail on token
+     * alone). NOTHING here is logged: browsed URLs and page text do not
+     * belong in idea.log (048 hard rule 8), and the token is a capability.
+     */
+    private fun serveAgentBrowser(exchange: HttpExchange) {
+        val origin = exchange.requestHeaders.getFirst("Origin")
+        if (origin != null && !bridgeAuth.originAllowed(origin)) {
+            respondJson(exchange, 403, buildJsonObject { put("ok", false); put("reason", "origin not allowed") })
+            return
+        }
+        val project = agentBrowserProject(exchange.requestHeaders.getFirst("X-Pi-Browser-Token"))
+        if (project == null) {
+            respondJson(exchange, 403, buildJsonObject { put("ok", false); put("reason", "invalid token") })
+            return
+        }
+        val parse = dev.pi.agent.browser.AgentBrowserRequestCodec.parse(readBody(exchange))
+        if (parse is dev.pi.agent.browser.AgentParseResult.Invalid) {
+            respondJson(exchange, 200, buildJsonObject { put("ok", false); put("reason", parse.reason) })
+            return
+        }
+        val result = dev.pi.agent.browser.AgentBrowserTool.execute(
+            project, (parse as dev.pi.agent.browser.AgentParseResult.Valid).request, bridgeTokenOf(project),
+        )
+        respondJson(exchange, 200, result)
     }
 
     /** Parses an int query parameter (019 D4); falls back to [fallback]. */
