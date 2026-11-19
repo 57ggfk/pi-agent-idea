@@ -60,6 +60,24 @@ CSRF 驱动你的 agent。
 
 ## 安装
 
+> **关于远程代码 / About remote code**
+>
+> 插件本身不内置 pi 命令行程序。首次配置时，你可以用 npm 安装、指定本机已有的 pi，
+> 或选择 pi 官方安装脚本。**若选择官方脚本，插件会下载并执行来自 `pi.dev` 的安装脚本**
+> （Windows: `irm https://pi.dev/install.ps1 | iex`；macOS/Linux: `curl -fsSL https://pi.dev/install.sh | sh`），
+> 该脚本会安装 pi，并在需要时一并安装自带的 Node.js。执行前会完整展示命令与来源，
+> 需你明确确认，过程中随时可停止。若不接受这一点，请选择 npm 或手动指定路径，
+> 这两条路径不会从 `pi.dev` 获取任何内容。
+>
+> The plugin does not bundle the pi CLI. On first setup you can install pi via npm,
+> point to an existing executable, or use pi's official install script. **If you choose
+> the official script, the plugin downloads and executes an installer script from
+> `pi.dev`** (`irm https://pi.dev/install.ps1 | iex` on Windows,
+> `curl -fsSL https://pi.dev/install.sh | sh` on macOS/Linux); the script installs pi
+> and, when needed, its own Node.js. The full command and source are shown before you
+> confirm, and the install can be stopped at any time. If you prefer not to, use npm
+> or the manual path — neither fetches anything from `pi.dev`.
+
 从 [Releases](../../releases) 下载 `pi-agent-idea-<version>.zip`，然后
 `Settings → Plugins → ⚙ → Install Plugin from Disk…`，重启 IDE。
 
