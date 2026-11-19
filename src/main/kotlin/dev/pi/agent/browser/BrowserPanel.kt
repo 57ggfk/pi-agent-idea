@@ -15,6 +15,7 @@ import com.intellij.ui.awt.RelativePoint
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import dev.pi.agent.PiAgentBundle
+import dev.pi.agent.ui.PiUiErrorPanel
 import java.awt.BorderLayout
 import java.awt.Dimension
 import java.awt.MouseInfo
@@ -37,6 +38,7 @@ import javax.swing.JComponent
 import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.JProgressBar
+import javax.swing.JTextField
 import javax.swing.KeyStroke
 import javax.swing.SwingUtilities
 

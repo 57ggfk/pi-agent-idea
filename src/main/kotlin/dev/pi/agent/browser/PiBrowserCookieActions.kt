@@ -1,6 +1,6 @@
 package dev.pi.agent.browser
 
-import com.intellij.ui.jcef.JBCefCookieManager
+import com.intellij.ui.jcef.JBCefBrowserBase
 
 /**
  * Cookie actions for the in-app browser surfaces (F-215 M2).
@@ -19,7 +19,7 @@ object PiBrowserCookieActions {
     /** Clears ALL cookies of the shared JCEF profile. Returns success. */
     fun clearAll(): Boolean =
         try {
-            JBCefCookieManager.getGlobalJBCefCookieManager()?.deleteCookies(true) ?: false
+            JBCefBrowserBase.getGlobalJBCefCookieManager()?.deleteCookies(true) ?: false
         } catch (_: Throwable) {
             false
         }
@@ -30,7 +30,7 @@ object PiBrowserCookieActions {
      */
     fun clearFor(urlOrigin: String): Boolean =
         try {
-            JBCefCookieManager.getGlobalJBCefCookieManager()
+            JBCefBrowserBase.getGlobalJBCefCookieManager()
                 ?.deleteCookies(urlOrigin, true) ?: false
         } catch (_: Throwable) {
             false
