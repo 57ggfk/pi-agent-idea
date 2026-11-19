@@ -369,9 +369,27 @@ intellijPlatform {
         name = "Pi Agent"
         version = project.version.toString()
         description = """
-            Pi coding agent, embedded in your IDE. Chat with the pi coding agent,
-            review its tool calls, manage models, sessions, MCP servers, packages
-            and skills — all from a JCEF-based tool window.
+            Pi coding agent embedded in your IDE. Chat with pi, review its tool calls,
+            and manage models, sessions, MCP servers, packages and skills from a JCEF-based tool window.
+
+            Installation and remote code: This plugin does not bundle the pi CLI. On first
+            setup you can install pi through npm, point to an existing pi executable, or choose
+            pi's official install script. If you choose the official script, the plugin downloads
+            and executes an installer script from pi.dev — 'irm https://pi.dev/install.ps1 | iex'
+            on Windows, 'curl -fsSL https://pi.dev/install.sh | sh' on macOS/Linux. That script
+            installs pi and, when needed, its own Node.js runtime. Nothing is downloaded or
+            executed until the full command is shown and you explicitly confirm it, and the
+            install can be stopped at any time.
+
+            Pi 编码助手，内嵌在你的 IDE 中。在工具窗里与 pi 对话、审阅工具调用，管理模型、
+            会话、MCP 服务器、扩展包和技能。
+
+            安装与远程代码说明：本插件不内置 pi 命令行程序。首次配置时，你可以选择用 npm 安装、
+            指定已有的 pi 可执行文件，或使用 pi 官方安装脚本。若选择官方脚本，插件会下载并执行
+            来自 pi.dev 的安装脚本——Windows 为 'irm https://pi.dev/install.ps1 | iex'，
+            macOS/Linux 为 'curl -fsSL https://pi.dev/install.sh | sh'。该脚本会安装 pi，并在
+            需要时一并安装自带的 Node.js。在完整命令展示出来并由你明确确认之前，不会下载或执行
+            任何内容；安装过程中随时可以停止。
         """.trimIndent()
         ideaVersion {
             // Support range mirrors cc gui: 2023.3 .. 2026.3. Compilation
