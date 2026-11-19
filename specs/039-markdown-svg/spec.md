@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-16
 
-**Status**: Draft（需求已收集、疑问已澄清；只产出 spec，不写 plan/tasks，不实现）
+**Status**: Implemented（已实现并随 0.5.10 内测；发布文案见 changelog.d/039-*；真机审查另修正了 SVG 远程 URI 净化，见该 spec 的真机审查修订）
 
 **Input**: 用户提出（2026-11-16，第 3 条拆分后的「中」档）
 > 扩展格式的支持 SVG、Mermaid、KaTeX 数学公式、diff 高亮、脚注。可按难易程度拆分成多个spec。
@@ -86,3 +86,11 @@ pi 回复中包含合法内联 SVG（`<svg viewBox=...>…</svg>`）时，消息
 ## 开放问题
 
 无阻塞项。拆分档位、安全口径、IDE 能力复用结论均已拍板/核实。裸 SVG vs 围栏源码的优化交互口径留 plan 阶段与用户确认。
+
+---
+
+## 真机审查修订（2026-11-20，release/0.5.10 真机质量审查 P0-1）
+
+- **现象**：规格假设 DOMPurify 会剥掉 SVG 里指向远程地址的 `xlink:href`，但实测 DOMPurify 3.4.17 **放行** http/https 的 `xlink:href`（只拦 `javascript:` 等危险协议）——即渲染层允许一条从外部站点取资源的引用。
+- **修订**：净化钩子在 DOMPurify 之后追加一步：SVG 命名空间节点上，凡是 `href` / `xlink:href` 不是以 `#` 开头的**一律移除**（保留文档内片段引用）。同时修掉规格/注释里「DOMPurify 已剥远程 href」的错误断言。
+- **回归判据**：e2e 断言恶意 SVG 的远程 `xlink:href` 不出现在渲染结果里（原来那条断言用 `[xlink\:href]` 选择器，在 HTML 里匹配不到命名空间属性，一直是假绿）；单测覆盖命名空间与片段引用的区别。
