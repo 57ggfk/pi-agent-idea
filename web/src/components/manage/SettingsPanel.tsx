@@ -96,7 +96,7 @@ export default function SettingsPanel({ api }: { api: ReturnType<typeof manageAp
         }}
       />
       <div className="panel-row-sub">
-        Restart the pi process (Chat → + New does not suffice; use project reopen or pi /reload) after changing settings.
+        {t("manage.settings.restartHint")}
       </div>
       <div className="panel-toolbar">
         <button className="btn" data-testid="env-snapshot-btn" onClick={() => void loadSnapshot()}>

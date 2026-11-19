@@ -6,20 +6,21 @@ import { useT } from "../../i18n/useT";
 import { shortPath } from "../../lib/shortPath";
 import {
   SOURCE_IDS,
-  SOURCE_LABELS,
+  SOURCE_LABEL_KEYS,
   summarize,
   summarizeState,
   type SourceId,
   type SourceStatus,
 } from "../../store/sources";
 
-const STATUS_LABEL: Record<SourceStatus, string> = {
-  ready: "Ready",
-  loading: "Loading",
-  failed: "Failed",
-  unsupported: "Not supported",
-  idle: "Not loaded",
-};
+/** i18n keys per status — the panel's labels follow the UI language (008/036). */
+const STATUS_LABEL_KEY = {
+  ready: "manage.diag.status.ready",
+  loading: "manage.diag.status.loading",
+  failed: "manage.diag.status.failed",
+  unsupported: "manage.diag.status.unsupported",
+  idle: "manage.diag.status.idle",
+} as const satisfies Record<SourceStatus, string>;
 
 /**
  * One tool line in the environment card (036 FR-001/FR-002): `node vX.Y.Z`
@@ -126,19 +127,14 @@ export default function DiagnosticsPanel({ api, bridge }: { api: ReturnType<type
     <div className="diagnostics" data-testid="diagnostics-panel" data-state={overall}>
       <div className="diagnostics-summary" data-testid="diag-summary" data-state={overall}>
         {overall === "ok" ? (
-          <span>All good — every data source loaded.</span>
+          <span>{t("manage.diag.summary.ok")}</span>
         ) : overall === "failed" ? (
-          <span>
-            {summary.failed} source{summary.failed > 1 ? "s" : ""} failing. Retry below, or restart pi from
-            the status bar.
-          </span>
+          <span>{t("manage.diag.summary.failed", { count: summary.failed })}</span>
         ) : overall === "loading" ? (
-          <span>Loading…</span>
+          <span>{t("manage.diag.summary.loading")}</span>
         ) : (
           // Not a fault: a source nobody has asked for yet simply has no data.
-          <span>
-            {summary.idle} source{summary.idle > 1 ? "s" : ""} not loaded yet.
-          </span>
+          <span>{t("manage.diag.summary.idle", { count: summary.idle })}</span>
         )}
       </div>
 
@@ -210,17 +206,18 @@ export default function DiagnosticsPanel({ api, bridge }: { api: ReturnType<type
       <ul className="diag-list">
         {SOURCE_IDS.map((id: SourceId) => {
           const state = sources[id];
+          const label = t(SOURCE_LABEL_KEYS[id]);
           const detail =
             state.status === "failed"
               ? state.error
               : state.status === "unsupported"
-                ? "not implemented by this bridge"
+                ? t("manage.diag.detail.unsupported")
                 : "";
           return (
             <li key={id} className="diag-item">
               <div className="panel-row" data-testid={`diag-row-${id}`} data-status={state.status}>
                 <span className="panel-row-main">
-                  <span className="panel-row-title">{SOURCE_LABELS[id]}</span>
+                  <span className="panel-row-title">{label}</span>
                   <span className="panel-row-sub diag-error" data-testid={`diag-error-${id}`}>
                     {detail}
                   </span>
@@ -230,7 +227,7 @@ export default function DiagnosticsPanel({ api, bridge }: { api: ReturnType<type
                   data-testid={`diag-status-${id}`}
                   data-status={state.status}
                 >
-                  {STATUS_LABEL[state.status]}
+                  {t(STATUS_LABEL_KEY[state.status])}
                   {state.status === "failed" && state.retries > 1 ? ` ×${state.retries}` : ""}
                 </span>
                 <span className="panel-row-actions">
@@ -241,19 +238,19 @@ export default function DiagnosticsPanel({ api, bridge }: { api: ReturnType<type
                     disabled={state.inflight || state.status === "unsupported"}
                     title={
                       state.status === "unsupported"
-                        ? "This bridge does not implement the call"
-                        : `Re-read ${SOURCE_LABELS[id].toLowerCase()}`
+                        ? t("manage.diag.retryUnsupportedTitle")
+                        : t("manage.diag.retryTitle", { name: label })
                     }
                     onClick={() => void retrySource(id)}
                   >
-                    {state.inflight ? "Retrying…" : "Retry"}
+                    {state.inflight ? t("manage.diag.retrying") : t("manage.diag.retry")}
                   </button>
                 </span>
               </div>
               {/* Truncation belongs in the menu summary, not here (FR-011). */}
               {state.status === "failed" && state.fullError && state.fullError !== state.error ? (
                 <details className="diag-details" data-testid={`diag-details-${id}`}>
-                  <summary>Full error</summary>
+                  <summary>{t("manage.diag.fullError")}</summary>
                   <pre className="diag-full mono">{state.fullError}</pre>
                 </details>
               ) : null}
