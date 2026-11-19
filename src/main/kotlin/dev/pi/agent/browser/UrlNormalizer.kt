@@ -6,24 +6,57 @@ package dev.pi.agent.browser
  */
 object UrlNormalizer {
 
-    /**
-     * Address-bar normalization. `null` = nothing to load.
-     *
-     * A bare host gets `http://` (the browser-address-bar convention); a value
-     * with any scheme passes through untouched so `https://`, the preview
-     * route, or a pasted `data:` URL survive as typed. Anything else (a stray
-     * sentence, say) also gets the prefix and lands on the error card — spec
-     * Q1's default: the address bar only builds URLs, it does not guess.
-     */
-    fun normalizeAddressBar(input: String?): String? {
-        val trimmed = input?.trim() ?: return null
-        if (trimmed.isEmpty()) return null
-        // containsMatchIn with a ^ anchor: Regex.matches is a FULL-string
-        // match, which a URL with a path never satisfies.
-        return if (SCHEME_REGEX.containsMatchIn(trimmed)) trimmed else "http://$trimmed"
+    /** What the user typed into the address bar (F-212: URL or search). */
+    sealed class AddressInput {
+        /** A loadable URL (typed with a scheme, or a host-shaped value). */
+        data class Url(val url: String) : AddressInput()
+
+        /** Not URL-shaped — a search query (F-212 flips spec 048 Q1). */
+        data class Search(val query: String) : AddressInput()
     }
 
+    /**
+     * Address-bar classification. A value with any scheme is a URL verbatim
+     * (`https://`, the preview route, a pasted `data:` URL); whitespace means
+     * search; a bare host/localhost/IP/host:port gets `http://` (the
+     * browser-address-bar convention); anything else is a search query.
+     *
+     * Q1 was re-answered by F-212: the old behavior (`http://` prefix on any
+     * non-URL) punycode-mangled `react hooks` into an unusable host and landed
+     * on the error card. The address bar now searches those like every real
+     * browser does; the host-shaped forms keep the zero-surprise load.
+     */
+    fun parseAddressBar(input: String?): AddressInput {
+        val trimmed = input?.trim() ?: return AddressInput.Search("")
+        if (trimmed.isEmpty()) return AddressInput.Search("")
+        // containsMatchIn with a ^ anchor: Regex.matches is a FULL-string
+        // match, which a URL with a path never satisfies.
+        if (SCHEME_REGEX.containsMatchIn(trimmed)) return AddressInput.Url(trimmed)
+        if (trimmed.any { it.isWhitespace() }) return AddressInput.Search(trimmed)
+        if (HOST_LIKE.containsMatchIn(trimmed)) return AddressInput.Url("http://$trimmed")
+        return AddressInput.Search(trimmed)
+    }
+
+    /**
+     * Programmatic-entry normalization ([AgentBrowserTool], actions): URL
+     * inputs pass/build as before; a search-shaped value yields `null` —
+     * callers that cannot show a search must not guess one either.
+     */
+    fun normalizeAddressBar(input: String?): String? =
+        when (val parsed = parseAddressBar(input)) {
+            is AddressInput.Url -> parsed.url
+            is AddressInput.Search -> null
+        }
+
     private val SCHEME_REGEX = Regex("^[a-zA-Z][a-zA-Z0-9+.-]*:")
+
+    /**
+     * Host-shaped without a scheme: localhost, IPv4, [IPv6], host:port, or a
+     * dotted domain (`.tld` suffix required so `react hooks` never matches).
+     */
+    private val HOST_LIKE = Regex(
+        "^(localhost|(?:\\d{1,3}\\.){3}\\d{1,3}|\\[[0-9a-fA-F:.]+\\]|(?:[A-Za-z0-9-]+\\.)+[A-Za-z]{2,})(:\\d{1,5})?([/?#].*)?$",
+    )
 
     /**
      * Downloads: CEF hands us the server's suggested name. It is untrusted
