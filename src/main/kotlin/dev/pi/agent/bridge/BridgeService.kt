@@ -205,6 +205,10 @@ class BridgeService(private val project: Project) : Disposable {
                 "manage.modelsOpenFile" -> modelsOpenFile(params)
                 "ide.saveImage" -> IdeImageActions.saveImage(project, params)
                 "ide.copyImage" -> IdeImageActions.copyImage(params)
+                // F-213: IDE-side file download (chat artifact files) — copies
+                // the local file into ~/Downloads with a reveal notification,
+                // bypassing the CEF download path that OOP IDEs never fire.
+                "ide.downloadFile" -> downloadFile(params)
                 "manage.agentsList" -> dev.pi.agent.manage.PiAgents.list(project.basePath)
                 "manage.agentsOpen" -> dev.pi.agent.manage.PiAgents.open(project, project.basePath, params)
                 "manage.agentsCreate" -> dev.pi.agent.manage.PiAgents.create(project.basePath, params)
@@ -809,6 +813,28 @@ class BridgeService(private val project: Project) : Disposable {
             ?: throw IllegalArgumentException("file not found: $path")
         com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
             com.intellij.openapi.fileEditor.OpenFileDescriptor(project, vf, line - 1, 0).navigate(true)
+        }
+        return buildJsonObject { put("ok", true) }
+    }
+
+    /**
+     * F-213 layer 1: copies a local artifact file into the user's Downloads
+     * dir with the shared reveal notification. Validation is synchronous
+     * (fast fail with a model-readable error); the copy itself runs on the
+     * pooled thread so a big file never blocks the envelope executor — the
+     * notification is the completion signal, the reply only acknowledges
+     * acceptance.
+     */
+    private fun downloadFile(params: JsonObject): JsonObject {
+        val path = (params["path"] as? JsonPrimitive)?.content?.takeIf { it.isNotBlank() }
+            ?: throw IllegalArgumentException("ide.downloadFile requires path")
+        val local = resolveFile(path)?.toNioPath()
+            ?: throw IllegalArgumentException("file not found: $path")
+        if (!java.nio.file.Files.isRegularFile(local)) {
+            throw IllegalArgumentException("not a readable file: $path")
+        }
+        com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
+            dev.pi.agent.browser.PiDownloader.downloadFile(project, local)
         }
         return buildJsonObject { put("ok", true) }
     }
