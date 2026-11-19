@@ -176,7 +176,7 @@ class PiBrowserKernel(private val project: Project, parent: Disposable) : Dispos
     /** The Swing component hosting the browser; null until created. */
     fun component(): JComponent? = browser?.component
 
-    internal fun currentCefBrowser(): JBCefBrowser? = browser
+    internal fun currentJbBrowser(): JBCefBrowser? = browser
 
     internal fun hopEdt(block: () -> Unit) {
         ApplicationManager.getApplication().invokeLater(block)
