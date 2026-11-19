@@ -104,9 +104,13 @@ val unixLoginShell: String? = if (isWindows) null else listOf(
     "/bin/sh",
 ).firstOrNull { it != null && File(it).isFile }
 
-val npmInstallCmd = when {
-    isWindows -> listOf("cmd", "/c", "npm", "install", "--no-audit", "--no-fund")
-    else -> listOf(unixLoginShell ?: "/bin/sh", "-lic", "npm install --no-audit --no-fund")
+// `npm ci` installs EXACTLY what the lockfile pins and never rewrites it.
+// `npm install` rewrites package-lock.json with its own metadata (e.g. the
+// "peer" flags), which both dirties the repo and makes this task
+// permanently out-of-date.
+val npmCiCmd = when {
+    isWindows -> listOf("cmd", "/c", "npm", "ci", "--no-audit", "--no-fund")
+    else -> listOf(unixLoginShell ?: "/bin/sh", "-lic", "npm ci --no-audit --no-fund")
 }
 val npmBuildCmd = when {
     isWindows -> listOf("cmd", "/c", "npm", "run", "build")
@@ -118,8 +122,15 @@ val ensureWebUiDeps = tasks.register<Exec>("ensureWebUiDeps") {
     inputs.file(layout.projectDirectory.file("web/package.json"))
     inputs.file(layout.projectDirectory.file("web/package-lock.json"))
     outputs.dir(layout.projectDirectory.dir("web/node_modules"))
-    onlyIf { !file("web/node_modules").exists() }
-    commandLine(npmInstallCmd)
+    // NO `onlyIf` gate here on purpose. The old
+    // `onlyIf { !file("web/node_modules").exists() }` meant a machine whose
+    // node_modules predated a lockfile bump NEVER refreshed its deps — the
+    // build then died inside vite with "Rollup failed to resolve import
+    // katex/dist/katex.min.css", a message that points nowhere near the real
+    // cause (a stale dependency tree). Gradle's own up-to-date check is the
+    // correct gate: lockfile changed → re-install; node_modules missing →
+    // re-install; otherwise skip.
+    commandLine(npmCiCmd)
 }
 
 val buildWebUi = tasks.register<Exec>("buildWebUi") {
