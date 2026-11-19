@@ -39,6 +39,8 @@ function registerPurifyHooks() {
       if (!href.startsWith("#")) {
         node.setAttribute("target", "_blank");
         node.setAttribute("rel", "noopener noreferrer");
+        // 049/F-107 易用性：hover 即见目标，不然聊天里一个高亮词点出去才知道去哪。
+        node.setAttribute("title", href);
       }
     }
   });
