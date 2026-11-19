@@ -81,6 +81,45 @@ object PageSnapshotSanitizer {
     }
 
     /**
+     * F-206/F-207 round 2: the page-side tap riding the SAME query channel as
+     * the read script. Captures console.error/warning into a page buffer AND
+     * ships each entry back through [injectStatement] (which references the
+     * `tapEvent` variable); overrides alert/confirm/prompt so page dialogs
+     * surface as IDE notifications instead of vanishing. Idempotent per
+     * document; read-only otherwise (it wraps, it never fabricates calls).
+     */
+    fun buildTapScript(injectStatement: String): String {
+        return """
+            (function(){
+              if (window.__piTapInstalled) return;
+              window.__piTapInstalled = true;
+              window.__piConsoleLines = [];
+              var send = function(obj){
+                try {
+                  var tapEvent = JSON.stringify(obj);
+                  %INJECT%
+                } catch (e) {}
+              };
+              ['error','warn'].forEach(function(level){
+                var orig = console[level] ? console[level].bind(console) : function(){};
+                console[level] = function(){
+                  try {
+                    var text = Array.prototype.map.call(arguments, function(a){ return String(a); }).join(' ').slice(0, 300);
+                    if (window.__piConsoleLines.length > 12) window.__piConsoleLines.shift();
+                    window.__piConsoleLines.push(level + ': ' + text);
+                    if (level === 'error') send({kind:'console', level: level, text: text});
+                  } catch (e) {}
+                  orig.apply(null, arguments);
+                };
+              });
+              window.alert = function(m){ send({kind:'dialog', type:'alert', text:String(m).slice(0,300)}); };
+              window.confirm = function(m){ send({kind:'dialog', type:'confirm', text:String(m).slice(0,300)}); return false; };
+              window.prompt = function(m,d){ send({kind:'dialog', type:'prompt', text:String(m).slice(0,300)}); return null; };
+            })()
+        """.trimIndent().replace("%INJECT%", injectStatement)
+    }
+
+    /**
      * The injected read script. [injectStatement] comes from
      * `JBCefJSQuery.inject("result")` and references the `result` variable
      * this IIFE declares — the whole thing is read-only by construction

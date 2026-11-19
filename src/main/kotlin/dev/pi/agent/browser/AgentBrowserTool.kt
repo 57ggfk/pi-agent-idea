@@ -80,8 +80,10 @@ object AgentBrowserTool {
                 ?: return failure("not a usable url: ${LogSafe.url(url)}")
         }
         val manager = PiBrowserManager.getInstance(project)
-        manager.open(normalized) // hops to EDT internally, creates/selects the tab
-        val panel = pollUntil(PANEL_WAIT_MS) { manager.browserPanel() }
+        // F-208 round 2: open returns the exact panel it landed on (EDT-exact,
+        // no selection-lag guesswork) — the walkthrough caught the poll-based
+        // lookup navigating the PREVIOUSLY selected tab as well.
+        val panel = manager.open(normalized)
             ?: return failure("browser tool window is unavailable", normalized)
         // Wait for the navigate to at least start before polling, so a stale
         // LOADED from the previous page cannot pass as the new page's state.

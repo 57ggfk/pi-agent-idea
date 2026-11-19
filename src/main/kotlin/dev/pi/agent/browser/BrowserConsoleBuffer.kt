@@ -38,6 +38,20 @@ class BrowserConsoleBuffer(private val max: Int = 50) {
         lines.takeLast(limit.coerceAtMost(max))
     }
 
+    /**
+     * F-206 round 2: one tap event straight from the injected page shim
+     * (console.error/warning routed over the JSQuery channel). Same bounded
+     * buffer, no DevTools dependency.
+     */
+    fun onTapLine(level: String, text: String) {
+        if (level != "error" && level != "warning") return
+        val line = LogSafe.truncate("console.$level: $text")
+        synchronized(lock) {
+            lines.addLast(line)
+            while (lines.size > max) lines.removeFirst()
+        }
+    }
+
     fun clear() = synchronized(lock) { lines.clear() }
 
     companion object {

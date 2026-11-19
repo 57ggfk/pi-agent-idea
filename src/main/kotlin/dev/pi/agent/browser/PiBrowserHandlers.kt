@@ -141,6 +141,26 @@ internal class PiBrowserHandlers(private val kernel: PiBrowserKernel) {
      */
     val keyboardHandler = object : CefKeyboardHandlerAdapter() {
         override fun onPreKeyEvent(browser: CefBrowser, event: CefKeyboardHandler.CefKeyEvent, isKeyboardShortcut: org.cef.misc.BoolRef?): Boolean {
+            // F-202 round 2: Alt+Left/Right arrive as WM_SYSKEYDOWN ->
+            // KEYEVENT_KEYDOWN (never RAWKEYDOWN on Windows - Ctrl+R/F5/Esc
+            // keep the RAW path and verified working). Handled here or not at all.
+            if (event.type == CefKeyboardHandler.CefKeyEvent.EventType.KEYEVENT_KEYDOWN) {
+                val m = event.modifiers
+                if (m and FLAG_ALT != 0 && m and (FLAG_CONTROL or FLAG_SHIFT) == 0) {
+                    return when (event.windows_key_code) {
+                        VK_LEFT -> {
+                            kernel.hopEdt { kernel.back() }
+                            true
+                        }
+                        VK_RIGHT -> {
+                            kernel.hopEdt { kernel.forward() }
+                            true
+                        }
+                        else -> false
+                    }
+                }
+                return false
+            }
             if (event.type != CefKeyboardHandler.CefKeyEvent.EventType.KEYEVENT_RAWKEYDOWN) return false
             // Zoom first: no overlap with the nav keys below.
             if (JcefBrowserZoom.onPreKeyEvent(kernel.currentJbBrowser()?.cefBrowser, event)) return true
@@ -312,6 +332,19 @@ internal class PiBrowserHandlers(private val kernel: PiBrowserKernel) {
                 val status = a[1] as CefRequestHandler.TerminationStatus
                 kernel.onEvent(PiBrowserEvent.RenderProcessGone(status.name))
                 null // void
+            }
+            "onBeforeBrowse" -> {
+                // F-110 round 2: on remote CEF (2025.2+) the thrift channel has
+                // no DownloadHandler_* at all, so a page-linked download never
+                // reaches ANY Java handler. Intercept download-shaped
+                // navigations here, cancel, and fetch IDE-side instead.
+                val request = a.getOrNull(2) as? org.cef.network.CefRequest
+                val url = request?.getURL().orEmpty()
+                if (PiDownloader.looksLikeDownload(url)) {
+                    log.info("browser download intercepted at browse: " + LogSafe.url(url))
+                    kernel.onDownloadUrlRequested(url)
+                    true
+                } else false
             }
             else -> defaultReturnValue(method)
         }
