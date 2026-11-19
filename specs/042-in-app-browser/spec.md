@@ -71,21 +71,6 @@
   - `onBeforePopup` / 下载 / 证书错误的默认行为（证书结论回填 043）；
   - 渲染模式实测：windowed vs OSR 本机帧滞后对比（stale-frame 史，选 windowed 的实证）。
 
-### 真机探针执行记录（2026-11-18，CDP 通道能力，16/16）
-
-> **范围声明（重要）**：本轮在真实 IDEA 2026.2.3（JCEF 内核 Chrome/144）上执行，宿主为**现有 Pi Agent 桥接面板实例**（`?token=…&instance=1`，见下方证据）。
-> 探针脚本 `scripts/probe-042-cdp.mjs` 走裸 CDP 页面级 WebSocket，结果落 `build/probe-042-result.json`。
-> **本轮证明的是 CEF/CDP 通道的通用能力，不是内置浏览器原型的能力**——内置浏览器（第二个零桥接 JBCefBrowser）尚未实现，其隔离性、双形态承载、批注覆盖层、windowed/OSR 实测仍须在原型落地后单独验证。不得把下列结论当作「内置浏览器已验证」。
-
-| 探针 | 真机结论 | 对 plan 的用途 |
-|---|---|---|
-| DevTools/CDP 通道 | Runtime / DOM / CSS / Network / Log / Page.captureScreenshot / Emulation.setDeviceMetricsOverride **全部 available**；CSS 需 `DOM.enable → CSS.enable → getDocument → querySelector` 正确顺序 | P1 DevTools、P2 元素采集/截图的技术路径有底层支撑；脚本 enable 链顺序写进 plan |
-| 元素选取与上下文 | 稳定 CSS 选择器可拼（`body > div#root > … > textarea.composer-input`），`getComputedStyle` 可得 color/fontSize/display/padding，`getBoundingClientRect` 可得尺寸；页面无 CSP meta、内联 eval 可用 | P2 批注「选择器 + 计算样式 + 尺寸 + 裁剪截图」结构化上下文在 CEF 侧可行；CSP 注入威胁在本类页面不构成阻碍 |
-| token 隔离基线 | 现有桥接面板 URL 确实携带 43 字符 token | 佐证 §六硬约束「token 永不进内置浏览器 URL」的必要性；内置浏览器原型须以「URL 无 token」为验收断言 |
-| 证书控制（CDP 层） | `Security.setIgnoreCertificateErrors` 在 CDP available | 仅说明 CDP 层能力；**043 的 `onCertificateError`（Java 请求链）仍未真机验证**，二者不可等同，见 043 记录 |
-
-**仍待原型落地后验证**（本轮未覆盖）：JCEF 多实例/OSR 绘制共存与帧滞后对比、`JBCefHealthMonitor.TOPIC` 在 233–263 的存在性、独立 request context / cookie 隔离、`onBeforePopup`/下载/证书错误默认行为、双形态承载、批注覆盖层、会话注入数据形状。
-
 ## 六、不做的事（本版本）
 
 - 不实现、不拆 plan/tasks、不改任何源码——本次只记录方向。

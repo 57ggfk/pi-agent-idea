@@ -65,11 +65,6 @@
 - 「不安全放行」状态提示的 UI 形态与位置（地址栏徽标 / 页面顶部警告条），以及是否每次导航都提示。
 - 配置项在现有设置体系中的落位（新分组还是并入浏览器设置）与数据结构。
 
-> **真机探针记录（2026-11-18，CDP 层 + Java API 存在性）**：
-> ① **CDP 层**：IDEA 2026.2.3 / JCEF Chrome 144 上 `Security.setIgnoreCertificateErrors` 在页面级 CDP available（`scripts/probe-042-cdp.mjs`，`build/probe-042-result.json`）。
-> ② **Java API 存在性**（jar 常量池直读，`scripts/probe-042-api.py`，`build/probe-042-api-result.md`）：`CefRequestHandler.onCertificateError(CefBrowser, CefLoadHandler.ErrorCode, String, CefSSLInfo, CefCallback) : boolean` 与 `getAuthCredentials(...CefAuthCallback) : boolean` 均存在于 `intellij.libraries.jcef.jar`。FR-002 四类错误有直接对应的 `CefLoadHandler.ErrorCode` 常量：自签名/私有 CA → `ERR_CERT_AUTHORITY_INVALID`、过期 → `ERR_CERT_DATE_INVALID`、域名不匹配 → `ERR_CERT_COMMON_NAME_INVALID`（另有 `ERR_CERT_REVOKED` / `ERR_CERT_WEAK_*` 等共 18 个 `ERR_CERT_*`）。
-> **边界**：① 只证明 CDP/DevTools 通道能切换证书忽略；② 只证明 Java **API 存在**，二者都不等于「内置浏览器原型已按策略放行」。回调在四类错误下按当前策略的实际行为、`getAuthCredentials` 处理、启动参数（ignore-certificate-errors / 自定义 CA 注入）在 233–263 全线的可用性，**仍须原型落地后真机验证**。不得据本条提前判定 FR-002/FR-003 已可实施。
-
 ## 不做的事
 
 - 不改 pi 进程 / npm registry / provider / MCP 的网络与证书策略（用户 Q1）。

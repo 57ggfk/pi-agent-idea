@@ -9,7 +9,7 @@
 
 ## 0. 探针证据基线（plan 的每条决策都有编号出处）
 
-真机探针（裸 CDP 对真机 WebStorm CEF 144 + 探针插件对沙盒 IC-2024.3.1 CEF 122）已完成并留下结论报告（完整报告已入库：`specs/042-in-app-browser/probe-report-2026-11-17.md`，原始工件在 `probe-evidence/`；关键结论已摘入本 plan 各决策条目）。要点：
+真机探针（裸 CDP 对真机 WebStorm CEF 144 + 探针插件对沙盒 IC-2024.3.1 CEF 122）已完成并留下结论报告（本地 `specs/042-in-app-browser/probe-report-TEMP-2026-11-17.md`，未入库；关键结论已摘入本 plan 各决策条目）。要点：
 
 | # | 结论 | 出处 |
 |---|---|---|

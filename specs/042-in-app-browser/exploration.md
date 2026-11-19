@@ -77,16 +77,11 @@
 | C2 独立工具窗（如 `Pi Browser`） | 新 toolWindow，用户可自由 anchor | 生命周期完全独立；实现路径与 PiAgentPanel 同构 | 与 042 拍板的双形态重复；多占一个工具窗按钮 | 降为备选（若双形态都受阻再启用） |
 | C4 浮动 Dialog / JBPopup | 一次性弹窗看一眼 | 实现最轻 | 不能长驻、不能与 IDE 布局共存 | 不推荐做主载体 |
 
-### 渲染模式：windowed（与聊天面板一致）——⚠️ 2026-11-18 真机发现该前提在本机不成立，待 P0 plan 重评
+### 渲染模式：windowed（与聊天面板一致）
 
 - 选型口诀直接命中：内置浏览器装的是**动效/交互/视频俱全的通用网页**（042 还要装 dev server 应用），OSR 的帧率上限与软渲染（进程外环境下）是下策；且本项目已在本机踩过 stale-frame 坑并留了 `wasResized` workaround，没有理由再选一条帧滞后更重的路。
 - windowed 的代价是 heavyweight 原生窗口盖住 Swing 弹层——平台的 HwFacade 已默认兜底（`ide.browser.jcef.hwfacade.enabled=true`），官方 What's New / SVG 查看器同款选择。
 - v1 不做 OSR；042 的「批注覆盖层」若需在浏览器视口上叠自绘 UI，到 P2 探针时再评估是否需要 OSR。
-
-> **⚠️ 2026-11-18 真机反证（影响 P0 架构决策，必须在 plan 前解决）**：
-> 本机 IDEA 2026.2.3 经进程命令行确认运行于 **remote / out-of-process 变体**——存在独立 `plugins/jcef-plugin/jcef/cef_server.exe` 进程（PID 39684，`--port=30000 --remote-allow-origins=*`），GPU / network / storage / renderer 全部拆为 `cef_server.exe` 子进程。
-> 而 `intellij.platform.ui.jcef.jar` 的 `JBCefBrowserBuilder` 内含字符串：「Trying to create windowed browser when remote-mode is enabled. Setting isOffScreenRendering=false will be ignored.」→ **remote 模式下 `setOffScreenRendering(false)`（windowed）会被强制忽略，实际退化为 OSR**。
-> 结论：本节「windowed」拍板在本机真实环境下可能是空谈——聊天面板当前是否真的 windowed、内置浏览器若按 windowed 建会不会静默变 OSR（进而触发 OSR 帧滞后 + stale-frame 老坑），**须在 P0 plan 前用最小原型真机验证**（建一个 `JBCefBrowser` 读其实际渲染模式、对比帧表现）。若确为强制 OSR，§3 的 windowed 选型结论与 P2 批注覆盖层方案都要重新评估。证据：`build/probe-042-api-result.md` §渲染模式、进程命令行取证。
 
 ## 4. 入口场景（探索稿原口径 → 042 P0 分层的映射）
 
@@ -100,12 +95,8 @@
 ## 5. 关键技术决策点（实施 spec/plan 时逐条落）
 
 1. **实例生命周期**：懒创建（首次有 URL 才建）；建议「关闭页签即 `dispose`」，不做实例池。若真机证明反复开合太重，再加「空闲 N 分钟销毁」——每浏览器一整套 Chromium 子进程（FM-5），宁可先保守。
-2. **P0 零桥接是身份而非省略**：不注入任何 `JBCefJSQuery`、不加 drag/drop handler、不注册到 `BridgeService`。JS→Java 通道为零，则 FM-1（JSQuery 池）整类不存在；标签标题/地址用 Java 侧 `CefDisplayHandler` 回调（`onTitleChange`/`onAddressChange`，**2026-11-18 真机更正：方法名是 `onTitleChange` 无词尾 d**），不进页面。**P1/P2 修订**：开发交互（console/网络采集、批注上下文）需要 JS→Java 时，走**独立受控通道**（Java 侧回调优先；确需 JSQuery/CefMessageRouter 时创建前设池大小——事后设置无效），仍不复用 pi 桥接、不携 token。
-3. **崩溃判定**：聊天面板靠「前端 20s 长轮询静默」判死；内置浏览器没有这个心跳。可行替代：`CefLoadHandler.onLoadError` + JCEF 健康监控 TOPIC → 错误卡 + 重载按钮（复用 `PiUiErrorPanel` 形态）。
-   **⚠️ 2026-11-18 真机更正（jar 常量池直读，IDEA 2026.2.3 / JCEF api 1.21）**：原文写的 `JBCefHealthMonitor.TOPIC` 和状态常量 `CEF_SERVER_DISCONNECTED`/`STARTUP_TEST_FAILED` **均不存在**。真实 API 是：
-   - TOPIC = 内部类 `JBCefHealthMonitor.JBCefHealthCheckTopic.TOPIC`（类型 `Topic<JBCefHealthCheckTopic>`），监听方法 `onHealthHealthStatusChanged`；
-   - `JBCefHealthMonitor.Status` 枚举**只有 5 个值**：`OK` / `UNKNOWN` / `GPU_PROCESS_FAILED` / `UNPRIVILEGED_USER_NS_DISABLED` / `RUN_UNDER_SUPER_USER`。
-   本条崩溃判定的落地形态须按真实 API 重写；233–263 全线的存在性仍须逐个 IDE 版本复核（本轮仅证 2026.2.3）。证据见 `build/probe-042-api-result.md`、脚本 `scripts/probe-042-api.py`。
+2. **P0 零桥接是身份而非省略**：不注入任何 `JBCefJSQuery`、不加 drag/drop handler、不注册到 `BridgeService`。JS→Java 通道为零，则 FM-1（JSQuery 池）整类不存在；标签标题/地址用 Java 侧 `CefDisplayHandler` 回调（`onTitleChanged`/`onAddressChange`），不进页面。**P1/P2 修订**：开发交互（console/网络采集、批注上下文）需要 JS→Java 时，走**独立受控通道**（Java 侧回调优先；确需 JSQuery/CefMessageRouter 时创建前设池大小——事后设置无效），仍不复用 pi 桥接、不携 token。
+3. **崩溃判定**：聊天面板靠「前端 20s 长轮询静默」判死；内置浏览器没有这个心跳。可行替代：`CefLoadHandler.onLoadError` + `JBCefHealthMonitor` TOPIC（`GPU_PROCESS_FAILED` / `CEF_SERVER_DISCONNECTED` / `STARTUP_TEST_FAILED`）→ 错误卡 + 重载按钮（复用 `PiUiErrorPanel` 形态）。**`JBCefHealthMonitor.TOPIC` 在 233–263 全线的 API 存在性是探针项**（dev-checklist §4 的样例代码按 2026.2 写）。
 4. **导航控制**：back/forward/reload 走 `cefBrowser` 自带导航栈；地址栏展示走 `onAddressChange`，编辑导航按 042 Q3 为 P0 需求；`target="_blank"`/`onBeforePopup` 的默认行为必须显式定夺（仍在内置浏览器打开 or 交系统浏览器，二选一，**不允许 CEF 默认弹独立 Chromium 窗**）。
 5. **下载**：通用网页会触发下载，CEF 无处理时会静默失败——挂 `CefDownloadHandler` 显式转交系统默认下载（或提示用系统浏览器打开该链接）。这是聊天 SPA 从未面对过的新失败面。
 6. **证书错误 / HTTP 认证弹窗**：按 **043** 执行（`onCertificateError` 四类错误 × 三种配置形态、默认严格、放行须可见提示）——本稿不重复定义，探针结论回填 043。
@@ -160,16 +151,10 @@ P3 仅记方向（042 原文）
 | 5 | 承载双形态（工具窗 Content 与编辑器）实现路径与切换语义 | 042 |
 | 6 | URL 安全边界（白名单/确认/跨域/下载/隔离存储） | 042 |
 | 7 | 批注回流数据形状（文本+截图 vs 结构化上下文；体积/截断） | 042 |
-| 8 | `JBCefHealthMonitor` TOPIC 在 233–263 的存在性与行为 | 本稿 |
+| 8 | `JBCefHealthMonitor.TOPIC` 在 233–263 的存在性与行为 | 本稿 |
 | 9 | 独立 request context / cookie 隔离的 API 可行性 | 本稿 |
 | 10 | `onBeforePopup` / 下载 / 证书错误的默认行为（结论回填 043） | 本稿 |
 | 11 | 渲染模式实测：windowed vs OSR 本机帧滞后对比（stale-frame 史） | 本稿 |
-
-**2026-11-18 API 存在性探针进展**（jar 常量池直读，仅证 2026.2.3 / JCEF api 1.21，非全版本；详见 `build/probe-042-api-result.md`）：
-- **#8 部分探明**：TOPIC 真实路径 `JBCefHealthMonitor.JBCefHealthCheckTopic.TOPIC`、Status 只有 5 值（见 §5.3 更正）；233–263 跨版本仍待测。
-- **#9 API 可行**：`CefRequestContext.createContext(CefRequestContextHandler)` 存在，`getGlobalContext`/`setPreference`/`ClearCertificateExceptions` 均在——独立 context 路径成立；**行为**（cookie 是否真隔离）仍须原型真机验证。
-- **#10 API 签名确认**：`onBeforePopup` / `CefDownloadHandler.onBeforeDownload`+`onDownloadUpdated` / `onCertificateError` 签名均已 dump；证书四类错误有对应 `ERR_CERT_*` 错误码（`AUTHORITY_INVALID`/`DATE_INVALID`/`COMMON_NAME_INVALID` 等 18 个），回填 043。**默认行为**（弹窗/下载/证书放行时实际发生什么）仍须原型真机验证。
-- **#11 风险信号（已坐实）**：`JBCefBrowserBuilder` 内含字符串「remote-mode 下 windowed 会被忽略、isOffScreenRendering=false 无效」；本机进程命令行已确认**就是 remote/out-of-process 变体**（独立 `cef_server.exe` + GPU/network/storage 子进程）→ §3 的 windowed 拍板在本机可能不成立，须 P0 plan 前最小原型实测渲染模式（详见 §3 反证块）。另 `setEnableOpenDevToolsMenuItem(boolean)` 存在，利好 P1。
 
 探针工具：本机 CDP 已常开（§5.10），裸 CDP 脚本路径有先例（`scripts/probe-033-cdp.mjs`）；040 Mermaid 的挂起探针同属「JCEF 渲染行为」一族，可共用探针脚本与结论格式。
 

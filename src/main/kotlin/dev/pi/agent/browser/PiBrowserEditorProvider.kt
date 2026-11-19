@@ -33,7 +33,7 @@ class PiBrowserEditorProvider : FileEditorProvider, DumbAware {
 
 internal class PiBrowserFileEditor(private val project: Project, private val file: VirtualFile) : FileEditor {
 
-    private val panel = BrowserPanel(project, offscreen = true)
+    private val panel = BrowserPanel(project)
 
     init {
         Disposer.register(this, panel)
@@ -41,8 +41,6 @@ internal class PiBrowserFileEditor(private val project: Project, private val fil
     }
 
     override fun getComponent(): JComponent = panel
-
-    override fun getFile(): VirtualFile = file
 
     override fun getPreferredFocusedComponent(): JComponent? = null
 
