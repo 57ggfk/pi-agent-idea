@@ -6,11 +6,11 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.popup.JBPopup
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.icons.AllIcons
 import com.intellij.ui.AnimatedIcon
 import com.intellij.ui.SimpleListCellRenderer
-import com.intellij.ui.TextFieldWithHistory
 import com.intellij.ui.awt.RelativePoint
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
@@ -57,9 +57,9 @@ class BrowserPanel(private val project: Project) : JPanel(BorderLayout()), Dispo
 
     private val kernel = PiBrowserKernel(project, this)
 
-    // F-201: the address bar is a TextFieldWithHistory — recent URLs pop up
-    // on focus/click, closes the "closed the tab, lost the port" gap.
-    private val addressField = TextFieldWithHistory()
+    // F-201: recent URLs drop down on focus/click (own popup), closing the
+    // "closed the tab, lost the port" gap.
+    private val addressField = JTextField()
     private val goButton = JButton(PiAgentBundle.message("browser.go"))
     private val backButton = navButton("browser.back.tooltip", AllIcons.Actions.Back)
     private val forwardButton = navButton("browser.forward.tooltip", AllIcons.Actions.Forward)
@@ -113,31 +113,28 @@ class BrowserPanel(private val project: Project) : JPanel(BorderLayout()), Dispo
     private var lastFindQuery: String = ""
     private var findNextPending = false
 
+    /** F-201 round 2: the OWN history popup (replaces TextFieldWithHistory). */
+    private var historyPopup: JBPopup? = null
+
     init {
         border = JBUI.Borders.empty()
 
-        val navRow = JPanel()
-        navRow.layout = BoxLayout(navRow, BoxLayout.LINE_AXIS)
-        navRow.border = JBUI.Borders.empty(4, 8, 4, 8)
-        navRow.add(backButton)
-        navRow.add(forwardButton)
-        navRow.add(reloadButton)
-        navRow.add(devToolsButton)
-        navRow.add(Box.createHorizontalStrut(4))
-        navRow.add(openExternalButton)
-        navRow.add(Box.createHorizontalStrut(6))
-        navRow.add(addressField)
-        navRow.add(Box.createHorizontalStrut(6))
-        navRow.add(goButton)
-        // 真机实测（049/F-109，窄工具窗）：BoxLayout 把地址栏压到 ~40px、Go 被裁出
-        // 可视区，地址栏导航整个不可用。字段至少可读（120px）且吸收剩余宽度
-        // （max 放开），Go 才能留在行尾；按钮锁 max=pref + 收紧 margin，保持
-        // 图标原始紧凑宽度，剩余宽度全部归地址栏。
-        addressField.minimumSize = JBUI.size(120, 28)
-        addressField.maximumSize = Dimension(Int.MAX_VALUE / 4, addressField.preferredSize.height)
+        // F-109 round 2: BoxLayout 拉宽/挤压两轮修都没根治——按钮组 WEST、
+        // 地址栏 CENTER、Go EAST 的 BorderLayout 让 Go 恒在行尾、地址栏恒吸收
+        // 剩余宽度（真机复验：Go ~830px 才回归的根因是 max=pref 让按钮不可压缩）。
+        val navRow = JPanel(BorderLayout())
+        val navButtons = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 2, 0))
+        navButtons.border = JBUI.Borders.empty(4, 8)
+        navButtons.add(backButton)
+        navButtons.add(forwardButton)
+        navButtons.add(reloadButton)
+        navButtons.add(devToolsButton)
+        navButtons.add(openExternalButton)
+        navRow.add(navButtons, BorderLayout.WEST)
+        navRow.add(addressField, BorderLayout.CENTER)
+        navRow.add(goButton, BorderLayout.EAST)
         for (button in listOf(backButton, forwardButton, reloadButton, devToolsButton, openExternalButton, goButton)) {
             button.margin = JBUI.insets(2, 4)
-            button.maximumSize = button.preferredSize
         }
 
         val north = JPanel(BorderLayout())
@@ -157,7 +154,7 @@ class BrowserPanel(private val project: Project) : JPanel(BorderLayout()), Dispo
         showPlaceholder()
         add(centerHost, BorderLayout.CENTER)
 
-        val editor = addressField.getTextEditor()
+        val editor = addressField
         editor.toolTipText = PiAgentBundle.message("browser.address.tooltip")
         // F-101: the address bar is the one Swing text input users type into;
         // CJK IME composition pipelines (微信输入法 CN 模式) turn digits into
@@ -168,14 +165,25 @@ class BrowserPanel(private val project: Project) : JPanel(BorderLayout()), Dispo
         // (flagged tradeoff, see F-212).
         editor.enableInputMethods(false)
         addressField.isEditable = true
-        addressField.setHistorySize(PiBrowserHistory.MAX_HISTORY)
 
-        // F-201: recent URLs drop down when the editor gains focus or is clicked.
+        // F-201 round 2: recent URLs drop down on focus/click — OWN JBPopup,
+        // not TextFieldWithHistory's (whose open popup swallowed the field's
+        // Enter and submitted an empty search; walkthrough regression). The
+        // field keeps keyboard focus the whole time, so Enter always submits
+        // exactly what the user typed; a history pick fills + submits.
         editor.addFocusListener(object : FocusAdapter() {
             override fun focusGained(e: FocusEvent) = maybeShowHistory()
         })
         editor.addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(e: MouseEvent) = maybeShowHistory()
+        })
+        editor.addKeyListener(object : KeyAdapter() {
+            override fun keyPressed(e: KeyEvent) {
+                if (e.keyCode == KeyEvent.VK_ESCAPE && historyPopup?.isVisible == true) {
+                    historyPopup?.cancel()
+                    e.consume()
+                }
+            }
         })
 
         // Ctrl+L jumps to the address bar (spec Q5) — the one browser habit
@@ -377,8 +385,18 @@ class BrowserPanel(private val project: Project) : JPanel(BorderLayout()), Dispo
     private fun maybeShowHistory() {
         val entries = PiBrowserHistory.getInstance(project).entries()
         if (entries.isEmpty()) return
-        addressField.setHistory(entries)
-        if (!addressField.isPopupVisible) addressField.showPopup()
+        if (historyPopup?.isVisible == true) return
+        historyPopup = JBPopupFactory.getInstance()
+            .createPopupChooserBuilder(entries)
+            .setTitle(PiAgentBundle.message("browser.history.title"))
+            .setRenderer(SimpleListCellRenderer.create("") { it })
+            .setItemChosenCallback { chosen ->
+                addressField.text = chosen
+                submitAddress()
+            }
+            .setCancelOnClickOutside(true)
+            .createPopup()
+            .also { it.show(RelativePoint(addressField, java.awt.Point(0, addressField.height))) }
     }
 
     private fun navButton(tooltipKey: String, icon: Icon): JButton {
@@ -492,6 +510,17 @@ class BrowserPanel(private val project: Project) : JPanel(BorderLayout()), Dispo
     /** Kernel handle for the agent state polling and page read. */
     fun agentKernel(): PiBrowserKernel = kernel
 
+    /**
+     * F-103 round 2: tab re-selection re-syncs the echo row and address bar
+     * from THIS tab's kernel (the walkthrough caught a tab showing another
+     * tab's URL after switching back - the echo only updates from kernel
+     * callbacks that fired while the tab was selected). EDT only.
+     */
+    fun refreshFromKernel() {
+        titleText = kernel.lastKnownTitle
+        updateEcho(kernel.lastKnownUrl)
+    }
+
     /** F-208: the tab's target URL, for the manager's per-URL reuse rule. */
     fun currentUrl(): String = lastUrl
 
@@ -506,7 +535,9 @@ class BrowserPanel(private val project: Project) : JPanel(BorderLayout()), Dispo
     }
 
     private fun submitAddress() {
-        load(addressField.getText())
+        val text = addressField.text
+        if (text.isBlank()) return // Enter on an empty field never navigates
+        load(text)
     }
 
     private fun onStateChanged(state: PiBrowserState) {

@@ -36,6 +36,68 @@ object PiDownloader {
     private const val NOTIFICATION_GROUP = "Pi Agent"
 
     /**
+     * Extensions that mean "this navigation is a download" at browse level
+     * (F-110 round 2): on 2025.2+/JCEF 144 the remote CEF channel never
+     * dispatches DownloadHandler callbacks (thrift method list has no
+     * DownloadHandler_* — javap-verified), so the ONLY way to keep a page
+     * link download from silently vanishing is to cancel the navigation in
+     * onBeforeBrowse and fetch it IDE-side. PDF/csv/office docs included:
+     * vanishing is worse than landing in Downloads.
+     */
+    private val DOWNLOAD_EXTENSIONS = setOf(
+        "zip", "exe", "msi", "bin", "dmg", "apk", "rar", "7z", "gz", "tgz",
+        "tar", "iso", "jar", "pdf", "csv", "xlsx", "docx", "pptx",
+    )
+
+    /**
+     * Pure URL classifier for the onBeforeBrowse intercept: path ends with a
+     * known download extension (query/fragment stripped, extension must sit
+     * after the last slash so `.bin` inside a directory name never counts).
+     */
+    fun looksLikeDownload(url: String): Boolean {
+        val path = url.substringBefore('#').substringBefore('?')
+        if (!path.startsWith("http://", true) && !path.startsWith("https://", true)) return false
+        val dot = path.lastIndexOf('.')
+        if (dot < 0) return false
+        if (dot < path.lastIndexOf('/')) return false
+        val ext = path.substring(dot + 1).lowercase()
+        return ext in DOWNLOAD_EXTENSIONS
+    }
+
+    /**
+     * F-110 round 2: fetch a page-linked download IDE-side over the JDK HTTP
+     * stack (CEF-independent, works identically on 233-263) and land it in
+     * Downloads with the shared done/reveal notification. Runs on its own
+     * daemon thread — the caller (CEF callback thread) just cancels.
+     */
+    fun downloadUrl(project: Project?, url: String) {
+        Thread({
+            runCatching {
+                val conn = java.net.URI(url).toURL().openConnection()
+                        as java.net.HttpURLConnection
+                conn.connectTimeout = 15_000
+                conn.readTimeout = 120_000
+                conn.instanceFollowRedirects = true
+                val name = contentDispositionName(conn.getHeaderField("Content-Disposition"))
+                    ?: url.substringBefore('#').substringBefore('?').substringAfterLast('/').ifBlank { "download" }
+                val target = uniqueTarget(downloadsDir(), UrlNormalizer.downloadFileName(name))
+                conn.inputStream.use { input ->
+                    target.outputStream().use { output -> input.copyTo(output, 64 * 1024) }
+                }
+                notifyDone(project, target.absolutePath)
+            }.onFailure { e ->
+                notifyFailure(project, LogSafe.truncate(e.message ?: e.javaClass.simpleName))
+            }
+        }, "pi-browser-web-download").apply { isDaemon = true }.start()
+    }
+
+    /** `filename=…` / `filename*=UTF-8''…` out of Content-Disposition, or null. */
+    private fun contentDispositionName(disposition: String?): String? = disposition?.let {
+        Regex("""filename\*?=(?:UTF-8'')?"?([^";]+)""").find(it)?.groupValues?.get(1)
+            ?.trim('"')?.let { name -> runCatching { java.net.URLDecoder.decode(name, "UTF-8") }.getOrDefault(name) }
+    }
+
+    /**
      * Copies the local file [source] into the user's Downloads directory
      * (never overwriting an existing file) and notifies. Returns the target
      * path, or null with a failure notification when the source is unusable.

@@ -23,35 +23,50 @@ import dev.pi.agent.PiAgentBundle
 @Service(Service.Level.PROJECT)
 class PiBrowserManager(private val project: Project) {
 
-    /** Opens (or refocuses) a browser tab and navigates to [url]. */
-    fun open(url: String) {
-        if (ApplicationManager.getApplication().isDispatchThread) {
+    /**
+     * Opens (or refocuses) a browser tab, navigates to [url], and returns the
+     * exact [BrowserPanel] it landed on. F-208 round 2: the agent endpoint
+     * needs THAT panel (invokeAndWait on the caller thread, so there is no
+     * selection-lag race where the previously selected tab would be navigated
+     * as well); fire-and-forget callers simply ignore the return.
+     */
+    fun open(url: String): BrowserPanel? {
+        return if (ApplicationManager.getApplication().isDispatchThread) {
             doOpen(url)
         } else {
-            ApplicationManager.getApplication().invokeLater { doOpen(url) }
+            var result: BrowserPanel? = null
+            runCatching {
+                ApplicationManager.getApplication().invokeAndWait(
+                    Runnable { result = doOpen(url) },
+                )
+            }
+            result
         }
     }
 
-    private fun doOpen(url: String) {
-        if (project.isDisposed) return
-        val toolWindow = ToolWindowManager.getInstance(project).getToolWindow(TOOLWINDOW_ID) ?: return
+    private fun doOpen(url: String): BrowserPanel? {
+        if (project.isDisposed) return null
+        val toolWindow = ToolWindowManager.getInstance(project).getToolWindow(TOOLWINDOW_ID) ?: return null
         toolWindow.show(null)
         val manager = toolWindow.contentManager
         val browserContents = manager.contents.filter { it.getComponent() is BrowserPanel }
         val existing = browserContents.firstOrNull { (it.getComponent() as BrowserPanel).currentUrl() == url }
         if (existing != null) {
             manager.setSelectedContent(existing)
-            (existing.getComponent() as BrowserPanel).load(url)
-            return
+            val panel = existing.getComponent() as BrowserPanel
+            panel.load(url)
+            return panel
         }
         if (browserContents.size >= MAX_TABS) {
             // F-208 ceiling: reuse the tab the user is looking at (or the
             // first browser tab) instead of growing Contents without bound.
             val fallback = browserContents.firstOrNull { it.isSelected } ?: browserContents.first()
             manager.setSelectedContent(fallback)
-            (fallback.getComponent() as BrowserPanel).load(url)
-            return
+            val panel = fallback.getComponent() as BrowserPanel
+            panel.load(url)
+            return panel
         }
+        ensureTabListener(manager)
         val panel = BrowserPanel(project)
         val content = ContentFactory.getInstance().createContent(
             panel, PiAgentBundle.message("toolwindow.browser.tab"), true,
@@ -63,6 +78,7 @@ class PiBrowserManager(private val project: Project) {
         manager.addContent(content)
         manager.setSelectedContent(content)
         panel.load(url)
+        return panel
     }
 
     /**
@@ -79,8 +95,26 @@ class PiBrowserManager(private val project: Project) {
             ?.getComponent() as? BrowserPanel
     }
 
+    /**
+     * F-103 round 2: switching browser tabs must re-sync each panel's echo row
+     * from ITS OWN kernel — the walkthrough caught a tab showing another tab's
+     * URL after re-selection (echo rows only update from kernel callbacks that
+     * fired while the tab was selected). One listener per content manager.
+     */
+    private fun ensureTabListener(manager: com.intellij.ui.content.ContentManager) {
+        if (tabListenerAdded) return
+        tabListenerAdded = true
+        manager.addContentManagerListener(object : com.intellij.ui.content.ContentManagerListener {
+            override fun selectionChanged(event: com.intellij.ui.content.ContentManagerEvent) {
+                (event.content.getComponent() as? BrowserPanel)?.refreshFromKernel()
+            }
+        })
+    }
+
     companion object {
         private const val TOOLWINDOW_ID = "Pi Agent"
+
+        private var tabListenerAdded = false
 
         /** F-208: same per-project ceiling as the chat instance tabs (019). */
         const val MAX_TABS = 4

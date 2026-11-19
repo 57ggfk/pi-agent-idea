@@ -34,6 +34,9 @@ object DevServerProbe {
 
     /** Connect timeout per candidate; the total budget caps the whole sweep. */
     private const val CONNECT_TIMEOUT_MS = 300L
+
+    /** F-214 round 2: netstat raced a 3s timeout on the real machine (busy TCP tables) — 10s. */
+    private const val NETSTAT_TIMEOUT_S = 10L
     private const val TOTAL_BUDGET_MS = 2_500L
 
     /** Loopback hosts that count as "this machine, reachable from here". */
@@ -115,7 +118,7 @@ object DevServerProbe {
             if (os.contains("mac")) ProcessBuilder("sh", "-c", "lsof -nP -iTCP -sTCP:LISTEN")
             else ProcessBuilder("sh", "-c", "ss -ltn")
         }.redirectErrorStream(true).start()
-        if (!process.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)) {
+        if (!process.waitFor(NETSTAT_TIMEOUT_S, java.util.concurrent.TimeUnit.SECONDS)) {
             process.destroyForcibly()
             null
         } else {

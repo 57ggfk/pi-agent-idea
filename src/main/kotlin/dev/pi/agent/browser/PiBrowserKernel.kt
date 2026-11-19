@@ -16,6 +16,9 @@ import dev.pi.agent.settings.PiAgentSettings
 import java.lang.reflect.Proxy
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import javax.swing.JComponent
 
 /**
@@ -55,6 +58,10 @@ class PiBrowserKernel(private val project: Project, parent: Disposable) : Dispos
      * would churn routers and log pool warnings).
      */
     private var jsQuery: JBCefJSQuery? = null
+
+    /** F-206/F-207 round 2: the per-query statement that ships a page-side
+     *  tapEvent variable back to [onReadResult]; built once with the query. */
+    private var tapScript: String? = null
 
     /** 049 readPage: the one in-flight snapshot request, or null. */
     private var pendingRead: CompletableFuture<PageSnapshot>? = null
@@ -167,7 +174,6 @@ class PiBrowserKernel(private val project: Project, parent: Disposable) : Dispos
         client.addKeyboardHandler(h.keyboardHandler, cef)
         client.addContextMenuHandler(h.contextMenuHandler, cef)
         client.addJSDialogHandler(h.jsDialogHandler, cef)
-        attachConsoleCapture(cef)
         jsQuery = createReadbackQuery(created)
         log.info("browser kernel: windowed browser created")
         return created
@@ -286,6 +292,7 @@ class PiBrowserKernel(private val project: Project, parent: Disposable) : Dispos
         }
         if (effective is PiBrowserEvent.LoadEnd) {
             JcefFrameRepaint.forceRepaint(browser)
+            injectTap() // F-206/F-207: console+dialog shim rides every document
         }
         if (effective is PiBrowserEvent.LoadError) {
             // F-210: the state machine folds the payload away; the side-channel
@@ -343,6 +350,11 @@ class PiBrowserKernel(private val project: Project, parent: Disposable) : Dispos
     }
 
     // ---- downloads ----
+
+    /** F-110 round 2: a download-shaped navigation was cancelled at browse level; fetch IDE-side. */
+    internal fun onDownloadUrlRequested(url: String) {
+        PiDownloader.downloadUrl(project, url)
+    }
 
     /** F-110: a download-carrying navigation never fires LoadEnd (OOP/144); clear LOADING here. */
     internal fun onDownloadStarted() {
@@ -420,15 +432,62 @@ class PiBrowserKernel(private val project: Project, parent: Disposable) : Dispos
     /** Recent page console errors for the agent snapshot (F-206); empty when capture is unavailable. */
     fun recentConsoleLines(limit: Int = 5): List<String> = consoleBuffer.recent(limit)
 
-    /** CEF message-router callback (CEF browser-process thread). */
+    /**
+     * CEF message-router callback (CEF browser-process thread). Routes three
+     * shapes over ONE query: page snapshots (the F-206 original path), console
+     * taps and JS dialog shims (round-2 replacements for the reflection
+     * devToolsClient mount and the CefJSDialogHandler that never fire on the
+     * remote/CEF-144 channel).
+     */
     private fun onReadResult(request: String?): JBCefJSQuery.Response {
-        val future = pendingRead
-        if (future != null) {
-            val snapshot = PageSnapshotSanitizer.fromJs(request, lastKnownUrl, lastKnownTitle)
-            future.complete(snapshot)
-            pendingRead = null
+        val req = request ?: return JBCefJSQuery.Response(null)
+        when {
+            req.contains("\"kind\":\"console\"") -> {
+                runCatching {
+                    val obj = Json.parseToJsonElement(req).jsonObject
+                    consoleBuffer.onTapLine(
+                        obj["level"]?.jsonPrimitive?.content ?: "error",
+                        obj["text"]?.jsonPrimitive?.content ?: "",
+                    )
+                }
+            }
+            req.contains("\"kind\":\"dialog\"") -> {
+                runCatching {
+                    val obj = Json.parseToJsonElement(req).jsonObject
+                    val type = obj["type"]?.jsonPrimitive?.content ?: "alert"
+                    val text = obj["text"]?.jsonPrimitive?.content ?: ""
+                    hopEdt { showJsDialog(type, text) }
+                }
+            }
+            else -> {
+                val future = pendingRead
+                if (future != null) {
+                    val snapshot = PageSnapshotSanitizer.fromJs(req, lastKnownUrl, lastKnownTitle)
+                    future.complete(snapshot)
+                    pendingRead = null
+                }
+            }
         }
         return JBCefJSQuery.Response(null)
+    }
+
+    /**
+     * F-207 round 2: page alert/confirm/prompt become VISIBLE (notification),
+     * replacing the silently-auto-dismissed default. confirm/prompt answer
+     * false/null immediately - the page proceeds with the safe default while
+     * the notification explains why.
+     */
+    private fun showJsDialog(type: String, text: String) {
+        val shown = LogSafe.truncate(text.ifBlank { "(empty message)" }, 160)
+        val (message, isWarning) = when (type) {
+            "confirm" -> PiAgentBundle.message("browser.jsdialog.confirm", shown) to true
+            "prompt" -> PiAgentBundle.message("browser.jsdialog.prompt", shown) to true
+            else -> PiAgentBundle.message("browser.jsdialog.alert", shown) to false
+        }
+        NotificationGroupManager.getInstance()
+            .getNotificationGroup("Pi Agent")
+            .createNotification(message, if (isWarning) NotificationType.WARNING else NotificationType.INFORMATION)
+            .notify(project)
     }
 
     private fun createReadbackQuery(browser: JBCefBrowser): JBCefJSQuery {
@@ -436,42 +495,28 @@ class PiBrowserKernel(private val project: Project, parent: Disposable) : Dispos
         query.addHandler { request -> onReadResult(request) }
         // Kernel dispose drops the query; the client-side registration dies with the client.
         Disposer.register(this, query)
+        tapScript = query.inject("tapEvent")
         return query
     }
 
     /**
-     * F-206: attaches the DevTools console listener reflectively. The
-     * `CefDevToolsClient` class does not exist on the 233 floor (verified:
-     * ideaIC-2023.3.1 lib-client.jar has neither the class nor
-     * `CefBrowser.getDevToolsClient`), so nothing here names those types —
-     * a missing or failed attachment degrades silently to an empty buffer.
+     * F-206/F-207 round 2: inject the console/dialog tap through the SAME
+     * channel the page readback uses (JBCefJSQuery - verified working on the
+     * remote/CEF-144 machine, unlike the reflection devToolsClient mount and
+     * the CefJSDialogHandler that the thrift channel silently drops).
+     *
+     * The tap captures console.error/warning into a page buffer AND ships
+     * them back; it also overrides alert/confirm/prompt so page dialogs
+     * become visible notifications (confirm/prompt answer the safe default
+     * immediately - the notification explains it). Idempotent per document;
+     * re-injected on every LoadEnd.
      */
-    private fun attachConsoleCapture(cef: org.cef.browser.CefBrowser) {
+    private fun injectTap() {
+        val inject = tapScript ?: return
+        val b = browser ?: return
         runCatching {
-            val client = cef.javaClass.getMethod("getDevToolsClient").invoke(cef) ?: return
-            val listenerClass = Class.forName("org.cef.browser.CefDevToolsClient\$EventListener")
-            val listener = Proxy.newProxyInstance(
-                javaClass.classLoader,
-                arrayOf(listenerClass),
-            ) { _, method, args ->
-                if (method.name == "onEvent" && args != null && args.size >= 2) {
-                    consoleBuffer.onDevToolsEvent(args[0] as? String ?: "", args[1] as? String ?: "")
-                }
-                null
-            }
-            client.javaClass.getMethod("addEventListener", listenerClass).invoke(client, listener)
-            val enable = client.javaClass.methods
-                .filter { it.name == "executeDevToolsMethod" && it.parameterCount in 1..2 }
-                .minByOrNull { it.parameterCount }
-            if (enable != null) {
-                for (domain in listOf("Runtime.enable", "Log.enable")) {
-                    runCatching {
-                        if (enable.parameterCount == 2) enable.invoke(client, domain, "{}")
-                        else enable.invoke(client, domain)
-                    }
-                }
-            }
-        }.onFailure { log.debug("browser console capture unavailable: ${it.message}") }
+            b.cefBrowser.executeJavaScript(PageSnapshotSanitizer.buildTapScript(inject), null, 0)
+        }.onFailure { log.debug("tap inject failed: ${it.message}") }
     }
 
     fun addStateListener(listener: (PiBrowserState) -> Unit) {
