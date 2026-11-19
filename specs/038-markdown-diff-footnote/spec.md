@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-16
 
-**Status**: Draft（需求已收集、疑问已澄清；只产出 spec，不写 plan/tasks，不实现）
+**Status**: Implemented（已实现并随 0.5.10 内测；发布文案见 changelog.d/038-*）
 
 **Input**: 用户提出（2026-11-16，第 3 条拆分后的「易」档）
 > 扩展格式的支持 SVG、Mermaid、KaTeX 数学公式、diff 高亮、脚注。可按难易程度拆分成多个spec。

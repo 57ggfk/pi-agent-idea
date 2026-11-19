@@ -54,12 +54,14 @@ test.describe("skill reference folding", () => {
     const clip = await page.evaluate(() => navigator.clipboard.readText());
     expect(clip).toBe("/skill:demo-skill how do I use it");
 
-    // quote: composer gets the folded text as a blockquote. Since spec 015
-    // the quote ends with exactly one newline so the caret starts on a fresh
-    // line instead of being glued to the quoted text.
+    // quote: composer gets the folded text as a blockquote. The trailing is
+    // 045's unified rule: single-line injection → two spaces (Markdown hard
+    // break), multi-line → one newline. This quote is a single line, so it
+    // ends with TWO SPACES — the old expectation of "\n" predates 045 and was
+    // left stale, which made this spec red while the product was right.
     await user.hover();
     await user.getByTestId("act-quote").click();
-    await expect(page.getByTestId("composer-input")).toHaveValue("> /skill:demo-skill how do I use it\n");
+    await expect(page.getByTestId("composer-input")).toHaveValue("> /skill:demo-skill how do I use it  ");
     await page.getByTestId("composer-input").fill("");
   });
 

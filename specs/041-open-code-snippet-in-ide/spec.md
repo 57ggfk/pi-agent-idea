@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-16
 
-**Status**: Draft（需求已收集、疑问已澄清；只产出 spec，不写 plan/tasks，不实现）
+**Status**: Implemented（已实现并随 0.5.10 内测；发布文案见 changelog.d/041-*）
 
 **Input**: 用户提出（2026-11-16，Markdown 格式扩展讨论中的延伸想法）
 > 有没有一种方式在 IDE 中打开片段并关联语法格式，如果有所有的代码片段也可以支持了。
