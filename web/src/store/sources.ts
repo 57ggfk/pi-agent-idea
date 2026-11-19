@@ -67,16 +67,21 @@ export const SOURCE_IDS: readonly SourceId[] = [
   "stats",
 ] as const;
 
-export const SOURCE_LABELS: Record<SourceId, string> = {
-  files: "Project files",
-  commands: "Slash commands",
-  models: "Models",
-  thinkingLevels: "Thinking levels",
-  policy: "Approval policy",
-  prefs: "Preferences",
-  sessions: "Sessions",
-  stats: "Session stats",
-};
+/**
+ * i18n keys for the source labels (008/036): the diagnostics panel is shown
+ * next to Chinese panels, so its row labels must follow the UI language.
+ * Resolve with `t()` at render time — a plain string here cannot.
+ */
+export const SOURCE_LABEL_KEYS = {
+  files: "manage.diag.source.files",
+  commands: "manage.diag.source.commands",
+  models: "manage.diag.source.models",
+  thinkingLevels: "manage.diag.source.thinkingLevels",
+  policy: "manage.diag.source.policy",
+  prefs: "manage.diag.source.prefs",
+  sessions: "manage.diag.source.sessions",
+  stats: "manage.diag.source.stats",
+} as const satisfies Record<SourceId, string>;
 
 export function emptySourceState(): SourceState {
   return { status: "idle", inflight: false, retries: 0 };

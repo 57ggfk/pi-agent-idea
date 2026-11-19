@@ -52,7 +52,7 @@ function QueueRow({ item, index }: { item: QueueItem; index: number }) {
         <span
           className="queue-image-count"
           data-testid="queue-image-count"
-          title={t("tool.images_other", { count: item.images.length })}
+          title={t("tool.images", { count: item.images.length })}
         >
           <Icon name="image" className="ic-sm" />
           {item.images.length}
