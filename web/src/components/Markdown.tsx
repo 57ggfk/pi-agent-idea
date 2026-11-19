@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, type MouseEvent } from "react";
 import { marked } from "marked";
 import markedFootnote from "marked-footnote";
-import markedKatex from "marked-katex-extension";
 import DOMPurify from "dompurify";
 import hljs from "highlight.js/lib/common";
 import { getBridge } from "../bridge";
@@ -11,6 +10,7 @@ import { copyText } from "../lib/clipboard";
 import { rasterizeElement } from "../lib/copyAsImage";
 import { parseDiffHeaderPath } from "../lib/diffPaths";
 import { normalizeFootnoteDefs } from "../lib/footnotePreprocess";
+import { markedKatexExtended } from "../lib/katexInline";
 import { renderMermaid } from "../lib/mermaidRender";
 
 marked.setOptions({ gfm: true, breaks: true });
@@ -22,7 +22,11 @@ marked.use(markedFootnote());
 // 040 FR-001: LaTeX math ($…$ inline, $$…$$ block — the AI-output standard).
 // throwOnError:false renders invalid input as source text instead of throwing
 // (US1 degrades gracefully); output still passes DOMPurify below (FR-002).
-marked.use(markedKatex({ throwOnError: false }));
+// markedKatexExtended = upstream marked-katex-extension with ONE change: the
+// closing `$` may be followed by more trailing characters (`;` `)` `、` `」`
+// …), so a formula at the end of a clause actually renders. The currency
+// guard is untouched — see lib/katexInline.ts.
+marked.use(markedKatexExtended({ throwOnError: false }));
 
 // Links must never navigate the SPA: the IDE (Kotlin) intercepts the click and
 // opens the system browser; standalone the browser opens a new tab. The hook
@@ -30,10 +34,26 @@ marked.use(markedKatex({ throwOnError: false }));
 // Pure-hash links (footnote refs/backrefs, 038) are exempt: they must jump
 // inside the page, and a target=_blank on them would pop a second window.
 let hooksRegistered = false;
+const SVG_NS = "http://www.w3.org/2000/svg";
 function registerPurifyHooks() {
   if (hooksRegistered) return;
   hooksRegistered = true;
   DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+    // 039 修订（实测推翻旧结论）：DOMPurify 的默认 profile **不会**剥 SVG 里
+    // 的远程 href / xlink:href —— 它的 ALLOWED_URI_REGEXP 放行 http/https
+    // （它防 XSS，不防外链）。实测 `<svg><a xlink:href="http://evil.example">`
+    // 原样留在 DOM 里，而插件的 linkHandler 会把点击交给系统浏览器 → 模型
+    // 输出里的一个恶意 SVG 就能把用户带到任意外站。规格 039 写的「远程 href
+    // 净化」此前只在纸面上成立，e2e 那条断言又因为选择器匹配不到命名空间
+    // 属性而假绿（见 web/e2e/markdown-svg.spec.ts）。
+    // 这里显式剥：SVG 命名空间下只允许纯片段引用（#id）。
+    if (node.namespaceURI === SVG_NS) {
+      for (const attr of ["href", "xlink:href"]) {
+        const value = node.getAttribute(attr);
+        if (value && !value.startsWith("#")) node.removeAttribute(attr);
+      }
+      return;
+    }
     if (node.tagName === "A") {
       const href = node.getAttribute("href") ?? "";
       if (!href.startsWith("#")) {
@@ -321,8 +341,10 @@ export default function Markdown({ text }: { text: string }) {
           // 039 FR-002 (explicit whitelist posture): inline SVG renders via
           // DOMPurify's default svg profile; these two are forbidden even if
           // a future DOMPurify default ever loosened them. Measured with
-          // DOMPurify 3.x: script / on* / foreignObject / remote href were
-          // already stripped — this pins the guarantee at our call site.
+          // DOMPurify 3.x: script / on* / foreignObject are already stripped —
+          // this pins the guarantee at our call site.
+          // 远程 href 不靠 DOMPurify（实测它放行 http/https），靠
+          // registerPurifyHooks 里的 SVG 命名空间剥除。
           FORBID_TAGS: ["script", "foreignObject"],
         }),
       ),

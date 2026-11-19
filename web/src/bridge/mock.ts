@@ -2518,7 +2518,10 @@ export class MockBridge implements Bridge {
           : this.mdKnob === "math"
             ? // 040: inline and block LaTeX via KaTeX, plus a nasty math body —
               // the sanitizer must keep the math but strip script vectors.
-              "Energy:\n\n$E=mc^2$ inline, and a block:\n\n$$\\sum_{i=1}^{n} x_i$$\n\nNow a nasty one: $\\text{<script>alert(1)</script>}$\n"
+              // 040 revision: the last line carries formulas whose closing `$`
+              // is followed by a clause mark (`;` `)` `、`) — the upstream rule
+              // left those as raw text, which is what the revision fixes.
+              "Energy:\n\n$E=mc^2$ inline, and a block:\n\n$$\\sum_{i=1}^{n} x_i$$\n\nTrailing marks: $x+1$; $y+2$); $z+3$、\n\nNow a nasty one: $\\text{<script>alert(1)</script>}$\n"
             : this.mdKnob === "mermaid"
             ? // 040 US2: one valid diagram + two broken diagrams (distinct
               // sources = distinct failure keys) — the valid one renders, the

@@ -61,3 +61,23 @@ test("zero regression: code blocks and footnotes still render beside math (040 F
   await expect(page.locator(".markdown .code-copy-btn").first()).toHaveCount(1);
   await expect(page.locator(".markdown pre code.hljs").first()).toHaveCount(1);
 });
+
+test("a formula whose closing $ is followed by a clause mark still renders (040 revision)", async ({ page }) => {
+  await sendMathPrompt(page);
+  // The mock's "Trailing marks" line ends each formula with `;` `)` `、`.
+  // Upstream's rule required whitespace/punctuation from a narrow set after
+  // the closing `$`, so these three stayed raw `$…$` text. They must now be
+  // KaTeX structures — and the RAW dollar text must be gone.
+  const audit = await page.evaluate(() => {
+    const root = Array.from(document.querySelectorAll(".markdown")).find((el) =>
+      el.textContent!.includes("Energy:"),
+    )!;
+    const text = root.textContent ?? "";
+    return {
+      rawLeft: text.includes("$x+1$") || text.includes("$y+2$") || text.includes("$z+3$"),
+      katex: root.querySelectorAll(".katex").length,
+    };
+  });
+  expect(audit.rawLeft).toBe(false);
+  expect(audit.katex).toBeGreaterThanOrEqual(5);
+});

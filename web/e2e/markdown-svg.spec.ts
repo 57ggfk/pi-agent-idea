@@ -13,8 +13,16 @@ test("legal inline SVG renders inside the bubble, size-constrained (039 US1)", a
   await page.getByTestId("composer-input").fill("show icons");
   await page.getByTestId("send-btn").click();
 
+  // THREE <svg> elements survive sanitization, and that is correct:
+  //   1) the legal one (renders the circle),
+  //   2) the malicious one — only its script / foreignObject / remote href
+  //      are stripped, the <svg> shell itself stays (it draws nothing),
+  //   3) the malformed one — the browser's parser recovers the unclosed tag
+  //      into an EMPTY <svg>, i.e. the documented degrade (FR-004).
+  // The old "2" expectation was written before the mock grew the malformed
+  // case; counting 2 made this spec red while the product was correct.
   const svg = page.locator(".markdown svg[viewBox='0 0 20 20']");
-  await expect(svg).toHaveCount(2, { timeout: 30_000 });
+  await expect(svg).toHaveCount(3, { timeout: 30_000 });
   // The legal circle survives…
   await expect(page.locator(".markdown svg circle[r='8']")).toHaveCount(1);
   // …and is constrained by the container (FR-001).
@@ -32,16 +40,26 @@ test("malicious SVG vectors are stripped: no script, no foreignObject, no remote
   await expect(page.getByTestId("empty-state")).toBeVisible();
   await page.getByTestId("composer-input").fill("show icons");
   await page.getByTestId("send-btn").click();
-  await expect(page.locator(".markdown svg")).toHaveCount(2, { timeout: 30_000 });
+  await expect(page.locator(".markdown svg")).toHaveCount(3, { timeout: 30_000 });
+  // Anchor on the dangerous SVG being FULLY streamed: its <a> (the remote
+  // link the sanitizer must strip) only exists once the whole graphic has
+  // arrived — counting the <svg> elements alone can win the race against the
+  // stream and make the remote-link audit below a false green.
+  await expect(page.locator(".markdown svg a")).toHaveCount(1, { timeout: 30_000 });
 
   const audit = await page.evaluate(() => {
     const root = document.querySelector(".markdown")!;
+    // NB: `querySelectorAll("[xlink\\:href]")` cannot match a namespaced
+    // attribute in an HTML document — that is why the old remote-href check
+    // was a false green. Walk the elements and read the attributes instead.
+    const remoteLinks = Array.from(root.querySelectorAll("*")).filter((el) => {
+      const href = el.getAttribute("href") ?? el.getAttribute("xlink:href") ?? "";
+      return /^https?:/i.test(href);
+    }).length;
     return {
       scripts: root.querySelectorAll("script").length,
       foreignObjects: root.querySelectorAll("foreignObject").length,
-      remoteLinks: Array.from(root.querySelectorAll("[href], [xlink\\:href]")).filter((el) =>
-        (el.getAttribute("href") ?? el.getAttribute("xlink:href") ?? "").startsWith("http"),
-      ).length,
+      remoteLinks,
       evilHost: root.innerHTML.includes("evil.example"),
       rectSurvives: root.querySelectorAll("rect").length,
     };
@@ -70,8 +88,13 @@ test("fenced SVG source stays a code block while bare SVG renders (039 #6 bounda
   await page.getByTestId("composer-input").fill("show icons");
   await page.getByTestId("send-btn").click();
   // Tail-anchored: both fenced blocks are the reply's final chunks.
+  // The mock streams the reply word by word, so "two <code> elements exist"
+  // is NOT "the second fence is complete" — an UNTERMINATED fence already
+  // renders as a language-svg block carrying partial text. Waiting on the
+  // count alone made this assertion race the stream.
   const fenced = page.locator(".markdown pre code.language-svg");
   await expect(fenced).toHaveCount(2, { timeout: 30_000 });
+  await expect(fenced.filter({ hasText: "alert(1)" })).toHaveCount(1, { timeout: 30_000 });
 
   // Bare legal SVG rendered exactly once as a graphic — the fenced copy of
   // the SAME markup must not render a second one (boundary: fence = source).
@@ -106,7 +129,7 @@ test("zero regression: file links and code blocks still work with SVG enabled (0
   await expect(page.getByTestId("empty-state")).toBeVisible();
   await page.getByTestId("composer-input").fill("show icons");
   await page.getByTestId("send-btn").click();
-  await expect(page.locator(".markdown svg")).toHaveCount(2, { timeout: 30_000 });
+  await expect(page.locator(".markdown svg")).toHaveCount(3, { timeout: 30_000 });
   // Code block highlight pipeline still runs (the copy button gets injected).
   await expect(page.locator(".markdown .code-copy-btn").first()).toHaveCount(1);
   // The message copy action still sees real text (no SVG corruption of the
