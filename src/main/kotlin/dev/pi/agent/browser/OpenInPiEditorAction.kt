@@ -1,11 +1,9 @@
 package dev.pi.agent.browser
 
-import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
-import com.intellij.openapi.actionSystem.CommonDataKeys
+import com.intellij.openapi.actionSystem.PlatformDataKeys
 import com.intellij.openapi.fileEditor.FileEditorManager
-import dev.pi.agent.editor.selectedVirtualFile
 import dev.pi.agent.ui.LocalUiServer
 import java.nio.file.Files
 
@@ -16,20 +14,16 @@ import java.nio.file.Files
  */
 class OpenInPiEditorAction : AnAction() {
 
-    override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
-
     override fun update(e: AnActionEvent) {
         val project = e.project
-        // Read VIRTUAL_FILE_ARRAY (the tree selection), not the single key —
-        // see OpenInPiBrowserAction.update for why the single key misleads.
-        val file = e.getData(CommonDataKeys.VIRTUAL_FILE_ARRAY)?.firstOrNull()
+        val file = e.getData(PlatformDataKeys.VIRTUAL_FILE)
         e.presentation.isEnabled = project != null && !project.isDisposed &&
             file != null && file.extension?.lowercase() in HTML_EXTENSIONS
     }
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
-        val file = selectedVirtualFile(e) ?: return
+        val file = e.getData(PlatformDataKeys.VIRTUAL_FILE) ?: return
         val snapshot = OpenInPiBrowserAction.snapshotIntoPreviewRoot(file)
         val token = PiBrowserPreviews.register(snapshot)
         val url = LocalUiServer.getInstance().baseUrl + "preview/" + token

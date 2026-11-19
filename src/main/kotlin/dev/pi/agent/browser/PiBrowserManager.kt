@@ -53,20 +53,6 @@ class PiBrowserManager(private val project: Project) {
         panel.load(url)
     }
 
-    /**
-     * 049: the project's tool-window browser panel, or null when the tab has
-     * never been opened (or cannot exist). The agent endpoint resolves the
-     * kernel through this — the editor carrier is deliberately unreachable
-     * from the agent (plan D8).
-     */
-    fun browserPanel(): BrowserPanel? {
-        if (project.isDisposed) return null
-        val toolWindow = ToolWindowManager.getInstance(project).getToolWindow(TOOLWINDOW_ID) ?: return null
-        return toolWindow.contentManager.contents
-            .firstOrNull { it.getComponent() is BrowserPanel }
-            ?.getComponent() as? BrowserPanel
-    }
-
     companion object {
         private const val TOOLWINDOW_ID = "Pi Agent"
 

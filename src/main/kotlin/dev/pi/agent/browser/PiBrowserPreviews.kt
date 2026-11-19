@@ -6,17 +6,16 @@ import java.security.SecureRandom
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Re-fetchable local-HTML preview registry (spec 048 T015 / plan D10).
+ * One-shot local-HTML preview registry (spec 048 T015 / plan D10).
  *
  * Local HTML never loads through `file://` (hard constraint 2): callers copy
  * the file into this object's temp root and get a 128-bit random token; the
- * UI server serves `/preview/<token>` any number of times within [TTL_MS]
- * (panel reload and intercepted popups re-fetch the same URL), then both the
- * token and its snapshot file die.
+ * UI server serves `/preview/<token>` exactly once within [TTL_MS], then the
+ * token is dead. Entries beyond the TTL are garbage collected lazily.
  *
- * Security posture: the token is unguessable, short-lived, and the served
- * path must live inside the temp root — a token can therefore never be used
- * to read arbitrary local files.
+ * Security posture: the token is unguessable, single-use, short-lived, and
+ * the served path must live inside the temp root — a token can therefore
+ * never be used to read arbitrary local files.
  */
 object PiBrowserPreviews {
 
@@ -44,9 +43,9 @@ object PiBrowserPreviews {
     }
 
     /**
-     * Registers [file] for repeated fetches within [TTL_MS]. The file MUST
-     * already live in [previewRoot] (callers copy first); anything else is
-     * refused — the route must never become a reader for arbitrary local paths.
+     * Registers [file] for exactly one fetch. The file MUST already live in
+     * [previewRoot] (callers copy first); anything else is refused — the
+     * route must never become a reader for arbitrary local paths.
      */
     fun register(file: Path): String {
         val canonical = file.toAbsolutePath().normalize()
@@ -78,14 +77,7 @@ object PiBrowserPreviews {
 
     private fun clearExpired() {
         val now = System.currentTimeMillis()
-        entries.entries.removeIf { entry ->
-            if (now - entry.value.createdAt > TTL_MS) {
-                // A preview that was registered but never (or only partially)
-                // served still owns a snapshot file — don't leak it on expiry.
-                runCatching { Files.deleteIfExists(entry.value.path) }
-                true
-            } else false
-        }
+        entries.entries.removeIf { now - it.value.createdAt > TTL_MS }
     }
 
     private fun newToken(): String {

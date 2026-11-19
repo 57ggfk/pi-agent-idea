@@ -1,11 +1,9 @@
 package dev.pi.agent.browser
 
-import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
-import com.intellij.openapi.actionSystem.CommonDataKeys
+import com.intellij.openapi.actionSystem.PlatformDataKeys
 import com.intellij.openapi.vfs.VirtualFile
-import dev.pi.agent.editor.selectedVirtualFile
 import dev.pi.agent.PiAgentBundle
 import dev.pi.agent.ui.LocalUiServer
 import java.nio.file.Files
@@ -24,27 +22,16 @@ import java.nio.file.Path
  */
 class OpenInPiBrowserAction : AnAction() {
 
-    // Match SendFileToPi/ExplainFileWithPi exactly: they read the same data
-    // keys in update() on BGT and stay enabled in the project tree.
-    override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
-
     override fun update(e: AnActionEvent) {
         val project = e.project
-        // Read VIRTUAL_FILE_ARRAY (the actual project-tree selection), NOT the
-        // single VIRTUAL_FILE key: in the Project View the single key can point
-        // at the file open in the editor (e.g. README.md), greying out a
-        // perfectly valid HTML right-click. Send/Explain use the array for the
-        // same reason. selectedVirtualFile() is only for the click handler,
-        // where the single key is the intended fallback.
-        val file = e.getData(CommonDataKeys.VIRTUAL_FILE_ARRAY)?.firstOrNull()
-        val enabled = project != null && !project.isDisposed &&
+        val file = e.getData(PlatformDataKeys.VIRTUAL_FILE)
+        e.presentation.isEnabled = project != null && !project.isDisposed &&
             file != null && file.extension?.lowercase() in HTML_EXTENSIONS
-        e.presentation.isEnabled = enabled
     }
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
-        val file = selectedVirtualFile(e) ?: return
+        val file = e.getData(PlatformDataKeys.VIRTUAL_FILE) ?: return
         val snapshot = snapshotIntoPreviewRoot(file)
         val token = PiBrowserPreviews.register(snapshot)
         val url = LocalUiServer.getInstance().baseUrl + "preview/" + token
