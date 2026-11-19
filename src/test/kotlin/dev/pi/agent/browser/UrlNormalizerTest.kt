@@ -39,10 +39,52 @@ class UrlNormalizerTest {
     }
 
     @Test
-    fun `non url input still builds a url per spec q1 default`() {
-        // Q1 default: the address bar only builds URLs; a stray sentence gets
-        // the prefix and lands on the error card — no search-guessing.
-        assertEquals("http://hello world", UrlNormalizer.normalizeAddressBar("hello world"))
+    fun `non url input is a search per flipped spec q1`() {
+        // Q1 was re-answered by F-212: the old `http://` prefix punycode-
+        // mangled `react hooks` into an unusable host. Non-URL input is now
+        // classified as a search; the programmatic normalizeAddressBar
+        // declines it (null) instead of guessing.
+        assertNull(UrlNormalizer.normalizeAddressBar("hello world"))
+        assertNull(UrlNormalizer.normalizeAddressBar("react hooks"))
+    }
+
+    @Test
+    fun `parseAddressBar classifies url host and search`() {
+        // host-shaped inputs build URLs (zero-surprise load path kept)
+        assertEquals(
+            UrlNormalizer.AddressInput.Url("http://127.0.0.1:8931/"),
+            UrlNormalizer.parseAddressBar("127.0.0.1:8931"),
+        )
+        assertEquals(
+            UrlNormalizer.AddressInput.Url("http://localhost/fps.html"),
+            UrlNormalizer.parseAddressBar("localhost/fps.html"),
+        )
+        assertEquals(
+            UrlNormalizer.AddressInput.Url("http://example.com"),
+            UrlNormalizer.parseAddressBar("example.com"),
+        )
+        // search-shaped inputs
+        assertEquals(
+            UrlNormalizer.AddressInput.Search("react hooks"),
+            UrlNormalizer.parseAddressBar("react hooks"),
+        )
+        assertEquals(
+            UrlNormalizer.AddressInput.Search("kotlin 协程"),
+            UrlNormalizer.parseAddressBar("kotlin 协程"),
+        )
+        // a dotted string is host-shaped per the plan (含点域名) — loads like
+        // an intranet host, exactly what a real address bar does
+        assertEquals(
+            UrlNormalizer.AddressInput.Url("http://what.is.this"),
+            UrlNormalizer.parseAddressBar("what.is.this"),
+        )
+        // schemed values pass through verbatim
+        assertEquals(
+            UrlNormalizer.AddressInput.Url("data:text/html,<b>x</b>"),
+            UrlNormalizer.parseAddressBar("data:text/html,<b>x</b>"),
+        )
+        // blank input: nothing to search for either
+        assertEquals(UrlNormalizer.AddressInput.Search(""), UrlNormalizer.parseAddressBar("   "))
     }
 
     // ---- download file names ----
