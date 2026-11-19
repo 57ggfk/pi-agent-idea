@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-16
 
-**Status**: Draft（需求已收集、疑问已澄清；只产出 spec，不写 plan/tasks，不实现）
+**Status**: Implemented（已实现并随 0.5.10 内测；发布文案见 changelog.d/036-*）
 
 **Input**: 用户提出（2026-11-16）
 > - 诊断，增加 node npm 等信息包括版本和路径。增加插件的版本信息，如果有构建时间更好

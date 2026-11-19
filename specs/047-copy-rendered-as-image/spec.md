@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-17
 
-**Status**: Draft（用户 2026-11-17 追加需求；只产出 spec，plan/tasks 待后续）
+**Status**: Implemented（已实现并随 0.5.10 内测；发布文案见 changelog.d/047-*）
 
 **Input**: 用户提出（2026-11-17，内测反馈批次后追加）
 > 扩展格式的支持 SVG、Mermaid、KaTeX 数学公式等支持复制为图片。

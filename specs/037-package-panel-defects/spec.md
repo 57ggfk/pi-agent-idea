@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-16
 
-**Status**: Draft（需求已收集、疑问已澄清；只产出 spec，不写 plan/tasks，不实现）
+**Status**: Implemented（已实现并随 0.5.10 内测；发布文案见 changelog.d/037-*）
 
 **Input**: 用户提出（2026-11-16）
 > - 扩展包市场的链接点开弹窗白屏，还不如从默认浏览器打开
