@@ -1,0 +1,143 @@
+package dev.pi.agent.browser
+
+import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
+import java.time.Duration
+
+/**
+ * Loopback dev-server discovery for the agent's pi_browser tool (F-214,
+ * spec 049 竞品缺口 B 的 Cursor-2.0-style "dev-server awareness"): the agent
+ * calls `open` without a URL and the probe finds the running local server.
+ *
+ * Two pure, unit-tested halves plus an IO shell:
+ *  - [parseListeningPorts] — `netstat -ano` (Windows) / `ss -ltn` (Linux) /
+ *    `lsof -nP -iTCP -sTCP:LISTEN` (macOS) output → LISTEN ports bound to the
+ *    loopback interface only;
+ *  - [looksLikeHtml] — probe answer classifier (HTTP 200 + HTML-ish body);
+ *  - [detect] — enumerate, exclude the plugin's own UI-server port, probe the
+ *    candidates with a hard total budget, return the first HTML responder.
+ *
+ * Safety posture: loopback only, GET / only, no credentials injected, the
+ * chat SPA's own port excluded. A wrong explicit URL still fails through the
+ * normal failed path — auto-detect is strictly additive.
+ */
+object DevServerProbe {
+
+    data class ProbeResult(
+        /** `http://127.0.0.1:<port>/` of the first HTML responder, or null. */
+        val detected: String?,
+        /** Loopback ports that were enumerated (post-exclusion, probe order). */
+        val candidates: List<Int>,
+    )
+
+    /** Connect timeout per candidate; the total budget caps the whole sweep. */
+    private const val CONNECT_TIMEOUT_MS = 300L
+    private const val TOTAL_BUDGET_MS = 2_500L
+
+    /** Loopback hosts that count as "this machine, reachable from here". */
+    private fun isLoopbackHost(host: String): Boolean {
+        val h = host.removePrefix("[").removeSuffix("]")
+        return h == "::1" || h == "localhost" || h.startsWith("127.")
+    }
+
+    /**
+     * Parses LISTEN ports from netstat/ss/lsof output. Format-agnostic: any
+     * line containing a LISTEN(ING) state whose first `host:port` token is
+     * loopback-bound contributes the port. Wildcard binds (0.0.0.0/[::]) are
+     * ignored on purpose — auto-detect stays quiet on shared hosts. UDP and
+     * header lines carry no LISTEN state (or no loopback address) and drop
+     * out naturally.
+     */
+    fun parseListeningPorts(raw: String): List<Int> {
+        // host:port token; the 1..65535 range check below is what rejects
+        // fragments of longer tokens (a lookbehind here could never pass —
+        // the character before the current position is the port's own digit).
+        val addrPort = Regex("\\[?([0-9a-fA-F.:]+|[A-Za-z_-]+)]?:(\\d{1,5})")
+        val ports = linkedSetOf<Int>()
+        for (line in raw.lineSequence()) {
+            if (!line.contains("LISTEN", ignoreCase = true)) continue
+            val match = addrPort.find(line) ?: continue
+            val host = match.groupValues[1]
+            val port = match.groupValues[2].toIntOrNull() ?: continue
+            if (port !in 1..65535) continue
+            if (isLoopbackHost(host)) ports.add(port)
+        }
+        return ports.toList().sorted()
+    }
+
+    /** True when the probe answer is a usable web page: HTTP 200 + HTML-ish body. */
+    fun looksLikeHtml(status: Int, body: String): Boolean {
+        if (status != 200) return false
+        val head = body.trimStart().take(200).lowercase()
+        return head.startsWith("<!doctype") || head.startsWith("<html") ||
+            head.contains("<!doctype") || head.contains("<html")
+    }
+
+    /**
+     * Sweeps the loopback listeners (minus [excludePorts]) and returns the
+     * first HTML responder. [command] runs the platform netstat command,
+     * [probe] performs the GET — both injectable for tests.
+     */
+    fun detect(
+        excludePorts: Set<Int> = emptySet(),
+        command: (String) -> String? = ::runCommand,
+        probe: (Int) -> Pair<Int, String>? = ::probeRoot,
+    ): ProbeResult {
+        val ports = command("detect listening ports")?.let { parseListeningPorts(it) }.orEmpty()
+            .filter { it !in excludePorts }
+            .filter { it !in UNPROBEABLE_PORTS }
+        val deadline = System.currentTimeMillis() + TOTAL_BUDGET_MS
+        for (port in ports) {
+            if (System.currentTimeMillis() > deadline) break
+            val (status, body) = probe(port) ?: continue
+            if (looksLikeHtml(status, body)) {
+                return ProbeResult("http://127.0.0.1:$port/", ports)
+            }
+        }
+        return ProbeResult(null, ports)
+    }
+
+    /**
+     * Ports that never host a dev UI and would only burn the probe budget
+     * (Windows RPC/loopback services, the platform debugger and built-in
+     * web-server ports are pure noise).
+     */
+    private val UNPROBEABLE_PORTS = setOf(135, 445, 5040, 9222, 63342)
+
+    private fun runCommand(@Suppress("unused") command: String): String? = try {
+        val windows = System.getProperty("os.name", "").lowercase().contains("win")
+        val process = if (windows) {
+            ProcessBuilder("cmd", "/c", "netstat -ano")
+        } else {
+            val os = System.getProperty("os.name", "").lowercase()
+            if (os.contains("mac")) ProcessBuilder("sh", "-c", "lsof -nP -iTCP -sTCP:LISTEN")
+            else ProcessBuilder("sh", "-c", "ss -ltn")
+        }.redirectErrorStream(true).start()
+        if (!process.waitFor(3, java.util.concurrent.TimeUnit.SECONDS)) {
+            process.destroyForcibly()
+            null
+        } else {
+            process.inputStream.bufferedReader().readText()
+        }
+    } catch (_: Exception) {
+        null
+    }
+
+    private fun probeRoot(port: Int): Pair<Int, String>? = try {
+        val client = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofMillis(CONNECT_TIMEOUT_MS))
+            .followRedirects(HttpClient.Redirect.NEVER)
+            .build()
+        val request = HttpRequest.newBuilder()
+            .uri(URI.create("http://127.0.0.1:$port/"))
+            .timeout(Duration.ofMillis(CONNECT_TIMEOUT_MS))
+            .GET()
+            .build()
+        val response = client.send(request, HttpResponse.BodyHandlers.ofString())
+        response.statusCode() to (response.body() ?: "")
+    } catch (_: Exception) {
+        null
+    }
+}

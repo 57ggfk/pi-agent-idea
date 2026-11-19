@@ -238,6 +238,8 @@ class PiProcessManager(private val project: Project) : Disposable {
                     PiApprovalSupport.ensureExtensionInstalled()?.absolutePath,
                     PiModelReload.ensureExtensionInstalled()?.absolutePath,
                     PiIdeEnvExtension.ensureExtensionInstalled()?.absolutePath,
+                    // 049: the pi_browser tool (agent → in-app browser channel).
+                    dev.pi.agent.process.PiBrowserToolSupport.ensureExtensionInstalled()?.absolutePath,
                 ),
                 approveProjectFiles = consumeApproveOnNextStart(slot),
             )
@@ -255,6 +257,11 @@ class PiProcessManager(private val project: Project) : Disposable {
             pb.environment()["PI_APPROVE_POLICY"] = PiApprovalSupport.policyFile().absolutePath
             // pi-approve 在 pi 进程里跑，只有插件知道 IDE 是中文还是英文。
             pb.environment()["PI_APPROVE_LANG"] = PiApprovalSupport.languageTag()
+            // 049: pi_browser 工具的 IDE 端点与 per-project 能力 token。
+            dev.pi.agent.process.PiBrowserToolSupport.applyEnv(
+                pb.environment(),
+                dev.pi.agent.ui.LocalUiServer.getInstance().agentBrowserTokenFor(project),
+            )
             // 032 FR-005: 差量补齐构建相关环境变量（只增不改），并把快照路径交给
             // pi-env 扩展——扩展每轮 before_agent_start 读它注入系统提示词。
             dev.pi.agent.manage.PiIdeEnv.applyToProcess(
