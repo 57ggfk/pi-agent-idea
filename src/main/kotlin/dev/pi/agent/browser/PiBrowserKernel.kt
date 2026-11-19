@@ -1,5 +1,6 @@
 package dev.pi.agent.browser
 
+import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
@@ -9,7 +10,12 @@ import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.ui.jcef.JBCefApp
 import com.intellij.ui.jcef.JBCefBrowser
+import com.intellij.ui.jcef.JBCefJSQuery
 import dev.pi.agent.PiAgentBundle
+import dev.pi.agent.settings.PiAgentSettings
+import java.lang.reflect.Proxy
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
 import javax.swing.JComponent
 
 /**
@@ -24,7 +30,8 @@ import javax.swing.JComponent
  * Hard rules baked in (plan §0 probe evidence):
  *  - exactly ONE windowed browser per kernel — native HWNDs drift and cover
  *    Swing siblings (P-7), so no second instance ever gets created here;
- *  - no bridge involvement: no JSQuery, no token, nothing from BridgeService;
+ *  - the only JS bridge is the agent's READ-ONLY page snapshot (049 D4) —
+ *    no tokens, nothing from BridgeService;
  *  - crash detection via `onRenderProcessTerminated` — `JBCefHealthMonitor`
  *    does not exist on the 233–263 line (P-6);
  *  - after navigation the frame is force-repainted (P-9 stale-frame residue).
@@ -42,13 +49,26 @@ class PiBrowserKernel(private val project: Project, parent: Disposable) : Dispos
     private var browser: JBCefBrowser? = null
     private var handlers: PiBrowserHandlers? = null
 
+    /**
+     * 049 D4: the page→IDE readback channel, created once per browser (a
+     * JBCefJSQuery is client-level infrastructure; creating one per read
+     * would churn routers and log pool warnings).
+     */
+    private var jsQuery: JBCefJSQuery? = null
+
+    /** 049 readPage: the one in-flight snapshot request, or null. */
+    private var pendingRead: CompletableFuture<PageSnapshot>? = null
+
+    /** F-206: bounded page console errors, cleared on every navigate. */
+    private val consoleBuffer = BrowserConsoleBuffer()
+
     private val listeners = java.util.concurrent.CopyOnWriteArrayList<(PiBrowserState) -> Unit>()
 
     @Volatile
     var state: PiBrowserState = PiBrowserState.IDLE
         private set
 
-    /** Callback target for address echo; receives the scrubbed URL. */
+    /** Callback target for the address echo; receives the RAW URL (F-103). */
     @Volatile
     var onAddressChanged: ((String) -> Unit)? = null
 
@@ -56,13 +76,59 @@ class PiBrowserKernel(private val project: Project, parent: Disposable) : Dispos
     @Volatile
     var onTitleChanged: ((String) -> Unit)? = null
 
+    /** F-201: raw URL of every committed navigation, for the project history. */
+    @Volatile
+    var onNavigationHistory: ((String) -> Unit)? = null
+
     /** Callback for download completion (success, display path). EDT-safe. */
     @Volatile
     var onDownloadFinished: ((Boolean, String) -> Unit)? = null
 
+    /** F-213: download progress for the carrier's echo row (name, received, total). */
+    @Volatile
+    var onDownloadProgress: ((String, Long, Long) -> Unit)? = null
+
+    /** F-102: authoritative canGoBack/canGoForward from CEF's loading-state flips. */
+    @Volatile
+    var onNavStateChanged: ((Boolean, Boolean) -> Unit)? = null
+
+    /** F-210: main-frame load failure details for the error card. */
+    @Volatile
+    var onLoadError: ((errorCode: String, errorText: String) -> Unit)? = null
+
+    /** F-215 M1: a popup interception ended in ASK — carrier shows the selector. */
+    @Volatile
+    var onAskPopup: ((String) -> Unit)? = null
+
+    /** F-204: Ctrl+F inside the page → carrier toggles its find bar. */
+    @Volatile
+    var onFindRequest: (() -> Unit)? = null
+
+    /** F-204: Esc while the find bar is open → carrier closes it. */
+    @Volatile
+    var onFindClose: (() -> Unit)? = null
+
+    /** F-204: the carrier answers synchronously whether its find bar is open. */
+    @Volatile
+    var isFindBarOpen: () -> Boolean = { false }
+
     /** 043 replaces this; P0 ships strict-only. */
     @Volatile
     var certPolicy: PiCertPolicy = StrictCertPolicy
+
+    /** Last tracked address (RAW, F-103) — agent readback and open-external reuse it. */
+    @Volatile
+    var lastKnownUrl: String = ""
+        private set
+
+    /** Last tracked page title (scrubbed). */
+    @Volatile
+    var lastKnownTitle: String = ""
+        private set
+
+    /** F-202③: set by [stop]; the next main-frame LoadError keeps the partial page. */
+    @Volatile
+    private var stopRequested = false
 
     /** Set once the fuse blew: rebuilds stop until a carrier force-reloads. */
     @Volatile
@@ -82,7 +148,11 @@ class PiBrowserKernel(private val project: Project, parent: Disposable) : Dispos
     }
 
     private fun createOnEdt(): JBCefBrowser {
-        val created = JBCefBrowser()
+        // F-209: the platform's own "Open DevTools" context-menu entry (public
+        // builder flag, 233–263) — zero self-drawn menu work for inspect.
+        val created = JBCefBrowser.createBuilder()
+            .setEnableOpenDevToolsMenuItem(true)
+            .build()
         val h = PiBrowserHandlers(this)
         browser = created
         handlers = h
@@ -94,12 +164,23 @@ class PiBrowserKernel(private val project: Project, parent: Disposable) : Dispos
         client.addLoadHandler(h.loadHandler, cef)
         client.addDisplayHandler(h.displayHandler, cef)
         client.addFocusHandler(h.focusHandler, cef)
+        client.addKeyboardHandler(h.keyboardHandler, cef)
+        client.addContextMenuHandler(h.contextMenuHandler, cef)
+        client.addJSDialogHandler(h.jsDialogHandler, cef)
+        attachConsoleCapture(cef)
+        jsQuery = createReadbackQuery(created)
         log.info("browser kernel: windowed browser created")
         return created
     }
 
     /** The Swing component hosting the browser; null until created. */
     fun component(): JComponent? = browser?.component
+
+    internal fun currentCefBrowser(): JBCefBrowser? = browser
+
+    internal fun hopEdt(block: () -> Unit) {
+        ApplicationManager.getApplication().invokeLater(block)
+    }
 
     fun load(url: String) {
         if (!ApplicationManager.getApplication().isDispatchThread) {
@@ -125,6 +206,21 @@ class PiBrowserKernel(private val project: Project, parent: Disposable) : Dispos
         onEvent(PiBrowserEvent.Navigate(currentUrlOrNull() ?: ""))
     }
 
+    /**
+     * F-202③/F-203②: stop the in-flight load. stopLoad surfaces ERR_ABORTED
+     * (filtered in the handlers), but some aborts land as other error codes —
+     * [stopRequested] converts ANY main-frame LoadError until the next
+     * Navigate into a LoadEnd, so the partial page survives and the carrier
+     * never swaps it for the FAILED card (F-102 root cause 2 without the
+     * 049-era goBack juggling).
+     */
+    fun stop() {
+        val b = browser ?: return
+        stopRequested = true
+        b.cefBrowser.stopLoad()
+        if (state == PiBrowserState.LOADING) onEvent(PiBrowserEvent.LoadEnd)
+    }
+
     fun back() {
         browser?.cefBrowser?.goBack()
     }
@@ -137,7 +233,23 @@ class PiBrowserKernel(private val project: Project, parent: Disposable) : Dispos
 
     fun canGoForward(): Boolean = browser?.cefBrowser?.canGoForward() ?: false
 
-    fun currentUrl(): String = LogSafe.url(currentUrlOrNull())
+    /** F-209: opens the platform DevTools window for the current page. */
+    fun openDevtools() {
+        browser?.openDevtools()
+    }
+
+    // ---- F-204: page find ----
+
+    fun find(searchText: String, forward: Boolean, matchCase: Boolean, findNext: Boolean) {
+        browser?.cefBrowser?.find(searchText, forward, matchCase, findNext)
+    }
+
+    fun stopFinding(clearSelection: Boolean = true) {
+        browser?.cefBrowser?.stopFinding(clearSelection)
+    }
+
+    /** RAW current URL (F-103); empty string before the first load. */
+    fun currentUrl(): String = currentUrlOrNull() ?: ""
 
     private fun currentUrlOrNull(): String? = try {
         browser?.cefBrowser?.getURL()
@@ -148,19 +260,39 @@ class PiBrowserKernel(private val project: Project, parent: Disposable) : Dispos
     // ---- CEF -> state plumbing (called from CEF threads) ----
 
     internal fun onEvent(event: PiBrowserEvent) {
+        // F-202③: a user-requested stop must keep the half-loaded page — any
+        // main-frame LoadError until the next Navigate becomes a plain LoadEnd.
+        val effective = if (event is PiBrowserEvent.LoadError && stopRequested) {
+            stopRequested = false
+            log.debug("browser state: stopRequested swallowed LoadError " + event.errorCode)
+            PiBrowserEvent.LoadEnd
+        } else {
+            if (event is PiBrowserEvent.Navigate) stopRequested = false // next navigation owns the flag again
+            event
+        }
+        if (effective is PiBrowserEvent.Navigate) {
+            consoleBuffer.clear() // F-206: console lines describe ONE page
+        }
         val old: PiBrowserState
         val next: PiBrowserState?
         synchronized(stateLock) {
             old = state
-            next = PiBrowserStateMachine.transition(state, event)
+            next = PiBrowserStateMachine.transition(state, effective)
             if (next != null) state = next
         }
         if (next == null) {
-            log.debug("browser state: dropped " + event::class.simpleName + " in " + old)
+            log.debug("browser state: dropped " + effective::class.simpleName + " in " + old)
             return
         }
-        if (event is PiBrowserEvent.LoadEnd) {
+        if (effective is PiBrowserEvent.LoadEnd) {
             JcefFrameRepaint.forceRepaint(browser)
+        }
+        if (effective is PiBrowserEvent.LoadError) {
+            // F-210: the state machine folds the payload away; the side-channel
+            // (queued BEFORE fireState) hands it to the carrier's error card.
+            ApplicationManager.getApplication().invokeLater {
+                onLoadError?.invoke(effective.errorCode, effective.errorText)
+            }
         }
         when {
             next == PiBrowserState.CRASHED && old != PiBrowserState.CRASHED -> scheduleRebuild()
@@ -168,33 +300,178 @@ class PiBrowserKernel(private val project: Project, parent: Disposable) : Dispos
         fireState(next)
     }
 
-    internal fun onAddressChanged(scrubbed: String) {
-        ApplicationManager.getApplication().invokeLater { onAddressChanged?.invoke(scrubbed) }
+    internal fun onAddressChanged(raw: String) {
+        lastKnownUrl = raw
+        ApplicationManager.getApplication().invokeLater { onAddressChanged?.invoke(raw) }
     }
 
     internal fun onTitleChanged(scrubbed: String) {
+        if (scrubbed.isNotBlank()) lastKnownTitle = scrubbed
         ApplicationManager.getApplication().invokeLater { onTitleChanged?.invoke(scrubbed) }
     }
 
+    internal fun feedNavigationHistory(raw: String) {
+        ApplicationManager.getApplication().invokeLater { onNavigationHistory?.invoke(raw) }
+    }
+
+    internal fun onNavStateChanged(canGoBack: Boolean, canGoForward: Boolean) {
+        ApplicationManager.getApplication().invokeLater { onNavStateChanged?.invoke(canGoBack, canGoForward) }
+    }
+
+    /**
+     * F-215 M1: popups route through the same three-state decision as chat
+     * links. Loopback stays in place (048 US5 byte-for-byte), SYSTEM hands off
+     * to the system browser, EMBEDDED continues in this tab, ASK delegates to
+     * the carrier's selector popup ([onAskPopup]).
+     */
     internal fun continuePopupInPlace(targetUrl: String) {
-        log.info("browser popup intercepted -> in-place: " + LogSafe.url(targetUrl))
-        if (targetUrl.isBlank()) return // cancel only; never navigate a blank (US5)
-        load(targetUrl)
+        val decision = LinkRouting.routeExternalLink(targetUrl, PiAgentSettings.getInstance().linkTarget(), ownOrigin = null)
+        log.info("browser popup intercepted: " + LogSafe.url(targetUrl) + " -> " + decision::class.simpleName)
+        when (decision) {
+            is LinkRoute.CefDefault -> {
+                if (targetUrl.isBlank()) return // cancel only; never navigate a blank (US5)
+                load(targetUrl)
+            }
+            is LinkRoute.Embedded -> load(targetUrl)
+            is LinkRoute.SystemBrowser -> BrowserUtil.browse(targetUrl)
+            is LinkRoute.AskUser -> {
+                val ask = onAskPopup
+                if (ask != null) ApplicationManager.getApplication().invokeLater { ask(targetUrl) }
+                else BrowserUtil.browse(targetUrl)
+            }
+        }
+    }
+
+    // ---- downloads ----
+
+    /** F-110: a download-carrying navigation never fires LoadEnd (OOP/144); clear LOADING here. */
+    internal fun onDownloadStarted() {
+        if (state == PiBrowserState.LOADING) onEvent(PiBrowserEvent.LoadEnd)
+    }
+
+    internal fun onDownloadProgress(name: String, received: Long, total: Long) {
+        ApplicationManager.getApplication().invokeLater { onDownloadProgress?.invoke(name, received, total) }
     }
 
     internal fun onDownloadFinished(success: Boolean, path: String) {
         ApplicationManager.getApplication().invokeLater {
             onDownloadFinished?.invoke(success, path)
-            val type = if (success) NotificationType.INFORMATION else NotificationType.ERROR
-            val key = if (success) "browser.download.done" else "browser.download.failed"
-            NotificationGroupManager.getInstance()
-                .getNotificationGroup(NOTIFICATION_GROUP)
-                .createNotification(
-                    PiAgentBundle.message(key, LogSafe.truncate(path, 120)),
-                    type,
-                )
-                .notify(project)
+            if (success) {
+                // F-213 体验点: the done notification's action opens the folder.
+                PiDownloader.notifyDone(project, path)
+            } else {
+                NotificationGroupManager.getInstance()
+                    .getNotificationGroup(NOTIFICATION_GROUP)
+                    .createNotification(
+                        PiAgentBundle.message("browser.download.failed", LogSafe.truncate(path, 120)),
+                        NotificationType.ERROR,
+                    )
+                    .notify(project)
+            }
         }
+    }
+
+    // ---- agent readback (049 D4; spec §五 rule 1 revision: read-only, no tokens) ----
+
+    /**
+     * Read-only snapshot of the current page for the agent tool
+     * (spec 049 US4). The only JS injection the browser tab ever performs;
+     * bounded by the script itself (3000 chars) plus [timeoutMs] so a hung or
+     * CSP-locked page degrades to a failure snapshot instead of hanging the
+     * agent tool call. Returns immediately with a failure snapshot when there
+     * is no live page to read.
+     */
+    fun readPage(timeoutMs: Long = DEFAULT_READ_TIMEOUT_MS): CompletableFuture<PageSnapshot> {
+        val url = lastKnownUrl
+        val b = browser
+        if (b == null) {
+            return CompletableFuture.completedFuture(PageSnapshot.failure("browser tab is not open", url))
+        }
+        if (state == PiBrowserState.CRASHED) {
+            return CompletableFuture.completedFuture(PageSnapshot.failure("browser renderer is down", url))
+        }
+        val query = jsQuery
+        if (query == null) {
+            return CompletableFuture.completedFuture(PageSnapshot.failure("browser is still starting", url))
+        }
+        synchronized(this) {
+            if (pendingRead != null) {
+                return CompletableFuture.completedFuture(
+                    PageSnapshot.failure("another read is still in flight; retry shortly", url),
+                )
+            }
+            val future = CompletableFuture<PageSnapshot>()
+                .completeOnTimeout(
+                    PageSnapshot.failure("read timed out; the page may still be loading or blocked", url),
+                    timeoutMs, TimeUnit.MILLISECONDS,
+                )
+            pendingRead = future
+            val script = PageSnapshotSanitizer.buildReadScript(query.inject("result"))
+            try {
+                b.cefBrowser.executeJavaScript(script, null, 0)
+            } catch (e: Throwable) {
+                pendingRead = null
+                future.complete(PageSnapshot.failure("injection failed: " + LogSafe.truncate(e.message), url))
+            }
+            return future
+        }
+    }
+
+    /** Recent page console errors for the agent snapshot (F-206); empty when capture is unavailable. */
+    fun recentConsoleLines(limit: Int = 5): List<String> = consoleBuffer.recent(limit)
+
+    /** CEF message-router callback (CEF browser-process thread). */
+    private fun onReadResult(request: String?): JBCefJSQuery.Response {
+        val future = pendingRead
+        if (future != null) {
+            val snapshot = PageSnapshotSanitizer.fromJs(request, lastKnownUrl, lastKnownTitle)
+            future.complete(snapshot)
+            pendingRead = null
+        }
+        return JBCefJSQuery.Response(null)
+    }
+
+    private fun createReadbackQuery(browser: JBCefBrowser): JBCefJSQuery {
+        val query = JBCefJSQuery.create(browser)
+        query.addHandler { request -> onReadResult(request) }
+        // Kernel dispose drops the query; the client-side registration dies with the client.
+        Disposer.register(this, query)
+        return query
+    }
+
+    /**
+     * F-206: attaches the DevTools console listener reflectively. The
+     * `CefDevToolsClient` class does not exist on the 233 floor (verified:
+     * ideaIC-2023.3.1 lib-client.jar has neither the class nor
+     * `CefBrowser.getDevToolsClient`), so nothing here names those types —
+     * a missing or failed attachment degrades silently to an empty buffer.
+     */
+    private fun attachConsoleCapture(cef: org.cef.browser.CefBrowser) {
+        runCatching {
+            val client = cef.javaClass.getMethod("getDevToolsClient").invoke(cef) ?: return
+            val listenerClass = Class.forName("org.cef.browser.CefDevToolsClient\$EventListener")
+            val listener = Proxy.newProxyInstance(
+                javaClass.classLoader,
+                arrayOf(listenerClass),
+            ) { _, method, args ->
+                if (method.name == "onEvent" && args != null && args.size >= 2) {
+                    consoleBuffer.onDevToolsEvent(args[0] as? String ?: "", args[1] as? String ?: "")
+                }
+                null
+            }
+            client.javaClass.getMethod("addEventListener", listenerClass).invoke(client, listener)
+            val enable = client.javaClass.methods
+                .filter { it.name == "executeDevToolsMethod" && it.parameterCount in 1..2 }
+                .minByOrNull { it.parameterCount }
+            if (enable != null) {
+                for (domain in listOf("Runtime.enable", "Log.enable")) {
+                    runCatching {
+                        if (enable.parameterCount == 2) enable.invoke(client, domain, "{}")
+                        else enable.invoke(client, domain)
+                    }
+                }
+            }
+        }.onFailure { log.debug("browser console capture unavailable: ${it.message}") }
     }
 
     fun addStateListener(listener: (PiBrowserState) -> Unit) {
@@ -250,6 +527,11 @@ class PiBrowserKernel(private val project: Project, parent: Disposable) : Dispos
         val h = handlers
         browser = null
         handlers = null
+        runCatching { pendingRead?.complete(PageSnapshot.failure("browser closed during read", lastKnownUrl)) }
+        pendingRead = null
+        runCatching { jsQuery?.dispose() }
+        jsQuery = null
+        consoleBuffer.clear()
         runCatching {
             val client = current.jbCefClient
             val cef = current.cefBrowser
@@ -260,6 +542,9 @@ class PiBrowserKernel(private val project: Project, parent: Disposable) : Dispos
                 client.removeLoadHandler(h.loadHandler, cef)
                 client.removeDisplayHandler(h.displayHandler, cef)
                 client.removeFocusHandler(h.focusHandler, cef)
+                client.removeKeyboardHandler(h.keyboardHandler, cef)
+                client.removeContextMenuHandler(h.contextMenuHandler, cef)
+                client.removeJSDialogHandler(h.jsDialogHandler, cef)
             }
         }
         runCatching { current.dispose() }
@@ -276,5 +561,8 @@ class PiBrowserKernel(private val project: Project, parent: Disposable) : Dispos
         const val NOTIFICATION_GROUP = "Pi Agent"
         const val REBUILD_WINDOW_MS = 60_000L
         const val MAX_REBUILDS_PER_WINDOW = 2
+
+        /** Hard ceiling for one page read (spec 049 hard rule 9). */
+        const val DEFAULT_READ_TIMEOUT_MS = 10_000L
     }
 }
