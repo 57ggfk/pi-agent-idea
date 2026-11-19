@@ -364,6 +364,11 @@ export default function Composer() {
             className="ref-token"
             data-testid="ref-token"
             data-path={tok.path}
+            // The pill paints over the textarea's own text, so its content is
+            // byte-identical to the token — a shorter label would shift the
+            // mirror's line breaks. The full path therefore lives in the
+            // tooltip (真机审查 P1-1: the reference had no ellipsis/tooltip).
+            title={tok.path}
             // Click selects the whole token (then Backspace/typing replaces it).
             onMouseDown={(e) => {
               e.preventDefault();
@@ -563,17 +568,23 @@ export default function Composer() {
       const trailing = trailingFor(plain);
       const start = ta?.selectionStart ?? text.length;
       const end = ta?.selectionEnd ?? text.length;
-      applyText(text.slice(0, start) + token + trailing + text.slice(end));
+      const next = text.slice(0, start) + token + trailing + text.slice(end);
+      applyText(next);
       setPastes((prev) => new Map(prev).set(id, plain));
       if (shouldAutoSaveAsFile(lines)) {
         void savePasteAsFile({ id, content: plain, kind, lines });
       }
       requestAnimationFrame(() => {
-        if (ta) {
-          ta.focus();
-          const caret = start + token.length + trailing.length;
-          ta.setSelectionRange(caret, caret);
-        }
+        // The caret must not be stolen from someone who is already typing:
+        // the fold's own rAF can land a frame later, and moving the caret
+        // then would drop their keystrokes INSIDE the chip token (the token
+        // stops matching the paste regex → the transcript keeps the literal
+        // "[Pasted …]" text). Only move it when the draft is still exactly
+        // what this fold produced (真机/回归 P1：粘贴后立刻打字会错位).
+        if (!ta || textRef.current !== next) return;
+        ta.focus();
+        const caret = start + token.length + trailing.length;
+        ta.setSelectionRange(caret, caret);
       });
     },
     // savePasteAsFile intentionally omitted: it reads the draft through
