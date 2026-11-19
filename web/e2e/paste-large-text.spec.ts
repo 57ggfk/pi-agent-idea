@@ -170,6 +170,44 @@ test("short pastes insert directly — no chip (044 US6)", async ({ page }) => {
   expect(value).toBe("two short\nlines only");
 });
 
+test("the fold's caret placement never overrides a caret the user already took (044 #2a)", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByTestId("empty-state")).toBeVisible();
+
+  // Deterministic race: the fold moves the caret in a requestAnimationFrame,
+  // which can land a frame later. If the user typed in between, that caret
+  // move dropped their keystrokes INSIDE the chip token — the token stopped
+  // matching the paste regex, so the transcript kept the literal
+  // "[Pasted …]" text. The user's caret must win.
+  const token = `[Pasted Markdown #1 +${BIG_LINES} lines]`;
+  await page.evaluate(
+    ({ content, token }) => {
+      const ta = document.querySelector('[data-testid="composer-input"]') as HTMLTextAreaElement;
+      const dt = new DataTransfer();
+      dt.setData("text/plain", content);
+      ta.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+      // The keystroke lands before the fold's rAF: the DOM value is still
+      // stale, so the typed text is written over the known folded draft.
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+      setter.call(ta, "X" + token + "\n");
+      ta.dispatchEvent(new Event("input", { bubbles: true }));
+      ta.focus();
+      ta.setSelectionRange(1, 1);
+    },
+    { content: BIG_MARKDOWN, token },
+  );
+
+  // Let the fold's rAF run.
+  await page.waitForTimeout(500);
+
+  const state = await page.evaluate(() => {
+    const ta = document.querySelector('[data-testid="composer-input"]') as HTMLTextAreaElement;
+    return { value: ta.value, caret: ta.selectionStart };
+  });
+  expect(state.value).toBe("X" + token + "\n");
+  expect(state.caret).toBe(1);
+});
+
 test("sending a folded paste delivers the full original to the transcript (044 US5)", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByTestId("empty-state")).toBeVisible();
@@ -205,8 +243,21 @@ test("pastes beyond 2000 lines auto-save to a temp file reference (044 #4)", asy
   await expect(page.getByTestId("paste-save-failed")).toHaveCount(0);
   await expect(page.getByTestId("ref-token")).toHaveCount(1, { timeout: 10_000 });
   const value = await page.evaluate(() => (document.querySelector('[data-testid="composer-input"]') as HTMLTextAreaElement).value);
-  expect(value).toContain("@/tmp/mock-home/pi-paste-1-x/pasted-1.txt");
+  expect(value).toContain("@/tmp/mock-home/.pi-agent/pi-paste/m0ck-1.txt");
   expect(value).not.toContain("[Pasted");
+
+  // 真机审查 P1-1: the reference must stay short. The macOS system temp
+  // root alone is 52 chars, which pushed the reference to 105 chars and
+  // three wrapped lines in the IDE's narrow composer.
+  const refLen = await page.evaluate(
+    () => (document.querySelector('[data-testid="ref-token"]') as HTMLElement).dataset.path!.length,
+  );
+  expect(refLen).toBeLessThanOrEqual(60);
+  // One line, not three: an inline element reports one client rect per line.
+  const pillLines = await page.evaluate(
+    () => (document.querySelector('[data-testid="ref-token"]') as HTMLElement).getClientRects().length,
+  );
+  expect(pillLines).toBe(1);
 });
 
 test("a failed auto temp write keeps the folded chip, shows a dismissible notice (044 #4/FR-013)", async ({ page }) => {

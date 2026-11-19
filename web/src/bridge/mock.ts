@@ -793,20 +793,22 @@ export class MockBridge implements Bridge {
     }
     if (method === "files.saveTemp") {
       // 044 FR-012 mock: no real filesystem — a stable fake path so the e2e
-      // can assert the @ref insertion. `?saveTemp=fail` exercises the write
-      // failure path (the chip must stay intact).
+      // can assert the @ref insertion. The shape mirrors the real store
+      // (`~/.pi-agent/pi-paste/<tag>-<seq>.txt`, 真机审查 P1-1).
+      // `?saveTemp=fail` exercises the write failure path (the chip must
+      // stay intact).
       if (query()?.get("saveTemp") === "fail") {
         return { ok: false, error: "temp write failed (mock)" } as T;
       }
       const n = (this.saveTempSeq += 1);
-      return { ok: true, path: `/tmp/mock-home/pi-paste-1-x/pasted-${n}.txt` } as T;
+      return { ok: true, path: `/tmp/mock-home/.pi-agent/pi-paste/m0ck-${n}.txt` } as T;
     }
     if (method === "files.exist") {
       // 044 FR-014 mock: temp paste paths exist unless `?temprefs=gone`
       // simulates the session-level cleanup having removed them.
       const gone = query()?.get("temprefs") === "gone";
       const p = params as { paths?: string[] } | undefined;
-      const exists = (p?.paths ?? []).map((path) => !gone && path.includes("pi-paste-"));
+      const exists = (p?.paths ?? []).map((path) => !gone && path.includes("pi-paste"));
       return { exists } as T;
     }
     if (method === "files.relpath") {

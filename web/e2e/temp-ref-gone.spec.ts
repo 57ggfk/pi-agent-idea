@@ -15,10 +15,18 @@ async function saveAsFileRef(page: import("@playwright/test").Page) {
     dt.setData("text/plain", payload);
     ta.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
   }, huge);
-  await expect(page.getByTestId("paste-big-hint")).toBeVisible();
-  await page.getByTestId("paste-save-file").click();
+  // A paste beyond the 2000-line threshold auto-saves to a temp file and
+  // swaps the folded chip for an `@path` reference (044 FR-011/FR-012) —
+  // there is no button to click, the write happens on the paste itself.
+  //
+  // The old helper waited for a `paste-big-hint` testid (that string is a CSS
+  // CLASS, the elements carry `paste-save-failed` / `temp-ref-warning`) and
+  // then clicked a `paste-save-file` testid (the real one is
+  // `paste-preview-save`, and it only exists inside the hover preview).
+  // Both selectors were wrong, so all three cases failed on the first
+  // assertion — the feature itself was never exercised.
+  await expect(page.getByTestId("ref-token")).toHaveCount(1, { timeout: 30_000 });
   await expect(page.getByTestId("paste-chip")).toHaveCount(0);
-  await expect(page.getByTestId("ref-token")).toHaveCount(1);
 }
 
 test("a send with a stale temp reference is blocked with an explicit hint (044 FR-014)", async ({ page }) => {
@@ -64,5 +72,5 @@ test("without the knob the send goes through as before (fail-open / existing pat
   await page.getByTestId("send-btn").click();
   await expect(page.getByTestId("temp-ref-warning")).toHaveCount(0);
   // The message body carries the reference text; pi reads the file itself.
-  await expect(page.locator(".markdown").last()).toContainText("pi-paste-1-x/pasted-1.txt", { timeout: 30_000 });
+  await expect(page.locator(".markdown").last()).toContainText(".pi-agent/pi-paste/m0ck-1.txt", { timeout: 30_000 });
 });
