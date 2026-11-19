@@ -1,11 +1,15 @@
 package dev.pi.agent.toolwindow
 
+import com.intellij.icons.AllIcons
 import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.ui.Messages
+import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.intellij.ui.SimpleListCellRenderer
+import com.intellij.ui.awt.RelativePoint
 import com.intellij.ui.jcef.JBCefApp
 import com.intellij.ui.jcef.JBCefBrowser
 import dev.pi.agent.PiAgentBundle
@@ -13,9 +17,13 @@ import dev.pi.agent.bridge.BridgeService
 import dev.pi.agent.bridge.DropPaths
 import dev.pi.agent.bridge.DropRefs
 import dev.pi.agent.bridge.DropSource
+import dev.pi.agent.browser.LinkOption
 import dev.pi.agent.browser.LinkRoute
 import dev.pi.agent.browser.LinkRouting
+import dev.pi.agent.browser.PiBrowserHandlers
 import dev.pi.agent.browser.PiBrowserManager
+import dev.pi.agent.browser.PiDownloader
+import dev.pi.agent.browser.JcefBrowserZoom
 import dev.pi.agent.process.PiProcessManager
 import dev.pi.agent.settings.PiAgentSettings
 import dev.pi.agent.ui.LocalUiServer
@@ -23,15 +31,22 @@ import dev.pi.agent.ui.PiUiErrorPanel
 import org.cef.CefSettings
 import org.cef.browser.CefBrowser
 import org.cef.browser.CefFrame
+import org.cef.callback.CefContextMenuParams
 import org.cef.callback.CefDragData
+import org.cef.callback.CefMenuModel
+import org.cef.handler.CefContextMenuHandlerAdapter
 import org.cef.handler.CefDisplayHandlerAdapter
 import org.cef.handler.CefDragHandler
+import org.cef.handler.CefKeyboardHandler
+import org.cef.handler.CefKeyboardHandlerAdapter
 import org.cef.handler.CefLifeSpanHandlerAdapter
 import org.cef.handler.CefLoadHandler
 import org.cef.handler.CefLoadHandlerAdapter
 import org.cef.handler.CefRequestHandlerAdapter
 import org.cef.network.CefRequest
 import java.awt.BorderLayout
+import java.awt.MouseInfo
+import java.awt.datatransfer.StringSelection
 import java.awt.datatransfer.Transferable
 import java.awt.dnd.DropTarget
 import java.awt.dnd.DropTargetAdapter
@@ -101,16 +116,30 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
     }
 
     /**
+     * The chat SPA's own origin (`http://127.0.0.1:<port>`), for origin-exact
+     * link routing: the SPA stays in the chat browser, but OTHER loopback
+     * origins — the AI's dev servers, preview routes — are real links and
+     * route by the setting (049 真机：host-only loopback 检查曾让它们的
+     * target=_blank popup 裸开成白窗)。
+     */
+    private fun ownOrigin(): String? = try {
+        LocalUiServer.getInstance().baseUrl.dropLast(1)
+    } catch (t: Throwable) {
+        null
+    }
+
+    /**
      * 048 (spec US4): where chat links go, per the three-state setting.
      * SYSTEM (default) keeps the 037 semantics byte-for-byte; EMBEDDED hands
-     * the URL to the in-app browser tab; ASK asks once per click. The pure
-     * decision lives in [LinkRouting.routeExternalLink] (unit-tested); this
-     * wrapper only executes the IDE-side actions.
+     * the URL to the in-app browser tab; ASK shows the 049 selector (spec
+     * US1) — a three-row popup the user picks a destination from. The pure
+     * decision lives in [LinkRouting.routeExternalLink] (unit-tested, origin-
+     * aware overload per F-107); this wrapper only executes the IDE-side actions.
      */
     private fun routeExternal(url: String): Boolean {
-        val decision = LinkRouting.routeExternalLink(url, PiAgentSettings.getInstance().linkTarget())
+        val decision = LinkRouting.routeExternalLink(url, PiAgentSettings.getInstance().linkTarget(), ownOrigin())
         return when (decision) {
-            is LinkRoute.CefDefault -> false // loopback SPA navigation / blank
+            is LinkRoute.CefDefault -> false // SPA navigation / blank
             is LinkRoute.SystemBrowser -> {
                 BrowserUtil.browse(url)
                 true
@@ -120,21 +149,132 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
                 true
             }
             is LinkRoute.AskUser -> {
-                val openEmbedded = Messages.showYesNoDialog(
-                    project,
-                    PiAgentBundle.message("browser.link.ask"),
-                    PiAgentBundle.message("browser.link.ask.title"),
-                    Messages.getQuestionIcon(),
-                ) == Messages.YES
-                if (openEmbedded) {
-                    PiBrowserManager.getInstance(project).open(url)
-                } else {
-                    BrowserUtil.browse(url)
-                }
+                // CEF navigation is cancelled right away; the selector decides
+                // the destination on the EDT (the click arrives on a CEF
+                // thread and popups must be shown there).
+                ApplicationManager.getApplication().invokeLater { showLinkSelector(url) }
                 true
             }
         }
     }
+
+    /**
+     * F-211 (corrected F-107): right-click on a chat link APPENDS the three
+     * destination items after a separator instead of clearing the model —
+     * the 049 build wiped the native menu (open in new tab / copy link
+     * address / save image disappeared). Foreign command ids return false so
+     * CEF keeps handling its own items.
+     */
+    private val contextMenuHandler = object : CefContextMenuHandlerAdapter() {
+        override fun onBeforeContextMenu(
+            browser: CefBrowser?,
+            frame: CefFrame?,
+            params: CefContextMenuParams?,
+            model: CefMenuModel?,
+        ) {
+            val url = params?.linkUrl ?: return
+            if (url.isBlank()) return
+            val m = model ?: return
+            m.addSeparator()
+            m.addItem(PiBrowserHandlers.MENU_ID_OPEN_SYSTEM, PiAgentBundle.message("browser.link.option.SYSTEM_BROWSER"))
+            m.addItem(PiBrowserHandlers.MENU_ID_OPEN_EMBEDDED, PiAgentBundle.message("browser.link.option.EMBEDDED"))
+            m.addItem(PiBrowserHandlers.MENU_ID_COPY_LINK, PiAgentBundle.message("browser.link.option.COPY"))
+        }
+
+        override fun onContextMenuCommand(
+            browser: CefBrowser?,
+            frame: CefFrame?,
+            params: CefContextMenuParams?,
+            commandId: Int,
+            eventFlags: Int,
+        ): Boolean {
+            val url = params?.linkUrl
+            if (url.isNullOrBlank()) return false
+            when (commandId) {
+                PiBrowserHandlers.MENU_ID_OPEN_SYSTEM -> BrowserUtil.browse(url)
+                PiBrowserHandlers.MENU_ID_OPEN_EMBEDDED -> PiBrowserManager.getInstance(project).open(url)
+                PiBrowserHandlers.MENU_ID_COPY_LINK -> ApplicationManager.getApplication().invokeLater {
+                    CopyPasteManager.getInstance().setContents(StringSelection(url))
+                }
+                else -> return false // native items -> CEF
+            }
+            return true
+        }
+    }
+
+    /**
+     * 049 US1: ask-mode selector. Three rows in the spec Q3 order (system
+     * browser / Pi browser / copy), Esc or an outside click opens nothing.
+     * The raw URL rides along as the popup's ad text so the user always sees
+     * exactly what is about to open.
+     */
+    private fun showLinkSelector(url: String) {
+        val icons = mapOf(
+            LinkOption.SYSTEM_BROWSER to AllIcons.Actions.MoveToTopRight,
+            LinkOption.EMBEDDED to AllIcons.General.Web,
+            LinkOption.COPY to AllIcons.Actions.Copy,
+        )
+        val renderer = object : SimpleListCellRenderer<LinkOption>() {
+            override fun customize(
+                list: javax.swing.JList<out LinkOption>,
+                value: LinkOption,
+                index: Int,
+                selected: Boolean,
+                hasFocus: Boolean,
+            ) {
+                icon = icons[value]
+                text = value.label()
+            }
+        }
+        val popup = JBPopupFactory.getInstance()
+            .createPopupChooserBuilder(LinkRouting.linkOptions())
+            .setTitle(PiAgentBundle.message("browser.link.selector.title"))
+            .setRenderer(renderer)
+            .setAdText(url)
+            .setItemChosenCallback { option ->
+                when (option) {
+                    LinkOption.SYSTEM_BROWSER -> BrowserUtil.browse(url)
+                    LinkOption.EMBEDDED -> PiBrowserManager.getInstance(project).open(url)
+                    LinkOption.COPY -> CopyPasteManager.getInstance().setContents(StringSelection(url))
+                }
+            }
+            .createPopup()
+        val at = MouseInfo.getPointerInfo()?.location
+        if (at != null) {
+            popup.show(RelativePoint(at))
+        } else {
+            popup.showInFocusCenter()
+        }
+    }
+
+    /**
+     * F-205: Ctrl +/-/0 zooms the chat page itself, via the shared CEF
+     * keyboard helper (no platform zoom API exists; the accelerator lives in
+     * Chrome's UI layer, so hosts implement it).
+     */
+    private val keyboardHandler = object : CefKeyboardHandlerAdapter() {
+        override fun onPreKeyEvent(
+            browser: CefBrowser,
+            event: CefKeyboardHandler.CefKeyEvent,
+            isKeyboardShortcut: org.cef.misc.BoolRef?,
+        ): Boolean = JcefBrowserZoom.onPreKeyEvent(browser, event)
+    }
+
+    /**
+     * F-213 (defensive): the chat panel never registered a download handler,
+     * so a download click in the chat silently cancelled (CEF's no-handler
+     * default). On non-OOP IDEs this registration makes chat downloads land
+     * in ~/Downloads with the reveal notification; under OOP the platform
+     * never fires the callback (F-213) — that layer is IDE-side, not ours.
+     */
+    private val downloadHandler = PiBrowserHandlers.createDownloadHandler(
+        onStart = null,
+        onDone = { ok, path ->
+            if (ok) PiDownloader.notifyDone(project, path)
+            else PiDownloader.notifyFailure(project, path)
+        },
+        onProgress = null,
+    )
 
     /**
      * `target="_blank"` links (marketplace npm/repo cards) open a popup browser
@@ -395,6 +535,9 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
             created.jbCefClient.addLoadHandler(loadHandler, created.cefBrowser)
             created.jbCefClient.addDisplayHandler(consoleHandler, created.cefBrowser)
             created.jbCefClient.addDragHandler(dragHandler, created.cefBrowser)
+            created.jbCefClient.addContextMenuHandler(contextMenuHandler, created.cefBrowser)
+            created.jbCefClient.addKeyboardHandler(keyboardHandler, created.cefBrowser)
+            created.jbCefClient.addDownloadHandler(downloadHandler, created.cefBrowser)
             installAwtDropListener(created.component)
             add(created.component, BorderLayout.CENTER)
             created.loadURL(url)
@@ -536,6 +679,9 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
         browser = null
         runCatching { current.jbCefClient.removeRequestHandler(linkHandler, current.cefBrowser) }
         runCatching { current.jbCefClient.removeLifeSpanHandler(popupHandler, current.cefBrowser) }
+        runCatching { current.jbCefClient.removeContextMenuHandler(contextMenuHandler, current.cefBrowser) }
+        runCatching { current.jbCefClient.removeKeyboardHandler(keyboardHandler, current.cefBrowser) }
+        runCatching { current.jbCefClient.removeDownloadHandle(downloadHandler, current.cefBrowser) }
         runCatching { current.jbCefClient.removeLoadHandler(loadHandler, current.cefBrowser) }
         runCatching { current.jbCefClient.removeDisplayHandler(consoleHandler, current.cefBrowser) }
         runCatching { current.jbCefClient.removeDragHandler(dragHandler, current.cefBrowser) }
