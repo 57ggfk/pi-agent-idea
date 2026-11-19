@@ -67,7 +67,14 @@ class PiBrowserManager(private val project: Project) {
             return panel
         }
         ensureTabListener(manager)
-        val panel = BrowserPanel(project)
+        // 048 P-7 hard rule (round 2 enforcement): ONE windowed browser per
+        // tool window. The walkthrough's multi-tab build created one per TAB —
+        // the hidden tabs' native HWNDs stacked over the visible page and ate
+        // every click (the F-202/F-110 re-verify's dead page interaction).
+        // Tab 1 keeps windowed; tabs 2+ are OSR (editor-carrier proven).
+        val offscreen = windowedTabCreated
+        windowedTabCreated = true
+        val panel = BrowserPanel(project, offscreen)
         val content = ContentFactory.getInstance().createContent(
             panel, PiAgentBundle.message("toolwindow.browser.tab"), true,
         )
@@ -115,6 +122,9 @@ class PiBrowserManager(private val project: Project) {
         private const val TOOLWINDOW_ID = "Pi Agent"
 
         private var tabListenerAdded = false
+
+        /** P-7: whether this project's tool window already has its one windowed browser tab. */
+        private var windowedTabCreated = false
 
         /** F-208: same per-project ceiling as the chat instance tabs (019). */
         const val MAX_TABS = 4

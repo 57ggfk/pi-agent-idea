@@ -39,7 +39,16 @@ import javax.swing.JComponent
  *    does not exist on the 233–263 line (P-6);
  *  - after navigation the frame is force-repainted (P-9 stale-frame residue).
  */
-class PiBrowserKernel(private val project: Project, parent: Disposable) : Disposable {
+class PiBrowserKernel(
+    private val project: Project,
+    parent: Disposable,
+    /**
+     * P-7 (round-2 enforcement): OSR kernels don't own a native HWND, so the
+     * multi-tab manager may run tabs 2+ offscreen without stacking hidden
+     * native windows over the visible page. Default windowed (048 D2).
+     */
+    private val offscreen: Boolean = false,
+) : Disposable {
 
     private val log = Logger.getInstance(PiBrowserKernel::class.java)
 
@@ -157,9 +166,10 @@ class PiBrowserKernel(private val project: Project, parent: Disposable) : Dispos
     private fun createOnEdt(): JBCefBrowser {
         // F-209: the platform's own "Open DevTools" context-menu entry (public
         // builder flag, 233–263) — zero self-drawn menu work for inspect.
-        val created = JBCefBrowser.createBuilder()
+        val builder = JBCefBrowser.createBuilder()
             .setEnableOpenDevToolsMenuItem(true)
-            .build()
+        if (offscreen) builder.setOffScreenRendering(true)
+        val created = builder.build()
         val h = PiBrowserHandlers(this)
         browser = created
         handlers = h
@@ -175,7 +185,7 @@ class PiBrowserKernel(private val project: Project, parent: Disposable) : Dispos
         client.addContextMenuHandler(h.contextMenuHandler, cef)
         client.addJSDialogHandler(h.jsDialogHandler, cef)
         jsQuery = createReadbackQuery(created)
-        log.info("browser kernel: windowed browser created")
+        log.info("browser kernel: " + (if (offscreen) "OSR" else "windowed") + " browser created")
         return created
     }
 

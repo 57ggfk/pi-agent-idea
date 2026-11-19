@@ -51,11 +51,11 @@ import javax.swing.SwingUtilities
  * (constitution III); the kernel owns exactly one windowed browser, this
  * panel adds no second one (probe P-7).
  */
-class BrowserPanel(private val project: Project) : JPanel(BorderLayout()), Disposable {
+class BrowserPanel(private val project: Project, offscreen: Boolean = false) : JPanel(BorderLayout()), Disposable {
 
     private val log = Logger.getInstance(BrowserPanel::class.java)
 
-    private val kernel = PiBrowserKernel(project, this)
+    private val kernel = PiBrowserKernel(project, this, offscreen)
 
     // F-201: recent URLs drop down on focus/click (own popup), closing the
     // "closed the tab, lost the port" gap.
@@ -386,6 +386,9 @@ class BrowserPanel(private val project: Project) : JPanel(BorderLayout()), Dispo
         val entries = PiBrowserHistory.getInstance(project).entries()
         if (entries.isEmpty()) return
         if (historyPopup?.isVisible == true) return
+        // setRequestFocus(false): the field KEEPS focus while suggestions show
+        // — the walkthrough regression was exactly this popup stealing focus,
+        // so the user's typing went into type-ahead and Enter did nothing.
         historyPopup = JBPopupFactory.getInstance()
             .createPopupChooserBuilder(entries)
             .setTitle(PiAgentBundle.message("browser.history.title"))
@@ -394,6 +397,7 @@ class BrowserPanel(private val project: Project) : JPanel(BorderLayout()), Dispo
                 addressField.text = chosen
                 submitAddress()
             }
+            .setRequestFocus(false)
             .setCancelOnClickOutside(true)
             .createPopup()
             .also { it.show(RelativePoint(addressField, java.awt.Point(0, addressField.height))) }
