@@ -477,6 +477,12 @@ intellijPlatform {
             ide(IntelliJPlatformType.IntellijIdeaCommunity, "2024.1.7") // 241
             ide(IntelliJPlatformType.IntellijIdeaCommunity, "2024.2.6") // 242 — still no 2-arg overload
             ide(IntelliJPlatformType.IntellijIdeaCommunity, "2024.3.1") // compile baseline (243)
+            // F-110: 2025.2+ ships JCEF 144 whose CefDownloadHandler /
+            // CefRequestHandler ABIs differ (boolean onBeforeDownload, 4-arg
+            // onRenderProcessTerminated). The handlers are reflective Proxies
+            // now, but the verifier must actually CHECK the newest line too —
+            // 0.5.9 shipped exactly the ABI break this entry would have caught.
+            ide(IntelliJPlatformType.IntellijIdeaCommunity, "2026.2")
         }
         // Marketplace rejection criteria: binary incompatibilities and
         // internal API usage only.
