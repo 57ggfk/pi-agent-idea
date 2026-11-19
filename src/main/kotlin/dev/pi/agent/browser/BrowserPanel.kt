@@ -209,19 +209,19 @@ class BrowserPanel(private val project: Project) : JPanel(BorderLayout()), Dispo
         // Swing-side zoom shares the CEF clamp logic (the page HWND route is
         // JcefBrowserZoom.onPreKeyEvent; this covers toolbar/address focus).
         bind(KeyStroke.getKeyStroke(KeyEvent.VK_EQUALS, InputEvent.CTRL_DOWN_MASK), "zoomIn") {
-            JcefBrowserZoom.zoomIn(kernel.currentCefBrowser()?.cefBrowser)
+            JcefBrowserZoom.zoomIn(kernel.currentJbBrowser()?.cefBrowser)
         }
         bind(KeyStroke.getKeyStroke(KeyEvent.VK_ADD, InputEvent.CTRL_DOWN_MASK), "zoomInPad") {
-            JcefBrowserZoom.zoomIn(kernel.currentCefBrowser()?.cefBrowser)
+            JcefBrowserZoom.zoomIn(kernel.currentJbBrowser()?.cefBrowser)
         }
         bind(KeyStroke.getKeyStroke(KeyEvent.VK_MINUS, InputEvent.CTRL_DOWN_MASK), "zoomOut") {
-            JcefBrowserZoom.zoomOut(kernel.currentCefBrowser()?.cefBrowser)
+            JcefBrowserZoom.zoomOut(kernel.currentJbBrowser()?.cefBrowser)
         }
         bind(KeyStroke.getKeyStroke(KeyEvent.VK_SUBTRACT, InputEvent.CTRL_DOWN_MASK), "zoomOutPad") {
-            JcefBrowserZoom.zoomOut(kernel.currentCefBrowser()?.cefBrowser)
+            JcefBrowserZoom.zoomOut(kernel.currentJbBrowser()?.cefBrowser)
         }
         bind(KeyStroke.getKeyStroke(KeyEvent.VK_0, InputEvent.CTRL_DOWN_MASK), "zoomReset") {
-            JcefBrowserZoom.zoomReset(kernel.currentCefBrowser()?.cefBrowser)
+            JcefBrowserZoom.zoomReset(kernel.currentJbBrowser()?.cefBrowser)
         }
 
         val submit = { _: ActionEvent -> submitAddress() }

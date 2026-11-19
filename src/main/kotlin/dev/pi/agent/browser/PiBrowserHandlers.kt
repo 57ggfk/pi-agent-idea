@@ -142,7 +142,7 @@ internal class PiBrowserHandlers(private val kernel: PiBrowserKernel) {
         override fun onPreKeyEvent(browser: CefBrowser, event: CefKeyboardHandler.CefKeyEvent, isKeyboardShortcut: org.cef.misc.BoolRef?): Boolean {
             if (event.type != CefKeyboardHandler.CefKeyEvent.EventType.KEYEVENT_RAWKEYDOWN) return false
             // Zoom first: no overlap with the nav keys below.
-            if (JcefBrowserZoom.onPreKeyEvent(kernel.currentCefBrowser(), event)) return true
+            if (JcefBrowserZoom.onPreKeyEvent(kernel.currentJbBrowser()?.cefBrowser, event)) return true
             val m = event.modifiers
             return when (event.windows_key_code) {
                 VK_F -> if (m and FLAG_CONTROL != 0 && m and (FLAG_ALT or FLAG_SHIFT) == 0) {
