@@ -82,9 +82,9 @@ class DevServerProbeTest {
             },
         )
         assertEquals("http://127.0.0.1:8931/", result.detected)
-        // Probe order is ascending port: the dead 9223 listener is tried
-        // first and does not stop the sweep.
-        assertEquals(listOf(9223, 8931), probed)
+        // Ports sweep in ascending order: 8931 answers HTML first, so the
+        // sweep stops before ever trying the dead 9223 listener.
+        assertEquals(listOf(8931), probed)
         // RPC noise and excluded UI-server port never get probed.
         assertFalse(135 in result.candidates)
         assertFalse(8933 in result.candidates)

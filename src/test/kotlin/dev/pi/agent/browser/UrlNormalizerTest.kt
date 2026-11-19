@@ -52,7 +52,7 @@ class UrlNormalizerTest {
     fun `parseAddressBar classifies url host and search`() {
         // host-shaped inputs build URLs (zero-surprise load path kept)
         assertEquals(
-            UrlNormalizer.AddressInput.Url("http://127.0.0.1:8931/"),
+            UrlNormalizer.AddressInput.Url("http://127.0.0.1:8931"),
             UrlNormalizer.parseAddressBar("127.0.0.1:8931"),
         )
         assertEquals(

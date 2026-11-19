@@ -57,7 +57,6 @@ class PiBrowserManager(private val project: Project) {
             panel, PiAgentBundle.message("toolwindow.browser.tab"), true,
         )
         content.isCloseable = true
-        content.toolTipText = url
         // Content dispose (tab closed) releases the panel, which releases the
         // kernel's JCEF browser — no leak, no confirm needed (no pi run here).
         Disposer.register(content, panel)

@@ -35,11 +35,9 @@ class PiBrowserHistory {
 
     fun clear() = synchronized(lock) { entries.clear() }
 
-    private companion object {
-        const val MAX_ENTRIES = 20
-    }
-
     companion object {
+        private const val MAX_ENTRIES = 20
+
         /** Public so the address field's editor history size matches. */
         const val MAX_HISTORY = 20
 

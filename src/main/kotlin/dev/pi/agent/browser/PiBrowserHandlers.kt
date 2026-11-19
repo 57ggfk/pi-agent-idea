@@ -23,6 +23,7 @@ import org.cef.handler.CefKeyboardHandlerAdapter
 import org.cef.handler.CefLifeSpanHandlerAdapter
 import org.cef.handler.CefLoadHandler
 import org.cef.handler.CefLoadHandlerAdapter
+import org.cef.handler.CefRequestHandler
 import java.awt.datatransfer.StringSelection
 import java.io.File
 import java.lang.reflect.Proxy
@@ -273,8 +274,8 @@ internal class PiBrowserHandlers(private val kernel: PiBrowserKernel) {
                         "Confirm navigation",
                         Messages.getQuestionIcon(),
                     ) == Messages.OK
-                    cb.Continue(leave)
-                }.onFailure { runCatching { cb.Continue(false) } }
+                    cb.Continue(leave, "")
+                }.onFailure { runCatching { cb.Continue(false, "") } }
             }
             return true
         }
@@ -319,9 +320,9 @@ internal class PiBrowserHandlers(private val kernel: PiBrowserKernel) {
     companion object {
 
         // CEF event flags — chromium cef_event_flags_t values.
-        private const val FLAG_SHIFT_DOWN = 1 shl 0
-        private const val FLAG_CONTROL_DOWN = 1 shl 1
-        private const val FLAG_ALT_DOWN = 1 shl 2
+        private const val FLAG_SHIFT = 1 shl 0
+        private const val FLAG_CONTROL = 1 shl 1
+        private const val FLAG_ALT = 1 shl 2
 
         // Windows VK codes as CEF reports them in windows_key_code.
         private const val VK_ESCAPE = 0x1B

@@ -69,7 +69,7 @@ object PiDownloader {
             return null
         }
         notifyDone(project, target.absolutePath)
-        return target
+        return target.toPath()
     }
 
     private fun downloadsDir(): File {
