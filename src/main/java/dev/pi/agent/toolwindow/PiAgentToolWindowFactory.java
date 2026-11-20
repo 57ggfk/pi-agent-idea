@@ -1,5 +1,6 @@
 package dev.pi.agent.toolwindow;
 
+import com.intellij.icons.AllIcons;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.diagnostic.Logger;
@@ -97,7 +98,7 @@ public class PiAgentToolWindowFactory implements ToolWindowFactory {
 
         NewInstanceAction(Project project) {
             super(PiAgentBundle.message("toolwindow.new.instance"),
-                    PiAgentBundle.message("toolwindow.new.instance.tooltip"), null);
+                    PiAgentBundle.message("toolwindow.new.instance.tooltip"), AllIcons.General.Add);
             this.project = project;
         }
 
