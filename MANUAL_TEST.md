@@ -622,14 +622,17 @@
 - [x] **碎片**：`changelog.d/051-*.fixed.md` 三条；`collectChangelog -PdryRun=true` 通过，三条中英文均进入收集结果
 - [x] **构建**：`buildPlugin` PASS，产物 pi-agent-idea-0.5.9.zip（16:04:46）
 - [x] **换装舞台**：已按新包刷新，staged MD5 = build/libs MD5 = `2ED2710D9D30573965986C12D7247A8C`；已装 jar 仍是 050 旧包 `DBCFBAF2…`（IDE 运行中，jar 被内存映射锁）
-- [ ] **换装完成**：守望进程已挂起（120 分钟），用户关闭 IDE 后自动换装并校验 MD5
+- [x] **换装完成**：IDE 退出后重装，installed MD5 = `2ED2710D9D30573965986C12D7247A8C` = build/libs MD5（回滚备份 `pi-agent-idea-0.5.9.jar.bak-20261120-202810`）；新实例（21:02:24 起）跑完下面全部真机项
 
-**真机待办**（换装后按序做）：
+**真机复验**（2026-11-20 20:33–21:07，IDEA 2026.2.3，工程 `release-0.5.10-20261116/test/e2e-project`）：
 
-- [ ] **异常后不空白**：让页面停止轮询（杀掉渲染进程，或停掉本地 UI 服务）→ 面板最多自动重建 2 次，随后停在错误卡（标题「The embedded browser keeps failing」），卡上有 Retry / Open in Browser / Copy Address
-- [ ] **不再无限重建**：idea.log 中 `Rebuilding Pi Agent UI` 至多 2 条（带 `— attempt 1` / `— attempt 2`），随后 1 条 `Pi Agent UI keeps failing; not rebuilding again`；此后再无周期 90s 的重建
-- [ ] **Retry 可用**：点错误卡的 Retry → 面板回到聊天 UI，日志出现 `Pi Agent UI: loading http://127.0.0.1:<port>/`
-- [ ] **崩溃卡按钮**：浏览器页签强杀渲染进程 → 崩溃卡上确实有可点的 Retry 按钮（050 遗留项，051 已修根因）
-- [ ] **重建风暴限速**：关掉最后一个 Pi 标签页 → 内容立刻回来一次；5 秒内再关一次 → 日志出现 `closed to empty right after an automatic recreate` 且不再新建浏览器
-- [ ] **关机期风暴**：关闭 IDE → 日志中 `closed to empty` 至多 1~2 条（051 前 12 秒内 11 条）
-- [ ] **零 IDE 错误弹窗**：全段 0 条 `UnhandledException` / `IDE Internal Errors`
+- [x] **正常路径不空白**：面板渲染出 Pi Agent 欢迎页（`cbcn/glm-5.3-flash · 9router`、消息输入框、状态栏 `pi 1.5.2`、绿点在线）；日志 `pi agent UI server started on http://127.0.0.1:65513/` → `Pi Agent UI: loading …` → `bridge poll connected — the frontend is authenticated and polling`
+- [x] **异常后不空白**：强杀 JCEF 渲染进程（PID 43892）让页面停止轮询；再把渲染进程持续杀掉（每 30–80ms 一杀）逼出连续失败 → 面板最终停在**完整错误卡**而非白面板：标题 `The embedded browser keeps failing` + 失败原因 + `Address: http://127.0.0.1:65513/?token=…` + 三个按钮 `Retry / Open in Browser / Copy Address`
+- [x] **不再无限重建**：日志实证重建**有上限**——`Rebuilding Pi Agent UI (no bridge poll for 119s) — attempt 1` → `Rebuilding Pi Agent UI (the page never polled the bridge) — attempt 2` → `WARN Pi Agent UI keeps failing; not rebuilding again (the page never polled the bridge)`，此后不再重建（旧代码此处会每 90 秒无限重建下去）。页面恢复后计数正确清零：`Pi Agent UI is answering again after 1 failed attempt(s)`
+- [x] **只认本次挂载后的轮询**：`the page never polled the bridge` 这条 reason 只有新的 `pollAgeSinceMount` 才会产生（挂载后一次轮询都没有 → pollAge = MAX）
+- [x] **Retry 可用**：点错误卡的 Retry → 日志 `Pi Agent UI: loading http://127.0.0.1:65513/` → 面板**完整恢复渲染**（欢迎页 + 输入框 + `pi 1.5.2` 状态栏）
+- [x] **零 IDE 错误弹窗**：新实例 817 行日志里 `UnhandledException / IDE Internal Error / SEVERE` **计数 = 0**（旧实例同一路径 5+ 次）；本轮强杀渲染进程 300+ 次，无一次弹出 IDE 错误气球
+- [x] **关掉最后一个 Pi 标签页 → 内容立刻回来**（046 行为未回归）：`Pi Agent tool window closed to empty; recreating a clean content` + 立刻 `Pi Agent UI: loading …`
+- [ ] **5 秒内连关两次被限速拦下**：**未能在真机上复现**——合成点击命中标签页关闭钮不稳定（21:04:13 成功关过一次，之后连点 10+ 次均未触发关闭），拿不到 `not recreating again yet` 这条 WARN。该分支由 `AutoRecreatePolicyTest` 4 条单测覆盖（disposing 一律拒绝 / 首次允许 / 间隔内跳过 / 间隔后再允许）
+- [ ] **关机期风暴**：本次关机（21:00:00 `IDE SHUTDOWN`）日志里 `closed to empty` **0 条**（旧实例 12 秒内 11 条）；但本次关机时工程已先被 dispose，旧代码里本来就有的 `project.isDisposed()` 早退也会得到同样结果，**这一条不能单独证明限速生效**——与上一条同因，留作下轮
+- [ ] **崩溃卡在无地址时也渲染 Retry**（050 遗留根因修复）：代码条件已改（`onRetry != null` 即渲染，不再要求 `url != null`），但本轮没有触发到「无地址」的崩溃卡，留作下轮
