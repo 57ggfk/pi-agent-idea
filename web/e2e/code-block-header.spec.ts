@@ -129,6 +129,40 @@ test("the code block shows line numbers aligned with its code lines (048 FR-004)
   expect(Math.abs(offsets[0])).toBeLessThan(4);
 });
 
+test("the line numbers sit next to their code, not glued to the block edge (049)", async ({ page }) => {
+  await sendDiffReply(page);
+  const geo = await page.evaluate(() => {
+    const shell = document.querySelector(".markdown .block-shell") as HTMLElement;
+    const gutter = shell.querySelector(".code-gutter") as HTMLElement;
+    const code = shell.querySelector("code") as HTMLElement;
+    const nos = Array.from(gutter.querySelectorAll(".code-line-no")) as HTMLElement[];
+    // The widest number (two digits here) is the one that touches the edges.
+    const widest = nos.reduce((a, b) => (b.getBoundingClientRect().width > a.getBoundingClientRect().width ? b : a));
+    // The code's first character — where the eye expects the number to belong.
+    const walker = document.createTreeWalker(code, NodeFilter.SHOW_TEXT);
+    const first = walker.nextNode();
+    let textLeft = 0;
+    if (first) {
+      const range = document.createRange();
+      range.setStart(first, 0);
+      range.setEnd(first, 1);
+      textLeft = range.getBoundingClientRect().left;
+    }
+    const g = gutter.getBoundingClientRect();
+    const w = widest.getBoundingClientRect();
+    return {
+      gapFromBlockEdge: w.left - g.left,
+      gapToCode: textLeft - w.right,
+      gutterPadLeft: getComputedStyle(gutter).paddingLeft,
+    };
+  });
+  // The numbers must not be glued to the block's left border …
+  expect(geo.gapFromBlockEdge).toBeGreaterThanOrEqual(4);
+  // … and they must stay close to the code they belong to.
+  expect(geo.gapToCode).toBeLessThanOrEqual(16);
+  expect(geo.gutterPadLeft).toBe("8px");
+});
+
 test("selecting the code does not drag the line numbers along (048 FR-004)", async ({ page }) => {
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await sendDiffReply(page);
