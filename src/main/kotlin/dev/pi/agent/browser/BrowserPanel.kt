@@ -117,6 +117,14 @@ class BrowserPanel(private val project: Project, offscreen: Boolean = false) : J
     @Volatile
     private var findOpen = false
 
+    /**
+     * 049 robustness: set when the panel is disposed. The kernel's callbacks
+     * are queued on the EDT, so a queued callback can still run after the
+     * panel died — every one of them checks this flag first.
+     */
+    @Volatile
+    private var disposed = false
+
     private var lastFindQuery: String = ""
     private var findNextPending = false
 
@@ -274,10 +282,19 @@ class BrowserPanel(private val project: Project, offscreen: Boolean = false) : J
             }
         })
 
-        kernel.addStateListener { state -> SwingUtilities.invokeLater { onStateChanged(state) } }
-        kernel.onAddressChanged = { url -> SwingUtilities.invokeLater { updateEcho(url) } }
+        kernel.addStateListener { state ->
+            SwingUtilities.invokeLater {
+                if (!disposed) onStateChanged(state)
+            }
+        }
+        kernel.onAddressChanged = { url ->
+            SwingUtilities.invokeLater {
+                if (!disposed) updateEcho(url)
+            }
+        }
         kernel.onTitleChanged = { title ->
             SwingUtilities.invokeLater {
+                if (disposed) return@invokeLater
                 // F-203: a provisional title (next page's hostname) must not
                 // glue itself onto the previous page's echo row mid-load.
                 if (!loadingHint) {
@@ -287,8 +304,11 @@ class BrowserPanel(private val project: Project, offscreen: Boolean = false) : J
             }
         }
         kernel.onNavStateChanged = { back, forward ->
-            backButton.isEnabled = back
-            forwardButton.isEnabled = forward
+            SwingUtilities.invokeLater {
+                if (disposed) return@invokeLater
+                backButton.isEnabled = back
+                forwardButton.isEnabled = forward
+            }
         }
         kernel.onNavigationHistory = { url ->
             // F-201: page navigations feed the history; the one-shot preview
@@ -303,17 +323,23 @@ class BrowserPanel(private val project: Project, offscreen: Boolean = false) : J
             lastErrorText = text
         }
         kernel.onDownloadProgress = { name, received, total ->
-            downloadProgressText =
-                if (total > 0) "⬇ $name ${received * 100 / total}%" else "⬇ $name ${received}B"
-            echoLabel.text = downloadProgressText
+            if (!disposed) {
+                downloadProgressText =
+                    if (total > 0) "⬇ $name ${received * 100 / total}%" else "⬇ $name ${received}B"
+                echoLabel.text = downloadProgressText
+            }
         }
         kernel.onDownloadFinished = { _, _ ->
-            downloadProgressText = null
-            updateEcho(lastEchoUrl)
+            if (!disposed) {
+                downloadProgressText = null
+                updateEcho(lastEchoUrl)
+            }
         }
-        kernel.onAskPopup = { url -> showLinkSelector(url) }
-        kernel.onFindRequest = { toggleFindBar() }
-        kernel.onFindClose = { closeFindBar() }
+        kernel.onAskPopup = { url ->
+            if (!disposed) showLinkSelector(url)
+        }
+        kernel.onFindRequest = { if (!disposed) toggleFindBar() }
+        kernel.onFindClose = { if (!disposed) closeFindBar() }
         kernel.isFindBarOpen = { findOpen }
     }
 
@@ -601,6 +627,10 @@ class BrowserPanel(private val project: Project, offscreen: Boolean = false) : J
     }
 
     private fun onStateChanged(state: PiBrowserState) {
+        if (disposed) return
+        // 049 robustness: a platform surprise must degrade to a stale toolbar,
+        // never to an "IDE Internal Errors" balloon on the EDT.
+        BrowserSafety.guard("panel state update", Unit, { msg -> log.warn(msg) }) {
         backButton.isEnabled = kernel.canGoBack()
         forwardButton.isEnabled = kernel.canGoForward()
         loadingHint = state == PiBrowserState.LOADING
@@ -641,6 +671,7 @@ class BrowserPanel(private val project: Project, offscreen: Boolean = false) : J
                 }
             }
         }
+        }
     }
 
     private fun showErrorCard(title: String, detail: List<String>) {
@@ -669,6 +700,7 @@ class BrowserPanel(private val project: Project, offscreen: Boolean = false) : J
     }
 
     override fun dispose() {
+        disposed = true
         // Kernel disposes through Disposer (registered under this panel);
         // keep the hook explicit so the chain stays obvious.
         log.debug("browser panel disposed")

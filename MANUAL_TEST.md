@@ -631,7 +631,6 @@
 - [x] **下拉收编**：Go 右侧新增「⋮」下拉钮，点开为标题「Browser actions」的菜单，两项分别为 **Open DevTools**（放大镜图标）与 **Open in system browser**（箭头图标，未加载页面时置灰）
 - [x] **预览渲染无回归**：预览页签照旧渲染出 PI-BROWSER-PROBE-H1 / path= / open target=_blank / anchor blank，地址栏回显 http://127.0.0.1:50108/preview/<token>
 - [x] **DevTools 弹窗空白——已修复（机器侧 JCEF GPU 开关）**：根因是本机 CEF GPU 进程连环崩溃（exit_code=-2147483645 / STATUS_BREAKPOINT），窗口拿不到 GPU command buffer → 属机器环境问题、非插件缺陷；处置与复验见下一节：窗口实拍（624×631 全白），AX 树可见原生标题栏与地址栏 devtools://devtools/bundled/devtools_app.html?remoteBase=...；前端本身正常（bundled 资源加载完成，_createAppUI 440ms / _showAppUI 85ms / _initializeTarget 27ms，CDP 378 条命令）——**空白出在合成层**：12:32:43.870（DevTools 窗口创建那一刻）起 CEF GPU 进程连环崩溃 exit_code=-2147483645（STATUS_BREAKPOINT），到 12:35 累计 180 次 GPU 退出 + 98 次 Failed to send GpuControl.CreateCommandBuffer，窗口拿不到 command buffer → 画不出内容。修法是 IDE 级开关 -Dide.browser.jcef.gpu.disable=true（或 registry 键 ide.browser.jcef.gpu.disable）后重启 IDE（JCEF 知识库「预览白屏/黑屏」条目 IDEA-299007）；另一条路线是开 CDP 端口 + 系统浏览器打开真 DevTools（本机 CDP 未开：9222 未监听、无 DevToolsActivePort 文件）
-
 ### 049 DevTools 空白修复真机复验（2026-11-20，机器侧 JCEF GPU 开关）
 
 处置：定位生效的 vmoptions 为环境变量 `IDEA_VM_OPTIONS` 指向的 `C:\Users\Administrator\AppData\Local\JetBrains\jetbra\vmoptions\idea.vmoptions`（`%APPDATA%\JetBrains\IntelliJIdea2026.2\idea64.exe.vmoptions` 不生效），先备份 `idea.vmoptions.bak-20261120-123916`，再以 `[System.IO.File]::WriteAllText`（LF / UTF-8 无 BOM）追加独立一行 `-Dide.browser.jcef.gpu.disable=true`；重启 IDEA（新 PID 11400）。
@@ -642,3 +641,16 @@
 - [x] **右上角关闭钮可用**：AX 树含原生 TitleBar 的 Minimize / Maximize / Close；点击 Close 后窗口从窗口列表消失（cef_server 窗口数 0）
 - [x] **重开路径复验**：关闭后再次「⋮」→ Open DevTools（回车触发），新窗口正常渲染，任务栏出现 DevTools 条目
 - [x] **预览页无回归**：关 GPU 后预览页签照旧渲染 PI-BROWSER-PROBE-H1 / path= / open target=_blank / anchor blank
+### 050 浏览器失活健壮性真机验证（2026-11-20）
+
+输入：用户贴出 IDE「IDE Internal Errors」弹窗——`NullPointerException: Cannot invoke "java.lang.Boolean.booleanValue()"` at `RemoteBrowser.canGoBack` → `PiBrowserKernel.canGoBack` → `BrowserPanel.onStateChanged`。
+
+根因（idea.log 实证，旧实例 13:35）：平台 RPC 层 `RpcContext.execObj(...)` 返回 null，`RemoteBrowser.canGoBack` 直接拆箱 Boolean 抛 NPE；同一路径至少 5 次（被 IntelliJ 的「Suppressed a frequent exception」折叠）。Kotlin 的 `?.` 看不见它——异常在平台调用内部抛出，从 EDT 回调逃逸成 IDE 错误弹窗。
+
+- [x] **单测**：新增 BrowserSafetyTest 5 条——平台抛错降级为默认值且只报一次 / 正常值透传 / null 是值不是错 / ProcessCanceledException 原样抛出 / 其他异常不逃逸；`./gradlew test` 464 → **469** 用例 / 0 失败 / 5 跳过 / 56 测试类
+- [x] **常规路径无回归**：开预览页 → 渲染 PI-BROWSER-PROBE-H1 / path= / open target=_blank / anchor blank，工具条三个方形钮 + Go +「⋮」在位
+- [x] **旧错误路径清零**：新实例（PID 29384，13:48:56 启动）日志 755 行内 **0 条** UnhandledException / booleanValue / NullPointerException、**0 条** IDE Internal Error（旧实例同一路径 5+ 次）
+- [x] **导航中立刻关页签**：点刷新后立即关掉预览页签 → 无弹窗、无异常
+- [x] **强杀渲染进程**（PID 6504）：插件走自带崩溃卡「The embedded browser crashed — 渲染进程已死并自动重建」+ Retry / Open in Browser / Copy Address；日志 rebuilding renderer (1) → windowed browser created；**无 IDE 错误弹窗**
+- [x] **强杀整个 cef_server**（PID 38928 + 5 个子进程）：面板退回浏览器组件、页面空白，但 IDE 不崩、**0 内部错误**、0 未捕获异常
+- [ ] **崩溃卡 Retry 按钮未响应**：合成点击只把焦点移到按钮上，回车未触发 action（卡面文案写的是「Press Retry」）。属既有崩溃恢复交互的问题，与本批健壮性改动无关，但值得下一轮单独查
