@@ -1,0 +1,2 @@
+- 修复浏览器预览页签在地址只有一个路径段时显示成服务器地址的问题，现在正确显示页面文件名
+- Fixed browser preview tabs showing the server address instead of the page file name when the address has a single path segment
