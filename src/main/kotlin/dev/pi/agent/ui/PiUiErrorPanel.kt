@@ -47,7 +47,11 @@ class PiUiErrorPanel(
         column.add(detailArea(), BorderLayout.CENTER)
 
         val actions = JPanel(FlowLayout(FlowLayout.LEFT, 8, 0)).apply { isOpaque = false }
-        if (url != null && onRetry != null) {
+        // 051: the Retry button no longer needs an address to exist — the
+        // card it sits on may be the only way back for a user whose local
+        // UI server is down, and "Retry" is what makes the panel usable
+        // again instead of a dead end.
+        if (onRetry != null) {
             actions.add(JButton("Retry").apply { addActionListener { onRetry.invoke() } })
         }
         if (url != null) {

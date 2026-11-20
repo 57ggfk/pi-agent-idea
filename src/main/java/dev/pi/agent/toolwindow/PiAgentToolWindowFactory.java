@@ -2,6 +2,7 @@ package dev.pi.agent.toolwindow;
 
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
+import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.Messages;
@@ -48,6 +49,21 @@ public class PiAgentToolWindowFactory implements ToolWindowFactory {
 
     /** 019 D8: at most four pi instances per project (the "+" greys out past this). */
     private static final int MAX_INSTANCES = 4;
+
+    /**
+     * 051: minimum gap between two AUTOMATIC recreations of an emptied tool
+     * window.
+     *
+     * The 049 build recreated the content as fast as the platform reported
+     * removals: eleven fresh JBCefBrowser instances in twelve seconds on a
+     * real machine (idea.log 2026-11-20 13:35:29→13:35:41), and five in
+     * seventeen seconds on 2026-11-18 12:05 — every recreation was removed
+     * again, and each removal asked for another one.
+     *
+     * A user closing the last Pi tab still gets its content back at once;
+     * only a SECOND automatic recreation inside this gap is held back.
+     */
+    private static final long MIN_RECREATE_GAP_MS = 5_000L;
 
     @Override
     public void createToolWindowContent(Project project, ToolWindow toolWindow) {
@@ -136,6 +152,12 @@ public class PiAgentToolWindowFactory implements ToolWindowFactory {
             this.project = project;
         }
 
+        /**
+         * 051: when the last automatic recreation happened, for the rate
+         * limit in {@link #autoRecreateAllowed}.
+         */
+        private long lastRecreateMs = 0L;
+
         @Override
         public void contentRemoved(@NotNull ContentManagerEvent event) {
             Content removed = event.getContent();
@@ -194,14 +216,30 @@ public class PiAgentToolWindowFactory implements ToolWindowFactory {
          * its fresh content.
          */
         private void recreateIfLast(Project project) {
-            com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
-                if (project.isDisposed()) return;
+            ApplicationManager.getApplication().invokeLater(() -> {
                 ToolWindow toolWindow = toolWindowOf(project);
                 if (toolWindow == null) return;
                 ContentManager manager = toolWindow.getContentManager();
+                // 051: "the IDE is going away" is several different states,
+                // and none of them wants a brand new JBCefBrowser.
+                boolean disposing = project.isDisposed()
+                        || ApplicationManager.getApplication().isDisposed()
+                        || toolWindow.isDisposed()
+                        || manager.isDisposed();
+                long now = System.currentTimeMillis();
+                if (!autoRecreateAllowed(disposing, now, lastRecreateMs, MIN_RECREATE_GAP_MS)) {
+                    if (disposing) {
+                        LOG.info("Pi Agent tool window closed to empty while the IDE is closing; not recreating");
+                    } else {
+                        LOG.warn("Pi Agent tool window closed to empty right after an automatic recreate;"
+                                + " not recreating again yet");
+                    }
+                    return;
+                }
                 for (Content content : manager.getContents()) {
                     if (content.getComponent() instanceof PiAgentPanel) return;
                 }
+                lastRecreateMs = now;
                 LOG.info("Pi Agent tool window closed to empty; recreating a clean content");
                 createInstanceContent(project, toolWindow, nextInstanceId(toolWindow));
                 if (!toolWindow.isVisible()) {
@@ -231,6 +269,33 @@ public class PiAgentToolWindowFactory implements ToolWindowFactory {
         int n = 1;
         while (used.contains(n)) n++;
         return n;
+    }
+
+    /**
+     * 051: the rate limit for automatic recreations of an emptied tool
+     * window. Pure, so it can be unit-tested without a project.
+     *
+     * Two gates, and both are needed:
+     *
+     * <ul>
+     *   <li>while the IDE or the project is closing there is nothing worth
+     *       recreating — the window is being torn down;</li>
+     *   <li>a second automatic recreation inside {@code minGapMs} is held
+     *       back, because the 049 build recreated the content as fast as the
+     *       platform reported removals (eleven JBCefBrowser instances in
+     *       twelve seconds on a real machine): every recreation was removed
+     *       again, and each removal asked for another one.</li>
+     * </ul>
+     *
+     * @param disposing whether the IDE/project/tool window is going away.
+     * @param nowMs current wall-clock time.
+     * @param lastRecreateMs when the last automatic recreation happened, or 0.
+     * @param minGapMs minimum gap between two automatic recreations.
+     */
+    static boolean autoRecreateAllowed(boolean disposing, long nowMs, long lastRecreateMs, long minGapMs) {
+        if (disposing) return false;
+        if (lastRecreateMs == 0L) return true;
+        return nowMs - lastRecreateMs >= minGapMs;
     }
 
     private JComponent buildContent(Project project, int instanceId) {

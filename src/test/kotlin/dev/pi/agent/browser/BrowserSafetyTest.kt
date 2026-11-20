@@ -68,4 +68,31 @@ class BrowserSafetyTest {
         }
         assertEquals(false, result)
     }
+
+    @Test
+    fun `a platform Error subclass degrades to the default too`() {
+        // 051: the funnel caught Exception only, so a dead native peer
+        // answering with a LinkageError still killed the EDT task and
+        // produced the "IDE Internal Errors" balloon the user reported.
+        var reported: String? = null
+        val result = BrowserSafety.guard("canGoBack", false, { reported = it }) {
+            throw NoClassDefFoundError("com/jetbrains/cef/remote/browser/RemoteBrowser")
+        }
+        assertEquals(false, result, "a dead native peer must read as 'cannot go back'")
+        val log = reported ?: error("the failure must be reported")
+        assertTrue(log.contains("NoClassDefFoundError"), "the failure kind must be logged")
+    }
+
+    @Test
+    fun `an exhausted heap is not swallowed as a browser glitch`() {
+        // VirtualMachineError is fatal by contract: reporting it as a
+        // "browser glitch" and continuing would hide the real cause.
+        var reported: String? = null
+        val thrown = runCatching {
+            BrowserSafety.guard("loadURL", Unit, { reported = it }) { throw OutOfMemoryError("heap") }
+        }
+        assertTrue(thrown.isFailure, "an exhausted heap must propagate")
+        assertTrue(thrown.exceptionOrNull() is OutOfMemoryError)
+        assertNull(reported, "a fatal VM error is not a failure to report")
+    }
 }
