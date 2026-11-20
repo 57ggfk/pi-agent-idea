@@ -601,3 +601,15 @@
 - [ ] **F-213 下载体验——未验（BLOCKED，如实报）**：通知 reveal 动作、下载进度 echo、bridge ide.downloadFile 均以「下载成功落盘」为前提，而 F-110 未过（onBeforeDownload 不触发、无落盘无通知），无从验证；代码侧已核对存在（bridge 新方法等），bundle reveal 动作是否在包内未单独核对
 - [ ] **F-214 dev server 自动探测——未过**：聊天让 AI 以自动探测模式（不传 url）调 pi_browser open → 返回 error（3.0s）「Pi browser: FAILED — no loopback dev server found to auto-detect (nothing listening)…」——但 8931 全程在监听（本轮全部测试都在用它）；纯函数单测绿但真机 netstat 解析没找到任何候选。降级文案本身模型可读（这部分符合修复声明）
 - [ ] **F-215 弹窗接续/cookie——未过（部分）**：loopback 弹窗用户可见行为仍为原位接续（anchor blank 点击→?nav=1，crop-r2-f103.png）；但插件日志显示路由决策为「browser popup intercepted: … -> CefDefault」（idea.log 02:36:15/02:37:51 两行）——显式 in-place 路由未按声明接管，实际仍走 CEF 默认；cookie 清理动作无任何 UI 入口，真机无法触发（源码存在）；登录态/存储模式依旧缺失（048 已声明推迟）——核心诉求未解决
+
+### 049 复验轮 2（用户授权修复批，2026-11-20 真机三重建装复验）
+
+- [x] F-110 下载：地址栏导航 download-sample.bin → 拦截日志 + Downloads 落盘 2048B + 页面保持原页（导航正确取消）；F-213 通知/reveal 通道随之解锁
+- [x] F-201：历史弹窗（Recent URLs）开启时 Esc→Ctrl+A→输入新 URL→Enter → 正确导航（自绘弹窗不抢焦点修复生效，无 Bing 空搜索）
+- [x] F-109：905px 窄窗工具条 Go 恒在（BorderLayout 结构性保证）；六钮紧凑
+- [x] F-206：post-load console.error 经 tap→buffer→agent 回读，AI 原样引用两条标记（加载期错误为结构性限制：tap 在 LoadEnd 安装，加载前已发的错误不可回溯——如实登记）
+- [x] F-207：alert 经 shim→jsQuery→kernel→通知链路，两条 "JavaScript alert" 通知可见（confirm/prompt 自动安全应答为设计取舍）
+- [x] F-208：两次 pi_browser open 不同 URL → 两页签共存、URL 各自独立（P-7 修复：页签 2+ OSR）
+- [x] F-214：无端口 open → 启发式探测 0.3s 命中 8931（read-first 死锁修复 + 常见端口直连快筛）
+- [x] F-202 部分：windowed 页签键盘拦截为平台限制（onPreKeyEvent 不触发，无 JBCefKeyboardListener 可用）——Alt+←/→ 仅 OSR 页签可用，文档化；Ctrl+L/Esc/Ctrl+R/F5 正常
+- [x] F-209：DevTools 按钮意外验证可用（坐标试错点击打开 DevTools 窗口）
