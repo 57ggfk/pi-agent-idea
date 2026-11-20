@@ -79,19 +79,40 @@ object DevServerProbe {
     }
 
     /**
-     * Sweeps the loopback listeners (minus [excludePorts]) and returns the
-     * first HTML responder. [command] runs the platform netstat command,
-     * [probe] performs the GET — both injectable for tests.
+     * F-214 round 5: common dev-server ports probed FIRST (Cursor-style
+     * heuristic - connect-refused fails in milliseconds, so a miss costs
+     * almost nothing). The netstat sweep only runs if the heuristic missed,
+     * because spawning netstat from the IDE process context hangs past any
+     * watchdog on this machine (Java-reproduced: the same read-first spawn
+     * completes in 2.5s OUTSIDE the IDE - the hang is IDE-context specific,
+     * mechanism unidentified after 4 rounds).
+     */
+    internal val HEURISTIC_PORTS = listOf(
+        3000, 3001, 4200, 5000, 5173, 5174, 8000, 8001, 8080, 8081,
+        8888, 8931, 9000, 9090,
+    )
+
+    /**
+     * Heuristic-first sweep: common dev ports, then the netstat listener
+     * enumeration (minus [excludePorts]) if the budget remains. Returns the
+     * first HTML responder. [command]/[probe] injectable for tests.
      */
     fun detect(
         excludePorts: Set<Int> = emptySet(),
         command: (String) -> String? = ::runCommand,
         probe: (Int) -> Pair<Int, String>? = ::probeRoot,
     ): ProbeResult {
+        val deadline = System.currentTimeMillis() + TOTAL_BUDGET_MS
+        for (port in HEURISTIC_PORTS.filter { it !in excludePorts }) {
+            if (System.currentTimeMillis() > deadline) break
+            val (status, body) = probe(port) ?: continue
+            if (looksLikeHtml(status, body)) {
+                return ProbeResult("http://127.0.0.1:$port/", listOf(port))
+            }
+        }
         val ports = command("detect listening ports")?.let { parseListeningPorts(it) }.orEmpty()
             .filter { it !in excludePorts }
             .filter { it !in UNPROBEABLE_PORTS }
-        val deadline = System.currentTimeMillis() + TOTAL_BUDGET_MS
         for (port in ports) {
             if (System.currentTimeMillis() > deadline) break
             val (status, body) = probe(port) ?: continue

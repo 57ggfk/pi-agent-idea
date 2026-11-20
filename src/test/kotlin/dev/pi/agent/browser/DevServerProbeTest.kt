@@ -82,12 +82,32 @@ class DevServerProbeTest {
             },
         )
         assertEquals("http://127.0.0.1:8931/", result.detected)
-        // Ports sweep in ascending order: 8931 answers HTML first, so the
-        // sweep stops before ever trying the dead 9223 listener.
-        assertEquals(listOf(8931), probed)
-        // RPC noise and excluded UI-server port never get probed.
-        assertFalse(135 in result.candidates)
-        assertFalse(8933 in result.candidates)
+        // Two-phase order: the heuristic list runs first (all miss until
+        // 8931 answers HTML), and the netstat sweep NEVER runs because the
+        // heuristic already found the server (round-5 semantics).
+        assertEquals(
+            DevServerProbe.HEURISTIC_PORTS.takeWhile { it != 8931 } + 8931,
+            probed,
+        )
+        // netstat-only listeners (RPC noise, excluded ports) never probed.
+        assertFalse(135 in probed)
+        assertFalse(9223 in probed)
+        assertFalse(8933 in probed)
+    }
+
+    @Test
+    fun `netstat sweep still runs when the heuristic misses`() {
+        val netstat = "TCP    127.0.0.1:12345         0.0.0.0:0              LISTENING       7"
+        val result = DevServerProbe.detect(
+            command = { netstat },
+            probe = { port ->
+                if (port == 12345) 200 to "<html>on a non-heuristic port</html>" else 404 to "nope"
+            },
+        )
+        assertEquals("http://127.0.0.1:12345/", result.detected)
+        // The heuristic phase probed its whole list (all refused), then the
+        // sweep found 12345.
+        assertTrue(12345 in result.candidates)
     }
 
     @Test
