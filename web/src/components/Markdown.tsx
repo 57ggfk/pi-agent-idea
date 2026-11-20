@@ -435,6 +435,22 @@ function addImageCopyButtons(root: ParentNode) {
   for (const el of targets) wrapWithImageCopy(el, label);
 }
 
+/**
+ * 047/049: 把「复制为图片」入口挂到代码块标题栏的**最左**（复制按钮之前）。
+ *
+ * 入口是等图形渲染出来后才有的（图形没画出来就没有可复制的图），所以它天然
+ * 是「后到」的——append 就会掉到操作栏最右边。改成 insertBefore(firstChild)
+ * 才能让它稳定待在最左：图形后到、按钮先到，顺序不受到达时机影响。
+ */
+function addImageCopyEntry(actions: Element | null | undefined, getTarget: () => Element | null) {
+  if (!actions) return;
+  if (actions.querySelector(".copy-image-btn")) return;
+  actions.insertBefore(
+    makeImageCopyButton(i18n.t("markdown.copyAsImage"), getTarget),
+    actions.firstChild,
+  );
+}
+
 /** Builds the shared 「复制为图片」 button. `getTarget` reads the graphic at
  * click time; failures flash ✗ and recover — never a silent no-op (003). */
 function makeImageCopyButton(label: string, getTarget: () => Element | null) {
@@ -876,9 +892,7 @@ function renderSvgFence(code: HTMLElement): boolean {
   code.style.display = "none";
   syncGutter(pre);
   const actions = pre.closest(".block-shell")?.querySelector(".block-actions");
-  if (actions && !actions.querySelector(".copy-image-btn")) {
-    actions.appendChild(makeImageCopyButton(i18n.t("markdown.copyAsImage"), () => fig?.querySelector("svg") ?? null));
-  }
+  addImageCopyEntry(actions, () => fig?.querySelector("svg") ?? null);
   return true;
 }
 
@@ -979,9 +993,7 @@ async function renderMermaidBlock(code: HTMLElement, theme: MermaidTheme): Promi
   // 047: the figure landed after the effect ran — ride its pre's shared
   // action bar (degraded blocks never get a figure, hence no entry).
   const actions = pre.closest(".block-shell")?.querySelector(".block-actions");
-  if (actions && !actions.querySelector(".copy-image-btn")) {
-    actions.appendChild(makeImageCopyButton(i18n.t("markdown.copyAsImage"), () => fig!.querySelector("svg")));
-  }
+  addImageCopyEntry(actions, () => fig!.querySelector("svg"));
   return true;
 }
 
