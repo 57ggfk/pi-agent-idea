@@ -70,7 +70,11 @@ class PiBrowserEditorProvider : FileEditorProvider, DumbAware {
             )
             if (!afterScheme.contains('/')) return authority.ifBlank { "page" }
             val path = afterScheme.substringAfter('/').substringBefore('#').substringBefore('?')
-            val segment = path.substringAfterLast('/', "").trim()
+            // substringAfterLast's missing-delimiter default (the whole path)
+            // is REQUIRED here: a single-segment path ("…/bubbles.html") has
+            // no '/' inside, and an explicit "" made every such page fall
+            // back to the host name (055 真机: pi-preview 页签全叫 127.0.0.1).
+            val segment = path.substringAfterLast('/').trim()
             if (segment.isBlank()) return authority.ifBlank { "page" }
             return decodePercent(segment)
                 ?.takeIf { it.isNotBlank() && !it.contains('/') && !it.contains('\\') }
