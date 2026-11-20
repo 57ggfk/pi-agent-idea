@@ -412,7 +412,11 @@ button {
 }
 
 .markdown .block-shell > pre {
-  flex: 1 1 auto;
+  /* basis 必须 0 而不是 auto：壳是 flex-wrap，basis=auto 对 pre 取
+     max-content，代码最长行一超过面板宽，pre 整个被 wrap 到行号槽
+     下面自己一行 —— 行号和代码分家（048 真机缺陷，r57 复现）。
+     basis=0 后 pre 永远和行号槽同排，长行由 overflow-x 接管。 */
+  flex: 1 1 0%;
   /* flex 子项默认 min-width:auto —— 不置 0 的话长行会把外壳撑宽、
      pre 自己的 overflow-x:auto 就不生效了。 */
   min-width: 0;
