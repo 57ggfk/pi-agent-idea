@@ -158,28 +158,29 @@ class LocalUiServer private constructor() {
     }
 
     /**
-     * `/preview/<token>` — one-shot local-HTML preview (spec 048 T016 /
-     * plan D10). The [dev.pi.agent.browser.PiBrowserPreviews] registry owns
-     * the security model: unguessable token, single use, 5-minute TTL, served
-     * path locked to the preview temp root. No bridge auth applies and
-     * NOTHING here is logged — the token is a capability, and capability
-     * URLs do not belong in a log file users paste into bug reports.
+     * `/preview/<token>` — local-HTML preview (spec 048 T016 / plan D10).
+     * The [dev.pi.agent.browser.PiBrowserPreviews] registry owns the security
+     * model: unguessable token, 5-minute TTL, served path locked to the
+     * preview temp root. No bridge auth applies and NOTHING here is logged —
+     * the token is a capability, and capability URLs do not belong in a log
+     * file users paste into bug reports.
      */
     private fun servePreview(exchange: HttpExchange, uriPath: String) {
         val token = uriPath.removePrefix("/preview/").takeWhile { it != '?' }
-        val file = dev.pi.agent.browser.PiBrowserPreviews.take(token)
-        if (file == null) {
+        // The registry owns the file's lifetime: serve() hands over bytes and
+        // never deletes the snapshot, because the panel re-fetches this URL on
+        // reload. Deleting it here killed every refresh with a 404 card.
+        val bytes = dev.pi.agent.browser.PiBrowserPreviews.serve(token)
+        if (bytes == null) {
             exchange.sendResponseHeaders(404, -1)
             exchange.close()
             return
         }
         try {
-            val bytes = Files.readAllBytes(file)
             exchange.responseHeaders.add("Content-Type", "text/html; charset=utf-8")
             exchange.responseHeaders.add("Cache-Control", "no-store")
             exchange.sendResponseHeaders(200, bytes.size.toLong())
             exchange.responseBody.use { it.write(bytes) }
-            Files.deleteIfExists(file)
         } catch (e: Exception) {
             LOG.warn("preview serve failed", e)
             exchange.sendResponseHeaders(500, -1)
