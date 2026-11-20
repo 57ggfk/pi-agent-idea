@@ -630,4 +630,15 @@
 - [x] **按钮收窄**：导航行只剩后退/前进/刷新三个方形图标钮（24×24 = 16px 图标 + 余量），原先被平台默认度量拉到 ~60px 宽的按钮框消失；地址栏重新吸收整行剩余宽度，Go 与新下拉钮恒在行尾
 - [x] **下拉收编**：Go 右侧新增「⋮」下拉钮，点开为标题「Browser actions」的菜单，两项分别为 **Open DevTools**（放大镜图标）与 **Open in system browser**（箭头图标，未加载页面时置灰）
 - [x] **预览渲染无回归**：预览页签照旧渲染出 PI-BROWSER-PROBE-H1 / path= / open target=_blank / anchor blank，地址栏回显 http://127.0.0.1:50108/preview/<token>
-- [ ] **DevTools 弹窗空白——根因查明，修复方案待用户拍板**：窗口实拍（624×631 全白），AX 树可见原生标题栏与地址栏 devtools://devtools/bundled/devtools_app.html?remoteBase=...；前端本身正常（bundled 资源加载完成，_createAppUI 440ms / _showAppUI 85ms / _initializeTarget 27ms，CDP 378 条命令）——**空白出在合成层**：12:32:43.870（DevTools 窗口创建那一刻）起 CEF GPU 进程连环崩溃 exit_code=-2147483645（STATUS_BREAKPOINT），到 12:35 累计 180 次 GPU 退出 + 98 次 Failed to send GpuControl.CreateCommandBuffer，窗口拿不到 command buffer → 画不出内容。修法是 IDE 级开关 -Dide.browser.jcef.gpu.disable=true（或 registry 键 ide.browser.jcef.gpu.disable）后重启 IDE（JCEF 知识库「预览白屏/黑屏」条目 IDEA-299007）；另一条路线是开 CDP 端口 + 系统浏览器打开真 DevTools（本机 CDP 未开：9222 未监听、无 DevToolsActivePort 文件）
+- [x] **DevTools 弹窗空白——已修复（机器侧 JCEF GPU 开关）**：根因是本机 CEF GPU 进程连环崩溃（exit_code=-2147483645 / STATUS_BREAKPOINT），窗口拿不到 GPU command buffer → 属机器环境问题、非插件缺陷；处置与复验见下一节：窗口实拍（624×631 全白），AX 树可见原生标题栏与地址栏 devtools://devtools/bundled/devtools_app.html?remoteBase=...；前端本身正常（bundled 资源加载完成，_createAppUI 440ms / _showAppUI 85ms / _initializeTarget 27ms，CDP 378 条命令）——**空白出在合成层**：12:32:43.870（DevTools 窗口创建那一刻）起 CEF GPU 进程连环崩溃 exit_code=-2147483645（STATUS_BREAKPOINT），到 12:35 累计 180 次 GPU 退出 + 98 次 Failed to send GpuControl.CreateCommandBuffer，窗口拿不到 command buffer → 画不出内容。修法是 IDE 级开关 -Dide.browser.jcef.gpu.disable=true（或 registry 键 ide.browser.jcef.gpu.disable）后重启 IDE（JCEF 知识库「预览白屏/黑屏」条目 IDEA-299007）；另一条路线是开 CDP 端口 + 系统浏览器打开真 DevTools（本机 CDP 未开：9222 未监听、无 DevToolsActivePort 文件）
+
+### 049 DevTools 空白修复真机复验（2026-11-20，机器侧 JCEF GPU 开关）
+
+处置：定位生效的 vmoptions 为环境变量 `IDEA_VM_OPTIONS` 指向的 `C:\Users\Administrator\AppData\Local\JetBrains\jetbra\vmoptions\idea.vmoptions`（`%APPDATA%\JetBrains\IntelliJIdea2026.2\idea64.exe.vmoptions` 不生效），先备份 `idea.vmoptions.bak-20261120-123916`，再以 `[System.IO.File]::WriteAllText`（LF / UTF-8 无 BOM）追加独立一行 `-Dide.browser.jcef.gpu.disable=true`；重启 IDEA（新 PID 11400）。
+
+- [x] **参数生效**：idea.log 启动行 `JVM options: [...]` 匹配 `ide.browser.jcef.gpu.disable=true` = True
+- [x] **GPU 崩溃归零**：新实例 `jcef_chromium_11400.log` 0 字节 / GPU 退出 0 次 / `Failed to send GpuControl.CreateCommandBuffer` 0 次；旧实例 `jcef_chromium_33912.log` 21905 行、GPU 退出 385 次
+- [x] **DevTools 窗口正常出画面**：下拉「Open DevTools」开出的原生窗口（cef_server.exe PID 23332，标题 DevTools - 127.0.0.1:62121/preview/<token>，626×633 @ 312,216）实拍为完整 DevTools 界面——顶部标签 Elements/Console/Sources/Network/Performance/Memory；Elements 树含 `<!DOCTYPE html>` / `<html lang="zh">` / `h1#marker = PI-BROWSER-PROBE-H1` / `p#urlslot = path=` / `button#popup = open target=_blank` / `a[href="#nav1"]`；样式面板显示 element.style 与 body 规则
+- [x] **右上角关闭钮可用**：AX 树含原生 TitleBar 的 Minimize / Maximize / Close；点击 Close 后窗口从窗口列表消失（cef_server 窗口数 0）
+- [x] **重开路径复验**：关闭后再次「⋮」→ Open DevTools（回车触发），新窗口正常渲染，任务栏出现 DevTools 条目
+- [x] **预览页无回归**：关 GPU 后预览页签照旧渲染 PI-BROWSER-PROBE-H1 / path= / open target=_blank / anchor blank
