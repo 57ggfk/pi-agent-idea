@@ -74,7 +74,8 @@ test("zero regression: copy button still lands on diff blocks (038 FR-005)", asy
   await page.getByTestId("send-btn").click();
   const pre = page.locator(".markdown pre").first();
   await expect(pre.locator("code.language-diff")).toHaveCount(1, { timeout: 30_000 });
-  await expect(pre.locator(".code-copy-btn")).toHaveCount(1);
+  // The action bar sits in the block's shell, outside the `pre`.
+  await expect(pre.locator("xpath=..").locator(".block-actions .code-copy-btn")).toHaveCount(1);
 });
 
 test("diff block header paths are clickable file links (041 #9)", async ({ page }) => {

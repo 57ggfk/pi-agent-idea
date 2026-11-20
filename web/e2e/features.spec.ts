@@ -49,6 +49,9 @@ test("code block copy button copies the code and flashes a check", async ({ page
   });
 
   const copyBtn = page.locator(".code-copy-btn").first();
+  // The action bar is hover-only (041/047 revision): hover the block first,
+  // exactly like a user does — the bar lives above the block, outside it.
+  await page.locator(".markdown .block-shell pre").first().hover();
   await expect(copyBtn).toBeVisible();
   await copyBtn.click();
   await expect(copyBtn).toHaveText("✓");
