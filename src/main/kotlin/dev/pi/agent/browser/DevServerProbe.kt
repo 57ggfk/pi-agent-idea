@@ -111,8 +111,12 @@ object DevServerProbe {
 
     private fun runCommand(@Suppress("unused") command: String): String? = try {
         val windows = System.getProperty("os.name", "").lowercase().contains("win")
+        // F-214 round 3: spawn netstat DIRECTLY. The cmd /c wrapper hung the
+        // whole 10s budget when spawned from the IDE process (GUI process +
+        // console layer), while the same netstat completes in ~1s from a
+        // shell. netstat.exe lives in System32 - always on PATH.
         val process = if (windows) {
-            ProcessBuilder("cmd", "/c", "netstat -ano")
+            ProcessBuilder("netstat", "-ano")
         } else {
             val os = System.getProperty("os.name", "").lowercase()
             if (os.contains("mac")) ProcessBuilder("sh", "-c", "lsof -nP -iTCP -sTCP:LISTEN")
