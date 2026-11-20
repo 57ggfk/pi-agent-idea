@@ -153,6 +153,12 @@ val syncWebUi = tasks.register<Sync>("syncWebUi") {
 val buildInfoDir = layout.buildDirectory.dir("generated/buildinfo")
 val generateBuildInfo = tasks.register("generateBuildInfo") {
     outputs.dir(buildInfoDir)
+    // Always regenerate: the task declares no inputs, so Gradle would treat
+    // it as up-to-date forever after the first run and ship a stale commit id
+    // (the diagnostics page then names a commit that is not the one in the
+    // jar). Same reasoning as buildWebUi below — a silent no-op here ships
+    // the wrong build metadata.
+    outputs.upToDateWhen { false }
     doLast {
         val commit = try {
             val proc = ProcessBuilder("git", "rev-parse", "--short", "HEAD")
