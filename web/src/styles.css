@@ -420,6 +420,11 @@ button {
   border: 0;
   border-radius: 0;
   background: transparent;
+  /* 049：代码离行号槽的右分隔线只留 6px —— 行号与它那一行代码之间本来
+     隔着「槽的右内边距 + 分隔线 + pre 的左内边距」三段，合计 19px，
+     数字看着像漂在代码左边很远的地方（实测截图）。收到 11px 之后，
+     数字与代码才像一对。 */
+  padding-left: 6px;
 }
 
 /* 048 标题栏：左侧语言类型，右侧操作按钮（常驻可见，不再悬浮出现） */
@@ -479,12 +484,15 @@ button {
 
 /* 048 行号槽：在 pre 之外（pre 横向滚动会裁掉越界的元素）。
    user-select:none —— 鼠标框选代码时行号既不会被选中、也不会进剪贴板。
-   字体/行高由 JS 按代码本体的计算样式同步，保证行号与代码行齐平。 */
+   字体/行高由 JS 按代码本体的计算样式同步，保证行号与代码行齐平。
+   049 间距修订：数字不再紧贴代码块的左边框（原来左内边距为 0，数字几乎
+   粘在边框上），右内边距也收窄 —— 数字夹在「贴边」与「离代码远」之间，
+   看着别扭（实测截图）。现在左 8px / 右 4px，数字与代码成一对。 */
 .code-gutter {
   flex: 0 0 auto;
   user-select: none;
   -webkit-user-select: none;
-  padding-right: 8px;
+  padding: 0 4px 0 8px;
   border-right: 1px solid var(--border);
   background: var(--bg-subtle);
   color: var(--text-tertiary);
