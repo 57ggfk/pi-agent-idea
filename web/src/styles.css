@@ -394,56 +394,55 @@ button {
   font-size: 12px;
 }
 
-/* Copy button injected into fenced code blocks */
-.code-copy-btn {
-  position: absolute;
-  top: 4px;
-  right: 4px;
+/* 041/047 统一按钮外观：内容块上的所有操作按钮（复制 / 在 IDE 打开 /
+   复制为图片）共用一套样式——小号、1px 边、4px 圆角、同一底色，不再各长
+   各的（此前「复制为图片」自成一档，看着跟旁边按钮不像一套）。 */
+.block-action-btn {
   background: var(--bg-input);
   color: var(--text-secondary);
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 1px 6px;
   font-size: 10px;
+  line-height: 1.6;
   cursor: pointer;
-  opacity: 0.85;
+  white-space: nowrap;
+  /* The bar floats above the block, outside it — a faint shadow keeps the
+     buttons readable when they overlap the text above the block. */
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
 }
 
-/* 041 FR-001: Copy + "open in IDE" sit side by side in one anchored
-   container, so the second button never overlaps the first. */
-.code-actions {
+.block-action-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+/* 内容块的操作条：放在块的**上方外侧**（右上角、块之外），悬浮才出现。
+   .block-shell 是壳——代码块自身 overflow-x:auto（横向滚动）会把越界的
+   绝对定位裁掉，操作条必须是 pre 的兄弟节点才能真正「在块之外」。
+   .block-actions 的透明下内边距是「安全桥」：鼠标从块里往上移到按钮的
+   途中没有空隙，按钮不会中途消失（指针进按钮即取消隐藏，见 wireBlockActions）。 */
+.block-shell {
+  position: relative;
+}
+
+.block-actions {
   position: absolute;
-  top: 4px;
-  right: 4px;
+  bottom: 100%;
+  right: 0;
   display: flex;
   gap: 4px;
-  z-index: 1;
+  padding-bottom: 4px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease-in-out;
+  z-index: 3;
 }
 
-.code-actions .code-copy-btn,
-.code-actions .code-ide-btn {
-  position: static;
-}
-
-.code-ide-btn {
-  background: var(--bg-input);
-  color: var(--text-secondary);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 1px 6px;
-  font-size: 10px;
-  cursor: pointer;
-  opacity: 0.85;
-}
-
-.code-ide-btn:hover {
-  border-color: var(--accent);
-  color: var(--text);
-}
-
-.code-copy-btn:hover {
-  border-color: var(--accent);
-  color: var(--text);
+.block-shell.is-actions-visible > .block-actions,
+.copyable-frame.is-actions-visible > .block-actions {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /* Clickable path[:line] references inside messages */
@@ -2758,32 +2757,33 @@ button {
 
 /* 047: the graphic render blocks get a hover-revealed 「复制为图片」 button.
    The frame keeps the block's layout (inline-block shrink-wrap) and hosts the
-   button in its corner; the button must NOT swallow clicks aimed at the block. */
+   action bar; the bar sits ABOVE the graphic and outside it (see .block-actions),
+   the button must NOT swallow clicks aimed at the block. */
 .copyable-frame {
   position: relative;
   display: inline-block;
   max-width: 100%;
 }
 
-.copyable-frame > .copy-image-btn {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  z-index: 2;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg-secondary);
-  color: var(--text);
-  font-size: 11px;
-  padding: 2px 8px;
-  white-space: nowrap;
-  opacity: 0;
-  transition: opacity 0.12s ease-in-out;
-  cursor: pointer;
+/* 窄图形（行内小图标）的操作条比图形本身还宽，放到图形上方就会盖住上一行的
+   文字——给图形留出一条「槽位」，操作条落在槽位里，谁也不挡。
+   padding-top 把图形整体下移（同行文字一起下移，保持基线对齐），
+   操作条改为贴在框顶（top:0），正好落在槽位中。 */
+.copyable-frame[data-lane] {
+  /* 槽位高度由 JS 按操作条实际高度写入（style.paddingTop），保证条永远
+     完全落在图形上方。 */
 }
 
-.copyable-frame:hover > .copy-image-btn {
-  opacity: 1;
+.copyable-frame[data-lane] > .block-actions {
+  top: 0;
+  bottom: auto;
+}
+
+/* 窄图形的操作条比图形宽：往有空间的一侧长（消息列会横向裁剪，长过头按钮
+   就被切掉、点不到了）。 */
+.copyable-frame[data-lane][data-align="left"] > .block-actions {
+  left: 0;
+  right: auto;
 }
 
 /* 044 FR-005: read-only hover preview floating above the input wrap.
