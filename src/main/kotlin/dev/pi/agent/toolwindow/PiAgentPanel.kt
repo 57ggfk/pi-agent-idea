@@ -180,13 +180,12 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
             if (url.isBlank()) return
             val m = model ?: return
             m.addSeparator()
+            // 058：与浏览器面板链接菜单同款四项同款顺序——两个 Pi 目的地相邻，
+            // copy 收尾；ASK 选择器（LinkRouting.linkOptions）三行不动。
             m.addItem(PiBrowserHandlers.MENU_ID_OPEN_SYSTEM, PiAgentBundle.message("browser.link.option.SYSTEM_BROWSER"))
             m.addItem(PiBrowserHandlers.MENU_ID_OPEN_EMBEDDED, PiAgentBundle.message("browser.link.option.EMBEDDED"))
+            m.addItem(PiBrowserHandlers.MENU_ID_OPEN_PI_EDITOR, PiAgentBundle.message("browser.link.option.PI_EDITOR"))
             m.addItem(PiBrowserHandlers.MENU_ID_COPY_LINK, PiAgentBundle.message("browser.link.option.COPY"))
-            // 058 用户指令：054 当时刻意留在浏览器面板的第 4 项（当时 LinkOption
-            // 被 ASK 选择器共用的顾虑），现在补进 chat 面板——复用浏览器面板的
-            // 菜单 id 与 bundle 键，ASK 选择器（LinkRouting.linkOptions）不动。
-            m.addItem(PiBrowserHandlers.MENU_ID_OPEN_PI_EDITOR, PiAgentBundle.message("browser.open.in.editor.menu"))
         }
 
         override fun onContextMenuCommand(
