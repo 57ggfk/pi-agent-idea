@@ -56,13 +56,31 @@ test("the composer floats: no divider line and no strip band (floating-box)", as
 test("the breathing room lives at the content end, not above the input box", async ({ page }) => {
   // 内测反馈：浮框式后输入框上方又出现一层留白（composer 顶部 12px），与列表
   // 底部 24px 叠成两段——留白应全部住在滚动内容区的末尾，输入框直接贴边界。
+  // 注意：滚动容器自身的 padding-bottom 在内容溢出时不计入滚动范围（Chromium
+  // 行为，真机实测滚到底只剩 12.5px），所以末尾留白是 message-col 里的
+  // 22px spacer + 列的 14px flex gap = 36px，随内容滚动、必然生效。
+  await page.getByTestId("composer-input").fill("end gap probe");
+  await page.getByTestId("send-btn").click();
+  await expect(page.getByTestId("status-dot")).toHaveClass(/busy/, { timeout: 20_000 });
+  await expect(page.getByTestId("status-dot")).not.toHaveClass(/busy/, { timeout: 30_000 });
   const s = await page.evaluate(() => {
-    const cs = getComputedStyle(document.querySelector(".composer") as HTMLElement);
-    const ml = getComputedStyle(document.querySelector(".message-list") as HTMLElement);
-    return { composerTop: cs.paddingTop, listBottom: ml.paddingBottom };
+    const list = document.querySelector(".message-list") as HTMLElement;
+    const cs = getComputedStyle(list);
+    const gap = document.querySelector("[data-testid=message-end-gap]") as HTMLElement | null;
+    const last = [...document.querySelectorAll(".markdown")].pop() as HTMLElement;
+    return {
+      composerTop: getComputedStyle(document.querySelector(".composer") as HTMLElement).paddingTop,
+      listBottom: cs.paddingBottom,
+      gapPresent: !!gap,
+      gapH: gap ? gap.offsetHeight : null,
+      visibleEndGap: +(list.getBoundingClientRect().bottom - last.getBoundingClientRect().bottom).toFixed(1),
+    };
   });
   expect(s.composerTop).toBe("0px");
-  expect(s.listBottom).toBe("36px");
+  expect(s.listBottom).toBe("16px");
+  expect(s.gapPresent).toBe(true);
+  expect(s.gapH).toBe(22);
+  expect(s.visibleEndGap).toBeGreaterThanOrEqual(34);
 });
 
 test("the chip row is capped at ~two rows with internal scroll (safety valve)", async ({ page }) => {
