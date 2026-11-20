@@ -54,6 +54,13 @@ class PiBrowserKernel(
 
     private val log = Logger.getInstance(PiBrowserKernel::class.java)
 
+    /**
+     * The carrier's project, reachable from CEF-thread callbacks that must
+     * open IDE UI themselves (054 变更 1: the link menu's "Open in Pi editor"
+     * hops to the EDT and opens an editor tab).
+     */
+    internal val hostProject: Project get() = project
+
     init {
         // One registration covers the whole kernel; carriers must NOT
         // Disposer.register the kernel again (double dispose).
