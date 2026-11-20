@@ -111,11 +111,13 @@ test("zero regression: the copy button still works on the mermaid source (040 FR
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await sendMermaidReply(page);
   // The valid block's code element is hidden but still holds the source; the
-  // broken block's copy button is the plain-path one to exercise.
-  const brokenCopy = reply(page)
+  // broken block's copy button is the plain-path one to exercise. The action
+  // bar lives in the block's shell, outside the `pre`.
+  const brokenPre = reply(page)
     .locator("pre")
-    .filter({ has: page.locator("code.language-mermaid", { hasText: "A --> ];" }) })
-    .locator(".code-copy-btn");
+    .filter({ has: page.locator("code.language-mermaid", { hasText: "A --> ];" }) });
+  const brokenCopy = brokenPre.locator("xpath=..").locator(".code-copy-btn");
+  await brokenPre.hover();
   await brokenCopy.click();
   // The stale-figure heal may reflow the bar right at click time; give the
   // flash a wider window.

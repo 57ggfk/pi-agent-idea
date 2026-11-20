@@ -120,8 +120,12 @@ test("fenced SVG source stays a code block while bare SVG renders (039 #6 bounda
   // "源码可复制" is user-reachable: the shared action bar (Copy + open in IDE)
   // is injected on the fenced source block too.
   const sourcePre = page.locator(".markdown pre", { hasText: 'circle cx="10"' });
-  await expect(sourcePre.locator(".code-copy-btn")).toHaveCount(1);
-  await expect(sourcePre.locator(".code-ide-btn")).toHaveCount(1);
+  // The action bar lives in the block's shell (a sibling of the `pre`), so it
+  // can sit outside the block — the code block scrolls horizontally and would
+  // clip a bar inside it.
+  const sourceActions = sourcePre.locator("xpath=..").locator(".block-actions");
+  await expect(sourceActions.locator(".code-copy-btn")).toHaveCount(1);
+  await expect(sourceActions.locator(".code-ide-btn")).toHaveCount(1);
 });
 
 test("zero regression: file links and code blocks still work with SVG enabled (039 FR-005)", async ({ page }) => {

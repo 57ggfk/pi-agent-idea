@@ -26,8 +26,11 @@ test("mermaid figure gets the button on the shared action bar; click hands a PNG
   await expect(page.getByTestId("status-dot")).not.toHaveClass(/busy/, { timeout: 30_000 });
   // A stale streaming-prefix figure can briefly coexist (040's known
   // transient); any figure-bearing pre carries the button — click the first.
-  const btn = page.locator(".markdown pre .copy-image-btn").first();
+  // The button rides the block's action bar, which lives in the shell (the
+  // bar sits outside the block, above its top-right corner).
+  const btn = page.locator(".markdown .block-shell .copy-image-btn").first();
   await expect(btn).toBeVisible({ timeout: 30_000 });
+  await page.locator(".markdown .block-shell").first().hover();
   await btn.click();
   await expect(btn).toHaveText("✓");
   // The rasterize→bridge round trip is async — poll for the echo.
@@ -36,9 +39,14 @@ test("mermaid figure gets the button on the shared action bar; click hands a PNG
 
 test("bare inline SVG gets the button (047 US2)", async ({ page }) => {
   await send(page, "svg");
+  // Settle the stream first: React rebuilds the whole .markdown HTML on every
+  // delta, so a block that is still being replaced is detached again before
+  // the pointer can settle on it — the hover would never become stable.
+  await expect(page.getByTestId("status-dot")).toHaveClass(/busy/, { timeout: 20_000 });
+  await expect(page.getByTestId("status-dot")).not.toHaveClass(/busy/, { timeout: 30_000 });
   // The legal bare SVG (outside any pre) — wrapped with the button.
   const legal = page.locator(".markdown svg circle[r='8']").first();
-  const frame = legal.locator("xpath=ancestor::span[@class='copyable-frame'][1]");
+  const frame = legal.locator("xpath=ancestor::span[contains(@class,'copyable-frame')][1]");
   await expect(frame).toHaveCount(1);
   const btn = frame.locator("[data-testid='copy-image-btn']");
   await expect(btn).toHaveCount(1);
@@ -69,6 +77,9 @@ test("a failed copy flashes ✗ and recovers (047 US4/FR-005)", async ({ page })
   const display = page.locator(".katex-display").first();
   await expect(display).toHaveCount(1);
   const btn = page.locator(".copyable-frame:has(.katex-display) [data-testid='copy-image-btn']").first();
+  // The bar is hover-only (pointer-events off while hidden) — hover the
+  // block first, exactly like a user.
+  await display.hover();
   await btn.click();
   await expect(btn).toHaveText("✗");
   // The label is locale-dependent (the e2e browser runs with en-US).
@@ -78,9 +89,9 @@ test("a failed copy flashes ✗ and recovers (047 US4/FR-005)", async ({ page })
 test("degraded and code blocks carry no copy-as-image entry (047 FR-007)", async ({ page }) => {
   await send(page, "svg");
   // Both fenced svg source blocks stay code blocks: only Copy + Open in IDE.
-  const preButtons = page.locator(".markdown pre .copy-image-btn");
+  const preButtons = page.locator(".markdown .block-shell .copy-image-btn");
   await expect(preButtons).toHaveCount(0);
-  await expect(page.locator(".markdown pre .code-copy-btn")).toHaveCount(2);
+  await expect(page.locator(".markdown .block-shell .code-copy-btn")).toHaveCount(2);
   // The malicious bare SVG is stripped down to a rect — still an svg element,
   // so it keeps the entry (it renders something); the malformed one renders
   // no svg element at all, so no frame wraps it.
