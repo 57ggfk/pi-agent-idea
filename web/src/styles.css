@@ -394,8 +394,95 @@ button {
   font-size: 12px;
 }
 
+/* 048 内容块外壳：标题栏（左侧语言 + 右侧按钮）+ 行号槽 + 代码本体。
+   外壳负责边框与圆角，壳内的 pre 不再自带边框（否则双层边框）。
+   flex + wrap：标题栏独占一行（flex-basis 100%），行号槽与 pre 并排。 */
+.markdown .block-shell {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  /* pre 的浏览器默认外边距（1em）在壳内会把代码整体顶开、行号对不齐，
+     间距挪到壳上（保持块与正文之间的呼吸感）。 */
+  margin: 12px 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--code-bg);
+  overflow: hidden;
+}
+
+.markdown .block-shell > pre {
+  flex: 1 1 auto;
+  /* flex 子项默认 min-width:auto —— 不置 0 的话长行会把外壳撑宽、
+     pre 自己的 overflow-x:auto 就不生效了。 */
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+/* 048 标题栏：左侧语言类型，右侧操作按钮（常驻可见，不再悬浮出现） */
+.block-header {
+  flex: 0 0 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 6px 3px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+  min-height: 22px;
+}
+
+.block-lang {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 标题栏里的按钮区不再是悬浮条：静态定位、常驻可见。 */
+.block-header .block-actions {
+  position: static;
+  opacity: 1;
+  pointer-events: auto;
+  padding-bottom: 0;
+  box-shadow: none;
+}
+
+/* 048 换行开关的按下态（aria-pressed 由 JS 同步） */
+.block-action-btn.is-on,
+.block-action-btn[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+/* 048 行号槽：在 pre 之外（pre 横向滚动会裁掉越界的元素）。
+   user-select:none —— 鼠标框选代码时行号既不会被选中、也不会进剪贴板。
+   字体/行高由 JS 按代码本体的计算样式同步，保证行号与代码行齐平。 */
+.code-gutter {
+  flex: 0 0 auto;
+  user-select: none;
+  -webkit-user-select: none;
+  padding-right: 8px;
+  border-right: 1px solid var(--border);
+  background: var(--bg-subtle);
+  color: var(--text-tertiary);
+  text-align: right;
+  overflow: hidden;
+}
+
+.code-line-no {
+  display: block;
+}
+
 /* 041/047 统一按钮外观：内容块上的所有操作按钮（复制 / 在 IDE 打开 /
-   复制为图片）共用一套样式——小号、1px 边、4px 圆角、同一底色，不再各长
+   复制为图片 / 换行）共用一套样式——小号、1px 边、4px 圆角、同一底色，不再各长
    各的（此前「复制为图片」自成一档，看着跟旁边按钮不像一套）。 */
 .block-action-btn {
   background: var(--bg-input);
@@ -417,15 +504,12 @@ button {
   color: var(--text);
 }
 
-/* 内容块的操作条：放在块的**上方外侧**（右上角、块之外），悬浮才出现。
+/* 内容块的操作条（行内图形块用）：放在块的**上方外侧**（右上角、块之外），
+   悬浮才出现。
    .block-shell 是壳——代码块自身 overflow-x:auto（横向滚动）会把越界的
    绝对定位裁掉，操作条必须是 pre 的兄弟节点才能真正「在块之外」。
    .block-actions 的透明下内边距是「安全桥」：鼠标从块里往上移到按钮的
    途中没有空隙，按钮不会中途消失（指针进按钮即取消隐藏，见 wireBlockActions）。 */
-.block-shell {
-  position: relative;
-}
-
 .block-actions {
   position: absolute;
   bottom: 100%;
@@ -439,7 +523,6 @@ button {
   z-index: 3;
 }
 
-.block-shell.is-actions-visible > .block-actions,
 .copyable-frame.is-actions-visible > .block-actions {
   opacity: 1;
   pointer-events: auto;
@@ -1127,6 +1210,17 @@ button {
 }
 
 .markdown .mermaid-figure svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* 048: ```svg 围栏渲染出的图形 —— 与 Mermaid 图形同构（居中、尺寸受约束）。 */
+.markdown .svg-figure {
+  text-align: center;
+  overflow: hidden;
+}
+
+.markdown .svg-figure svg {
   max-width: 100%;
   height: auto;
 }
