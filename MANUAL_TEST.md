@@ -758,3 +758,19 @@
 - [x] **5b) 回归：chat 面板链接路由不变**：Pi 1 会话内右键用户消息链接 http://127.0.0.1:8931/probe-browser.html（059-chat-top.png 显示链接、059-chat-linkmenu2.png 菜单）：菜单仅含 在系统浏览器中打开/在 Pi 浏览器中打开/复制链接地址 三项，【无 在 Pi 编辑器中打开】——与源码一致（PiAgentPanel.kt:183-185 仅 append 三项，第 4 项只加入浏览器面板处理器）；工具结果行内 URL 为样式文本非 `<a>`（CDP 扫描全页仅 1 个 a[href]），右键得纯原生菜单（059-chat-linkmenu.png）
 - [x] **5c) 回归：既有工具条行为不变**：地址栏+Enter 导航多次成功（bubbles.html/index.html/target.html，CDP url 同步变化）；页内链接点击导航成功（059-item5-linkclick.png：index.html→target.html）；右键菜单 EMBEDDED 路由原位导航成功（059-item5-embedded.png：就地加载 target.html 未新建页签）；more 弹窗打开 DevTools 成功（059-devtools-probe2.png 检查 linkpage 页面）
 - [ ] **上报疑似既有缺陷（非本批四项变更范围，如实留痕）**：浏览器工具窗口 ←/→ 按钮置灰且点击/Alt+Left 均不导航，而 CEF 会话历史存在（CDP history.length=3）且 JS history.back() 正常回退（target.html→index.html，node CDP 实测）——按钮状态绑定/GoBack 调用失效。四项变更均不触及 back/forward 代码（BrowserPanel.kt:263 backButton→kernel.back() 原样保留）；本轮未重装旧版 zip 基线对比，无法判定引入点，留下轮用旧版对照（现场截图 059-item5-back*.png 存盘）
+
+### 055 agent 双形态 target 批真机复验（2026-11-21，重装轮 060，真实键鼠 + CDP）
+
+> 对象：055 批（pi_browser target 参数双形态 + 页签名修复 + 按钮图标）——AI 可指定内置浏览器两种形态（工具窗页签/编辑器页签）打开页面，缺省跟随上次打开形态；修复 pi-preview 页签单段路径显示成 host 名的存量 bug；「新建浏览器页签」标题动作换地球图标。
+> 门禁：全量 gradlew test 两轮 BUILD SUCCESSFUL（target 批轮 + 页签名修复轮，新增 3 用例全过）；collectChangelog dryRun+buildPlugin exit=0；verifyPlugin 5 目标 Compatible。
+> 重装流程：idea64 归零→15:16 zip 覆盖（主 jar 3579572B）→jetbra vmoptions（CDP 9222）→/json/list 就绪；composer 指令经 CDP 真实键鼠（build/ide-probe/055-cdp-send.mjs）。截图 build/walkthrough/055-*.png（不入库）。
+> 结论：8 组验收项全过；顺带真机发现并修复 1 个 054 存量 bug（页签名单段路径）。
+
+- [x] **1) open target=editor → 编辑器载体打开并渲染**：pi_browser open url=http://127.0.0.1:8932/bubbles.html target=editor → 编辑器区新 pi-preview 页签，漂浮泡泡动画真实渲染，open 返回 ok/state=LOADED/url 一致（055-run-2.png）
+- [x] **2) read/console 不带 target → 跟随上次打开形态**：read（不带 target）url 与 editor 载体当前页一致（agent 汇报原话「确认默认沿用 editor 形式的当前页」）；console（不带 target）返回编辑器内核计数+JSONL 路径（055-chat-1.png）
+- [x] **3) open target=tab → 工具窗页签打开**：open url=…/index.html target=tab → 工具窗「浏览器」页签加载、地址栏同步（055-run-1.png）
+- [x] **4) overflow 双形态 + 当前载体置灰（两载体）**：编辑器形态 ⋮ 弹窗「在 Pi 编辑器打开」置灰、tab 项可用（055-editor-overflow.png）；工具窗浏览器形态反向（055-tw-overflow.png）
+- [x] **5) 形态切换 URL 保持**：编辑器 ⋮→「在 Pi 浏览器页签打开」→ 工具窗新「浏览器」页签加载同一 URL（055-switch-tab2.png）
+- [x] **6) 页签名修复终验（RED→GREEN）**：修复前 bubbles.html（单段路径）两轮页签名均为「pi-preview: 127.0.0.1」而多段 index-dark.html 正确；单测先复现 RED（expected bubbles.html but was 127.0.0.1）→ 一行修复 → 套件 GREEN；15:16 包真机 target=editor 开 bubbles.html →「pi-preview: bubbles.html」（055-crop-final.png）
+- [x] **7) 按钮图标**：工具窗标题动作悬停显现——「新建浏览器页签」为地球图标（AllIcons.General.Web），其后为「新建实例」（055-crop-hover.png）
+- [x] **8) 回归**：404 页照常 LOADED（open 状态机不变）；链接右键/chat 路由/既有工具条未动；pi-preview 页签无「文本|浏览器」切换器（UnknownFileType 既有改动在包内）
