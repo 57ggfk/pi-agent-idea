@@ -203,19 +203,15 @@ internal class PiBrowserHandlers(private val kernel: PiBrowserKernel) {
     // ---- context menu (F-104/F-211: additive, native items preserved) ----
 
     /**
-     * Link right-clicks APPEND the three destination items after a separator
-     * — F-211: the 049 build cleared the whole model, which deleted "open in
+     * Link right-clicks APPEND the destination items after a separator
+     * (054 变更 1: system browser / Pi browser tab / copy / Pi editor) —
+     * F-211: the 049 build cleared the whole model, which deleted "open in
      * new tab / copy link address / save image". Returning false for foreign
      * command ids hands every native item back to CEF.
      */
     val contextMenuHandler = object : CefContextMenuHandlerAdapter() {
         override fun onBeforeContextMenu(browser: CefBrowser, frame: CefFrame?, params: CefContextMenuParams, model: CefMenuModel) {
-            val url = params.linkUrl ?: return
-            if (url.isBlank()) return
-            model.addSeparator()
-            model.addItem(MENU_ID_OPEN_SYSTEM, PiAgentBundle.message("browser.link.option.SYSTEM_BROWSER"))
-            model.addItem(MENU_ID_OPEN_EMBEDDED, PiAgentBundle.message("browser.link.option.EMBEDDED"))
-            model.addItem(MENU_ID_COPY_LINK, PiAgentBundle.message("browser.link.option.COPY"))
+            if (!appendLinkItems(model, params.linkUrl ?: "")) return
         }
 
         override fun onContextMenuCommand(browser: CefBrowser, frame: CefFrame?, params: CefContextMenuParams, commandId: Int, eventFlags: Int): Boolean {
@@ -226,6 +222,12 @@ internal class PiBrowserHandlers(private val kernel: PiBrowserKernel) {
                 MENU_ID_OPEN_EMBEDDED -> kernel.load(url) // in-place: this kernel (editor carrier stays in its tab)
                 MENU_ID_COPY_LINK -> kernel.hopEdt {
                     CopyPasteManager.getInstance().setContents(StringSelection(url))
+                }
+                // 054 变更 1: the link URL opens in an editor-form tab — its
+                // own kernel, this tab stays untouched. EDT hop: the CEF
+                // callback thread must not touch FileEditorManager.
+                MENU_ID_OPEN_PI_EDITOR -> kernel.hopEdt {
+                    PiBrowserEditorProvider.openUrlInEditor(kernel.hostProject, url, null)
                 }
                 else -> return false // native items -> CEF
             }
@@ -369,6 +371,28 @@ internal class PiBrowserHandlers(private val kernel: PiBrowserKernel) {
         val MENU_ID_OPEN_SYSTEM = CefMenuModel.MenuId.MENU_ID_USER_FIRST
         val MENU_ID_OPEN_EMBEDDED = CefMenuModel.MenuId.MENU_ID_USER_FIRST + 1
         val MENU_ID_COPY_LINK = CefMenuModel.MenuId.MENU_ID_USER_FIRST + 2
+
+        /** 054 变更 1: "Open in Pi editor" — the 4th appended destination. */
+        val MENU_ID_OPEN_PI_EDITOR = CefMenuModel.MenuId.MENU_ID_USER_FIRST + 3
+
+        /**
+         * The link menu builder (054 变更 1). Appends one separator + the four
+         * destination items for [url]; returns false WITHOUT touching the
+         * model when the URL is blank (a blank link keeps the pure native
+         * menu). Append-only by contract — never clear/remove native items
+         * (F-211). Pulled out of the handler so the shape (ids, order, count)
+         * is unit-testable headlessly via a reflective recording model
+         * (PiBrowserLinkMenuTest).
+         */
+        internal fun appendLinkItems(model: CefMenuModel, url: String): Boolean {
+            if (url.isBlank()) return false
+            model.addSeparator()
+            model.addItem(MENU_ID_OPEN_SYSTEM, PiAgentBundle.message("browser.link.option.SYSTEM_BROWSER"))
+            model.addItem(MENU_ID_OPEN_EMBEDDED, PiAgentBundle.message("browser.link.option.EMBEDDED"))
+            model.addItem(MENU_ID_COPY_LINK, PiAgentBundle.message("browser.link.option.COPY"))
+            model.addItem(MENU_ID_OPEN_PI_EDITOR, PiAgentBundle.message("browser.link.option.PI_EDITOR"))
+            return true
+        }
 
         private fun defaultReturnValue(method: java.lang.reflect.Method): Any? = when (method.returnType) {
             java.lang.Boolean.TYPE -> false

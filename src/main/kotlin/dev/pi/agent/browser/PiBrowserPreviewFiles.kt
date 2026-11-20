@@ -8,9 +8,11 @@ import com.intellij.testFramework.LightVirtualFile
 /**
  * In-memory handle for the editor-form preview (spec 048 T019, US9 D-track).
  * The tab is a [LightVirtualFile] carrying two userData values: the marker
- * that makes [PiBrowserEditorProvider] accept it, and the preview URL the
- * editor loads on creation. Nothing is persisted — closing the IDE loses the
- * tab, which is fine for a preview.
+ * that makes [PiBrowserEditorProvider] accept it, and the URL the editor
+ * loads on creation — a `/preview/<token>` route OR (054 变更 1/3, via
+ * [PiBrowserEditorProvider.openUrlInEditor] and the actions) a direct
+ * `file:///` URL. Nothing is persisted — closing the IDE loses the tab,
+ * which is fine for a preview.
  */
 object PiBrowserPreviewFiles {
 

@@ -56,7 +56,17 @@ import javax.swing.SwingUtilities
  * (constitution III); the kernel owns exactly one windowed browser, this
  * panel adds no second one (probe P-7).
  */
-class BrowserPanel(private val project: Project, offscreen: Boolean = false) : JPanel(BorderLayout()), Disposable {
+/**
+ * @param carrier which form this panel lives in (054 变更 2) — the
+ *   tool-window tab passes [BrowserCarrier.TOOLWINDOW] (default), the editor
+ *   tab passes [BrowserCarrier.EDITOR]; it greys the matching Open In row in
+ *   the overflow menu ([BrowserCarriers.menuItems]).
+ */
+class BrowserPanel(
+    private val project: Project,
+    offscreen: Boolean = false,
+    private val carrier: BrowserCarrier = BrowserCarrier.TOOLWINDOW,
+) : JPanel(BorderLayout()), Disposable {
 
     private val log = Logger.getInstance(BrowserPanel::class.java)
 
@@ -446,14 +456,19 @@ class BrowserPanel(private val project: Project, offscreen: Boolean = false) : J
     }
 
     /**
-     * The overflow menu: DevTools + the system browser hand-off. Both used to
-     * be plain buttons in the icon row; they live in this menu now so the
-     * nav row keeps navigation only.
+     * The overflow menu: DevTools + the system browser hand-off, plus the
+     * 054 变更 2 "Open In" rows (browser tab / editor tab; the current
+     * carrier's own row is disabled). The first two used to be plain buttons
+     * in the icon row; they live in this menu now so the nav row keeps
+     * navigation only.
      */
     private fun showOverflowMenu(anchor: JButton) {
         val group = DefaultActionGroup()
         group.add(devToolsAction())
         group.add(openExternalAction())
+        for (item in BrowserCarriers.menuItems(carrier)) {
+            group.add(openInAction(item))
+        }
         val popup = JBPopupFactory.getInstance().createActionGroupPopup(
             PiAgentBundle.message("browser.more.title"),
             group,
@@ -489,6 +504,47 @@ class BrowserPanel(private val project: Project, offscreen: Boolean = false) : J
         override fun actionPerformed(e: AnActionEvent) {
             val url = kernel.currentUrl().ifBlank { lastUrl }
             if (url.isNotBlank()) BrowserUtil.browse(url)
+        }
+    }
+
+    /**
+     * 054 变更 2: one "Open In" row — switch the current page to the OTHER
+     * carrier form. [item.enabled] comes from the pure [BrowserCarriers]
+     * rule: the row for THIS panel's own form is disabled (already there).
+     */
+    private fun openInAction(item: BrowserCarriers.MenuItem): AnAction = object : DumbAwareAction(
+        PiAgentBundle.message(
+            when (item.target) {
+                BrowserCarrier.TOOLWINDOW -> "browser.open.in.tab.menu"
+                BrowserCarrier.EDITOR -> "browser.open.in.editor.menu"
+            }
+        ),
+        PiAgentBundle.message(
+            when (item.target) {
+                BrowserCarrier.TOOLWINDOW -> "browser.open.in.tab.tooltip"
+                BrowserCarrier.EDITOR -> "browser.open.in.editor.tooltip"
+            }
+        ),
+        when (item.target) {
+            // General.Web doubles as the link-selector's "Open in Pi browser"
+            // icon; OpenNewTab stands for the editor tab. Both exist on the
+            // 233–243 compile baseline (OpenInToolWindow/OpenInEditor do not).
+            BrowserCarrier.TOOLWINDOW -> AllIcons.General.Web
+            BrowserCarrier.EDITOR -> AllIcons.Actions.OpenNewTab
+        },
+    ) {
+        override fun update(e: AnActionEvent) {
+            e.presentation.isEnabled = item.enabled
+        }
+
+        override fun actionPerformed(e: AnActionEvent) {
+            val url = kernel.currentUrl().ifBlank { lastUrl }
+            if (url.isBlank()) return
+            when (item.target) {
+                BrowserCarrier.TOOLWINDOW -> PiBrowserManager.getInstance(project).open(url)
+                BrowserCarrier.EDITOR ->
+                    PiBrowserEditorProvider.openUrlInEditor(project, url, null)
+            }
         }
     }
 

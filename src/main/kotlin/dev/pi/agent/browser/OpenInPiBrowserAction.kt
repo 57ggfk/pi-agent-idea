@@ -14,10 +14,26 @@ import java.nio.file.Path
 /**
  * "Open in Pi Browser" for project HTML files (spec 048 T017, spec US3).
  *
- * The file is COPIED into the one-shot preview root and served through
- * `/preview/<token>` — never `file://` (hard constraint 2): the browser tab
- * would otherwise hand local-path semantics to an untrusted renderer. The
- * preview copy is a snapshot: the tab shows the file as of open time.
+ * Local files load through a `file:///` URL DIRECTLY (054 变更 3): spec 048
+ * hard constraint 2 ("never `file://` — hand local-path semantics to an
+ * untrusted renderer") was RELAXED by explicit user authorization
+ * (2026-11-21). The relaxation is bounded to exactly this action:
+ *
+ *  - the user ACTIVELY opens a project file via a right-click "Open in Pi
+ *    Browser" — no chat link, no agent tool call, no preview route can
+ *    inject a `file://` navigation into a browser tab;
+ *  - the URL is built from the VFS file the user selected, not from any
+ *    page-supplied string — a renderer cannot point the tab at a new local
+ *    file by itself ([FileUrls.forLocalFile] only ever encodes the path it
+ *    is handed);
+ *  - non-local VFS entries (jar/library files) keep the one-shot preview
+ *    route below, and the chat export preview ([PiBrowserPreviews]) keeps
+ *    its token route — the preview registry never becomes a file:// helper.
+ *
+ * Compared with the old snapshot route this also fixes two real defects: the
+ * open no longer occupies a `/preview/<token>` route (the token TTL outlived
+ * nothing — a reload after TTL turned into a 404 error card), and there is
+ * no token expiry for the tab to fall off of.
  *
  * Action text/description come from the bundle by ID (plugin.xml rule: no
  * `text=` attribute, keys `action.PiAgent.OpenHtmlInBrowser.*`).
@@ -45,14 +61,27 @@ class OpenInPiBrowserAction : AnAction() {
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
         val file = selectedVirtualFile(e) ?: return
-        val snapshot = snapshotIntoPreviewRoot(file)
-        val token = PiBrowserPreviews.register(snapshot)
-        val url = LocalUiServer.getInstance().baseUrl + "preview/" + token
-        PiBrowserManager.getInstance(project).open(url)
+        PiBrowserManager.getInstance(project).open(previewTargetUrl(file))
     }
 
     companion object {
         val HTML_EXTENSIONS = setOf("html", "htm")
+
+        /**
+         * The URL the browser tab should load for [file]. Local project
+         * files: a `file:///` URL built by [FileUrls] (054 变更 3, see the
+         * class comment for the authorization boundary). Non-local VFS
+         * entries: the 048 snapshot route (copy into the preview root + a
+         * one-shot token) — `file.path` there is a jar URL, not a filesystem
+         * path, and the preview root is exactly the whitelisted place for it.
+         */
+        internal fun previewTargetUrl(file: VirtualFile): String {
+            if (file.isInLocalFileSystem) {
+                return FileUrls.forLocalFile(file.path)
+            }
+            val snapshot = snapshotIntoPreviewRoot(file)
+            return LocalUiServer.getInstance().baseUrl + "preview/" + PiBrowserPreviews.register(snapshot)
+        }
 
         /** Copy the file content into the preview root under a flat, unique name. */
         internal fun snapshotIntoPreviewRoot(file: VirtualFile): Path {

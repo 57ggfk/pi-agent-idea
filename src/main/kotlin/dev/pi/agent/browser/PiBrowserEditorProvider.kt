@@ -1,12 +1,14 @@
 package dev.pi.agent.browser
 
 import com.intellij.openapi.fileEditor.FileEditor
+import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.FileEditorPolicy
 import com.intellij.openapi.fileEditor.FileEditorProvider
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.vfs.VirtualFile
+import java.net.URLDecoder
 import javax.swing.JComponent
 
 /**
@@ -29,11 +31,75 @@ class PiBrowserEditorProvider : FileEditorProvider, DumbAware {
     override fun getEditorTypeId(): String = "pi-browser-preview"
 
     override fun getPolicy(): FileEditorPolicy = FileEditorPolicy.NONE
+
+    companion object {
+
+        /**
+         * Static open entry (054 变更 1): opens [url] in an editor-form
+         * browser tab and returns whether it was opened. Shared by the link
+         * right-click menu's "Open in Pi editor" and the overflow menu's
+         * editor switch. The tab is a [LightVirtualFile] carrying the URL in
+         * userData — exactly the claim pattern of [PiBrowserPreviewFiles]
+         * (marker + URL key), so [PiBrowserFileEditor] picks it up on
+         * creation; openFile is an EDT call, callers hop first.
+         */
+        @JvmStatic
+        fun openUrlInEditor(project: Project, url: String, suggestedName: String?): Boolean {
+            if (project.isDisposed) return false
+            if (url.isBlank()) return false
+            val name = suggestedName?.takeIf { it.isNotBlank() } ?: pageNameFromUrl(url)
+            val vf = PiBrowserPreviewFiles.create(name, url)
+            FileEditorManager.getInstance(project).openFile(vf, true)
+            return true
+        }
+
+        /**
+         * Pure tab-title guess from a URL: the last path segment
+         * (percent-decoded), falling back to the host (without port), then
+         * to "page". Unit-tested in [PiBrowserEditorOpenTest].
+         */
+        @JvmStatic
+        fun pageNameFromUrl(url: String): String {
+            val afterScheme = url.trim().substringAfter("://", missingDelimiterValue = "")
+            if (afterScheme.isEmpty()) return "page"
+            // Default missing-delimiter values matter here: a host-only URL
+            // ("http://127.0.0.1:8080") has no '/', a normal authority has no
+            // '@' — either missing case must keep the whole part, not "".
+            val authority = hostWithoutPort(
+                afterScheme.substringBefore('/').substringAfterLast('@'),
+            )
+            if (!afterScheme.contains('/')) return authority.ifBlank { "page" }
+            val path = afterScheme.substringAfter('/').substringBefore('#').substringBefore('?')
+            val segment = path.substringAfterLast('/', "").trim()
+            if (segment.isBlank()) return authority.ifBlank { "page" }
+            return decodePercent(segment)
+                ?.takeIf { it.isNotBlank() && !it.contains('/') && !it.contains('\\') }
+                ?: UrlNormalizer.downloadFileName(segment)
+        }
+
+        /** `host:port` -> `host`; IPv6 literals (`[::1]:8080`) lose the port too. */
+        private fun hostWithoutPort(authority: String): String {
+            val colon = authority.lastIndexOf(':')
+            if (colon <= 0) return authority
+            val port = authority.substring(colon + 1)
+            return if (port.all { it.isDigit() } && port.isNotEmpty()) authority.substring(0, colon) else authority
+        }
+
+        /** Decodes `%XX` escapes only — `+` must stay `+` in a path segment. */
+        private fun decodePercent(segment: String): String? {
+            if (!segment.contains('%')) return segment
+            return try {
+                URLDecoder.decode(segment.replace("+", "%2B"), Charsets.UTF_8)
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
 }
 
 internal class PiBrowserFileEditor(private val project: Project, private val file: VirtualFile) : FileEditor {
 
-    private val panel = BrowserPanel(project)
+    private val panel = BrowserPanel(project, carrier = BrowserCarrier.EDITOR)
 
     init {
         Disposer.register(this, panel)
