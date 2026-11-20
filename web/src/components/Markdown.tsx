@@ -157,7 +157,7 @@ function addImageCopyButtons(root: ParentNode) {
 function makeImageCopyButton(label: string, getTarget: () => Element | null) {
   const btn = document.createElement("button");
   btn.type = "button";
-  btn.className = "copy-image-btn";
+  btn.className = "copy-image-btn block-action-btn";
   btn.dataset.testid = "copy-image-btn";
   btn.textContent = label;
   const recover = () => {
@@ -190,14 +190,130 @@ function makeImageCopyButton(label: string, getTarget: () => Element | null) {
   return btn;
 }
 
-/** Wraps ONE rendered block with the hover copy-as-image button (047). */
+/**
+ * Wraps ONE rendered block with the hover copy-as-image button (047).
+ *
+ * The button lives in a `.block-actions` bar that sits **above the graphic and
+ * outside it** — the graphic's own box stays clean (no pill painted over the
+ * artwork), and the bar's transparent bottom padding bridges the gap so the
+ * pointer can travel from the graphic up to the button without the button
+ * disappearing on the way.
+ */
 function wrapWithImageCopy(el: Element, label: string) {
   if (el.closest(".copyable-frame")) return;
   const frame = document.createElement("span");
   frame.className = "copyable-frame";
   el.parentNode?.insertBefore(frame, el);
   frame.appendChild(el);
-  frame.appendChild(makeImageCopyButton(label, () => frame.firstElementChild));
+  const actions = document.createElement("span");
+  actions.className = "block-actions";
+  actions.appendChild(makeImageCopyButton(label, () => el));
+  frame.insertBefore(actions, el);
+  // A narrow graphic (an inline icon) cannot host the bar above itself: the
+  // bar is WIDER than the graphic, so it would hang over the text on the line
+  // above and hide it. Reserve a lane inside the frame for the bar instead —
+  // the graphic keeps its place and nothing gets covered.
+  requestAnimationFrame(() => {
+    const barW = actions.offsetWidth;
+    const frameW = frame.getBoundingClientRect().width;
+    // A data attribute, not a class: the frame's class stays exactly
+    // "copyable-frame" so existing selectors keep matching it.
+    if (barW <= frameW + 8) return;
+    frame.dataset.lane = "1";
+    // The lane is exactly as tall as the bar (plus 2px of air), so the bar
+    // sits fully ABOVE the graphic and never overlaps its top edge.
+    frame.style.paddingTop = `${actions.offsetHeight + 2}px`;
+    // Which way the bar may grow: the message column clips horizontally, so a
+    // bar that grows past the column's edge loses its left (or right) end and
+    // the button becomes unclickable. Grow towards the roomier side.
+    const r = frame.getBoundingClientRect();
+    let clip: Element | null = frame.parentElement;
+    while (clip && getComputedStyle(clip).overflowX === "visible") clip = clip.parentElement;
+    const cr = clip ? clip.getBoundingClientRect() : { left: 0, right: window.innerWidth };
+    const spaceLeft = r.left - cr.left;
+    const spaceRight = cr.right - r.right;
+    frame.dataset.align = spaceLeft >= barW + 8 || spaceLeft >= spaceRight ? "right" : "left";
+  });
+  wireBlockActions(frame, actions);
+}
+
+/**
+ * Last known pointer position.
+ *
+ * The browser's `:hover` state cannot be trusted right after React rebuilds
+ * the DOM (every streaming delta replaces the whole innerHTML): the new
+ * element reports no hover until the pointer moves again, so a hover-revealed
+ * bar would blink out mid-stream. The pointer's coordinates are stable, so
+ * the reveal is driven by them instead.
+ */
+let pointerAt: { x: number; y: number } | null = null;
+let pointerBound = false;
+
+function rememberPointer() {
+  if (pointerBound) return;
+  pointerBound = true;
+  window.addEventListener(
+    "mousemove",
+    (e) => {
+      pointerAt = { x: e.clientX, y: e.clientY };
+    },
+    { passive: true },
+  );
+}
+
+/** Is the remembered pointer inside this element's box? */
+function pointerInside(el: Element): boolean {
+  if (!pointerAt) return false;
+  const r = el.getBoundingClientRect();
+  return pointerAt.x >= r.left && pointerAt.x <= r.right && pointerAt.y >= r.top && pointerAt.y <= r.bottom;
+}
+
+/**
+ * Wires the hover behaviour of a block's action bar (041/047).
+ *
+ * The bar sits OUTSIDE the block (above its top-right corner), so the pointer
+ * has to cross a gap on its way up — a plain `:hover` rule would hide the bar
+ * the moment the pointer left the block, and the button could not be clicked.
+ * Hence: show on hover, hide with a short delay, cancel the hide while the
+ * pointer is on the bar (the same treatment the 044 hover preview needed).
+ *
+ * React rebuilds the whole innerHTML on every streaming delta, so the bar is
+ * re-created too: the pointer may not have moved at all — re-check the
+ * pointer's position after the rebuild, otherwise the buttons blink out
+ * mid-stream.
+ */
+function wireBlockActions(block: HTMLElement, actions: HTMLElement) {
+  rememberPointer();
+  let hideTimer: number | null = null;
+  const show = () => {
+    if (hideTimer !== null) {
+      window.clearTimeout(hideTimer);
+      hideTimer = null;
+    }
+    block.classList.add("is-actions-visible");
+  };
+  const hideSoon = () => {
+    if (hideTimer !== null) window.clearTimeout(hideTimer);
+    hideTimer = window.setTimeout(() => {
+      hideTimer = null;
+      block.classList.remove("is-actions-visible");
+    }, 300);
+  };
+  block.addEventListener("mouseenter", show);
+  block.addEventListener("mouseleave", hideSoon);
+  actions.addEventListener("mouseenter", show);
+  actions.addEventListener("mouseleave", hideSoon);
+  requestAnimationFrame(() => {
+    if (!pointerInside(block) && !pointerInside(actions)) return;
+    show();
+    // The bar was just rebuilt (React replaces the whole innerHTML on every
+    // streaming delta): show it WITHOUT the fade, otherwise the buttons
+    // flicker half-transparent while the reply is still streaming.
+    actions.style.transition = "none";
+    requestAnimationFrame(() => {
+      actions.style.transition = "";
+    });
+  });
 }
 
 /**
@@ -266,13 +382,20 @@ function stripDecorativeNewlines(html: string): string {
 }
 
 /**
- * Adds the block action bar in the top-right corner of every fenced code
- * block: Copy + "open in IDE" (041 FR-001, side by side in one container so
- * they never overlap). The ✓/✗ feedback lives in `copiedUntil` (keyed by pre
- * index): React replaces the whole innerHTML on every streaming delta, so the
- * freshly injected button must restore the "✓" state itself until the flash
- * window expires. The IDE button reads `code.textContent` and the
- * `language-*` class at click time (041 US3: streaming, several blocks).
+ * Adds the block action bar **above** every fenced code block: Copy + "open
+ * in IDE" (041 FR-001, side by side in one container so they never overlap).
+ *
+ * The bar is a sibling of the `pre`, not a child: the code block scrolls
+ * horizontally (`overflow-x: auto`), which would clip an absolutely
+ * positioned bar reaching outside the block's box. The shell `.block-shell`
+ * is the positioning context, so the bar can sit in the block's top-right
+ * corner, OUTSIDE the block (the code text is no longer covered by a pill).
+ *
+ * The ✓/✗ feedback lives in `copiedUntil` (keyed by pre index): React
+ * replaces the whole innerHTML on every streaming delta, so the freshly
+ * injected button must restore the "✓" state itself until the flash window
+ * expires. The IDE button reads `code.textContent` and the `language-*`
+ * class at click time (041 US3: streaming, several blocks).
  */
 function addCopyButtons(root: ParentNode, copiedUntil: Map<number, number>, openSnippet: (language: string, text: string) => Promise<boolean>) {
   const now = Date.now();
@@ -282,12 +405,18 @@ function addCopyButtons(root: ParentNode, copiedUntil: Map<number, number>, open
     if (until <= now) copiedUntil.delete(idx);
   }
   Array.from(root.querySelectorAll("pre")).forEach((pre, idx) => {
-    if (pre.querySelector(".code-copy-btn")) return;
+    const host = pre.parentElement;
+    // Already wrapped (this effect ran twice on the same DOM).
+    if (host?.classList.contains("block-shell") && host.querySelector(".code-copy-btn")) return;
+    const shell = document.createElement("div");
+    shell.className = "block-shell";
+    host?.insertBefore(shell, pre);
+    shell.appendChild(pre);
     const actions = document.createElement("div");
-    actions.className = "code-actions";
+    actions.className = "block-actions";
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "code-copy-btn";
+    btn.className = "code-copy-btn block-action-btn";
     const remaining = (copiedUntil.get(idx) ?? 0) - now;
     btn.textContent = remaining > 0 ? "✓" : copyLabel;
     if (remaining > 0) {
@@ -309,7 +438,7 @@ function addCopyButtons(root: ParentNode, copiedUntil: Map<number, number>, open
     });
     const ideBtn = document.createElement("button");
     ideBtn.type = "button";
-    ideBtn.className = "code-ide-btn";
+    ideBtn.className = "code-ide-btn block-action-btn";
     ideBtn.textContent = ideLabel;
     ideBtn.addEventListener("click", (ev) => {
       ev.stopPropagation();
@@ -326,7 +455,8 @@ function addCopyButtons(root: ParentNode, copiedUntil: Map<number, number>, open
     });
     actions.appendChild(btn);
     actions.appendChild(ideBtn);
-    pre.appendChild(actions);
+    shell.insertBefore(actions, pre);
+    wireBlockActions(shell, actions);
   });
 }
 
@@ -416,7 +546,7 @@ export default function Markdown({ text }: { text: string }) {
         fig.innerHTML = svg;
         // 047: the figure landed after the effect ran — ride its pre's shared
         // action bar (degraded blocks never get a figure, hence no entry).
-        const actions = pre.querySelector(".code-actions");
+        const actions = pre.closest(".block-shell")?.querySelector(".block-actions");
         if (actions && !actions.querySelector(".copy-image-btn")) {
           actions.appendChild(makeImageCopyButton(i18n.t("markdown.copyAsImage"), () => fig.querySelector("svg")));
         }
