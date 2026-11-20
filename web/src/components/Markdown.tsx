@@ -11,7 +11,7 @@ import { rasterizeElement } from "../lib/copyAsImage";
 import { parseDiffHeaderPath } from "../lib/diffPaths";
 import { normalizeFootnoteDefs } from "../lib/footnotePreprocess";
 import { markedKatexExtended } from "../lib/katexInline";
-import { renderMermaid } from "../lib/mermaidRender";
+import { renderMermaid, mermaidBuiltInTheme } from "../lib/mermaidRender";
 
 marked.setOptions({ gfm: true, breaks: true });
 // 038 US2: marked ^15 has no GFM footnote support of its own (measured:
@@ -484,6 +484,9 @@ export default function Markdown({ text }: { text: string }) {
   const copiedUntil = useRef<Map<number, number>>(new Map());
   const openFile = usePiStore((s) => s.openFile);
   const openSnippet = usePiStore((s) => s.openSnippet);
+  // The panel theme drives the mermaid palette (2026-11-20): a diagram must
+  // follow the bubble it is drawn in, not stay light in a dark IDE.
+  const theme = usePiStore((s) => s.theme);
 
   useEffect(() => {
     const root = ref.current;
@@ -512,9 +515,12 @@ export default function Markdown({ text }: { text: string }) {
     root.querySelectorAll("pre code.language-mermaid").forEach((el) => {
       const code = el as HTMLElement;
       const source = code.textContent ?? "";
-      if (!source.trim() || code.dataset.mermaidDone === source) return;
-      code.dataset.mermaidDone = source;
-      void renderMermaid(source).then((svg) => {
+      // The theme is part of the marker: switching the panel theme must
+      // re-render the diagram in the new palette.
+      const marker = `${theme}#${source}`;
+      if (!source.trim() || code.dataset.mermaidDone === marker) return;
+      code.dataset.mermaidDone = marker;
+      void renderMermaid(source, theme).then((svg) => {
         const pre = code.closest("pre");
         if (!pre || !pre.isConnected) return;
         // The rendered source must still be the block's CURRENT text: a late
@@ -522,6 +528,9 @@ export default function Markdown({ text }: { text: string }) {
         // diagram over the grown block, nor heal a figure it does not own.
         const current = pre.querySelector("code.language-mermaid")?.textContent ?? "";
         if (current !== source) return;
+        // Nor may a late render of the PREVIOUS theme paint over the new one:
+        // a theme switch starts a second render, which then owns this block.
+        if (code.dataset.mermaidDone !== marker) return;
         if (!svg) {
           // 047 找到的 040 流式遗留：a VALID streaming prefix rendered a
           // figure whose block later grew into a broken source — nothing
@@ -544,6 +553,9 @@ export default function Markdown({ text }: { text: string }) {
           code.style.display = "none";
         }
         fig.innerHTML = svg;
+        // Which mermaid theme the figure was drawn with — the diagram must
+        // follow the panel, not stay a light-mode widget in a dark bubble.
+        fig.dataset.mermaidTheme = mermaidBuiltInTheme() ?? "default";
         // 047: the figure landed after the effect ran — ride its pre's shared
         // action bar (degraded blocks never get a figure, hence no entry).
         const actions = pre.closest(".block-shell")?.querySelector(".block-actions");
@@ -552,7 +564,7 @@ export default function Markdown({ text }: { text: string }) {
         }
       });
     });
-  }, [html, openSnippet]);
+  }, [html, openSnippet, theme]);
 
   // One delegated handler covers links rendered via dangerouslySetInnerHTML.
   const onContainerClick = (e: MouseEvent<HTMLDivElement>) => {
