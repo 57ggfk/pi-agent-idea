@@ -37,4 +37,17 @@ object BrowserCarriers {
      */
     fun menuItems(carrier: BrowserCarrier): List<MenuItem> =
         BrowserCarrier.entries.map { MenuItem(it, enabled = it != carrier) }
+
+    /**
+     * 054 agent dual-form (user-directed): the pi_browser `target` param →
+     * carrier. Absent stays null — the caller falls back to the agent's
+     * LAST-USED carrier so follow-up read/scroll/console reach the panel the
+     * open landed on. Any other value is rejected by the codec before this
+     * runs; mapping it to null keeps this function total.
+     */
+    fun carrierFor(target: String?): BrowserCarrier? = when (target) {
+        "tab" -> BrowserCarrier.TOOLWINDOW
+        "editor" -> BrowserCarrier.EDITOR
+        else -> null
+    }
 }

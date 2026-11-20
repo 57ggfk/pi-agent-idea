@@ -1,0 +1,2 @@
+- pi_browser 工具新增 target 参数：AI 可指定在内置浏览器的工具窗页签或编辑器页签两种形态打开页面，后续读取/滚动/控制台自动跟随上次打开的形态
+- The pi_browser tool gains a target parameter: the AI can open a page in either the embedded browser's tool-window tab or an editor-tab preview, and follow-up read/scroll/console calls follow the last opened form

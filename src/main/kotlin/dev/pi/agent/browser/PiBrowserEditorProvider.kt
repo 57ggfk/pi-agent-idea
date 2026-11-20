@@ -108,6 +108,9 @@ internal class PiBrowserFileEditor(private val project: Project, private val fil
 
     override fun getComponent(): JComponent = panel
 
+    /** 054 agent dual-form: the agent's read/scroll/console resolve through this panel. */
+    internal fun agentPanel(): BrowserPanel = panel
+
     override fun getPreferredFocusedComponent(): JComponent? = null
 
     /**

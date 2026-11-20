@@ -23,6 +23,14 @@ val SCROLL_DIRECTIONS = setOf("down", "up")
 val READ_FORMATS = setOf("html", "text")
 
 /**
+ * 054: which carrier the agent's browser action targets — the tool-window
+ * tab (`tab`, the 048 default) or the editor-form preview (`editor`, 054
+ * 变更 1: the link right-click menu's "Open in Pi editor"). Absent means
+ * "wherever the last `open` landed" ([PiBrowserManager.lastAgentCarrier]).
+ */
+val BROWSER_TARGETS = setOf("tab", "editor")
+
+/**
  * One parsed agent-browser request. [url] is required for RELOAD, ignored by
  * READ, and OPTIONAL for OPEN since F-214: an absent url means "auto-detect
  * the dev server port" ([DevServerProbe]) — the Cursor-2.0-style awareness
@@ -42,6 +50,8 @@ data class AgentBrowserRequest(
     val format: String? = null,
     val consoleLimit: Int? = null,
     val consoleSince: Int? = null,
+    /** 054: "tab" = tool-window tab, "editor" = editor-form preview; null = the last-opened carrier. */
+    val target: String? = null,
 )
 
 object AgentBrowserRequestCodec {
@@ -55,9 +65,9 @@ object AgentBrowserRequestCodec {
     /** A selector is a lookup key, not a payload — keep it a bounded one. */
     const val MAX_SELECTOR_CHARS = 200
 
-    private val KNOWN_PARAMS = setOf("action", "url", "direction", "amount", "selector", "format", "limit", "since")
+    private val KNOWN_PARAMS = setOf("action", "url", "direction", "amount", "selector", "format", "limit", "since", "target")
 
-    private val KNOWN_PARAMS_HINT = "use action/url/direction/amount/selector/format/limit/since"
+    private val KNOWN_PARAMS_HINT = "use action/url/target/direction/amount/selector/format/limit/since"
 
     /**
      * Parses the POST body of `/agent-browser`. Anything malformed degrades to
@@ -117,6 +127,10 @@ object AgentBrowserRequestCodec {
             ?: if (obj.containsKey("since")) {
                 return AgentParseResult.Invalid("since must be a non-negative line index")
             } else null
+        val target = text(obj, "target")?.trim()?.lowercase()
+        if (target != null && target !in BROWSER_TARGETS) {
+            return AgentParseResult.Invalid("target must be \"tab\" or \"editor\"")
+        }
         return AgentParseResult.Valid(
             AgentBrowserRequest(
                 action = action,
@@ -127,6 +141,7 @@ object AgentBrowserRequestCodec {
                 format = format,
                 consoleLimit = limit?.roundToInt()?.coerceIn(1, MAX_CONSOLE_LIMIT),
                 consoleSince = since?.roundToInt()?.coerceAtLeast(0),
+                target = target,
             ),
         )
     }

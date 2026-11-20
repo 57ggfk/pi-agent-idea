@@ -9,14 +9,19 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 /**
- * Executes the pi_browser tool's requests against the tool-window browser
- * tab (spec 049 D2/D8). Runs on the LocalUiServer HTTP executor thread; every
- * Swing/EDT touch hops through invokeAndWait, and the load-completion wait is
- * a plain @Volatile-state poll — never an EDT block (plan §风险).
+ * Executes the pi_browser tool's requests against the browser (spec 049
+ * D2/D8, 054 agent dual-form). Runs on the LocalUiServer HTTP executor
+ * thread; every Swing/EDT touch hops through invokeAndWait, and the
+ * load-completion wait is a plain @Volatile-state poll — never an EDT block
+ * (plan §风险).
  *
- * The agent drives ONLY the tool-window carrier kernel (plan D8): no second
- * windowed browser is ever created here (048 P-7), and the editor carrier is
- * unaffected.
+ * 054 agent dual-form (user-directed "AI 两种形态都支持"): an explicit
+ * `target` picks the tool-window tab or the editor-form preview; a
+ * target-less call follows [PiBrowserManager.lastAgentCarrier] — the form
+ * the agent last opened into — so open + follow-up read/scroll/console hit
+ * the same kernel. The tool-window tab count rules (048 P-7) are unchanged:
+ * this creates no extra windowed browser there, and the editor carrier's
+ * kernel belongs to its own preview tab.
  */
 object AgentBrowserTool {
 
@@ -51,15 +56,26 @@ object AgentBrowserTool {
     fun execute(project: Project, request: AgentBrowserRequest, bridgeToken: String?): JsonObject {
         val violation = AgentBrowserRequestCodec.bridgeTokenViolation(request.url, bridgeToken)
         if (violation != null) return failure(violation)
+        val carrier = resolveCarrier(project, request.target)
 
         return when (request.action) {
-            AgentAction.READ -> read(project, request)
-            AgentAction.OPEN -> open(project, request.url ?: "")
-            AgentAction.RELOAD -> reload(project)
-            AgentAction.SCROLL -> scroll(project, request)
-            AgentAction.CONSOLE -> console(project, request)
+            AgentAction.READ -> read(project, carrier, request)
+            AgentAction.OPEN -> open(project, request.url ?: "", carrier)
+            AgentAction.RELOAD -> reload(project, carrier)
+            AgentAction.SCROLL -> scroll(project, carrier, request)
+            AgentAction.CONSOLE -> console(project, carrier, request)
         }
     }
+
+    /**
+     * 054 agent dual-form: explicit `target` ("tab"/"editor", codec-validated)
+     * picks the carrier; absent → the carrier the agent LAST opened into
+     * (tool-window default) — the "AI decides by situation" contract, where
+     * the situation is what the agent itself did earlier in this project.
+     */
+    internal fun resolveCarrier(project: Project, target: String?): BrowserCarrier =
+        BrowserCarriers.carrierFor(target)
+            ?: PiBrowserManager.getInstance(project).lastAgentCarrier
 
     /**
      * F-214: `open` without a URL runs the loopback dev-server probe
@@ -67,7 +83,7 @@ object AgentBrowserTool {
      * shell round-trip per verification. The plugin's own UI-server port is
      * excluded (that is the chat SPA, never a dev server).
      */
-    private fun open(project: Project, url: String): JsonObject {
+    private fun open(project: Project, url: String, carrier: BrowserCarrier): JsonObject {
         var normalized: String?
         var autoDetected = false
         var candidates: List<Int> = emptyList()
@@ -100,8 +116,12 @@ object AgentBrowserTool {
         // F-208 round 2: open returns the exact panel it landed on (EDT-exact,
         // no selection-lag guesswork) — the walkthrough caught the poll-based
         // lookup navigating the PREVIOUSLY selected tab as well.
-        val panel = manager.open(normalized)
-            ?: return failure("browser tool window is unavailable", normalized)
+        val panel = manager.open(normalized, carrier)
+            ?: return failure(
+                if (carrier == BrowserCarrier.EDITOR) "browser editor tab is unavailable"
+                else "browser tool window is unavailable",
+                normalized,
+            )
         // Wait for the navigate to at least start before polling, so a stale
         // LOADED from the previous page cannot pass as the new page's state.
         if (runOnEdt { panel.agentLoad(normalized) } == null) {
@@ -112,9 +132,9 @@ object AgentBrowserTool {
         return finishWithSnapshot(kernel, state, autoDetected, candidates)
     }
 
-    private fun reload(project: Project): JsonObject {
+    private fun reload(project: Project, carrier: BrowserCarrier): JsonObject {
         val manager = PiBrowserManager.getInstance(project)
-        val panel = manager.browserPanel()
+        val panel = manager.agentPanel(carrier)
             ?: return failure(NO_TAB_REASON)
         if (runOnEdt { panel.agentReload() } == null) {
             return failure("browser tab did not initialize")
@@ -124,9 +144,9 @@ object AgentBrowserTool {
         return finishWithSnapshot(kernel, state)
     }
 
-    private fun read(project: Project, request: AgentBrowserRequest): JsonObject {
+    private fun read(project: Project, carrier: BrowserCarrier, request: AgentBrowserRequest): JsonObject {
         val manager = PiBrowserManager.getInstance(project)
-        val panel = manager.browserPanel()
+        val panel = manager.agentPanel(carrier)
             ?: return failure(NO_TAB_REASON)
         val kernel = panel.agentKernel()
         // 053 B2: a selector excerpts that element instead of the whole page.
@@ -144,9 +164,9 @@ object AgentBrowserTool {
      * `scrollY` attached. The kernel owns the single-flight and the timeout;
      * a failed scroll answers with a plain failure, never a stale snapshot.
      */
-    private fun scroll(project: Project, request: AgentBrowserRequest): JsonObject {
+    private fun scroll(project: Project, carrier: BrowserCarrier, request: AgentBrowserRequest): JsonObject {
         val manager = PiBrowserManager.getInstance(project)
-        val panel = manager.browserPanel()
+        val panel = manager.agentPanel(carrier)
             ?: return failure(NO_TAB_REASON)
         val kernel = panel.agentKernel()
         val direction = request.scrollDirection ?: DEFAULT_SCROLL_DIRECTION
@@ -170,9 +190,9 @@ object AgentBrowserTool {
      * response names — the agent greps it instead of the plugin shipping the
      * whole history into the context.
      */
-    private fun console(project: Project, request: AgentBrowserRequest): JsonObject {
+    private fun console(project: Project, carrier: BrowserCarrier, request: AgentBrowserRequest): JsonObject {
         val manager = PiBrowserManager.getInstance(project)
-        val panel = manager.browserPanel()
+        val panel = manager.agentPanel(carrier)
             ?: return failure(NO_TAB_REASON)
         val kernel = panel.agentKernel()
         val since = (request.consoleSince ?: 0).coerceAtLeast(0)
