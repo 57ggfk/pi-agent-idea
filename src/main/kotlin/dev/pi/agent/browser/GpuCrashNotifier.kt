@@ -35,6 +35,8 @@ internal object GpuCrashNotifier {
             return
         }
 
+        log.info("Pi Agent: showing the GPU crash notification (" + launches + " crashes)")
+
         notification.addAction(
             NotificationAction.createSimpleExpiring(PiAgentBundle.message("notify.gpuCrash.action.disable")) {
                 disableGpuAndRestart()
@@ -60,6 +62,7 @@ internal object GpuCrashNotifier {
      * clean and degrades to the manual recipe when the key is unavailable.
      */
     private fun disableGpuAndRestart() {
+        log.info("Pi Agent: GPU crash action — disabling GPU acceleration and restarting the IDE")
         if (setGpuDisabled()) {
             ApplicationManager.getApplication().restart()
         } else {
@@ -89,6 +92,7 @@ internal object GpuCrashNotifier {
 
     /** The manual recipe — the fallback when the one-click route is unavailable. */
     private fun showManualFix() {
+        log.info("Pi Agent: GPU crash action — showing the manual fix")
         try {
             NotificationGroupManager.getInstance()
                 .getNotificationGroup(NOTIFICATION_GROUP)

@@ -24,6 +24,7 @@ import dev.pi.agent.browser.PiBrowserHandlers
 import dev.pi.agent.browser.PiBrowserManager
 import dev.pi.agent.browser.PiDownloader
 import dev.pi.agent.browser.JcefBrowserZoom
+import dev.pi.agent.browser.JcefLogLevelGuard
 import dev.pi.agent.process.PiProcessManager
 import dev.pi.agent.settings.PiAgentSettings
 import dev.pi.agent.ui.LocalUiServer
@@ -570,6 +571,10 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
         }
 
         try {
+            // 052: this may be the FIRST browser of the session, and creating
+            // it freezes the JCEF log level. Ask for the level that makes GPU
+            // crashes readable before that happens.
+            JcefLogLevelGuard.ensure()
             val created = JBCefBrowser()
             browser = created
             created.jbCefClient.addRequestHandler(linkHandler, created.cefBrowser)
