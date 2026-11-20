@@ -124,7 +124,8 @@ public class PiAgentToolWindowFactory implements ToolWindowFactory {
 
         NewBrowserAction(Project project) {
             super(PiAgentBundle.message("toolwindow.new.browser"),
-                    PiAgentBundle.message("toolwindow.new.browser.tooltip"), null);
+                    PiAgentBundle.message("toolwindow.new.browser.tooltip"),
+                    AllIcons.General.Web);
             this.project = project;
         }
 
