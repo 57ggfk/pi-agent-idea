@@ -187,8 +187,13 @@ object PageSnapshotSanitizer {
      * Embeds [raw] as a JS string literal: JSON-style escaping (quotes,
      * backslashes, control characters) is valid inside a JS string, so a
      * hostile selector stays inert string content — never code.
+     *
+     * 057: shared with the action scripts (click selector / type text /
+     * evaluate code embed the same way) — one escaping implementation, so
+     * the destroyer set (quotes, backslashes, newlines, CJK, `</script>`)
+     * is locked once in PageSnapshotSanitizerTest + BrowserActionScriptsTest.
      */
-    private fun jsString(raw: String): String {
+    internal fun jsString(raw: String): String {
         val sb = StringBuilder(raw.length + 2)
         sb.append('"')
         for (ch in raw) {

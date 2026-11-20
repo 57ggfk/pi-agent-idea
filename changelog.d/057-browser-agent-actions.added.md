@@ -1,0 +1,2 @@
+- pi_browser 工具新增操作层动作：click/type（CSS selector 定位，合成完整鼠标事件序列与 React 兼容的原生 value setter 输入）、evaluate（页面内执行 JS 并取回结果），均回传页面快照与 tab 字段，并新增 agent-actions 夹具页供真机验证
+- The pi_browser tool gains an operation layer: click/type (CSS selector targeting with full synthetic mouse sequences and React-compatible native value setter typing) and evaluate (run JS in the page and get its value back), each answering with a fresh page snapshot and the tab field, plus an agent-actions fixture page for real-machine verification

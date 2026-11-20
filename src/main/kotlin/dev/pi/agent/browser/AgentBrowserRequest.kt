@@ -7,9 +7,9 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.math.roundToInt
 
-/** What the pi_browser tool asked the IDE to do (spec 049 D1/D2, 053 B1, 056 list). */
+/** What the pi_browser tool asked the IDE to do (spec 049 D1/D2, 053 B1, 056 list, 057 操作层). */
 enum class AgentAction {
-    OPEN, READ, RELOAD, SCROLL, CONSOLE, LIST;
+    OPEN, READ, RELOAD, SCROLL, CONSOLE, LIST, CLICK, TYPE, EVALUATE;
 
     companion object {
         fun from(raw: String?): AgentAction? = AgentAction.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) }
@@ -60,6 +60,10 @@ data class AgentBrowserRequest(
      * precedence (the codec accepts both — see AgentBrowserTool).
      */
     val tab: String? = null,
+    /** 057 TYPE: the text to write into the matched element (≤ [AgentBrowserRequestCodec.MAX_ACTION_TEXT_CHARS]). */
+    val text: String? = null,
+    /** 057 EVALUATE: the JS to run in the page (≤ [AgentBrowserRequestCodec.MAX_EVALUATE_JS_CHARS]). */
+    val js: String? = null,
 )
 
 object AgentBrowserRequestCodec {
@@ -73,9 +77,17 @@ object AgentBrowserRequestCodec {
     /** A selector is a lookup key, not a payload — keep it a bounded one. */
     const val MAX_SELECTOR_CHARS = 200
 
-    private val KNOWN_PARAMS = setOf("action", "url", "direction", "amount", "selector", "format", "limit", "since", "target", "tab")
+    /** 057 TYPE: the text payload is bounded (5,000 chars). */
+    const val MAX_ACTION_TEXT_CHARS = 5_000
 
-    private val KNOWN_PARAMS_HINT = "use action/url/target/tab/direction/amount/selector/format/limit/since"
+    /** 057 EVALUATE: the JS payload is bounded (10,000 chars). */
+    const val MAX_EVALUATE_JS_CHARS = 10_000
+
+    private val KNOWN_PARAMS = setOf(
+        "action", "url", "direction", "amount", "selector", "format", "limit", "since", "target", "tab", "text", "js",
+    )
+
+    private val KNOWN_PARAMS_HINT = "use action/url/target/tab/direction/amount/selector/format/limit/since/text/js"
 
     /**
      * Parses the POST body of `/agent-browser`. Anything malformed degrades to
@@ -91,7 +103,7 @@ object AgentBrowserRequestCodec {
             val obj = Json.parseToJsonElement(body).jsonObject
             val action = AgentAction.from(text(obj, "action"))
             if (action == null) {
-                AgentParseResult.Invalid("unknown action; use open/read/reload/scroll/console/list")
+                AgentParseResult.Invalid("unknown action; use open/read/reload/scroll/console/list/click/type/evaluate")
             } else {
                 val unknown = obj.keys.firstOrNull { it !in KNOWN_PARAMS }
                 if (unknown != null) {
@@ -122,7 +134,17 @@ object AgentBrowserRequestCodec {
             ?: if (obj.containsKey("amount")) {
                 return AgentParseResult.Invalid("amount must be a number between 1 and $MAX_SCROLL_AMOUNT")
             } else null
-        val selector = text(obj, "selector")?.trim()?.take(MAX_SELECTOR_CHARS)
+        // 057: for the OPERATION actions an over-long selector is rejected —
+        // silent truncation could match a DIFFERENT element and mislead the
+        // model. READ keeps its 053 truncation (existing contract unchanged).
+        val rawSelector = text(obj, "selector")?.trim()
+        val selector = when {
+            rawSelector == null -> null
+            action == AgentAction.READ -> rawSelector.take(MAX_SELECTOR_CHARS)
+            rawSelector.length > MAX_SELECTOR_CHARS ->
+                return AgentParseResult.Invalid("selector must be at most $MAX_SELECTOR_CHARS characters")
+            else -> rawSelector
+        }
         val format = text(obj, "format")?.trim()?.lowercase()
         if (format != null && format !in READ_FORMATS) {
             return AgentParseResult.Invalid("format must be \"html\" or \"text\"")
@@ -148,6 +170,35 @@ object AgentBrowserRequestCodec {
                 "tab must be a tab id like t1 or e2 (as returned by open/list results), got \"$tab\"",
             )
         }
+        // 057 payloads — length caps are codec-level (over-limit = model-
+        // readable error, never a silent truncation of code the page runs).
+        val actionText = text(obj, "text")
+        if (actionText != null && actionText.length > MAX_ACTION_TEXT_CHARS) {
+            return AgentParseResult.Invalid("text must be at most $MAX_ACTION_TEXT_CHARS characters")
+        }
+        val actionJs = text(obj, "js")
+        if (actionJs != null && actionJs.length > MAX_EVALUATE_JS_CHARS) {
+            return AgentParseResult.Invalid("js must be at most $MAX_EVALUATE_JS_CHARS characters")
+        }
+        // 057 required params — the model must see WHAT is missing, not a
+        // runtime no-op that looks like success.
+        when (action) {
+            AgentAction.CLICK -> if (selector.isNullOrBlank()) {
+                return AgentParseResult.Invalid("action click requires a selector (the element to click)")
+            }
+            AgentAction.TYPE -> {
+                if (selector.isNullOrBlank()) {
+                    return AgentParseResult.Invalid("action type requires a selector (the element to fill)")
+                }
+                if (actionText.isNullOrBlank()) {
+                    return AgentParseResult.Invalid("action type requires text (what to enter into the element)")
+                }
+            }
+            AgentAction.EVALUATE -> if (actionJs.isNullOrBlank()) {
+                return AgentParseResult.Invalid("action evaluate requires js (the JavaScript to run in the page)")
+            }
+            else -> {}
+        }
         return AgentParseResult.Valid(
             AgentBrowserRequest(
                 action = action,
@@ -160,6 +211,8 @@ object AgentBrowserRequestCodec {
                 consoleSince = since?.roundToInt()?.coerceAtLeast(0),
                 target = target,
                 tab = tab,
+                text = actionText,
+                js = actionJs,
             ),
         )
     }

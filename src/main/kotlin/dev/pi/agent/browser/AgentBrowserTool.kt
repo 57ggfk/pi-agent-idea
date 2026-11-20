@@ -64,6 +64,9 @@ object AgentBrowserTool {
             AgentAction.SCROLL -> scroll(project, request)
             AgentAction.CONSOLE -> console(project, request)
             AgentAction.LIST -> list(project)
+            AgentAction.CLICK -> click(project, request)
+            AgentAction.TYPE -> type(project, request)
+            AgentAction.EVALUATE -> evaluate(project, request)
         }
     }
 
@@ -294,6 +297,110 @@ object AgentBrowserTool {
     private fun list(project: Project): JsonObject =
         listResponse(PiBrowserManager.getInstance(project).listTabs())
 
+    // ---- 057 浏览器操作层: click / type / evaluate ----
+
+    /**
+     * 057 CLICK: synthetic mouse event sequence on the matched element. The
+     * execution mirrors scroll's contract: a completed round-trip (hit OR
+     * miss) answers with the page snapshot + the click verdict; a dead
+     * round-trip (no page/timeout/throw) is a plain model-readable failure.
+     * The matched element's text is named `elementText` — the snapshot's own
+     * `text` field already occupies the name.
+     */
+    private fun click(project: Project, request: AgentBrowserRequest): JsonObject {
+        val lookup = resolveAgentPanel(project, request)
+        val panel = lookup.panel ?: return failure(lookup.missReason ?: NO_TAB_REASON)
+        val kernel = panel.agentKernel()
+        val selector = request.selector ?: return failure("action click requires a selector", tab = lookup.tabId)
+        val result = try {
+            kernel.clickElement(selector).get(LOAD_WAIT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
+        } catch (e: Exception) {
+            ActionResult.failure("click did not return: " + LogSafe.truncate(e.message))
+        }
+        if (!result.ok) {
+            return actionFailure(result.reason ?: "click failed", result.error, kernel.lastKnownUrl, lookup.tabId)
+        }
+        val verdict = if (result.found == true) {
+            buildJsonObject {
+                put("found", true)
+                result.tag?.let { put("tag", it) }
+                result.text?.let { put("elementText", it) }
+            }
+        } else {
+            buildJsonObject {
+                put("found", false)
+                put("reason", result.reason ?: "element not found")
+            }
+        }
+        return finishWithSnapshot(kernel, kernel.state.name, tab = lookup.tabId, actionFields = verdict)
+    }
+
+    /** 057 TYPE: write [request.text] into the matched element (React-compatible). */
+    private fun type(project: Project, request: AgentBrowserRequest): JsonObject {
+        val lookup = resolveAgentPanel(project, request)
+        val panel = lookup.panel ?: return failure(lookup.missReason ?: NO_TAB_REASON)
+        val kernel = panel.agentKernel()
+        val selector = request.selector ?: return failure("action type requires a selector", tab = lookup.tabId)
+        val text = request.text ?: return failure("action type requires text", tab = lookup.tabId)
+        val result = try {
+            kernel.typeText(selector, text).get(LOAD_WAIT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
+        } catch (e: Exception) {
+            ActionResult.failure("type did not return: " + LogSafe.truncate(e.message))
+        }
+        if (!result.ok) {
+            return actionFailure(result.reason ?: "type failed", result.error, kernel.lastKnownUrl, lookup.tabId)
+        }
+        val verdict = if (result.found == true) {
+            buildJsonObject {
+                put("found", true)
+                put("typed", result.typed ?: text.length)
+            }
+        } else {
+            buildJsonObject {
+                put("found", false)
+                put("reason", result.reason ?: "element not found")
+            }
+        }
+        return finishWithSnapshot(kernel, kernel.state.name, tab = lookup.tabId, actionFields = verdict)
+    }
+
+    /** 057 EVALUATE: run the user's JS in the page; the completion value comes back as a string. */
+    private fun evaluate(project: Project, request: AgentBrowserRequest): JsonObject {
+        val lookup = resolveAgentPanel(project, request)
+        val panel = lookup.panel ?: return failure(lookup.missReason ?: NO_TAB_REASON)
+        val kernel = panel.agentKernel()
+        val js = request.js ?: return failure("action evaluate requires js", tab = lookup.tabId)
+        val result = try {
+            kernel.evaluateJs(js).get(LOAD_WAIT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
+        } catch (e: Exception) {
+            ActionResult.failure("evaluate did not return: " + LogSafe.truncate(e.message))
+        }
+        if (!result.ok) {
+            return actionFailure(result.reason ?: "evaluate failed", result.error, kernel.lastKnownUrl, lookup.tabId)
+        }
+        return finishWithSnapshot(
+            kernel,
+            kernel.state.name,
+            tab = lookup.tabId,
+            actionFields = buildJsonObject { put("value", result.value ?: "") },
+        )
+    }
+
+    /**
+     * 057: failure answer for an action whose round-trip died (no page,
+     * timeout, in-flight, page-side throw). The page-side error rides as the
+     * `error` field when the page named one; no snapshot — the channel the
+     * snapshot would ride is the one that failed (scroll precedent).
+     */
+    internal fun actionFailure(reason: String, error: String?, url: String, tab: String?): JsonObject =
+        buildJsonObject {
+            put("ok", false)
+            put("reason", reason)
+            error?.let { put("error", it) }
+            if (url.isNotBlank()) put("url", url)
+            if (tab != null) put("tab", tab)
+        }
+
     private fun finishWithSnapshot(
         kernel: PiBrowserKernel,
         state: String,
@@ -303,6 +410,7 @@ object AgentBrowserTool {
         selector: String? = null,
         format: String? = null,
         tab: String? = null,
+        actionFields: JsonObject? = null,
     ): JsonObject {
         val snapshot = try {
             kernel.readPage(selector = selector, format = format)
@@ -328,6 +436,7 @@ object AgentBrowserTool {
             scrollY = scrollY,
             selector = selector,
             tab = tab,
+            actionFields = actionFields,
         )
     }
 
@@ -337,6 +446,8 @@ object AgentBrowserTool {
      * scrollY inserts after text, selector echoes after url when present.
      * 056 adds `tab` (the addressed panel's id) at the very TAIL — the field
      * order before it stays byte-locked by the 049/053/055 assertions.
+     * 057 adds [actionFields] (the click/type/evaluate verdict, flattened —
+     * found/tag/elementText/typed/value/reason) between console and tab.
      */
     internal fun snapshotResponse(
         ok: Boolean,
@@ -352,6 +463,7 @@ object AgentBrowserTool {
         scrollY: Int?,
         selector: String? = null,
         tab: String? = null,
+        actionFields: JsonObject? = null,
     ): JsonObject = buildJsonObject {
         if (!ok) {
             put("ok", false)
@@ -361,6 +473,7 @@ object AgentBrowserTool {
             if (selector != null) put("selector", selector)
             if (scrollY != null) put("scrollY", scrollY)
             appendConsole(console)
+            actionFields?.forEach { (key, value) -> put(key, value) }
             if (tab != null) put("tab", tab)
         } else {
             put("ok", true)
@@ -376,6 +489,7 @@ object AgentBrowserTool {
                 put("candidates", buildJsonArray { candidates.forEach { add(it) } })
             }
             appendConsole(console)
+            actionFields?.forEach { (key, value) -> put(key, value) }
             if (tab != null) put("tab", tab)
         }
     }

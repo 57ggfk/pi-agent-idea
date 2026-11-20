@@ -221,4 +221,74 @@ class AgentBrowserRequestCodecTest {
         assertEquals("e2", req.tab)
         assertEquals("tab", req.target)
     }
+
+    // ---- 057: the operation layer (click / type / evaluate) ----
+
+    @Test
+    fun `parses click type evaluate with their payloads`() {
+        val click = AgentBrowserRequestCodec.parse("""{"action":"click","selector":"#btn","tab":"t1"}""")
+        val clickReq = assertIs<AgentParseResult.Valid>(click).request
+        assertEquals(AgentAction.CLICK, clickReq.action)
+        assertEquals("#btn", clickReq.selector)
+        assertEquals("t1", clickReq.tab)
+
+        val type = AgentBrowserRequestCodec.parse("""{"action":"type","selector":"#inp","text":"你好 pi"}""")
+        val typeReq = assertIs<AgentParseResult.Valid>(type).request
+        assertEquals(AgentAction.TYPE, typeReq.action)
+        assertEquals("#inp", typeReq.selector)
+        assertEquals("你好 pi", typeReq.text)
+
+        val evaluate = AgentBrowserRequestCodec.parse("""{"action":"evaluate","js":"document.title"}""")
+        val evalReq = assertIs<AgentParseResult.Valid>(evaluate).request
+        assertEquals(AgentAction.EVALUATE, evalReq.action)
+        assertEquals("document.title", evalReq.js)
+    }
+
+    @Test
+    fun `click and type require a selector and type requires text`() {
+        val noSelector = AgentBrowserRequestCodec.parse("""{"action":"click"}""")
+        assertTrue("selector" in (noSelector as AgentParseResult.Invalid).reason, "reason=${noSelector.reason}")
+
+        val typeNoText = AgentBrowserRequestCodec.parse("""{"action":"type","selector":"#inp"}""")
+        assertTrue("text" in (typeNoText as AgentParseResult.Invalid).reason, "reason=${typeNoText.reason}")
+
+        val evaluateNoJs = AgentBrowserRequestCodec.parse("""{"action":"evaluate"}""")
+        assertTrue("js" in (evaluateNoJs as AgentParseResult.Invalid).reason, "reason=${evaluateNoJs.reason}")
+    }
+
+    @Test
+    fun `action payloads enforce the length caps with model-readable errors`() {
+        // selector at the cap parses; one over it is rejected (not truncated).
+        val atCap = AgentBrowserRequestCodec.parse("""{"action":"click","selector":"#${"a".repeat(199)}"}""")
+        assertEquals(
+            AgentBrowserRequestCodec.MAX_SELECTOR_CHARS,
+            (atCap as AgentParseResult.Valid).request.selector?.length,
+        )
+        val over = AgentBrowserRequestCodec.parse("""{"action":"click","selector":"#${"a".repeat(200)}"}""")
+        assertTrue("200" in (over as AgentParseResult.Invalid).reason, "reason=${over.reason}")
+
+        val atTextCap = AgentBrowserRequestCodec.parse("""{"action":"type","selector":"#inp","text":"${"b".repeat(5000)}"}""")
+        assertEquals(
+            AgentBrowserRequestCodec.MAX_ACTION_TEXT_CHARS,
+            (atTextCap as AgentParseResult.Valid).request.text?.length,
+        )
+        val overText = AgentBrowserRequestCodec.parse("""{"action":"type","selector":"#inp","text":"${"b".repeat(5001)}"}""")
+        assertTrue("5000" in (overText as AgentParseResult.Invalid).reason, "reason=${overText.reason}")
+
+        val atJsCap = AgentBrowserRequestCodec.parse("""{"action":"evaluate","js":"${"x".repeat(10000)}"}""")
+        assertEquals(
+            AgentBrowserRequestCodec.MAX_EVALUATE_JS_CHARS,
+            (atJsCap as AgentParseResult.Valid).request.js?.length,
+        )
+        val overJs = AgentBrowserRequestCodec.parse("""{"action":"evaluate","js":"${"x".repeat(10001)}"}""")
+        assertTrue("10000" in (overJs as AgentParseResult.Invalid).reason, "reason=${overJs.reason}")
+    }
+
+    @Test
+    fun `read keeps its 053 selector truncation unchanged`() {
+        // The red line: the observation side behaves exactly as it did — only
+        // the 057 actions reject over-long selectors.
+        val read = AgentBrowserRequestCodec.parse("""{"action":"read","selector":"${"c".repeat(250)}"}""")
+        assertEquals(200, (read as AgentParseResult.Valid).request.selector?.length)
+    }
 }

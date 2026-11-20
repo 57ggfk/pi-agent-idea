@@ -96,6 +96,14 @@ class PiBrowserKernel(
     private var pendingScroll: CompletableFuture<ScrollResult>? = null
 
     /**
+     * 057: the one in-flight page ACTION (click/type/evaluate share the
+     * slot), or null. The responses arrive over the SAME single JSQuery
+     * channel tagged `kind:"action"` — one slot keeps the routing unambiguous
+     * (a click and an evaluate racing would interleave on the wire).
+     */
+    private var pendingAction: CompletableFuture<ActionResult>? = null
+
+    /**
      * 053 B3: the JSONL console capture under the IDE system dir. Lazy so
      * unit tests and PathManager-less environments never touch it; null when
      * there is no system dir (best-effort by design, 048 hard rule 8).
@@ -537,16 +545,79 @@ class PiBrowserKernel(
      */
     fun consoleWindow(since: Int, limit: Int): ConsoleWindow = consoleBuffer.window(since, limit)
 
+    // ---- 057 浏览器操作层: the generic JS execution channel ----
+
+    /**
+     * 057 CLICK: synthetic mouse event sequence over the matched element
+     * (browser-use style). Same guards/timeout/single-flight as [scrollPage].
+     */
+    fun clickElement(selector: String, timeoutMs: Long = DEFAULT_READ_TIMEOUT_MS): CompletableFuture<ActionResult> =
+        runAction(timeoutMs) { inject -> BrowserActionScripts.buildClickScript(inject, selector) }
+
+    /**
+     * 057 TYPE: focus + native value setter + input event (or execCommand
+     * for contenteditable). Same guards/timeout/single-flight as [scrollPage].
+     */
+    fun typeText(selector: String, text: String, timeoutMs: Long = DEFAULT_READ_TIMEOUT_MS): CompletableFuture<ActionResult> =
+        runAction(timeoutMs) { inject -> BrowserActionScripts.buildTypeScript(inject, selector, text) }
+
+    /**
+     * 057 EVALUATE: run the user's JS and return its completion value. Same
+     * guards/timeout/single-flight as [scrollPage].
+     */
+    fun evaluateJs(js: String, timeoutMs: Long = DEFAULT_READ_TIMEOUT_MS): CompletableFuture<ActionResult> =
+        runAction(timeoutMs) { inject -> BrowserActionScripts.buildEvaluateScript(inject, js) }
+
+    /**
+     * The generic "inject JS, get the JSON result back" execution channel —
+     * the read/scroll pattern generalized. [buildScript] receives the
+     * `JBCefJSQuery.inject("result")` statement and returns the script whose
+     * `result` variable carries the JSON answer. The single JSQuery channel
+     * needs no second query or extra discriminator beyond the script's own
+     * `kind:"action"` tag (the page side self-labels; [onReadResult] routes
+     * on it), and ONE pending slot keeps click/type/evaluate single-flight
+     * against each other, not just against themselves.
+     */
+    private fun runAction(
+        timeoutMs: Long,
+        buildScript: (injectStatement: String) -> String,
+    ): CompletableFuture<ActionResult> {
+        val b = browser ?: return CompletableFuture.completedFuture(ActionResult.noPage())
+        if (state == PiBrowserState.CRASHED) {
+            return CompletableFuture.completedFuture(ActionResult.rendererDown())
+        }
+        val query = jsQuery ?: return CompletableFuture.completedFuture(ActionResult.stillStarting())
+        synchronized(this) {
+            if (pendingAction != null) {
+                return CompletableFuture.completedFuture(ActionResult.inFlight())
+            }
+            val future = CompletableFuture<ActionResult>()
+                .completeOnTimeout(ActionResult.timedOut(), timeoutMs, TimeUnit.MILLISECONDS)
+            pendingAction = future
+            val script = buildScript(query.inject("result"))
+            var failure: String? = null
+            BrowserSafety.guard("executeJavaScript", Unit, { msg -> failure = msg }) {
+                b.cefBrowser.executeJavaScript(script, null, 0)
+            }
+            if (failure != null) {
+                pendingAction = null
+                future.complete(ActionResult.failure("injection failed: " + LogSafe.truncate(failure)))
+            }
+            return future
+        }
+    }
+
     /** 053 B3: JSONL capture path for the tool response; null outside an IDE. */
     fun consoleFilePath(): String? = consoleFile?.path
 
     /**
-     * CEF message-router callback (CEF browser-process thread). Routes four
+     * CEF message-router callback (CEF browser-process thread). Routes five
      * shapes over ONE query: page snapshots (the F-206 original path), console
      * taps and JS dialog shims (round-2 replacements for the reflection
      * devToolsClient mount and the CefJSDialogHandler that never fire on the
-     * remote/CEF-144 channel), and — since 053 B2 — viewport scroll results
-     * (dispatched on the JSON.stringify kind tag).
+     * remote/CEF-144 channel), viewport scroll results (053 B2), and — since
+     * 057 — page action results (click/type/evaluate; all dispatched on the
+     * JSON.stringify kind tag).
      */
     private fun onReadResult(request: String?): JBCefJSQuery.Response {
         val req = request ?: return JBCefJSQuery.Response(null)
@@ -573,6 +644,13 @@ class PiBrowserKernel(
                 if (future != null) {
                     future.complete(ScrollResult.fromJs(req))
                     pendingScroll = null
+                }
+            }
+            req.contains("\"kind\":\"action\"") -> {
+                val future = pendingAction
+                if (future != null) {
+                    future.complete(ActionResult.fromJs(req))
+                    pendingAction = null
                 }
             }
             else -> {
@@ -705,6 +783,8 @@ class PiBrowserKernel(
         pendingRead = null
         runCatching { pendingScroll?.complete(ScrollResult.closed()) }
         pendingScroll = null
+        runCatching { pendingAction?.complete(ActionResult.closed()) }
+        pendingAction = null
         runCatching { jsQuery?.dispose() }
         jsQuery = null
         consoleBuffer.clear()
