@@ -170,4 +170,55 @@ class AgentBrowserRequestCodecTest {
         assertTrue("\"selctor\"" in paramReason, "reason=$paramReason")
         assertTrue("limit" in paramReason, "reason should list the known parameters: $paramReason")
     }
+
+    // ---- 056: tab addressing (tab id param + list action) ----
+
+    @Test
+    fun `parses the list action`() {
+        val list = AgentBrowserRequestCodec.parse("""{"action":"list"}""")
+        assertEquals(AgentAction.LIST, (list as AgentParseResult.Valid).request.action)
+    }
+
+    @Test
+    fun `parses tab ids for any action`() {
+        assertEquals(
+            "t1",
+            (AgentBrowserRequestCodec.parse("""{"action":"read","tab":"t1"}""") as AgentParseResult.Valid).request.tab,
+        )
+        assertEquals(
+            "e12",
+            (AgentBrowserRequestCodec.parse("""{"action":"open","url":"http://127.0.0.1:3000/","tab":"e12"}""") as AgentParseResult.Valid).request.tab,
+        )
+        assertEquals(
+            "t10",
+            (AgentBrowserRequestCodec.parse("""{"action":"scroll","tab":"t10","direction":"up"}""") as AgentParseResult.Valid).request.tab,
+        )
+        assertNull(
+            (AgentBrowserRequestCodec.parse("""{"action":"read"}""") as AgentParseResult.Valid).request.tab,
+            "tab-less body parses like the pre-056 contract",
+        )
+    }
+
+    @Test
+    fun `malformed tab ids fail the codec format check`() {
+        // Format errors are codec-level; an id that LOOKS right but names no
+        // live panel is a runtime miss (the tool answers "no browser tab t9").
+        for (tab in listOf("t0", "x1", "T1", "tab", "editor", "t", "t01", "1t", "t1.5")) {
+            val parsed = AgentBrowserRequestCodec.parse("""{"action":"read","tab":"$tab"}""")
+            val reason = assertIs<AgentParseResult.Invalid>(parsed, "tab=$tab").reason
+            assertTrue("tab" in reason, "tab=$tab reason=$reason")
+        }
+    }
+
+    @Test
+    fun `tab and target are both legal in one body`() {
+        // The codec accepts both; the TOOL layer gives the narrower address
+        // (tab) precedence over the form (target).
+        val parsed = AgentBrowserRequestCodec.parse(
+            """{"action":"read","tab":"e2","target":"tab"}""",
+        )
+        val req = assertIs<AgentParseResult.Valid>(parsed).request
+        assertEquals("e2", req.tab)
+        assertEquals("tab", req.target)
+    }
 }

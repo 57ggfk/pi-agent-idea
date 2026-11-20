@@ -83,4 +83,14 @@ class BrowserCarriersTest {
         assertNull(BrowserCarriers.carrierFor(null), "absent target falls back to the last-used carrier")
         assertNull(BrowserCarriers.carrierFor("window"), "values outside the codec set map to null")
     }
+
+    /**
+     * 056 list 动作：载体的线名与 target 词表一致（tab/editor），LIST 回答
+     * 的 carrier 字段由此而来。
+     */
+    @Test
+    fun `wireName maps the carrier to the list wire vocabulary`() {
+        assertEquals("tab", BrowserCarriers.wireName(BrowserCarrier.TOOLWINDOW))
+        assertEquals("editor", BrowserCarriers.wireName(BrowserCarrier.EDITOR))
+    }
 }

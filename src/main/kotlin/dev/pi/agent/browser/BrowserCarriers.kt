@@ -50,4 +50,14 @@ object BrowserCarriers {
         "editor" -> BrowserCarrier.EDITOR
         else -> null
     }
+
+    /**
+     * 056 list 动作: the carrier's wire name in the LIST answer — the same
+     * vocabulary as `target` (tab/editor) so the model can round-trip a LIST
+     * result into a `target` param without a mapping table.
+     */
+    fun wireName(carrier: BrowserCarrier): String = when (carrier) {
+        BrowserCarrier.TOOLWINDOW -> "tab"
+        BrowserCarrier.EDITOR -> "editor"
+    }
 }

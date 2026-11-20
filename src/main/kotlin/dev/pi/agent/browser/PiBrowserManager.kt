@@ -5,6 +5,7 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
+import com.intellij.openapi.util.Key
 import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.ui.content.ContentFactory
 import dev.pi.agent.PiAgentBundle
@@ -23,6 +24,9 @@ import dev.pi.agent.PiAgentBundle
  */
 @Service(Service.Level.PROJECT)
 class PiBrowserManager(private val project: Project) {
+
+    /** 056: per-instance monotonic tab-id sequence (t1/e2/t3 …, never reused). */
+    private val tabIds = BrowserTabIdSequence()
 
     /**
      * Opens (or refocuses) a browser tab, navigates to [url], and returns the
@@ -52,7 +56,13 @@ class PiBrowserManager(private val project: Project) {
             }
             result
         }
-        if (panel != null) lastAgentCarrier = carrier
+        if (panel != null) {
+            lastAgentCarrier = carrier
+            // 056: the landing panel's IDENTITY — follow-ups without an
+            // explicit tab address this panel even after the user selects a
+            // different tab.
+            lastTabId = tabIdOf(panel)
+        }
         return panel
     }
 
@@ -123,6 +133,10 @@ class PiBrowserManager(private val project: Project) {
             panel, PiAgentBundle.message("toolwindow.browser.tab"), true,
         )
         content.isCloseable = true
+        // 056: the tab id is minted at CREATION and lives in the Content's
+        // userData — stable for the Content's lifetime, gone when the tab
+        // closes, never reused (per-manager monotonic sequence).
+        content.putUserData(TAB_ID_KEY, tabIds.next(BrowserCarrier.TOOLWINDOW))
         // Content dispose (tab closed) releases the panel, which releases the
         // kernel's JCEF browser — no leak, no confirm needed (no pi run here).
         Disposer.register(content, panel)
@@ -184,6 +198,70 @@ class PiBrowserManager(private val project: Project) {
         BrowserCarrier.EDITOR -> editorCarrierPanel()
     }
 
+    // ---- 056 页签寻址: stable per-panel ids + identity tracking ----
+
+    /**
+     * Scans the LIVE browser panels — tool-window contents plus open editor
+     * previews — stamping ids where a panel has none (editor previews can be
+     * created by user paths the manager doesn't route through; the scan
+     * lazily mints their id on first sight). Deliberately NO resident
+     * registry: closed tabs simply drop out of the next scan, so no stale
+     * entry can answer an old address.
+     *
+     * Threading follows the existing off-EDT reads of the tool window
+     * (browserPanel() does the same from the agent endpoint thread).
+     */
+    internal fun liveTabs(): List<BrowserTabRef> {
+        if (project.isDisposed) return emptyList()
+        val tabs = mutableListOf<BrowserTabRef>()
+        val toolWindow = ToolWindowManager.getInstance(project).getToolWindow(TOOLWINDOW_ID)
+        if (toolWindow != null) {
+            for (content in toolWindow.contentManager.contents) {
+                val panel = content.getComponent() as? BrowserPanel ?: continue
+                val id = content.getUserData(TAB_ID_KEY)
+                    ?: tabIds.next(BrowserCarrier.TOOLWINDOW).also { content.putUserData(TAB_ID_KEY, it) }
+                tabs += BrowserTabRef(id, panel, BrowserCarrier.TOOLWINDOW, content.isSelected)
+            }
+        }
+        val editorManager = FileEditorManager.getInstance(project)
+        for (file in editorManager.openFiles) {
+            if (!PiBrowserPreviewFiles.isPreview(file)) continue
+            val editor = editorManager.getEditors(file)
+                .firstOrNull { it is PiBrowserFileEditor } as? PiBrowserFileEditor ?: continue
+            val id = file.getUserData(TAB_ID_KEY)
+                ?: tabIds.next(BrowserCarrier.EDITOR).also { file.putUserData(TAB_ID_KEY, it) }
+            tabs += BrowserTabRef(id, editor.agentPanel(), BrowserCarrier.EDITOR, editorManager.selectedEditor == editor)
+        }
+        return tabs
+    }
+
+    /**
+     * 056: the live panel addressed by [tabId], or null — the caller answers
+     * the model-readable miss ("no browser tab t9"). Ids are never reused, so
+     * a closed tab's address stays a miss instead of silently hitting a
+     * recycled panel.
+     */
+    fun panelById(tabId: String): BrowserPanel? = liveTabs().firstOrNull { it.tabId == tabId }?.panel
+
+    /** 056: the id of [panel] among the live tabs; null when it is not live (responses omit "tab"). */
+    fun tabIdOf(panel: BrowserPanel): String? = liveTabs().firstOrNull { it.panel === panel }?.tabId
+
+    /** 056 LIST: every live browser panel as `{tab,url,title,carrier,selected}`. */
+    fun listTabs(): List<BrowserTabSummary> = liveTabs().map { it.toSummary() }
+
+    /**
+     * 056: the tab id the agent's last open landed on (explicit-tab opens
+     * record themselves via [recordLastTabId]). Resolution order: explicit
+     * tab param → this → the 055 carrier fallback.
+     */
+    @Volatile
+    var lastTabId: String? = null
+        private set
+
+    internal fun recordLastTabId(id: String?) {
+        lastTabId = id
+    }
+
     /**
      * 054 agent dual-form: the carrier the AGENT last opened into. Explicit
      * `target` params override it; target-less follow-ups (read/scroll/
@@ -216,6 +294,12 @@ class PiBrowserManager(private val project: Project) {
 
         /** P-7: whether this project's tool window already has its one windowed browser tab. */
         private var windowedTabCreated = false
+
+        /**
+         * 056: where a tool-window tab's agent-facing id lives. Editor
+         * previews keep theirs on the LightVirtualFile's userData (same key).
+         */
+        private val TAB_ID_KEY = Key.create<String>("pi.browser.tab.id")
 
         /** F-208: same per-project ceiling as the chat instance tabs (019). */
         const val MAX_TABS = 4
