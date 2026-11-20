@@ -284,6 +284,31 @@ export default function MessageList() {
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
 
+  /**
+   * 010 内测反馈补强：图片/SVG 等富内容在 message_end 之后**不经 React
+   * re-render** 地长高（晚加载），pinned 视图会悬在半空，而跳底按钮被
+   * stale pinned 吃掉（真机复现：切进「终端中渲染 SVG 围栏代码块」会话后
+   * 落点距底 120px、按钮不出现——内容长高不发 scroll 事件，pin 机器无从
+   * 得知）。观察 message-col 的尺寸变化：pinned 时跟随到底；未 pinned 时
+   * 用新几何重估按钮状态。
+   */
+  useEffect(() => {
+    const el = scrollRef.current;
+    const col = el?.querySelector(".message-col");
+    if (!el || !(col instanceof HTMLElement)) return;
+    const ro = new ResizeObserver(() => {
+      if (pinRef.current.pinned) {
+        el.scrollTop = el.scrollHeight;
+        pinRef.current = { pinned: true, lastTop: el.scrollTop, lastHeight: el.scrollHeight };
+        syncPinUi(true);
+      } else {
+        onScroll();
+      }
+    });
+    ro.observe(col);
+    return () => ro.disconnect();
+  }, []);
+
   return (
     <div className="message-list-wrap">
       <div className="message-list" ref={scrollRef} onScroll={onScroll} data-testid="message-list">

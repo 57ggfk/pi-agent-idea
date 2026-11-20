@@ -2385,8 +2385,13 @@ button {
   /* Give the column the full height of the scroll container even when it is
      empty: `margin: auto` on `.empty-state` needs free space to absorb, or
      the π logo hugs the top of the panel. With messages this is a no-op —
-     content overflows past 100% and flows from the top as before. */
+     content overflows past 100% and flows from the top as before.
+     flex-shrink 0：列表是 flex 容器，作为 item 的 col 原本会被压扁在
+     min-height 地板上（内容全部溢出 col 盒子之外，真机实测 col 高恒 523px
+     而内容 1008px）——ResizeObserver 因此永远看不到内容生长。不收缩后 col
+     随内容真实长高，末尾 spacer / 附件卡的生长才可观测。 */
   min-height: 100%;
+  flex-shrink: 0;
   min-width: 0;
   max-width: 780px;
   margin: 0 auto;
