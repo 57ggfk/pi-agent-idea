@@ -636,3 +636,35 @@
 - [ ] **5 秒内连关两次被限速拦下**：**未能在真机上复现**——合成点击命中标签页关闭钮不稳定（21:04:13 成功关过一次，之后连点 10+ 次均未触发关闭），拿不到 `not recreating again yet` 这条 WARN。该分支由 `AutoRecreatePolicyTest` 4 条单测覆盖（disposing 一律拒绝 / 首次允许 / 间隔内跳过 / 间隔后再允许）
 - [ ] **关机期风暴**：本次关机（21:00:00 `IDE SHUTDOWN`）日志里 `closed to empty` **0 条**（旧实例 12 秒内 11 条）；但本次关机时工程已先被 dispose，旧代码里本来就有的 `project.isDisposed()` 早退也会得到同样结果，**这一条不能单独证明限速生效**——与上一条同因，留作下轮
 - [ ] **崩溃卡在无地址时也渲染 Retry**（050 遗留根因修复）：代码条件已改（`onRetry != null` 即渲染，不再要求 `url != null`），但本轮没有触发到「无地址」的崩溃卡，留作下轮
+
+### 052 GPU 崩溃守卫真机复验（2026-11-20，分支 release/0.5.10-browser-build）
+
+输入：用户拍板 052「A+D」= GPU 失败时拦截（通知 + 一键处置）+ 附说明兜底。049 的 DevTools 白屏已被证实是 GPU 进程反复崩溃。
+
+**平台查证（先做，选型靠它定）**：
+
+- [x] **平台自带健康检查存在但太晚**：`JBCefHealthMonitor` / `JBCefHealthCheckTopic` **只在 2026.2 有**（233–243 发行包里没有）。平台调 `onGpuProcessFailed()` 的时机是**自己的 GPU 启动上限被突破之后**（默认 10 次），那时它已经 `CefApp.dispose()`，属于事后通知
+- [x] **抢不了平台的 app handler**：`CefApp.addAppHandler` 只有在「还没有任何 CefApp 实例」时才能注册；用户槽 `userAppHandler_` 会**顶掉**平台自己的 handler（CefApp 构造里 `appHandler_ = userAppHandler_`），抢它等于关掉平台自己的 GPU 计数
+- [x] **Windows 读不到进程命令行**：`ProcessHandle.Info.commandLine()` 在本机恒为 null（连 JVM 自己的子进程也是），GPU / renderer / utility 无法区分 → v1 的「数 GPU 进程」方案作废并删除
+- [x] **唯一可用的信号是 Chromium 日志**：每次 GPU 崩溃恰好 1 行 `GPU process exited unexpectedly`（049 会话 385 行；本机杀 3 次 = 3 行）
+- [x] **默认配置下日志是哑弹**：平台默认 `LOGSEVERITY_DISABLE`，`jcef_chromium_<pid>.log` 0 字节；级别来自**系统属性** `ide.browser.jcef.log.level`（243 源码 + 262 字节码同构），在**第一个浏览器创建时**冻结 → 插件必须自己设
+- [x] **平台不预热（Windows/Linux）**：`JBCefStartup` 预热服务带 `os="mac"`，所以 Win/Linux 上 CEF 只在首个浏览器创建时初始化 → 插件抢在前面设级别是可行的
+
+**自动化已过**：
+
+- [x] **单测（RED→GREEN 亲眼见证）**：新增 `JcefLogLevelPolicyTest` 6 条（未设级别→SET / 用户设过→KEEP / JCEF 已起→TOO_LATE / 用户级别优先 / 只有含 ERROR 的级别才看得到崩溃行）+ `GpuCrashLogTailerTest` 4 条（首次见到不回放历史 / 只报新增 / 跨轮次半行拼回 / 忽略别的 IDE 实例的日志）；合计 59 类 492 → **61 类 502 用例** / 0 失败 / 0 错误 / 5 跳过
+- [x] **碎片**：`changelog.d/052-gpu-crash-guard.added.md`、`052-gpu-troubleshooting-guide.added.md`、`052-jcef-error-log.added.md`；`collectChangelog -PdryRun=true` 通过，三条中英文均进入收集结果
+- [x] **构建**：`buildPlugin` PASS
+- [x] **换装**：IDE 退出后重装，installed MD5 = `B6874B4E6D5265BD800F58283CBAAE86` = build/libs MD5（备份 `pi-agent-idea-0.5.9.jar.bak-20261120-222724`）
+
+**真机复验**（2026-11-20 22:12–22:31，IDEA 2026.2.3，工程 `release-0.5.10-browser-build/test/e2e-project`）：
+
+- [x] **先证明「默认配置确实是哑弹」**：手动在 vmoptions 加 `-Dide.browser.jcef.log.level=error` → 平台日志 `JCEF logging: level=LOGSEVERITY_ERROR`、浏览器命令行 `--loglevel=err` + `cs:log_severity=LOGSEVERITY_ERROR`；连杀 GPU 3 次 → Chromium 日志**恰好 3 行** `GPU process exited unexpectedly`（共 381 字节）→ 插件逐次判定 `1 / 2 / 3 GPU crash(es)`。同一实验在默认（disable）级别下 `jcef_chromium_<pid>.log` 保持 0 字节、插件毫无输出——这就是必须自己设级别的实证
+- [x] **插件自己设级别（v3 自动化）**：移除 vmoptions 里的级别，只靠插件 → `JcefLogLevelGuard - Pi Agent: set ide.browser.jcef.log.level=error so GPU crashes show up in the JCEF log`（22:27:37.412），平台 **8ms 后**读到 `LOGSEVERITY_ERROR`；第二次调用（面板 / 监控器再问）→ `JCEF log level left at 'error'`（幂等，且不覆盖用户自设值）
+- [x] **崩溃被识别并提醒**：连杀 GPU 3 次（每次 Chromium 都拉起新 PID）→ 3 行崩溃记录（667 字节）→ `1 GPU crash(es)` → `2` → `3` → `WARN the browser GPU process crashed 3 times in the last minute` → `GpuCrashNotifier - showing the GPU crash notification (3 crashes)`
+- [x] **通知形态**：气泡实拍标题 `Embedded browser GPU keeps crashing`，正文 `The browser GPU process crashed 3 times in the last minute…`，两个动作 `Disable GPU and restart IDE` / `How to fix it manually`
+- [x] **一键处置（禁用 GPU 并重启 IDE）**：前台点击该动作 → 插件日志 `GPU crash action — disabling GPU acceleration and restarting the IDE`；平台日志 `Registry value 'ide.browser.jcef.gpu.disable' has changed to 'true' by SYSTEM`（注册表写入成功）；平台按惯例弹出「Confirm Exit」→ 确认后 `Restarter - run restarter: […\restarter.exe, 41144]` → **新实例 PID 34080（22:31:25 启动）**
+- [x] **说明兜底（手动怎么修）**：用户手动点击该动作 → 弹出 `Disable GPU acceleration manually` 气泡，列出两种手动办法（VM 参数 / 注册表）
+- [x] **一次运行只提醒一次**：同一实例里 3 次崩溃只弹一次通知
+- [x] **面板无回归**：`pi agent UI server started` → `Pi Agent UI: loading` → `bridge poll connected`，面板照旧渲染
+- [ ] **macOS 上级别可能被平台预热抢先**（`JBCefStartup` 带 `os="mac"`）：该次会话会记一条 WARN 并提示用 `-Dide.browser.jcef.log.level=error`；本轮真机只有 Windows，未实测
