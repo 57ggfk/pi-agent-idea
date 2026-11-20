@@ -1,10 +1,15 @@
 package dev.pi.agent.browser
 
 import com.intellij.ide.BrowserUtil
+import com.intellij.ide.DataManager
 import com.intellij.openapi.Disposable
 
+import com.intellij.openapi.actionSystem.AnAction
+import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.ide.CopyPasteManager
+import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopup
 import com.intellij.openapi.ui.popup.JBPopupFactory
@@ -65,11 +70,13 @@ class BrowserPanel(private val project: Project, offscreen: Boolean = false) : J
     private val forwardButton = navButton("browser.forward.tooltip", AllIcons.Actions.Forward)
     private val reloadButton = navButton("browser.reload.tooltip", AllIcons.Actions.Refresh)
 
-    /** F-106 (049 C1): hand the current page to the system default browser. */
-    private val openExternalButton = navButton("browser.open.external.tooltip", AllIcons.Actions.MoveToTopRight)
+    /**
+     * The overflow menu on the RIGHT edge of the toolbar, right after Go:
+     * the two entries that used to crowd the nav icon row — DevTools
+     * (F-209) and the system browser hand-off (F-106).
+     */
+    private val moreButton = navButton("browser.more.tooltip", AllIcons.Actions.More)
 
-    /** F-209: the platform DevTools window (inspector) for the current page. */
-    private val devToolsButton = navButton("browser.devtools.tooltip", AllIcons.Actions.Preview)
     private val echoLabel = JLabel(" ")
 
     /** F-203: indeterminate strip while a navigation is in flight. */
@@ -122,18 +129,16 @@ class BrowserPanel(private val project: Project, offscreen: Boolean = false) : J
         // F-109 round 2: BoxLayout 拉宽/挤压两轮修都没根治——按钮组 WEST、
         // 地址栏 CENTER、Go EAST 的 BorderLayout 让 Go 恒在行尾、地址栏恒吸收
         // 剩余宽度（真机复验：Go ~830px 才回归的根因是 max=pref 让按钮不可压缩）。
-        val navRow = JPanel(BorderLayout())
-        val navButtons = JPanel(java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 2, 0))
-        navButtons.border = JBUI.Borders.empty(4, 8)
-        navButtons.add(backButton)
-        navButtons.add(forwardButton)
-        navButtons.add(reloadButton)
-        navButtons.add(devToolsButton)
-        navButtons.add(openExternalButton)
-        navRow.add(navButtons, BorderLayout.WEST)
-        navRow.add(addressField, BorderLayout.CENTER)
-        navRow.add(goButton, BorderLayout.EAST)
-        for (button in listOf(backButton, forwardButton, reloadButton, devToolsButton, openExternalButton, goButton)) {
+        // 049 工具条复检：平台默认度量会把纯图标钮拉到 ~60px 宽（四个钮就把地址栏
+        // 挤没了），DevTools/系统浏览器两个钮也撤进 Go 右侧的下拉——导航行只留
+        // 前进/后退/刷新，右侧是 Go + 下拉。
+        val navRow = BrowserToolbar.buildNavRow(
+            navButtons = listOf(backButton, forwardButton, reloadButton),
+            address = addressField,
+            goButton = goButton,
+            overflowButton = moreButton,
+        ).panel
+        for (button in listOf(backButton, forwardButton, reloadButton, moreButton, goButton)) {
             button.margin = JBUI.insets(2, 4)
         }
 
@@ -239,13 +244,8 @@ class BrowserPanel(private val project: Project, offscreen: Boolean = false) : J
         addressField.addActionListener(submit)
         backButton.addActionListener { kernel.back() }
         forwardButton.addActionListener { kernel.forward() }
-        devToolsButton.addActionListener { kernel.openDevtools() }
         reloadButton.addActionListener { reloadOrStop() }
-        openExternalButton.addActionListener {
-            val url = kernel.currentUrl().ifBlank { lastUrl }
-            if (url.isNotBlank()) BrowserUtil.browse(url)
-        }
-        openExternalButton.isEnabled = false // nothing loaded yet
+        moreButton.addActionListener { showOverflowMenu(moreButton) }
 
         // F-204 find bar wiring.
         findField.toolTipText = PiAgentBundle.message("browser.find.tooltip")
@@ -403,11 +403,67 @@ class BrowserPanel(private val project: Project, offscreen: Boolean = false) : J
             .also { it.show(RelativePoint(addressField, java.awt.Point(0, addressField.height))) }
     }
 
+    /**
+     * An icon-only nav button. The platform's default metrics stretch such a
+     * button to ~60px wide, so the preferred box is pinned to the icon itself
+     * (the loader hands back already-scaled icons — HiDPI stays correct).
+     */
     private fun navButton(tooltipKey: String, icon: Icon): JButton {
         val button = JButton(icon)
         button.toolTipText = PiAgentBundle.message(tooltipKey)
         button.isFocusable = false
+        val size = BrowserToolbar.compactButtonSize(icon)
+        button.preferredSize = size
+        button.minimumSize = size
+        button.maximumSize = size
         return button
+    }
+
+    /**
+     * The overflow menu: DevTools + the system browser hand-off. Both used to
+     * be plain buttons in the icon row; they live in this menu now so the
+     * nav row keeps navigation only.
+     */
+    private fun showOverflowMenu(anchor: JButton) {
+        val group = DefaultActionGroup()
+        group.add(devToolsAction())
+        group.add(openExternalAction())
+        val popup = JBPopupFactory.getInstance().createActionGroupPopup(
+            PiAgentBundle.message("browser.more.title"),
+            group,
+            DataManager.getInstance().getDataContext(anchor),
+            JBPopupFactory.ActionSelectionAid.SPEEDSEARCH,
+            true,
+        )
+        popup.show(RelativePoint(anchor, java.awt.Point(0, anchor.height)))
+    }
+
+    /** F-209: the platform DevTools window (inspector) for the current page. */
+    private fun devToolsAction(): AnAction = object : DumbAwareAction(
+        PiAgentBundle.message("browser.devtools.menu"),
+        PiAgentBundle.message("browser.devtools.tooltip"),
+        AllIcons.Actions.Preview,
+    ) {
+        override fun actionPerformed(e: AnActionEvent) {
+            kernel.openDevtools()
+        }
+    }
+
+    /** F-106 (049 C1): hand the current page to the system default browser. */
+    private fun openExternalAction(): AnAction = object : DumbAwareAction(
+        PiAgentBundle.message("browser.open.external.menu"),
+        PiAgentBundle.message("browser.open.external.tooltip"),
+        AllIcons.Actions.MoveToTopRight,
+    ) {
+        override fun update(e: AnActionEvent) {
+            // Nothing loaded yet — the hand-off has no target.
+            e.presentation.isEnabled = kernel.currentUrl().isNotBlank() || lastUrl.isNotBlank()
+        }
+
+        override fun actionPerformed(e: AnActionEvent) {
+            val url = kernel.currentUrl().ifBlank { lastUrl }
+            if (url.isNotBlank()) BrowserUtil.browse(url)
+        }
     }
 
     /**
@@ -603,8 +659,6 @@ class BrowserPanel(private val project: Project, offscreen: Boolean = false) : J
         lastEchoUrl = url
         val loadingPrefix = if (loadingHint) PiAgentBundle.message("browser.loading.prefix") else ""
         echoLabel.text = loadingPrefix + if (titleText.isBlank()) url else "$titleText  —  $url"
-        // F-106: external hand-off only makes sense once a page is up.
-        openExternalButton.isEnabled = url.isNotBlank() || lastUrl.isNotBlank()
         // F-103: echo navigation into the address bar (raw URL). Update unless
         // the user has typed something different from the last echoed URL —
         // nav buttons are non-focusable, so hasFocus() alone would go stale
