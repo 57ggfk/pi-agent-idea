@@ -47,13 +47,29 @@ function formatSnapshot(data) {
   const title = (data.title || "(no title)").trim();
   const excerpt = String(data.text || "").replace(/\s+/g, " ").trim().slice(0, 600);
   const ready = data.ready ? ` ready=${data.ready}` : "";
+  // 056: which tab the action landed on (t1 = tool-window tab, e2 = editor preview).
+  const tab = data.tab ? ` [${data.tab}]` : "";
   // F-206: the IDE attaches the page's recent console errors when it captured
   // them — the single most useful "why did my page misbehave" signal.
   const consoleLine = Array.isArray(data.console) && data.console.length
     ? " — console: " + data.console.map((c) => String(c).replace(/\s+/g, " ")).join(" | ").slice(0, 300)
     : "";
-  const head = `Pi browser: ${data.state} ${data.url} — "${title}"${ready}${consoleLine}`;
+  const head = `Pi browser:${tab} ${data.state} ${data.url} — "${title}"${ready}${consoleLine}`;
   return excerpt ? `${head} — text: ${excerpt}` : head;
+}
+
+/**
+ * 056 list readback — one line per live browser tab across both forms
+ * (tool-window `t<n>` / editor preview `e<n>`); the tab ids are the
+ * addresses every other action accepts.
+ */
+function formatList(data) {
+  const tabs = Array.isArray(data.tabs) ? data.tabs : [];
+  if (!tabs.length) return "Pi browser: no browser tab is open — use action 'open' first.";
+  const lines = tabs.map((t) =>
+    `${t.selected ? "*" : " "} ${t.tab} [${t.carrier}] ${t.url}${t.title ? ` — "${String(t.title).trim()}"` : ""}`,
+  );
+  return `Pi browser: ${tabs.length} tab(s) (* = selected)\n${lines.join("\n").slice(0, 1500)}`;
 }
 
 /**
@@ -92,12 +108,16 @@ export default function (pi) {
       "When pi_browser reports state FAILED or a failed snapshot, react on the error (and console lines) instead of claiming success.",
       "For long pages use action 'scroll' (direction/amount) to reach content the text excerpt missed, and 'read' with a CSS selector to excerpt one element's markup; page back through 'console' (since/limit) when the ride-along tail is not enough — the console result names a JSONL file you can grep for older lines.",
       "Open supports two forms: target 'tab' puts the page in the Pi Agent tool-window tab, 'editor' in an editor-tab preview; follow-up read/scroll/console go to the form your last open used, so pass target again only when you want to switch.",
+      "Every open/list result names the tab it used (tab: t1, e2, … — run action 'list' to enumerate all live tabs); pass that tab on later actions to operate on that exact tab even after you or the user switch tabs, and omit tab to keep following the tab your last open landed on.",
     ],
     parameters: Type.Object({
-      action: StringEnum(["open", "read", "reload", "scroll", "console"]),
+      action: StringEnum(["open", "read", "reload", "scroll", "console", "list"]),
       url: Type.Optional(Type.String({ description: "Absolute URL; omit to auto-detect the dev server" })),
       target: Type.Optional(StringEnum(["tab", "editor"], {
         description: "which browser form to use: 'tab' = the Pi Agent tool-window tab, 'editor' = an editor-tab preview; omit to keep the form the last open used",
+      })),
+      tab: Type.Optional(Type.String({
+        description: "which browser tab to operate on — a tab id (t1, e2, …) from open/list results; omit to follow the tab your last open landed on",
       })),
       direction: Type.Optional(StringEnum(["down", "up"], { description: "scroll: where to move the viewport (default down)" })),
       amount: Type.Optional(Type.Number({ description: "scroll: distance in px, clamped to 1..10000 (default 800)" })),
@@ -129,6 +149,7 @@ export default function (pi) {
         const body = { action: params.action };
         if (params.url) body.url = params.url;
         if (params.target) body.target = params.target;
+        if (params.tab) body.tab = params.tab;
         if (params.direction) body.direction = params.direction;
         if (params.amount != null) body.amount = params.amount;
         if (params.selector) body.selector = params.selector;
@@ -137,7 +158,10 @@ export default function (pi) {
         if (params.since != null) body.since = params.since;
         const data = await callIde(body);
         if (data && data.ok === true) {
-          const text = params.action === "console" ? formatConsole(data) : formatSnapshot(data);
+          const text =
+            params.action === "console" ? formatConsole(data) :
+            params.action === "list" ? formatList(data) :
+            formatSnapshot(data);
           return {
             content: [{ type: "text", text }],
             details: data,

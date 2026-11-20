@@ -100,4 +100,81 @@ class AgentBrowserToolResponseTest {
         assertTrue("since" in reason, "reason=$reason")
         assertTrue("12" in reason, "reason=$reason")
     }
+
+    // ---- 056: tab addressing — the "tab" field rides at the tail of every answer ----
+
+    @Test
+    fun `tab stamps the tail of an ok snapshot without disturbing the locked order`() {
+        val json = AgentBrowserTool.snapshotResponse(
+            ok = true, reason = null, state = "LOADED", url = "http://127.0.0.1:3000/",
+            title = "Home", ready = "complete", text = "hello",
+            console = listOf("console.error: late"), autoDetected = false, candidates = emptyList(),
+            scrollY = 900, tab = "t1",
+        ).toString()
+        assertEquals(
+            listOf("ok", "state", "url", "title", "ready", "text", "scrollY", "console", "tab"),
+            keys(json),
+            "tab is the LAST field; the 049/053 order before it is untouched",
+        )
+        assertTrue("\"tab\":\"t1\"" in json)
+    }
+
+    @Test
+    fun `tab stamps the tail of a failure snapshot too`() {
+        val json = AgentBrowserTool.snapshotResponse(
+            ok = false, reason = "read timed out; the page may still be loading or blocked", state = "TIMEOUT",
+            url = "http://127.0.0.1:3000/", title = "", ready = "", text = "",
+            console = emptyList(), autoDetected = false, candidates = emptyList(),
+            scrollY = null, tab = "e2",
+        ).toString()
+        assertEquals(listOf("ok", "reason", "state", "url", "tab"), keys(json))
+        assertTrue("\"tab\":\"e2\"" in json)
+    }
+
+    @Test
+    fun `tab-less responses omit the field entirely`() {
+        val json = AgentBrowserTool.snapshotResponse(
+            ok = true, reason = null, state = "LOADED", url = "http://x/", title = "", ready = "", text = "",
+            console = emptyList(), autoDetected = false, candidates = emptyList(),
+            scrollY = null, tab = null,
+        ).toString()
+        assertTrue("\"tab\"" !in json, "a panel with no id must not fabricate a tab field")
+    }
+
+    @Test
+    fun `console response carries the tab at the tail`() {
+        val window = ConsoleWindow(total = 1, dropped = 0, matched = 1, entries = listOf(ConsoleEntry(1, "console.error: x")))
+        val json = AgentBrowserTool.consoleResponse(window, since = 0, file = null, tab = "t2")
+        assertEquals(listOf("ok", "total", "dropped", "count", "lines", "tab"), keys(json.toString()))
+        assertTrue("\"tab\":\"t2\"" in json.toString())
+    }
+
+    @Test
+    fun `list response enumerates tabs with the locked wire shape`() {
+        val json = AgentBrowserTool.listResponse(
+            listOf(
+                BrowserTabSummary("t1", "http://127.0.0.1:3000/", "Home", "tab", selected = true),
+                BrowserTabSummary("e1", "file:///D:/demo/bubbles.html", "bubbles", "editor", selected = false),
+            ),
+        )
+        val obj = Json.parseToJsonElement(json.toString()).jsonObject
+        assertEquals(true, obj["ok"]?.toString()?.toBooleanStrictOrNull() ?: false)
+        val tabs = obj["tabs"]!!.toString()
+        // Per-tab field order is locked: tab, url, title, carrier, selected.
+        assertTrue(
+            """"tab":"t1","url":"http://127.0.0.1:3000/","title":"Home","carrier":"tab","selected":true""" in tabs,
+            "tabs=$tabs",
+        )
+        assertTrue(
+            """"tab":"e1","url":"file:///D:/demo/bubbles.html","title":"bubbles","carrier":"editor","selected":false""" in tabs,
+            "tabs=$tabs",
+        )
+    }
+
+    @Test
+    fun `list response with no live tabs stays ok with an empty array`() {
+        val json = AgentBrowserTool.listResponse(emptyList()).toString()
+        assertEquals(listOf("ok", "tabs"), keys(json))
+        assertTrue("\"tabs\":[]" in json)
+    }
 }

@@ -7,9 +7,9 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.math.roundToInt
 
-/** What the pi_browser tool asked the IDE to do (spec 049 D1/D2, 053 B1). */
+/** What the pi_browser tool asked the IDE to do (spec 049 D1/D2, 053 B1, 056 list). */
 enum class AgentAction {
-    OPEN, READ, RELOAD, SCROLL, CONSOLE;
+    OPEN, READ, RELOAD, SCROLL, CONSOLE, LIST;
 
     companion object {
         fun from(raw: String?): AgentAction? = AgentAction.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) }
@@ -52,6 +52,14 @@ data class AgentBrowserRequest(
     val consoleSince: Int? = null,
     /** 054: "tab" = tool-window tab, "editor" = editor-form preview; null = the last-opened carrier. */
     val target: String? = null,
+    /**
+     * 056: the exact panel to operate on — a [BrowserTabIds] id (`t1`, `e2`)
+     * from open/list results. Absent = follow the tab the last open landed
+     * on ([PiBrowserManager.lastTabId]), then the 055 carrier fallback. When
+     * both [tab] and [target] are present the TOOL layer gives [tab]
+     * precedence (the codec accepts both — see AgentBrowserTool).
+     */
+    val tab: String? = null,
 )
 
 object AgentBrowserRequestCodec {
@@ -65,9 +73,9 @@ object AgentBrowserRequestCodec {
     /** A selector is a lookup key, not a payload — keep it a bounded one. */
     const val MAX_SELECTOR_CHARS = 200
 
-    private val KNOWN_PARAMS = setOf("action", "url", "direction", "amount", "selector", "format", "limit", "since", "target")
+    private val KNOWN_PARAMS = setOf("action", "url", "direction", "amount", "selector", "format", "limit", "since", "target", "tab")
 
-    private val KNOWN_PARAMS_HINT = "use action/url/target/direction/amount/selector/format/limit/since"
+    private val KNOWN_PARAMS_HINT = "use action/url/target/tab/direction/amount/selector/format/limit/since"
 
     /**
      * Parses the POST body of `/agent-browser`. Anything malformed degrades to
@@ -83,7 +91,7 @@ object AgentBrowserRequestCodec {
             val obj = Json.parseToJsonElement(body).jsonObject
             val action = AgentAction.from(text(obj, "action"))
             if (action == null) {
-                AgentParseResult.Invalid("unknown action; use open/read/reload/scroll/console")
+                AgentParseResult.Invalid("unknown action; use open/read/reload/scroll/console/list")
             } else {
                 val unknown = obj.keys.firstOrNull { it !in KNOWN_PARAMS }
                 if (unknown != null) {
@@ -131,6 +139,15 @@ object AgentBrowserRequestCodec {
         if (target != null && target !in BROWSER_TARGETS) {
             return AgentParseResult.Invalid("target must be \"tab\" or \"editor\"")
         }
+        // 056: tab ids are FORMAT-checked here (t1/e2 …); an id that looks
+        // right but names no live panel is a RUNTIME miss — the tool answers
+        // "no browser tab t9", the codec stays transport-shaped.
+        val tab = text(obj, "tab")?.trim()
+        if (tab != null && !BrowserTabIds.isValid(tab)) {
+            return AgentParseResult.Invalid(
+                "tab must be a tab id like t1 or e2 (as returned by open/list results), got \"$tab\"",
+            )
+        }
         return AgentParseResult.Valid(
             AgentBrowserRequest(
                 action = action,
@@ -142,6 +159,7 @@ object AgentBrowserRequestCodec {
                 consoleLimit = limit?.roundToInt()?.coerceIn(1, MAX_CONSOLE_LIMIT),
                 consoleSince = since?.roundToInt()?.coerceAtLeast(0),
                 target = target,
+                tab = tab,
             ),
         )
     }

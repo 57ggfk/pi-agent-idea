@@ -56,14 +56,14 @@ object AgentBrowserTool {
     fun execute(project: Project, request: AgentBrowserRequest, bridgeToken: String?): JsonObject {
         val violation = AgentBrowserRequestCodec.bridgeTokenViolation(request.url, bridgeToken)
         if (violation != null) return failure(violation)
-        val carrier = resolveCarrier(project, request.target)
 
         return when (request.action) {
-            AgentAction.READ -> read(project, carrier, request)
-            AgentAction.OPEN -> open(project, request.url ?: "", carrier)
-            AgentAction.RELOAD -> reload(project, carrier)
-            AgentAction.SCROLL -> scroll(project, carrier, request)
-            AgentAction.CONSOLE -> console(project, carrier, request)
+            AgentAction.READ -> read(project, request)
+            AgentAction.OPEN -> open(project, request)
+            AgentAction.RELOAD -> reload(project, request)
+            AgentAction.SCROLL -> scroll(project, request)
+            AgentAction.CONSOLE -> console(project, request)
+            AgentAction.LIST -> list(project)
         }
     }
 
@@ -77,13 +77,81 @@ object AgentBrowserTool {
         BrowserCarriers.carrierFor(target)
             ?: PiBrowserManager.getInstance(project).lastAgentCarrier
 
+    // ---- 056 页签寻址: panel resolution by identity ----
+
+    /**
+     * The outcome of panel resolution for one agent request: either a live
+     * [panel] plus the tab id the answer stamps ([tabId], null when the panel
+     * carries no id — responses then omit "tab"), or the model-readable
+     * [missReason].
+     */
+    internal data class PanelLookup<P>(val panel: P?, val tabId: String?, val missReason: String?)
+
+    /**
+     * 056 resolution order, pure over lambdas (unit-locked in
+     * AgentBrowserToolTabAddressingTest; the production wrapper below wires
+     * them to the manager):
+     *
+     *  1. explicit `tab` param → panelById — a miss is a MODEL-READABLE
+     *     failure ("no browser tab t9"), never a silent fallback: the model
+     *     asked for THAT panel and must learn it is gone;
+     *  2. [lastTabId] — the tab the last open landed on (identity beats
+     *     form, survives manual tab switching); a stale id (tab closed)
+     *     degrades to the carrier fallback;
+     *  3. the 055 carrier fallback (lastAgentCarrier / selected tab).
+     *
+     * `tab` wins over `target` when both are present: the codec accepts both,
+     * and the tool layer gives the narrower address (an exact panel id)
+     * precedence over the carrier form — [target] only feeds step 3.
+     */
+    internal fun <P> resolveAgentPanel(
+        explicitTab: String?,
+        lastTabId: String?,
+        carrier: BrowserCarrier,
+        panelById: (String) -> P?,
+        panelForCarrier: (BrowserCarrier) -> P?,
+        tabIdOf: (P) -> String?,
+    ): PanelLookup<P> {
+        if (explicitTab != null) {
+            val panel = panelById(explicitTab)
+            return if (panel == null) {
+                PanelLookup(null, null, "no browser tab $explicitTab; use the list action to see live tab ids")
+            } else {
+                PanelLookup(panel, tabIdOf(panel), null)
+            }
+        }
+        val last = lastTabId?.let(panelById)
+        val panel = last ?: panelForCarrier(carrier)
+        return if (panel == null) PanelLookup(null, null, NO_TAB_REASON) else PanelLookup(panel, tabIdOf(panel), null)
+    }
+
+    /** Production wiring of [resolveAgentPanel] to the project's manager. */
+    private fun resolveAgentPanel(project: Project, request: AgentBrowserRequest): PanelLookup<BrowserPanel> {
+        val manager = PiBrowserManager.getInstance(project)
+        return resolveAgentPanel(
+            explicitTab = request.tab,
+            lastTabId = manager.lastTabId,
+            carrier = resolveCarrier(project, request.target),
+            panelById = manager::panelById,
+            panelForCarrier = manager::agentPanel,
+            tabIdOf = manager::tabIdOf,
+        )
+    }
+
     /**
      * F-214: `open` without a URL runs the loopback dev-server probe
      * ([DevServerProbe]) and reports what it found — the agent skips one
      * shell round-trip per verification. The plugin's own UI-server port is
      * excluded (that is the chat SPA, never a dev server).
+     *
+     * 056: an explicit `tab` pins the landing panel — the request navigates
+     * THAT panel instead of the carrier-based open (tab wins over target;
+     * the landing is recorded in [PiBrowserManager.lastTabId]). Without a
+     * tab, the 055 carrier open is byte-for-byte unchanged (F-208 reuse /
+     * new-tab rules), and the landed panel's id rides in the answer.
      */
-    private fun open(project: Project, url: String, carrier: BrowserCarrier): JsonObject {
+    private fun open(project: Project, request: AgentBrowserRequest): JsonObject {
+        val url = request.url ?: ""
         var normalized: String?
         var autoDetected = false
         var candidates: List<Int> = emptyList()
@@ -113,6 +181,20 @@ object AgentBrowserTool {
                 ?: return failure("not a usable url: ${LogSafe.url(url)}")
         }
         val manager = PiBrowserManager.getInstance(project)
+        // 056: an explicit tab id navigates THAT exact panel (codec checked
+        // the format; a dead id is a runtime miss answered model-readably).
+        request.tab?.let { tabId ->
+            val pinned = manager.panelById(tabId)
+                ?: return failure("no browser tab $tabId; use the list action to see live tab ids", normalized)
+            if (runOnEdt { pinned.agentLoad(normalized) } == null) {
+                return failure("browser tab did not initialize", normalized, tabId)
+            }
+            val kernel = pinned.agentKernel()
+            val state = waitForLoad(kernel)
+            manager.recordLastTabId(tabId)
+            return finishWithSnapshot(kernel, state, autoDetected, candidates, tab = tabId)
+        }
+        val carrier = resolveCarrier(project, request.target)
         // F-208 round 2: open returns the exact panel it landed on (EDT-exact,
         // no selection-lag guesswork) — the walkthrough caught the poll-based
         // lookup navigating the PREVIOUSLY selected tab as well.
@@ -129,25 +211,27 @@ object AgentBrowserTool {
         }
         val kernel = panel.agentKernel()
         val state = waitForLoad(kernel)
-        return finishWithSnapshot(kernel, state, autoDetected, candidates)
+        return finishWithSnapshot(kernel, state, autoDetected, candidates, tab = manager.tabIdOf(panel))
     }
 
-    private fun reload(project: Project, carrier: BrowserCarrier): JsonObject {
-        val manager = PiBrowserManager.getInstance(project)
-        val panel = manager.agentPanel(carrier)
-            ?: return failure(NO_TAB_REASON)
+    /**
+     * 056: reload resolves the panel by identity (explicit tab → last-open
+     * tab → 055 carrier fallback) instead of only by carrier form.
+     */
+    private fun reload(project: Project, request: AgentBrowserRequest): JsonObject {
+        val lookup = resolveAgentPanel(project, request)
+        val panel = lookup.panel ?: return failure(lookup.missReason ?: NO_TAB_REASON)
         if (runOnEdt { panel.agentReload() } == null) {
-            return failure("browser tab did not initialize")
+            return failure("browser tab did not initialize", tab = lookup.tabId)
         }
         val kernel = panel.agentKernel()
         val state = waitForLoad(kernel)
-        return finishWithSnapshot(kernel, state)
+        return finishWithSnapshot(kernel, state, tab = lookup.tabId)
     }
 
-    private fun read(project: Project, carrier: BrowserCarrier, request: AgentBrowserRequest): JsonObject {
-        val manager = PiBrowserManager.getInstance(project)
-        val panel = manager.agentPanel(carrier)
-            ?: return failure(NO_TAB_REASON)
+    private fun read(project: Project, request: AgentBrowserRequest): JsonObject {
+        val lookup = resolveAgentPanel(project, request)
+        val panel = lookup.panel ?: return failure(lookup.missReason ?: NO_TAB_REASON)
         val kernel = panel.agentKernel()
         // 053 B2: a selector excerpts that element instead of the whole page.
         return finishWithSnapshot(
@@ -155,6 +239,7 @@ object AgentBrowserTool {
             kernel.state.name,
             selector = request.selector,
             format = request.format,
+            tab = lookup.tabId,
         )
     }
 
@@ -164,10 +249,9 @@ object AgentBrowserTool {
      * `scrollY` attached. The kernel owns the single-flight and the timeout;
      * a failed scroll answers with a plain failure, never a stale snapshot.
      */
-    private fun scroll(project: Project, carrier: BrowserCarrier, request: AgentBrowserRequest): JsonObject {
-        val manager = PiBrowserManager.getInstance(project)
-        val panel = manager.agentPanel(carrier)
-            ?: return failure(NO_TAB_REASON)
+    private fun scroll(project: Project, request: AgentBrowserRequest): JsonObject {
+        val lookup = resolveAgentPanel(project, request)
+        val panel = lookup.panel ?: return failure(lookup.missReason ?: NO_TAB_REASON)
         val kernel = panel.agentKernel()
         val direction = request.scrollDirection ?: DEFAULT_SCROLL_DIRECTION
         val amount = request.scrollAmount ?: DEFAULT_SCROLL_AMOUNT_PX
@@ -177,9 +261,9 @@ object AgentBrowserTool {
             ScrollResult.failure("scroll did not return: " + LogSafe.truncate(e.message))
         }
         if (!result.ok) {
-            return failure(result.reason ?: "scroll failed", kernel.lastKnownUrl)
+            return failure(result.reason ?: "scroll failed", kernel.lastKnownUrl, tab = lookup.tabId)
         }
-        return finishWithSnapshot(kernel, kernel.state.name, scrollY = result.scrollY)
+        return finishWithSnapshot(kernel, kernel.state.name, scrollY = result.scrollY, tab = lookup.tabId)
     }
 
     /**
@@ -190,17 +274,25 @@ object AgentBrowserTool {
      * response names — the agent greps it instead of the plugin shipping the
      * whole history into the context.
      */
-    private fun console(project: Project, carrier: BrowserCarrier, request: AgentBrowserRequest): JsonObject {
-        val manager = PiBrowserManager.getInstance(project)
-        val panel = manager.agentPanel(carrier)
-            ?: return failure(NO_TAB_REASON)
+    private fun console(project: Project, request: AgentBrowserRequest): JsonObject {
+        val lookup = resolveAgentPanel(project, request)
+        val panel = lookup.panel ?: return failure(lookup.missReason ?: NO_TAB_REASON)
         val kernel = panel.agentKernel()
         val since = (request.consoleSince ?: 0).coerceAtLeast(0)
         val limit = (request.consoleLimit ?: DEFAULT_CONSOLE_PREVIEW_LINES)
             .coerceIn(1, MAX_CONSOLE_PREVIEW_LINES)
         val window = kernel.consoleWindow(since, limit)
-        return consoleResponse(window, since, kernel.consoleFilePath())
+        return consoleResponse(window, since, kernel.consoleFilePath(), tab = lookup.tabId)
     }
+
+    /**
+     * 056 LIST: enumerate the live browser panels across BOTH carriers —
+     * `{ok, tabs:[{tab,url,title,carrier,selected}]}`. URL/title come from
+     * the kernel's last-known values, so a mid-load tab still answers; the
+     * ids it returns are the addresses every other action accepts.
+     */
+    private fun list(project: Project): JsonObject =
+        listResponse(PiBrowserManager.getInstance(project).listTabs())
 
     private fun finishWithSnapshot(
         kernel: PiBrowserKernel,
@@ -210,6 +302,7 @@ object AgentBrowserTool {
         scrollY: Int? = null,
         selector: String? = null,
         format: String? = null,
+        tab: String? = null,
     ): JsonObject {
         val snapshot = try {
             kernel.readPage(selector = selector, format = format)
@@ -234,6 +327,7 @@ object AgentBrowserTool {
             candidates = candidates,
             scrollY = scrollY,
             selector = selector,
+            tab = tab,
         )
     }
 
@@ -241,6 +335,8 @@ object AgentBrowserTool {
      * The pure response assembly behind every snapshot answer (unit-tested):
      * the 049 field order is untouched when the 053 extras are absent —
      * scrollY inserts after text, selector echoes after url when present.
+     * 056 adds `tab` (the addressed panel's id) at the very TAIL — the field
+     * order before it stays byte-locked by the 049/053/055 assertions.
      */
     internal fun snapshotResponse(
         ok: Boolean,
@@ -255,6 +351,7 @@ object AgentBrowserTool {
         candidates: List<Int>,
         scrollY: Int?,
         selector: String? = null,
+        tab: String? = null,
     ): JsonObject = buildJsonObject {
         if (!ok) {
             put("ok", false)
@@ -264,6 +361,7 @@ object AgentBrowserTool {
             if (selector != null) put("selector", selector)
             if (scrollY != null) put("scrollY", scrollY)
             appendConsole(console)
+            if (tab != null) put("tab", tab)
         } else {
             put("ok", true)
             put("state", state)
@@ -278,6 +376,7 @@ object AgentBrowserTool {
                 put("candidates", buildJsonArray { candidates.forEach { add(it) } })
             }
             appendConsole(console)
+            if (tab != null) put("tab", tab)
         }
     }
 
@@ -285,8 +384,9 @@ object AgentBrowserTool {
      * The pure console response assembly (unit-tested): ok stays true for an
      * empty buffer (zero captured errors IS the answer for a verification
      * call), with a reason field explaining what is and is not captured.
+     * 056: the addressed panel's id rides at the tail.
      */
-    internal fun consoleResponse(window: ConsoleWindow, since: Int, file: String?): JsonObject {
+    internal fun consoleResponse(window: ConsoleWindow, since: Int, file: String?, tab: String? = null): JsonObject {
         val lines = window.entries.map { "[${it.index}] ${it.text}" }
         return buildJsonObject {
             put("ok", true)
@@ -302,7 +402,27 @@ object AgentBrowserTool {
             }
             put("lines", buildJsonArray { lines.forEach { add(it) } })
             if (file != null) put("file", file)
+            if (tab != null) put("tab", tab)
         }
+    }
+
+    /**
+     * 056: the pure LIST assembly (unit-tested) — `{ok, tabs:[...]}` with the
+     * per-tab wire order tab/url/title/carrier/selected.
+     */
+    internal fun listResponse(tabs: List<BrowserTabSummary>): JsonObject = buildJsonObject {
+        put("ok", true)
+        put("tabs", buildJsonArray {
+            tabs.forEach { t ->
+                add(buildJsonObject {
+                    put("tab", t.tabId)
+                    put("url", t.url)
+                    put("title", t.title)
+                    put("carrier", t.carrier)
+                    put("selected", t.selected)
+                })
+            }
+        })
     }
 
     private fun kotlinx.serialization.json.JsonObjectBuilder.appendConsole(console: List<String>) {
@@ -351,9 +471,10 @@ object AgentBrowserTool {
         }
     }
 
-    private fun failure(reason: String, url: String = ""): JsonObject = buildJsonObject {
+    private fun failure(reason: String, url: String = "", tab: String? = null): JsonObject = buildJsonObject {
         put("ok", false)
         put("reason", reason)
         if (url.isNotBlank()) put("url", url)
+        if (tab != null) put("tab", tab)
     }
 }

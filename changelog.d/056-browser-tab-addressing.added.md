@@ -1,0 +1,2 @@
+- pi_browser 工具新增页签寻址：每个浏览器页签有稳定 id（工具窗 t1/t2…、编辑器预览 e1/e2…），open/list 返回 tab，后续动作带 tab 精确操作某个页签（不再跟随「当前选中的」被手动切换带偏），新增 list 动作枚举双形态全部活页签
+- The pi_browser tool gains tab addressing: every browser tab gets a stable id (tool-window t1/t2…, editor previews e1/e2…), open/list answers carry it, later actions take tab to operate on one exact tab, and a new list action enumerates all live tabs across both forms
