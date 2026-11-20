@@ -716,6 +716,7 @@
 - [x] **5b) 回归：chat 面板链接路由不变**：Pi 1 会话内右键用户消息链接 http://127.0.0.1:8931/probe-browser.html（059-chat-top.png 显示链接、059-chat-linkmenu2.png 菜单）：菜单仅含 在系统浏览器中打开/在 Pi 浏览器中打开/复制链接地址 三项，【无 在 Pi 编辑器中打开】——与源码一致（PiAgentPanel.kt:183-185 仅 append 三项，第 4 项只加入浏览器面板处理器）；工具结果行内 URL 为样式文本非 `<a>`（CDP 扫描全页仅 1 个 a[href]），右键得纯原生菜单（059-chat-linkmenu.png）
 - [x] **5c) 回归：既有工具条行为不变**：地址栏+Enter 导航多次成功（bubbles.html/index.html/target.html，CDP url 同步变化）；页内链接点击导航成功（059-item5-linkclick.png：index.html→target.html）；右键菜单 EMBEDDED 路由原位导航成功（059-item5-embedded.png：就地加载 target.html 未新建页签）；more 弹窗打开 DevTools 成功（059-devtools-probe2.png 检查 linkpage 页面）
 - [ ] **上报疑似既有缺陷（非本批四项变更范围，如实留痕）**：浏览器工具窗口 ←/→ 按钮置灰且点击/Alt+Left 均不导航，而 CEF 会话历史存在（CDP history.length=3）且 JS history.back() 正常回退（target.html→index.html，node CDP 实测）——按钮状态绑定/GoBack 调用失效。四项变更均不触及 back/forward 代码（BrowserPanel.kt:263 backButton→kernel.back() 原样保留）；本轮未重装旧版 zip 基线对比，无法判定引入点，留下轮用旧版对照（现场截图 059-item5-back*.png 存盘）
+- [x] **【2026-11-21 撤案】上条疑似缺陷经用户真机实测推翻**：用户实测前进/后退「能操作呀」——链路无开关（kernel.back() 即裸 goBack()），置灰仅为 Swing enabled 态（CEF canGoBack 回调 + 状态机双路刷新，BrowserPanel.kt:319/690）。矛盾证据最可能为测试伪象：当时 3 个 CDP target 并存（聊天 SPA+编辑器预览+工具窗页签），history.length=3 大概率查在另一 target 而点击的是空历史页签——空历史时置灰/no-op 均为 CEF 正确行为。挂账关闭，留观察（用户侧若再现再查）。
 
 ### 055 agent 双形态 target 批真机复验（2026-11-21，重装轮 060，真实键鼠 + CDP）
 
