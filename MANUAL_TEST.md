@@ -568,3 +568,36 @@
 - [ ] 项目树右键 HTML 文件 → Pi Agent 组内「在 Pi 浏览器中打开」→ 页签加载渲染；「在编辑器中打开（Pi 预览）」→ 编辑器页签出现
 - [ ] 导出会话 HTML → 通知点「预览」→ 页签打开且内容与导出文件一致；预览 URL 5 分钟后刷新 → 过期死亡（错误卡），重新发起即可
 - [ ] 无 JCEF 环境（`-Dide.browser.jcef.headless.enabled=false` 启动）→ 浏览器入口降级为错误卡，不崩溃
+
+## 048 走查修复批真机复验（2026-11-20，重建包 r2）
+
+> 复验对象：给定复验 zip 实为**修复前旧构建**（md5 `8086343b…` 与已装坏包逐字节相同；PiBrowserHistory / DevServerProbe / PiDownloader / PiBrowserCookieActions / JcefBrowserZoom / BrowserConsoleBuffer 六个修复类全缺）。
+> 处置：从 worktree HEAD `485b8e3` 跑 `./gradlew buildPlugin` 重建（新 zip md5 `c00ef522…`，含全部修复类）→ 重装序列 WM_CLOSE→Confirm Exit→Exit→idea64 退出码 0→备份 bak-prerefix-r2→换包→重启→过启动（项目已信任，无信任框）→CDP 9222 就绪。
+> **以下各项均只对重建包复验**；截图在 `build/walkthrough/`（crop-r2-*.png / shot-r2-*.png，不入库）；完整明细与未过项分析见 `specs/0.5.10-run-report.md`「048 走查修复批真机复验」段。
+> 结论：**25 项 = 15 过 / 10 未过**（9 项复现失败 + 1 项 BLOCKED 无法验证）；其中两个是本轮修复引入的新回归（F-201 地址栏 Enter 劫持、F-208 页签隔离），发版前需再修一轮。
+
+- [x] **F-101 地址栏直输（IME 关闭）**：任务栏输入指示器为「中」（微信输入法 CN 模式）下真点击地址栏 → Ctrl+A → 慢速直打完整 URL → 字段精确显示 `http://127.0.0.1:8931/star-clock.html`，无丢字符/变形；随后 Enter 曾被 F-201 新回归劫持（见下），Esc 关下拉后 Enter 正常导航到星空时钟（CDP title=星空时钟）。截图 crop-r2-f101-typed.png、crop-r2-imebar.png
+- [x] **F-102 后退/前进/停止**：anchor blank 点击→?nav=1；后退→base（CDP s=""）；前进→?nav=1（title=NAV-TARGET-TITLE）——前进修复生效；黑洞导航中点停止→无错误卡、星空时钟页保留（crop-r2-f203-stopped3.png），CDP 单 target 无 chrome-error 条目。边界：错误卡状态下再黑洞+Esc 停止仍出错误卡（ERR_EMPTY_RESPONSE，时序相关）——主路径已修、边界如实留痕
+- [x] **F-103 地址栏实时回显**：anchor 点击后地址栏立即显示完整 `http://127.0.0.1:8931/probe-browser.html?nav=1`（crop-r2-f103.png），CDP {title:'NAV-TARGET-TITLE', url:'…?nav=1'} 一致——query 丢失已修。新瑕疵：页签切换重选后地址栏回显退回 base（CDP 仍 ?nav=1），并入 F-208 页签隔离缺陷
+- [x] **F-104 右键加法菜单**：CEF 默认项 Back/Forward(灰)/Print…/View page source + Open DevTools + Open in system browser + Open in Pi browser + Copy link address 全保留（crop-r2-f104menu.png）；Copy link address 点击后剪贴板精确 `http://127.0.0.1:8931/download-sample.bin`。注：本机 OSR 的 CEF 默认菜单本就不含链接专属项（另存为等），加法修复保留了 CEF 实际提供的全部默认项
+- [x] **F-105 回显无粘连**：星空时钟已加载→导航 8933 → 错误卡状态行「127.0.0.1 — http://127.0.0.1:8933/」两段一致（旧拼错消失）；加载中回显为干净的「Loading... http://10.255.255.1/slow-r2」（目标 URL，无上一页标题粘连）。crop-r2-f210.png、crop-r2-f203-loading.png
+- [x] **F-106 外开带 query**：Bing 搜索结果页（带 query）真点外开按钮 (1471,95) → Edge 新标签页标题「react hooks 文档 - 搜索 和另外 6 个页面」——带 query 的原始 URL 直开系统浏览器
+- [x] **F-107 聊天链接三态**：AI 输出 [Example](https://example.com/) 与 [探针](http://127.0.0.1:8931/probe-browser.html) 两链接（crop-r2-f107b.png）；左键 Example → Edge「Example Domain 和另外 7 个页面」（系统浏览器直开）；右键探针 → 加法菜单（crop-r2-f107c.png）；点 Open in Pi browser → 新建 Browser 页签加载 probe（CDP 新 target PI-BROWSER-PROBE-TITLE，crop-r2-f107d.png）。小变化：右键菜单不再带底部 URL 预览行
+- [x] **F-108 pi_browser 工具**：聊天发送后 AI 调 pi_browser open（0.1s）→ 新建 Browser 页签并加载 probe-browser.html，read 回执含 URL/标题/文本（聊天 DOM 轮询多次验证「Pi browser: LOADED … text: JS error probe page」）
+- [ ] **F-109 窄窗工具条——未过**：拖窄至约 510px：六个按钮全部保留不消失（crop-r2-f109n3.png，改进项生效）但 Go 仍被挤出不可见；放宽至 580px（crop-r2-f109w.png）与 650px（crop-r2-f109w2.png）Go 仍缺（地址栏持续吸收剩余宽度），约 830px 才回归（crop-r2-restore.png）——窄态鼠标用户失去 Go 的核心症状未修复
+- [ ] **F-110 下载——未过**：dl-test 页真实点击下载链接 (1147,228) 与地址栏直访 `http://127.0.0.1:8931/download-sample.bin` 后，`C:/Users/Administrator/Downloads` 目录仍未被创建（ls 报 No such file or directory）、idea.log 无任何下载行、无通知；.bin 导航后状态卡停在「Loading... …download-sample.bin」（spinner+进度条可见，crop-r2-f110d.png），CDP target 仍为 dl-test.html——Proxy 化 downloadHandler 未使 onBeforeDownload 触发
+- [ ] **F-201 地址栏历史下拉——未过（本轮修复引入的新回归）**：点击/聚焦地址栏正常弹最近访问下拉（含 bing 首页、搜索页、probe 三条，crop-r2-f201-dd2.png）；但下拉开着时输入完整 URL（字段显示正确，crop-r2-f201-typed2.png）按 Enter **不会导航到所输 URL**，而是提交空搜索进 Bing（CDP url=https://www.bing.com/?scope=web&cc=SG，历史里留下空搜索条目），两次复现确定；先按 Esc 关下拉再 Enter 才正常（CDP title=星空时钟）——「输入+Enter 导航」主路径被破坏
+- [~] **F-202 快捷键（部分）**：Ctrl+R 与 F5 生效（注入 window.__probeMark 后按键 → mark=null，真实重载）；Esc 停止主路径无错误卡（同 F-102）。未过：Alt+←/→ 在页面真实聚焦（hasFocus=true）与 Swing 地址栏聚焦两种上下文下、干净两步历史后各等 2.5s，CDP title/search 均无变化——windowed 未验证的风险在 OSR 同样存在（FLAG_ALT=0x4 与 cef_event_flags_t 实际 ALT=8 不符亦可能）；错误卡状态下 Esc 仍出错误卡（同 F-102 边界）
+- [x] **F-203 加载可视化**：黑洞 URL 挂起期间刷新钮变 spinner、navRow 下进度条出现、echo 为干净目标 URL（crop-r2-f203-loading.png）三项全部生效；停止后 spinner 复位为刷新钮（crop-r2-f203-stopped3.png）
+- [x] **F-204 页内查找**：Browser 页签聚焦后 Ctrl+F 弹查找条（hint 含「无计数（engine limitation）」+×按钮，crop-r2-f204b.png）；粘贴 PROBE 回车 → PI-BROWSER-PROBE-H1 黄色高亮（crop-r2-f204b2.png）；Esc 关闭（crop-r2-f204b3.png）。聊天面板 Ctrl+F 打开其自带 SessionSearch（另一作用域，既有实现）
+- [x] **F-205 缩放**：CDP 计量 Ctrl+加号×2 → innerWidth 787→656、devicePixelRatio 1→1.2（真实缩放）；Ctrl+0 恢复 787/1.0（crop-r2-f205.png）。滚轮缩放按计划允许降级未实现，未测
+- [ ] **F-206 console 读回——未过**：jserr.html（加载即 console.error，CDP 证实 __jsErrFired=true）经 pi_browser open+read 后回执仍无任何 console 行；AI 亦明确说工具返回中未显示 JS 错误——反射挂 devToolsClient 静默降级生效，console 读回未工作
+- [ ] **F-207 JS 弹窗——未过**：CDP 钩 window.alert 计数后真实点击 fire alert → 计数 0→1（alert 已调用）但屏幕无任何对话框，win_ui list 无新 SunAwtDialog（shot-r2-f207b.png）——CefJSDialogHandler 在 OSR 工具窗内核未产生可见弹窗；confirm/prompt 同路径未再单测
+- [ ] **F-208 多页签——未过（页签隔离缺陷，本轮修复引入）**：多页签创建生效：pi_browser open 不同 URL 新建 Browser Content（页签条出现第二个 Browser，crop-r2-f208tabs.png；上限 4 生效）；但每次 open 除新建/选中目标页签外，还把此前选中的页签也导航到同一 URL——open star-clock 后原 dl-test 页签变 star-clock；open jserr 后出现两个 JSERR-TITLE target（最终 4 个 Browser target 中两个同为 jserr）——单次 open 导致旧页签内容丢失
+- [x] **F-209 DevTools 入口**：工具条第 4 个按钮为 DevTools（宽态 crop-r2-browser0.png）；页内右键含「Open DevTools」（crop-r2-f104menu.png）；点击后 DevTools 以独立窗口打开（CDP 新 target devtools://devtools/bundled/devtools_app.html，任务栏独立 DevTools 窗口，shot-r2-f209.png），WM_CLOSE 干净关闭
+- [x] **F-210 错误码**：8933 死端口错误卡新增「Reason: ERR_CONNECTION_REFUSED (ERR_CONNECTION_REFUSED)」行（crop-r2-f210.png）；黑洞停止场景显示「Reason: ERR_EMPTY_RESPONSE (ERR_EMPTY_RESPONSE)」（crop-r2-f203-stopped.png）——错误码随事件类型正确变化
+- [x] **F-211 聊天面板右键加法**：非链接区域 CEF 默认四项保留；链接区域为 CEF 默认项+Open DevTools+三自定义项（crop-r2-f104menu.png），Copy link address 剪贴板精确；「复制链接文本」按计划降级为复制地址、「检查」由平台 DevTools 菜单项覆盖
+- [x] **F-212 地址栏直搜**：地址栏粘贴「react hooks 文档」（Esc 关下拉后 Enter）→ CDP target {title:'react hooks 文档 - Search', url:'https://www.bing.com/search?q=react+hooks+%E6%96%87%E6%A1%A3&rdr=1…'}——Bing 直搜生效，不再是 punycode 错误卡（spec 048 Q1 拍板行与 F-101 IME 取舍标注已核对）
+- [ ] **F-213 下载体验——未验（BLOCKED，如实报）**：通知 reveal 动作、下载进度 echo、bridge ide.downloadFile 均以「下载成功落盘」为前提，而 F-110 未过（onBeforeDownload 不触发、无落盘无通知），无从验证；代码侧已核对存在（bridge 新方法等），bundle reveal 动作是否在包内未单独核对
+- [ ] **F-214 dev server 自动探测——未过**：聊天让 AI 以自动探测模式（不传 url）调 pi_browser open → 返回 error（3.0s）「Pi browser: FAILED — no loopback dev server found to auto-detect (nothing listening)…」——但 8931 全程在监听（本轮全部测试都在用它）；纯函数单测绿但真机 netstat 解析没找到任何候选。降级文案本身模型可读（这部分符合修复声明）
+- [ ] **F-215 弹窗接续/cookie——未过（部分）**：loopback 弹窗用户可见行为仍为原位接续（anchor blank 点击→?nav=1，crop-r2-f103.png）；但插件日志显示路由决策为「browser popup intercepted: … -> CefDefault」（idea.log 02:36:15/02:37:51 两行）——显式 in-place 路由未按声明接管，实际仍走 CEF 默认；cookie 清理动作无任何 UI 入口，真机无法触发（源码存在）；登录态/存储模式依旧缺失（048 已声明推迟）——核心诉求未解决
