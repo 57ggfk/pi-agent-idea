@@ -1219,46 +1219,6 @@ export default function Composer() {
           )}
         </div>
       ) : null}
-      {images.length > 0 ? (
-        <div className="image-chips" data-testid="image-chips">
-          {images.map((img, i) => {
-            const label = img.name || t("composer.image.fallback");
-            const src = `data:${img.mimeType};base64,${img.data}`;
-            const size = estimateSize(img.data);
-            return (
-              <span key={i} className="image-card" data-testid="image-card">
-                {/* 018 US2: the thumbnail opens the shared preview modal; the
-                    list is handed over with the click (composer images never
-                    enter the transcript). */}
-                <img
-                  className="image-card-thumb"
-                  src={src}
-                  alt={label}
-                  title={size ? `${label} · ${size}` : label}
-                  onClick={() =>
-                    openComposerPreview(
-                      images.map((im) => ({
-                        src: `data:${im.mimeType};base64,${im.data}`,
-                        label: im.name || t("composer.image.fallback"),
-                      })),
-                      i,
-                    )
-                  }
-                />
-                <span className="image-card-name">{label}</span>
-                <button
-                  type="button"
-                  className="chip-remove"
-                  aria-label={t("composer.image.remove", { name: label })}
-                  onClick={() => setImages((prev) => prev.filter((_, j) => j !== i))}
-                >
-                  <Icon name="x" className="ic-sm" />
-                </button>
-              </span>
-            );
-          })}
-        </div>
-      ) : null}
       {/* Reference chips moved inline (018 US1): tokens are rendered by the
           mirror overlay inside the textarea wrap below, so nothing occupies a
           separate row above the box anymore. */}
@@ -1329,6 +1289,46 @@ export default function Composer() {
             e.target.value = "";
           }}
         />
+      {images.length > 0 ? (
+        <div className="image-chips" data-testid="image-chips">
+          {images.map((img, i) => {
+            const label = img.name || t("composer.image.fallback");
+            const src = `data:${img.mimeType};base64,${img.data}`;
+            const size = estimateSize(img.data);
+            return (
+              <span key={i} className="image-card" data-testid="image-card">
+                {/* 018 US2: the thumbnail opens the shared preview modal; the
+                    list is handed over with the click (composer images never
+                    enter the transcript). */}
+                <img
+                  className="image-card-thumb"
+                  src={src}
+                  alt={label}
+                  title={size ? `${label} · ${size}` : label}
+                  onClick={() =>
+                    openComposerPreview(
+                      images.map((im) => ({
+                        src: `data:${im.mimeType};base64,${im.data}`,
+                        label: im.name || t("composer.image.fallback"),
+                      })),
+                      i,
+                    )
+                  }
+                />
+                <span className="image-card-name">{label}</span>
+                <button
+                  type="button"
+                  className="chip-remove"
+                  aria-label={t("composer.image.remove", { name: label })}
+                  onClick={() => setImages((prev) => prev.filter((_, j) => j !== i))}
+                >
+                  <Icon name="x" className="ic-sm" />
+                </button>
+              </span>
+            );
+          })}
+        </div>
+      ) : null}
         <div className="composer-input-wrap">
           {/* Mirror overlay (018 US1): paints the token pills over the raw
               text. It is non-interactive except the pills themselves; the

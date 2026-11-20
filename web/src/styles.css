@@ -772,9 +772,11 @@ button {
 /* Composer */
 .composer {
   flex: 0 0 auto;
-  border-top: 1px solid var(--border);
+  /* 浮框式（输入区分隔竞品调研拍板）：不再有分割线与条带底色——消息区与输入
+     区之间只有留白（message-list 底部 24px）+ 输入框自身的边框与 focus 高亮。
+     16 家竞品「分割线+条带底色+框边框」三条信号并用 0 先例，IDE 编码面板
+     5/6 是无分割线无条带的浮框。 */
   padding: 8px 10px;
-  background: var(--bg-secondary);
   /* Anchors the drag-and-drop hint (spec 016) over the whole composer. */
   position: relative;
 }
@@ -3012,6 +3014,13 @@ button {
   flex-wrap: wrap;
   gap: 6px;
   margin-bottom: 6px;
+  /* 图片卡在 composer-box 边框内部（浮框式：附件跟着框走，VS Code/Cline/
+     ChatGPT 同款结构——附件行是带边框容器的第一个子节点，容器长高包住）。
+     内边距让卡片与框线保持 6px 呼吸；约两行封顶、内部滚动是安全阀——20 张
+     以上的极端情况不再让 composer 反客为主吃掉消息区。 */
+  padding: 6px 6px 0;
+  max-height: 190px;
+  overflow-y: auto;
 }
 
 .image-chip {
