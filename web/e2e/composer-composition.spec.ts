@@ -58,7 +58,8 @@ test("the breathing room lives at the content end, not above the input box", asy
   // 底部 24px 叠成两段——留白应全部住在滚动内容区的末尾，输入框直接贴边界。
   // 注意：滚动容器自身的 padding-bottom 在内容溢出时不计入滚动范围（Chromium
   // 行为，真机实测滚到底只剩 12.5px），所以末尾留白是 message-col 里的
-  // 22px spacer + 列的 14px flex gap = 36px，随内容滚动、必然生效。
+  // 4px spacer + 列的 14px flex gap = 18px（用户反馈 36px 太高，去一半），
+  // 随内容滚动、必然生效。
   await page.getByTestId("composer-input").fill("end gap probe");
   await page.getByTestId("send-btn").click();
   await expect(page.getByTestId("status-dot")).toHaveClass(/busy/, { timeout: 20_000 });
@@ -79,8 +80,8 @@ test("the breathing room lives at the content end, not above the input box", asy
   expect(s.composerTop).toBe("0px");
   expect(s.listBottom).toBe("16px");
   expect(s.gapPresent).toBe(true);
-  expect(s.gapH).toBe(22);
-  expect(s.visibleEndGap).toBeGreaterThanOrEqual(34);
+  expect(s.gapH).toBe(4);
+  expect(s.visibleEndGap).toBeGreaterThanOrEqual(16);
 });
 
 test("the chip row is capped at ~two rows with internal scroll (safety valve)", async ({ page }) => {
