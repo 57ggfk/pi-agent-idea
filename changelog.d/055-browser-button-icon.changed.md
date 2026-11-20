@@ -1,0 +1,2 @@
+- 工具窗的「新建浏览器页签」按钮换成浏览器样式的地球图标
+- The tool window's "new browser tab" button now uses a browser-style globe icon
