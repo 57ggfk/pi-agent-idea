@@ -174,6 +174,9 @@ class PiBrowserKernel(
     }
 
     private fun createOnEdt(): JBCefBrowser {
+        // 052: creating a browser freezes the JCEF log level — ask for the
+        // level that makes GPU crashes readable first.
+        JcefLogLevelGuard.ensure()
         // F-209: the platform's own "Open DevTools" context-menu entry (public
         // builder flag, 233–263) — zero self-drawn menu work for inspect.
         val builder = JBCefBrowser.createBuilder()

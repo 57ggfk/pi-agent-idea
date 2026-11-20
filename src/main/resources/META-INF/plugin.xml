@@ -46,6 +46,9 @@
                     icon="/icons/piAgent.svg"
                     canCloseContents="true"/>
         <postStartupActivity implementation="dev.pi.agent.toolwindow.PiAgentStartupActivity"/>
+        <!-- 052: the JCEF log level is frozen when the first browser is
+             created, so the plugin has to ask for it as early as it can. -->
+        <preStartupActivity implementation="dev.pi.agent.browser.JcefLogLevelSetup"/>
 
         <!-- 048 (spec US9): editor-form presentation for the plugin's own
              preview files only — never claims real project HTML files. -->

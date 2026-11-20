@@ -3,96 +3,111 @@ package dev.pi.agent.browser
 /**
  * 052: when does a JCEF GPU crash loop deserve a user-facing warning?
  *
- * Why the plugin counts processes instead of listening for an event: the
- * platform hook this would normally use does not exist on the supported line.
- * `JBCefHealthMonitor` / `JBCefHealthCheckTopic` are absent from 233-263
- * (checked against the 2024.3.1 sources jar and the 262 runtime jars), and
- * the one hook that DOES exist — `CefAppHandler.onBeforeChildProcessLaunch` —
- * can only be registered BEFORE the CEF app is initialized (`CefApp
- * .addAppHandler` throws "Must be called before CefApp is initialized") into
- * a single static slot that the platform already owns (`JBCefApp
- * .MyCefAppHandler` counts `--type=gpu-process` launches itself and shows
- * its own notification at 10 launches).
+ * Why the plugin reads Chromium's own log instead of listening for an event:
+ * both platform hooks are checked and neither can warn early.
  *
- * Chromium relaunches a crashed GPU process as a NEW process, and every
- * launch carries `--type=gpu-process` in its command line. Counting distinct
- * GPU processes over a window is therefore a direct read of "the GPU keeps
- * crashing" — with no platform dependency at all.
+ * - `JBCefHealthMonitor` / `JBCefHealthCheckTopic` exist in 2026.2 only
+ *   (absent from 233-243), and the platform calls `onGpuProcessFailed()`
+ *   only after ITS OWN gpu-launch limit is exceeded — 10 launches by
+ *   default, by which time it has already disposed the whole CEF app.
+ *   Late is not early.
+ * - `CefApp.addAppHandler` throws unless no CefApp instance exists yet, and
+ *   the single user slot REPLACES the platform's handler (the CefApp
+ *   constructor assigns `appHandler_ = userAppHandler_`). Taking it would
+ *   silently disable the platform's own gpu-launch counting.
+ *
+ * The platform's JCEF writes Chromium's native log next to the IDE log, and
+ * every GPU crash lands there as
+ * `ERROR:content\browser\gpu\gpu_process_host.cc] GPU process exited
+ * unexpectedly: exit_code=…` — verified on 2026.2.3: three kills of the GPU
+ * process produced exactly three such lines, and the 049 crash session left
+ * 385 of them. Counting those lines inside a window is a direct read of "the
+ * GPU keeps crashing".
+ *
+ * The log only carries those lines when Chromium logs at ERROR level — the
+ * platform defaults to "disable", which leaves the file empty. The plugin
+ * raises the level itself (see [JcefLogLevelPolicy]) before the first
+ * browser is created.
+ *
+ * Counting PROCESSES instead was tried first and does not work on Windows:
+ * `ProcessHandle.Info.commandLine()` returns null there (verified on
+ * 2026.2.3 — even for the JVM's own child), so a GPU process cannot be told
+ * apart from the renderer and utility children.
  */
 internal object GpuCrashPolicy {
 
-    /** Chromium's marker for the GPU child process. */
-    const val GPU_PROCESS_MARKER = "--type=gpu-process"
+    /** Chromium's wording for a GPU process that died. Exactly one per crash. */
+    const val GPU_CRASH_MARKER = "GPU process exited unexpectedly"
 
-    /** How far back a launch still counts as "recent". */
+    /** How far back a crash still counts as "recent". */
     const val WINDOW_MS = 60_000L
 
     /**
-     * How many GPU launches inside the window mean "crash loop".
+     * How many GPU crashes inside the window mean "crash loop".
      *
-     * A healthy IDE starts exactly one GPU process per CEF app, so three
-     * launches inside a minute is already abnormal — and it stays well below
-     * the platform's own limit of 10, so the user hears about it before the
-     * IDE tears down its whole browser stack.
+     * The platform's own limit is 10 GPU process launches, after which it
+     * disposes the whole CEF app. Three crashes inside a minute is already
+     * abnormal and fires well before that, so the user hears about it while
+     * the IDE still works.
      */
-    const val MIN_LAUNCHES = 3
+    const val MIN_CRASHES = 3
 
-    fun isGpuProcess(commandLine: String?): Boolean =
-        commandLine != null && commandLine.contains(GPU_PROCESS_MARKER)
+    fun isGpuCrashLine(line: String): Boolean = line.contains(GPU_CRASH_MARKER)
 
-    fun launchesInWindow(
-        launchTimestampsMs: List<Long>,
+    fun countGpuCrashLines(lines: List<String>): Int = lines.count { isGpuCrashLine(it) }
+
+    fun crashesInWindow(
+        crashTimestampsMs: List<Long>,
         nowMs: Long,
         windowMs: Long = WINDOW_MS,
-    ): Int = launchTimestampsMs.count { nowMs - it in 0..windowMs }
+    ): Int = crashTimestampsMs.count { nowMs - it in 0..windowMs }
 
     fun decide(
-        launchTimestampsMs: List<Long>,
+        crashTimestampsMs: List<Long>,
         nowMs: Long,
-        minLaunches: Int = MIN_LAUNCHES,
+        minCrashes: Int = MIN_CRASHES,
     ): GpuCrashDecision =
-        if (launchesInWindow(launchTimestampsMs, nowMs) >= minLaunches) {
+        if (crashesInWindow(crashTimestampsMs, nowMs) >= minCrashes) {
             GpuCrashDecision.NOTIFY
         } else {
             GpuCrashDecision.NONE
         }
 }
 
-/** What the detector decided about the GPU launches it has seen. */
+/** What the detector decided about the GPU crashes it has seen. */
 internal enum class GpuCrashDecision { NONE, NOTIFY }
 
 /**
- * Sliding-window state of GPU launches. Pure on purpose: no clock, no
- * processes — the caller feeds it timestamps, so the policy stays unit
- * testable.
+ * Sliding-window state of GPU crashes. Pure on purpose: no clock, no files —
+ * the caller feeds it timestamps, so the policy stays unit testable.
  */
 internal class GpuCrashTracker(
     private val windowMs: Long = GpuCrashPolicy.WINDOW_MS,
-    private val minLaunches: Int = GpuCrashPolicy.MIN_LAUNCHES,
+    private val minCrashes: Int = GpuCrashPolicy.MIN_CRASHES,
 ) {
-    private val launches = ArrayDeque<Long>()
+    private val crashes = ArrayDeque<Long>()
 
     @Synchronized
-    fun onGpuLaunch(nowMs: Long): GpuCrashDecision {
-        launches.addLast(nowMs)
+    fun onGpuCrash(nowMs: Long): GpuCrashDecision {
+        crashes.addLast(nowMs)
         return decision(nowMs)
     }
 
     @Synchronized
     fun decision(nowMs: Long): GpuCrashDecision {
         prune(nowMs)
-        return GpuCrashPolicy.decide(launches.toList(), nowMs, minLaunches)
+        return GpuCrashPolicy.decide(crashes.toList(), nowMs, minCrashes)
     }
 
     @Synchronized
-    fun launchesInWindow(nowMs: Long): Int {
+    fun crashesInWindow(nowMs: Long): Int {
         prune(nowMs)
-        return launches.size
+        return crashes.size
     }
 
     private fun prune(nowMs: Long) {
-        while (launches.isNotEmpty() && nowMs - launches.first() > windowMs) {
-            launches.removeFirst()
+        while (crashes.isNotEmpty() && nowMs - crashes.first() > windowMs) {
+            crashes.removeFirst()
         }
     }
 }

@@ -11,8 +11,9 @@
 ## 怎么确认
 
 1. `Help → Show Log in Explorer` 打开 `idea.log`。
-2. 看 JCEF 的 Chromium 日志 `log/jcef_chromium_<pid>.log`（需要
-   `-Dide.browser.jcef.log.level=verbose` 才有内容）：
+2. 看 JCEF 的 Chromium 日志 `log/jcef_chromium_<pid>.log`（默认是空的——平台
+   默认把日志级别设成 `disable`；插件会在你没设过级别时自动抬到 `error`，
+   自己看的话在 VM 参数里加一行 `-Dide.browser.jcef.log.level=error`）：
    - `GPU process exited unexpectedly: exit_code=…` —— GPU 进程崩溃；
    - `Failed to send GpuControl.CreateCommandBuffer` —— 合成层拿不到画面。
 3. 看进程树：IDE 的 JCEF 服务进程下面挂着 `cef_server.exe --type=gpu-process`，
@@ -20,16 +21,24 @@
 
 ## 插件现在会做什么（052）
 
-插件盯着 IDE 自己的 Chromium GPU 子进程（命令行里带 `--type=gpu-process`）：
+插件读 JCEF 的 Chromium 日志（IDE 日志目录下的 `jcef_chromium_<pid>.log`；2024.3 默认落在
+用户主目录），盯每一次 GPU 崩溃记录（`GPU process exited unexpectedly`）：
 
-- 60 秒内出现 3 个**新的** GPU 进程（= 崩溃后被重启 3 次）→ 弹一次通知；
+- 60 秒内记到 3 次 GPU 崩溃 → 弹一次通知；
 - 通知带「**禁用 GPU 并重启 IDE**」一键按钮：翻转平台自己的注册表键
   `ide.browser.jcef.gpu.disable=true` 并重启 IDE——用户不需要改任何配置文件；
 - 另附「**手动怎么修**」按钮，列出下面两种手动办法；
 - 一次 IDE 运行最多提醒一次，正常路径零打扰。
+- 为了让日志里真的有东西，插件在**你没设过日志级别**时把 JCEF 日志级别抬到 `error`
+  （只留错误级，文件很小：实测 3 次 GPU 崩溃共 381 字节）。你若自己设过级别
+  （`ide.browser.jcef.log.level`），插件一律不动它。
+
+> 日志级别在**第一个浏览器创建时**就被冻结。若那时已有别的组件建过浏览器，插件就改不动
+> 级别，这次会话可能看不到提示——插件会在 `idea.log` 里留一行 WARN 说明这一点。
+> 想每次都生效，用 VM 参数 `-Dide.browser.jcef.log.level=error` 固定下来。
 
 平台的原生阈值是 GPU 进程启动 10 次（`ide.browser.jcef.gpu.infinitecrash.internallimit`，
-默认 10），到点后 IDE 会销毁整个 CEF 进程树。插件的阈值更早（3 次 / 60 秒），
+默认 10），到点后 IDE 会销毁整个 CEF 进程树。插件的阈值更早（3 次崩溃 / 60 秒），
 目的是在 IDE 自己拆掉浏览器栈之前先把原因和修法交到用户手上。
 
 > 平台自己的通知（`Too many restarts of the GPU process (JCEF)`）在 233–263 都有；
