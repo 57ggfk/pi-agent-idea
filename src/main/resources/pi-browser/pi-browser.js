@@ -125,6 +125,7 @@ export default function (pi) {
       "Open supports two forms: target 'tab' puts the page in the Pi Agent tool-window tab, 'editor' in an editor-tab preview; follow-up read/scroll/console go to the form your last open used, so pass target again only when you want to switch.",
       "Every open/list result names the tab it used (tab: t1, e2, … — run action 'list' to enumerate all live tabs); pass that tab on later actions to operate on that exact tab even after you or the user switch tabs, and omit tab to keep following the tab your last open landed on.",
       "click and type target elements by CSS selector (synthetic events, React-compatible input) and evaluate runs JavaScript in the page — they carry page side effects, so re-run 'read' afterwards to verify the DOM actually changed; found:false means the selector matched nothing (check the selector or the page state first).",
+      "Pages you generate must carry their own colors: declare body background AND text color as a matched pair (background:#fff;color:#222, or background:#111;color:#eee) — never rely on browser defaults. A page that sets only one of them turns into unreadable dark-on-dark or white-on-white text; the browser cannot adapt your page to its theme for you.",
     ],
     parameters: Type.Object({
       action: StringEnum(["open", "read", "reload", "scroll", "console", "list", "click", "type", "evaluate"]),

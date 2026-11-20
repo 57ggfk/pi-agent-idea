@@ -211,6 +211,11 @@ class PiBrowserKernel(
             .setEnableOpenDevToolsMenuItem(true)
         if (offscreen) builder.setOffScreenRendering(true)
         val created = builder.build()
+        // 058: JCEF 默认画布跟随 IDE 主题色——暗色主题下未自声明背景的页面=暗底配 UA
+        // 黑字，黑字不可读（057 夹具页真机实证）。平台预览器同款兜底（[J1]
+        // WebPreviewFileEditor 强制 Color.WHITE）：setPageBackgroundColor 只填充画布，
+        // 页面自带的背景/文字配色不受影响。
+        created.setPageBackgroundColor("#FFFFFF")
         val h = PiBrowserHandlers(this)
         browser = created
         handlers = h
