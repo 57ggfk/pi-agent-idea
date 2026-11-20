@@ -452,6 +452,10 @@ button {
   pointer-events: auto;
   padding-bottom: 0;
   box-shadow: none;
+  /* 049: 标题栏右侧可能同时有 复制 / 在 IDE 打开 / 源码 / 换行 / 复制为图片
+     五个按钮——窄面板里宁可让按钮换行，也不能被壳裁掉。 */
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 /* 048 换行开关的按下态（aria-pressed 由 JS 同步） */
@@ -460,6 +464,17 @@ button {
   background: var(--accent-soft);
   border-color: var(--accent);
   color: var(--accent-text);
+}
+
+/* 049 禁用态：渲染成图时没有「行」可换，「换行」开关置灰。
+   只动颜色与透明度——字号、边框、间距、底色与其它按钮保持一致（048 的
+   「所有块按钮同一套外观」依赖这一点）。 */
+.block-action-btn:disabled,
+.block-action-btn:disabled:hover {
+  color: var(--text-tertiary);
+  border-color: var(--border);
+  opacity: 0.55;
+  cursor: default;
 }
 
 /* 048 行号槽：在 pre 之外（pre 横向滚动会裁掉越界的元素）。

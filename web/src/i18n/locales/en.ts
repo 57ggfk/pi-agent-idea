@@ -13,6 +13,8 @@ export const en = {
   "markdown.openInIde": "Open in IDE",
   "markdown.copyAsImage": "Copy as image",
   "markdown.wrap": "Wrap",
+  // 049: 渲染/源码模式切换（aria-pressed=true 表示当前看的是源码）
+  "markdown.source": "Source",
   "common.delete": "Delete",
   "common.loading": "Loading…",
 

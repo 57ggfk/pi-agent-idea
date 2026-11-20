@@ -11,7 +11,7 @@ import { rasterizeElement } from "../lib/copyAsImage";
 import { parseDiffHeaderPath } from "../lib/diffPaths";
 import { normalizeFootnoteDefs } from "../lib/footnotePreprocess";
 import { markedKatexExtended } from "../lib/katexInline";
-import { renderMermaid, mermaidBuiltInTheme } from "../lib/mermaidRender";
+import { renderMermaid, mermaidBuiltInTheme, type MermaidTheme } from "../lib/mermaidRender";
 
 marked.setOptions({ gfm: true, breaks: true });
 // 038 US2: marked ^15 has no GFM footnote support of its own (measured:
@@ -123,19 +123,42 @@ function linkifyTextNodes(root: ParentNode) {
 const COPY_FLASH_MS = 1200;
 
 /**
- * 048: 每块的换行状态。
+ * 048/049: 每块的状态（换行开关、渲染/源码模式）。
  *
  * **不能**放在组件的 ref 里：pi 的 `message_end` 会用权威消息整条替换
  * assistant item（新的 item id → React 重挂载 → ref 归零），流式结束的那
- * 一刻状态就丢了。所以状态放在模块级，键取「语言 + 源码开头」——与消息、
- * 与组件实例都无关，重挂载后照样认得。
+ * 一刻状态就丢了。所以状态放在模块级，键取「语言 + 块序号 + 源码开头」——
+ * 与消息、与组件实例都无关，重挂载后照样认得。
  */
 const wrapStates = new Map<string, boolean>();
+/** 049: 每块的显示模式——`render`（渲染成图）或 `source`（看源码）。 */
+const viewModes = new Map<string, ViewMode>();
 /** 状态条目的上限（防止长会话无限增长）。 */
 const WRAP_STATE_MAX = 200;
+const VIEW_STATE_MAX = 200;
 
-function wrapStateKey(lang: string, text: string): string {
-  return `${lang}:${text.slice(0, 48)}`;
+/**
+ * 块状态键：`lang#index:源码开头`。
+ *
+ * **带块序号**是为了让「前缀回溯」安全：源码在流式增长，键会变，早先记下的
+ * 键是当前键的前缀 —— 但只有**同一个块**（同样的语言与序号）才该继承。
+ * 没有序号时，源码还空着的块（键 = `mermaid:`）会匹配到消息里**每一个**
+ * mermaid 块 → 用户在一个块上的选择会跑到别的块上。
+ */
+function blockStateKey(lang: string, index: number, text: string): string {
+  // marked 给围栏内容补了一个结尾换行（渲染出来的 textContent 比原始源码多
+  // 一个 "\n"）。**必须去掉它**：否则流式中途的源码前缀与下一段不再成前缀
+  // （"...\n  \n" vs "...\n  A[Start] \n"），前缀回溯就认不出同一个块，
+  // 用户在流式中途做的选择会丢。
+  return `${lang}#${index}:${text.replace(/\n$/, "").slice(0, 48)}`;
+}
+
+/** 键里「lang#index:」前缀的长度 —— 比它短的键不算是同一个块。 */
+function stateKeyPrefixLen(key: string): number {
+  const hash = key.indexOf("#");
+  if (hash < 0) return 0;
+  const colon = key.indexOf(":", hash + 1);
+  return colon < 0 ? 0 : colon + 1;
 }
 
 function readWrapState(key: string): boolean {
@@ -143,8 +166,9 @@ function readWrapState(key: string): boolean {
   if (exact !== undefined) return exact;
   // 流式期间源码在增长：源码没写满 48 字时键会变，早先记下的键是当前键的
   // 前缀 → 沿用它（用户在源码还没写完时就切了换行，那个状态不能丢）。
+  const min = stateKeyPrefixLen(key);
   for (const [k, v] of wrapStates) {
-    if (v && k.length >= 12 && key.startsWith(k)) return true;
+    if (v && k.length >= min && key.startsWith(k)) return true;
   }
   return false;
 }
@@ -156,6 +180,66 @@ function writeWrapState(key: string, on: boolean) {
   }
   wrapStates.set(key, on);
 }
+
+/**
+ * 049: 块的显示模式。
+ *
+ * - `render`：默认。```svg / ```mermaid 这类块渲染成图，源码隐藏。
+ * - `source`：看源码。图形收起、源码显示、换行开关恢复可用。
+ *
+ * 状态存在模块级（理由同 `wrapStates`）：`message_end` 会整条替换 assistant
+ * item，组件 ref 会被冲掉；键取「语言 + 块序号 + 源码开头」，流式中源码变长
+ * 时按前缀回溯（用户在源码还没写完时切的模式不能丢）。
+ */
+type ViewMode = "render" | "source";
+
+function readViewMode(key: string): ViewMode {
+  const exact = viewModes.get(key);
+  if (exact) return exact;
+  // 流式期间源码在增长 → 当前键比早先记下的键长，且早先的键是它的前缀
+  // → 沿用最长的那个前缀（用户切了模式，那个选择不能丢）。
+  const min = stateKeyPrefixLen(key);
+  let bestLen = 0;
+  let best: ViewMode = "render";
+  for (const [k, v] of viewModes) {
+    if (k.length >= min && key.startsWith(k) && k.length > bestLen) {
+      bestLen = k.length;
+      best = v;
+    }
+  }
+  return best;
+}
+
+function writeViewMode(key: string, mode: ViewMode) {
+  if (!viewModes.has(key) && viewModes.size >= VIEW_STATE_MAX) {
+    const oldest = viewModes.keys().next();
+    if (!oldest.done) viewModes.delete(oldest.value);
+  }
+  viewModes.set(key, mode);
+}
+
+/**
+ * 049: 把状态跟着增长的源码一起往前带。
+ *
+ * 键随源码变长 → 早先记下的键只能靠前缀回溯认出来；认出来之后顺手记到
+ * **当前**键上，下一次就不用再靠回溯了（源码还没写满 4 个字就点开关的
+ * 那种情况，早先的键短到认不出来 —— 记到当前键上就稳了）。
+ *
+ * 只带「非默认」的状态：默认的「渲染 / 不换行」不写，免得盖掉用户更晚
+ * 做的选择。
+ */
+function carryForwardState(key: string) {
+  if (readViewMode(key) === "source") writeViewMode(key, "source");
+  if (readWrapState(key)) writeWrapState(key, true);
+}
+
+/** 围栏语言（`language-*`）——多个地方要用，抽一个。 */
+function langOf(code: Element | null): string {
+  return /language-([\w+#-]+)/.exec(code?.className ?? "")?.[1] ?? "";
+}
+
+/** 049: 哪些语言的代码块默认渲染成图（因而需要「渲染 ⇄ 源码」切换）。 */
+const RENDERABLE_LANGS = new Set(["svg", "mermaid"]);
 
 /**
  * 048: 代码块标题栏 —— 左侧语言类型、右侧操作按钮。
@@ -600,11 +684,13 @@ function addCopyButtons(
   root: ParentNode,
   copiedUntil: Map<number, number>,
   openSnippet: (language: string, text: string) => Promise<boolean>,
+  theme: MermaidTheme,
 ) {
   const now = Date.now();
   const copyLabel = i18n.t("common.copy");
   const ideLabel = i18n.t("markdown.openInIde");
   const wrapLabel = i18n.t("markdown.wrap");
+  const sourceLabel = i18n.t("markdown.source");
   for (const [idx, until] of copiedUntil) {
     if (until <= now) copiedUntil.delete(idx);
   }
@@ -666,7 +752,7 @@ function addCopyButtons(
       ev.stopPropagation();
       // Read at click time: the block may still be streaming (041 US3).
       const code = pre.querySelector("code");
-      const lang = /language-([\w+#-]+)/.exec(code?.className ?? "")?.[1] ?? "";
+      const lang = langOf(code);
       void openSnippet(lang, code?.textContent ?? "").then((ok) => {
         if (ok) return;
         ideBtn.textContent = "✗";
@@ -678,11 +764,39 @@ function addCopyButtons(
     actions.appendChild(btn);
     actions.appendChild(ideBtn);
 
+    const codeEl = pre.querySelector("code");
+    const lang = langOf(codeEl);
+    const stateKey = blockStateKey(lang, idx, codeEl?.textContent ?? "");
+
+    // ── 049 模式开关：只有「默认渲染成图」的块才有（svg / mermaid）。
+    //    普通代码块本来就是源码，没有可切的模式 ──
+    if (RENDERABLE_LANGS.has(lang.toLowerCase())) {
+      const modeBtn = document.createElement("button");
+      modeBtn.type = "button";
+      modeBtn.className = "code-source-btn block-action-btn";
+      modeBtn.textContent = sourceLabel;
+      modeBtn.setAttribute("aria-pressed", "false");
+      modeBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        // 意图取反：源码模式锁定 ⇄ 回到渲染。
+        const next: ViewMode = modeBtn.getAttribute("aria-pressed") === "true" ? "render" : "source";
+        // 键按**当前**源码算（流式中源码在长，键跟着长）。
+        writeViewMode(blockStateKey(lang, idx, codeEl?.textContent ?? ""), next);
+        void applyBlockViewMode(codeEl as HTMLElement, theme, next, idx).then((ok) => {
+          if (ok) return;
+          // 这个块渲染不出来（语法错的 Mermaid / 画不出的 SVG）：告诉用户
+          // 「切不过去」，而不是让按钮灰着、点了没反应。
+          modeBtn.textContent = "✗";
+          setTimeout(() => {
+            modeBtn.textContent = i18n.t("markdown.source");
+          }, COPY_FLASH_MS);
+        });
+      });
+      actions.appendChild(modeBtn);
+    }
+
     // ── 048 换行开关：默认不换行；状态存在模块级（组件会被 message_end
     //    重挂载，见 wrapStates 的注释）──
-    const codeEl = pre.querySelector("code");
-    const lang = /language-([\w+#-]+)/.exec(codeEl?.className ?? "")?.[1] ?? "";
-    const stateKey = wrapStateKey(lang, codeEl?.textContent ?? "");
     const wrapBtn = document.createElement("button");
     wrapBtn.type = "button";
     wrapBtn.className = "code-wrap-btn block-action-btn";
@@ -715,9 +829,9 @@ function addCopyButtons(
  * 画不出东西的（空壳、畸形、只剩 <script>）降级回源码显示，不给「复制为图片」
  * 入口（047 FR-007）。
  */
-function renderSvgFence(code: HTMLElement) {
+function renderSvgFence(code: HTMLElement): boolean {
   const pre = code.closest("pre");
-  if (!pre) return;
+  if (!pre) return false;
   const source = code.textContent ?? "";
   const clean = DOMPurify.sanitize(source, {
     USE_PROFILES: { svg: true },
@@ -731,7 +845,7 @@ function renderSvgFence(code: HTMLElement) {
     fig?.remove();
     code.style.display = "";
     syncGutter(pre);
-    return;
+    return false;
   }
   if (!fig) {
     fig = document.createElement("div");
@@ -757,7 +871,7 @@ function renderSvgFence(code: HTMLElement) {
     fig.remove();
     code.style.display = "";
     syncGutter(pre);
-    return;
+    return false;
   }
   code.style.display = "none";
   syncGutter(pre);
@@ -765,6 +879,172 @@ function renderSvgFence(code: HTMLElement) {
   if (actions && !actions.querySelector(".copy-image-btn")) {
     actions.appendChild(makeImageCopyButton(i18n.t("markdown.copyAsImage"), () => fig?.querySelector("svg") ?? null));
   }
+  return true;
+}
+
+/**
+ * 049: 源码模式 —— 收起图形、显示源码、撤掉「复制为图片」入口。
+ *
+ * 这是「源码模式」的唯一入口（渲染失败降级也走这里），保证两种模式互斥：
+ * 图形在，源码就不在；源码在，图形就不在。
+ */
+function showSourceBlock(pre: HTMLElement, code: HTMLElement) {
+  pre.querySelector(".mermaid-figure")?.remove();
+  pre.querySelector(".svg-figure")?.remove();
+  code.style.display = "";
+  // 渲染标记作废：切回渲染模式时必须重新渲染（否则会被「已渲染过」跳过）。
+  delete code.dataset.mermaidDone;
+  pre.closest(".block-shell")?.querySelector(".copy-image-btn")?.remove();
+  syncGutter(pre);
+}
+
+/**
+ * 049: Mermaid 渲染（040 的渲染路径，提到模块级以便模式切换复用）。
+ *
+ * 返回 `true` 表示图形已就位；`false` 表示渲染失败（降级回源码）。
+ *
+ * **图形必须记住自己是从哪份源码画出来的**（`data-mermaid-marker`）：流式
+ * 期间同一个块会被反复重建，同一份源码可能同时有多个渲染请求在飞，而
+ * `renderMermaid` 的并发保护会让后来的请求直接返回 `null`。`null` 只说明
+ * 「这次没画成」，**不代表屏幕上那张图是错的** —— 只有当图属于**另一份**
+ * 源码（流式里源码变长了）时才能把它撤掉，否则刚画好的图会被后来的
+ * `null` 请求拆掉，块永远停在源码上。
+ */
+async function renderMermaidBlock(code: HTMLElement, theme: MermaidTheme): Promise<boolean> {
+  const pre = code.closest("pre");
+  if (!pre) return false;
+  const source = code.textContent ?? "";
+  if (!source.trim()) return false;
+  // The theme is part of the marker: switching the panel theme must
+  // re-render the diagram in the new palette.
+  const marker = `${theme}#${source}`;
+
+  // 已经画好、且就是这份源码画出来的 → 认它，不必重画。
+  const existing = pre.querySelector<HTMLDivElement>(".mermaid-figure");
+  if (existing?.dataset.mermaidMarker === marker) {
+    code.style.display = "none";
+    syncGutter(pre);
+    return true;
+  }
+
+  code.dataset.mermaidDone = marker;
+  const svg = await renderMermaid(source, theme);
+  if (!pre.isConnected) return false;
+  // The rendered source must still be the block's CURRENT text: a late
+  // resolution for an older streaming prefix must not paint its (wrong)
+  // diagram over the grown block, nor heal a figure it does not own.
+  const current = pre.querySelector("code.language-mermaid")?.textContent ?? "";
+  if (current !== source) return false;
+  // Nor may a late render of the PREVIOUS theme paint over the new one:
+  // a theme switch starts a second render, which then owns this block.
+  if (code.dataset.mermaidDone !== marker) return false;
+  // 049: 用户在渲染途中切到了源码模式 → 这张图已经没人要了，不能再画出来。
+  if (code.dataset.viewMode !== "render") return false;
+  if (!svg) {
+    // 047 找到的 040 流式遗留：a VALID streaming prefix rendered a
+    // figure whose block later grew into a broken source — nothing
+    // removed the stale figure, so the user saw a WRONG diagram with
+    // the source hidden. The final (broken) render heals it: drop the
+    // stale figure and show the source again (the action-bar button is
+    // never appended for null renders, FR-007).
+    const stale = pre.querySelector<HTMLDivElement>(".mermaid-figure");
+    if (stale) {
+      // 同一份源码的图已经画好了 → 这次只是撞上了并发保护，认它。
+      if (stale.dataset.mermaidMarker === marker) {
+        code.style.display = "none";
+        syncGutter(pre);
+        return true;
+      }
+      stale.remove();
+      code.style.display = "";
+      syncGutter(pre);
+    }
+    return false;
+  }
+  let fig = pre.querySelector<HTMLDivElement>(".mermaid-figure");
+  if (!fig) {
+    fig = document.createElement("div");
+    fig.className = "mermaid-figure";
+    pre.insertBefore(fig, code);
+  }
+  fig.innerHTML = svg;
+  // 这张图属于哪份源码（换源码 / 换主题都要重画，见上面的说明）。
+  fig.dataset.mermaidMarker = marker;
+  code.style.display = "none";
+  // 048: 源码隐藏了，行号槽也一起收起（槽量的是隐藏源码的行数）。
+  syncGutter(pre);
+  // Which mermaid theme the figure was drawn with — the diagram must
+  // follow the panel, not stay a light-mode widget in a dark bubble.
+  fig.dataset.mermaidTheme = mermaidBuiltInTheme() ?? "default";
+  // 047: the figure landed after the effect ran — ride its pre's shared
+  // action bar (degraded blocks never get a figure, hence no entry).
+  const actions = pre.closest(".block-shell")?.querySelector(".block-actions");
+  if (actions && !actions.querySelector(".copy-image-btn")) {
+    actions.appendChild(makeImageCopyButton(i18n.t("markdown.copyAsImage"), () => fig!.querySelector("svg")));
+  }
+  return true;
+}
+
+/**
+ * 049: 模式按钮的状态。
+ *
+ * - `aria-pressed=true` ⇔ **源码模式已锁定**（按钮高亮 = 「源码模式开着」，
+ *   与「换行」按钮同构：文案是状态名，aria-pressed 表示该状态是否开启）。
+ * - 按钮**永不置灰**：切到源码必须永远可用 —— 流式期间源码还没写完、
+ *   渲染不出来是常态，把按钮灰掉等于「用户想看源码却不让看」。
+ *   切不到渲染的情形（语法错的 Mermaid / 画不出的 SVG）由点击时闪 ✗ 告知。
+ */
+function setModeButton(shell: HTMLElement | null, source: boolean) {
+  const btn = shell?.querySelector<HTMLButtonElement>(".code-source-btn");
+  if (!btn) return;
+  btn.setAttribute("aria-pressed", source ? "true" : "false");
+  btn.classList.toggle("is-on", source);
+}
+
+/** 049: 换行开关只在「代码真的显示着」时有效（渲染成图时没有行可换）。 */
+function setWrapEnabled(shell: HTMLElement | null, enabled: boolean) {
+  const btn = shell?.querySelector<HTMLButtonElement>(".code-wrap-btn");
+  if (btn) btn.disabled = !enabled;
+}
+
+/**
+ * 049: 把一个块切到指定模式。
+ *
+ * `intent` 是**用户意图**（不是当前显示）：
+ * - `render`：渲染成图（```svg / ```mermaid）；渲染不出来（降级）就落到源码，
+ *   但**不**改写意图 —— 流式中源码还没写完时渲染失败是常态，等源码合法了
+ *   自然会出图。
+ * - `source`：显示源码、收起图形、换行开关可用。
+ *
+ * 返回值：请求的渲染模式是否真的渲染出来了（`false` = 这个块渲染不出来）。
+ */
+async function applyBlockViewMode(
+  code: HTMLElement,
+  theme: MermaidTheme,
+  intent: ViewMode,
+  index: number,
+): Promise<boolean> {
+  const pre = code.closest("pre");
+  if (!pre) return false;
+  const shell = pre.closest<HTMLElement>(".block-shell");
+  const lang = langOf(code);
+  // 渲染途中的竞态守卫：切走之后这张图就不该再画出来。
+  code.dataset.viewMode = intent;
+  let rendered = false;
+  if (intent === "render") {
+    rendered = lang.toLowerCase() === "svg" ? renderSvgFence(code) : await renderMermaidBlock(code, theme);
+    // 用户在渲染途中切到了源码 → 渲染结果作废（renderMermaidBlock 自查）。
+    if (code.dataset.viewMode !== "render") return false;
+  }
+  if (!rendered) {
+    // 源码模式，或渲染失败降级 —— 代码在屏幕上，换行开关就该可用。
+    showSourceBlock(pre, code);
+    applyWrap(pre, readWrapState(blockStateKey(lang, index, code.textContent ?? "")));
+  }
+  // 按钮显示的是**意图**：源码模式锁定 = 高亮。
+  setModeButton(shell, intent === "source");
+  setWrapEnabled(shell, !rendered);
+  return intent === "source" ? true : rendered;
 }
 
 export default function Markdown({ text }: { text: string }) {
@@ -803,7 +1083,15 @@ export default function Markdown({ text }: { text: string }) {
     root.querySelectorAll("pre code:not(.hljs)").forEach((el) => {
       hljs.highlightElement(el as HTMLElement);
     });
-    addCopyButtons(root, copiedUntil.current, openSnippet);
+    // 049: 状态跟着增长的源码往前带（键随源码变长，早先的键只能靠前缀回溯
+    // 认出来 —— 认出来后记到当前键上，下一次就不用再靠回溯）。
+    const pres = Array.from(root.querySelectorAll("pre"));
+    pres.forEach((pre, idx) => {
+      const code = pre.querySelector("code");
+      if (!code) return;
+      carryForwardState(blockStateKey(langOf(code), idx, code.textContent ?? ""));
+    });
+    addCopyButtons(root, copiedUntil.current, openSnippet, theme);
     // Inline code tokens (`path.ts:12`) become clickable file links.
     root.querySelectorAll("code").forEach((el) => {
       if (el.closest("pre") || el.classList.contains("file-link")) return;
@@ -819,66 +1107,17 @@ export default function Markdown({ text }: { text: string }) {
     });
     // 047: 「复制为图片」 on the graphic render blocks.
     addImageCopyButtons(root);
-    // 048: ```svg 围栏渲染成图（源码隐藏，但仍可复制 / 在 IDE 打开）。
-    root.querySelectorAll("pre code.language-svg").forEach((el) => {
-      renderSvgFence(el as HTMLElement);
-    });
-    // 040 US2: mermaid blocks render to SVG in place; invalid source keeps
-    // the code block (the degrade is the natural pre-render state).
-    root.querySelectorAll("pre code.language-mermaid").forEach((el) => {
-      const code = el as HTMLElement;
-      const source = code.textContent ?? "";
-      // The theme is part of the marker: switching the panel theme must
-      // re-render the diagram in the new palette.
-      const marker = `${theme}#${source}`;
-      if (!source.trim() || code.dataset.mermaidDone === marker) return;
-      code.dataset.mermaidDone = marker;
-      void renderMermaid(source, theme).then((svg) => {
-        const pre = code.closest("pre");
-        if (!pre || !pre.isConnected) return;
-        // The rendered source must still be the block's CURRENT text: a late
-        // resolution for an older streaming prefix must not paint its (wrong)
-        // diagram over the grown block, nor heal a figure it does not own.
-        const current = pre.querySelector("code.language-mermaid")?.textContent ?? "";
-        if (current !== source) return;
-        // Nor may a late render of the PREVIOUS theme paint over the new one:
-        // a theme switch starts a second render, which then owns this block.
-        if (code.dataset.mermaidDone !== marker) return;
-        if (!svg) {
-          // 047 找到的 040 流式遗留：a VALID streaming prefix rendered a
-          // figure whose block later grew into a broken source — nothing
-          // removed the stale figure, so the user saw a WRONG diagram with
-          // the source hidden. The final (broken) render heals it: drop the
-          // stale figure and show the source again (the action-bar button is
-          // never appended for null renders, FR-007).
-          const stale = pre.querySelector(".mermaid-figure");
-          if (stale) {
-            stale.remove();
-            code.style.display = "";
-            syncGutter(pre);
-          }
-          return;
-        }
-        let fig = pre.querySelector<HTMLDivElement>(".mermaid-figure");
-        if (!fig) {
-          fig = document.createElement("div");
-          fig.className = "mermaid-figure";
-          pre.insertBefore(fig, code);
-          code.style.display = "none";
-        }
-        fig.innerHTML = svg;
-        // 048: 源码隐藏了，行号槽也一起收起（槽量的是隐藏源码的行数）。
-        syncGutter(pre);
-        // Which mermaid theme the figure was drawn with — the diagram must
-        // follow the panel, not stay a light-mode widget in a dark bubble.
-        fig.dataset.mermaidTheme = mermaidBuiltInTheme() ?? "default";
-        // 047: the figure landed after the effect ran — ride its pre's shared
-        // action bar (degraded blocks never get a figure, hence no entry).
-        const actions = pre.closest(".block-shell")?.querySelector(".block-actions");
-        if (actions && !actions.querySelector(".copy-image-btn")) {
-          actions.appendChild(makeImageCopyButton(i18n.t("markdown.copyAsImage"), () => fig.querySelector("svg")));
-        }
-      });
+    // 049: 默认渲染成图的块（```svg / ```mermaid）按当前模式呈现：
+    // 渲染模式 → 出图、源码隐藏；源码模式 → 出源码、图形收起。
+    // 渲染不出来（语法错的 mermaid / 画不出的 svg）落到源码，但不改写意图 ——
+    // 流式中源码还没写完时渲染失败是常态，源码合法了自然出图。
+    pres.forEach((pre, idx) => {
+      const code = pre.querySelector("code");
+      if (!code) return;
+      const lang = langOf(code);
+      if (!RENDERABLE_LANGS.has(lang.toLowerCase())) return;
+      const mode = readViewMode(blockStateKey(lang, idx, code.textContent ?? ""));
+      void applyBlockViewMode(code, theme, mode, idx);
     });
   }, [html, openSnippet, theme]);
 
