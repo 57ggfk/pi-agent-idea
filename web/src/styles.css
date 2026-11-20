@@ -2371,10 +2371,10 @@ button {
   overflow-x: hidden;
   /* Same 16px inline inset as `.composer`: the message column and the input
      box share one visual edge, without depending on how wide the platform's
-     scrollbar gutter happens to be. Vertical padding is symmetric so the
-     empty state's `margin: auto` centers on the *visible* middle, not 6px
-     above it (spec 010 US2). */
-  padding: 16px 16px 16px;
+     scrollbar gutter happens to be. 顶部对称 16px 保住空态的垂直居中（spec
+     010 US2）；底部 24px 是会话内容与输入区之间的呼吸留白（内测反馈：原来
+     16px + composer 顶部 0，两区贴得太近）。 */
+  padding: 16px 16px 24px;
 }
 
 .message-col {
@@ -2756,8 +2756,9 @@ button {
   min-width: 0;
   max-width: 100%;
   /* 16px inline == `.message-list`'s inset, so the input box and the message
-     column share one left/right edge at any width. */
-  padding: 0 16px 12px;
+     column share one left/right edge at any width. 顶部 12px 与底部对称——
+     内测反馈：原先顶部 0，输入框直接顶着分割线，下方却有 12px 空白。 */
+  padding: 12px 16px 12px;
 }
 
 .composer-inner {
