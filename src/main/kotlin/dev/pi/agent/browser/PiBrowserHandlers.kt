@@ -387,10 +387,11 @@ internal class PiBrowserHandlers(private val kernel: PiBrowserKernel) {
         internal fun appendLinkItems(model: CefMenuModel, url: String): Boolean {
             if (url.isBlank()) return false
             model.addSeparator()
+            // 058 审美修正：两个 Pi 目的地相邻，copy 作为工具项收尾。
             model.addItem(MENU_ID_OPEN_SYSTEM, PiAgentBundle.message("browser.link.option.SYSTEM_BROWSER"))
             model.addItem(MENU_ID_OPEN_EMBEDDED, PiAgentBundle.message("browser.link.option.EMBEDDED"))
-            model.addItem(MENU_ID_COPY_LINK, PiAgentBundle.message("browser.link.option.COPY"))
             model.addItem(MENU_ID_OPEN_PI_EDITOR, PiAgentBundle.message("browser.link.option.PI_EDITOR"))
+            model.addItem(MENU_ID_COPY_LINK, PiAgentBundle.message("browser.link.option.COPY"))
             return true
         }
 

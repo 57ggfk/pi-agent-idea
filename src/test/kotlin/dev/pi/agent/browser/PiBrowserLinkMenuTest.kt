@@ -1,5 +1,6 @@
 package dev.pi.agent.browser
 
+import dev.pi.agent.PiAgentBundle
 import org.cef.callback.CefContextMenuParams
 import org.cef.callback.CefMenuModel
 import java.lang.reflect.Proxy
@@ -76,14 +77,26 @@ class PiBrowserLinkMenuTest {
             "menu shape: one separator, then the appended destinations",
         )
         val first = CefMenuModel.MenuId.MENU_ID_USER_FIRST
+        // 058 审美修正：两个 Pi 目的地相邻——视觉顺序=system → embedded → editor → copy，
+        // id 是固定槽位常量，调用顺序决定视觉顺序，故 id 序列不再是单调的 first..first+3。
         assertEquals(
-            listOf(first, first + 1, first + 2, first + 3),
+            listOf(first, first + 1, first + 3, first + 2),
             menu.items.map { it.first },
-            "existing three ids must keep their slots; the editor item takes the next one",
+            "visual order: system, embedded, editor, copy",
         )
         val labels = menu.items.map { it.second }
         assertEquals(4, labels.map { it.isNotBlank() }.count { it }, "every label must be non-blank")
         assertEquals(4, labels.toSet().size, "labels must be distinct destinations")
+        assertEquals(
+            listOf(
+                PiAgentBundle.message("browser.link.option.SYSTEM_BROWSER"),
+                PiAgentBundle.message("browser.link.option.EMBEDDED"),
+                PiAgentBundle.message("browser.link.option.PI_EDITOR"),
+                PiAgentBundle.message("browser.link.option.COPY"),
+            ),
+            labels,
+            "the two Pi destinations must sit adjacent, copy last",
+        )
     }
 
     @Test
