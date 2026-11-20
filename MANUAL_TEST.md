@@ -613,3 +613,10 @@
 - [x] F-214：无端口 open → 启发式探测 0.3s 命中 8931（read-first 死锁修复 + 常见端口直连快筛）
 - [x] F-202 部分：windowed 页签键盘拦截为平台限制（onPreKeyEvent 不触发，无 JBCefKeyboardListener 可用）——Alt+←/→ 仅 OSR 页签可用，文档化；Ctrl+L/Esc/Ctrl+R/F5 正常
 - [x] F-209：DevTools 按钮意外验证可用（坐标试错点击打开 DevTools 窗口）
+
+### 048 预览编辑器缺陷修复真机复验（2026-11-20，commit d556aad / b8a8e84）
+
+样本：`build/preview-check/preview-sample.html`（仓库内建，插件快照走 `%TEMP%\pi-agent-preview*`）。动作路径：编辑器页签右键 → Pi Agent → Open in Editor (Pi preview)。
+
+- [x] **getFile() 缺陷**：PiBrowserFileEditor 未覆写 FileEditor.getFile()，IDEA 262 每次 EditorChange 记 SEVERE（"must override it"）并向平台返回 null。修复后真机：动作触发后新建「pi-preview: preview-sample.html」页签并渲染出页面；idea.log 11:06–11:10 全段 **0 条 PiBrowserFileEditor 日志、0 条 SEVERE**（修复前同一路径 09:41 成片刷屏）
+- [x] **预览刷新缺陷**：servePreview 在响应后删掉快照文件，与注册表「token 5 分钟内可重复取用」的约定冲突 → 同一 token 二次取用必 404（并发时 500）。修复后真机：预览页签点刷新钮 → 页面时间戳由 11:09:24 变 11:10:03（重新渲染，非错误卡）；idea.log **0 条 preview serve failed / UI request failed**；快照文件 886 bytes 在服务与刷新之后仍留在 `%TEMP%\pi-agent-preview9774978225299840308\preview-sample-mwoehprh.html`
