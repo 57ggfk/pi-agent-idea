@@ -75,9 +75,30 @@ object PiBrowserPreviews {
         return entry.path.takeIf { Files.exists(it) }
     }
 
+    /**
+     * Serves the bytes for [token] WITHOUT consuming the registration.
+     *
+     * The browser re-fetches the same preview URL on reload, so the file must
+     * survive the first response — the token's TTL ends its life, not the
+     * first fetch. The file's lifetime belongs to this registry on purpose:
+     * the UI server only ever sees bytes and cannot delete the snapshot out
+     * from under a live token.
+     */
+    fun serve(token: String, nowMs: Long = System.currentTimeMillis()): ByteArray? {
+        val path = take(token, nowMs) ?: return null
+        return runCatching { Files.readAllBytes(path) }.getOrNull()
+    }
+
     private fun clearExpired() {
         val now = System.currentTimeMillis()
-        entries.entries.removeIf { now - it.value.createdAt > TTL_MS }
+        // The files go with the registrations: nothing else deletes them
+        // anymore, and the preview root is a temp directory.
+        entries.entries
+            .filter { now - it.value.createdAt > TTL_MS }
+            .forEach {
+                entries.remove(it.key, it.value)
+                runCatching { Files.deleteIfExists(it.value.path) }
+            }
     }
 
     private fun newToken(): String {
