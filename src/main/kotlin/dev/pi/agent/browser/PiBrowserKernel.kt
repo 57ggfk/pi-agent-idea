@@ -598,12 +598,25 @@ class PiBrowserKernel(
         }
     }
 
-    /** Carrier "Reload" action on a permanent error card: clears the fuse. */
+    /**
+     * Carrier "Retry" action on a crash card: clears the fuse and reloads.
+     *
+     * 051: the card's Retry button now shows even when the browser never
+     * reported an address, so the URL can be blank. Navigating to an empty
+     * URL would only produce another load error, so the renderer is rebuilt
+     * and left idle instead — the user gets a working browser back, ready
+     * for the next address.
+     */
     fun manualReload(url: String) {
         rebuildGaveUp = false
         synchronized(rebuildStamps) { rebuildStamps.clear() }
         onEvent(PiBrowserEvent.Rebuilt)
-        load(url)
+        val target = url.ifBlank { lastKnownUrl }
+        if (target.isBlank()) {
+            log.info("browser kernel: manual reload without a known address; renderer rebuilt and left idle")
+            return
+        }
+        load(target)
     }
 
     private fun disposeBrowser() {

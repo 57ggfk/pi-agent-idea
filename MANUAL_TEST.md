@@ -653,4 +653,25 @@
 - [x] **导航中立刻关页签**：点刷新后立即关掉预览页签 → 无弹窗、无异常
 - [x] **强杀渲染进程**（PID 6504）：插件走自带崩溃卡「The embedded browser crashed — 渲染进程已死并自动重建」+ Retry / Open in Browser / Copy Address；日志 rebuilding renderer (1) → windowed browser created；**无 IDE 错误弹窗**
 - [x] **强杀整个 cef_server**（PID 38928 + 5 个子进程）：面板退回浏览器组件、页面空白，但 IDE 不崩、**0 内部错误**、0 未捕获异常
-- [ ] **崩溃卡 Retry 按钮未响应**：合成点击只把焦点移到按钮上，回车未触发 action（卡面文案写的是「Press Retry」）。属既有崩溃恢复交互的问题，与本批健壮性改动无关，但值得下一轮单独查
+- [x] **崩溃卡 Retry 按钮未响应**（050 遗留 → 051 查明根因并修复）：当时「合成点击只把焦点移到按钮上」是因为按钮**根本没渲染**——`BrowserPanel.showErrorCard` 传的是 `lastUrl.ifBlank { null }`，而 `PiUiErrorPanel` 旧逻辑要求 `url != null` 才渲染按钮，地址为空时卡面文案写着「Press Retry」却无按钮可按。051 改为「有 onRetry 就有按钮」，真机复验见下一段
+### 051 面板异常不崩溃 / 不空白真机复验（2026-11-20，分支 release/0.5.10-browser-build）
+
+输入：用户报「异常之后插件空白了，能否优化到，出现异常插件不要崩溃还能用」（前一批 050 报「健壮性需要提升」）。
+
+**自动化已过**（先做完再上真机）：
+
+- [x] **单测（RED→GREEN 亲眼见证）**：新增 `PanelHealthTest` 8 条（只认本次挂载后的轮询 / 连续失败预算 / 四种决策）、`AutoRecreatePolicyTest` 4 条（重建限速）、`BrowserSafetyTest` +2 条（`Error` 子类必须降级、`VirtualMachineError` 必须原样抛出）；合计 469 → **483** 用例 / 0 失败 / 0 错误 / 5 跳过
+- [x] **碎片**：`changelog.d/051-*.fixed.md` 三条；`collectChangelog -PdryRun=true` 通过，三条中英文均进入收集结果
+- [x] **构建**：`buildPlugin` PASS，产物 pi-agent-idea-0.5.9.zip（16:04:46）
+- [x] **换装舞台**：已按新包刷新，staged MD5 = build/libs MD5 = `2ED2710D9D30573965986C12D7247A8C`；已装 jar 仍是 050 旧包 `DBCFBAF2…`（IDE 运行中，jar 被内存映射锁）
+- [ ] **换装完成**：守望进程已挂起（120 分钟），用户关闭 IDE 后自动换装并校验 MD5
+
+**真机待办**（换装后按序做）：
+
+- [ ] **异常后不空白**：让页面停止轮询（杀掉渲染进程，或停掉本地 UI 服务）→ 面板最多自动重建 2 次，随后停在错误卡（标题「The embedded browser keeps failing」），卡上有 Retry / Open in Browser / Copy Address
+- [ ] **不再无限重建**：idea.log 中 `Rebuilding Pi Agent UI` 至多 2 条（带 `— attempt 1` / `— attempt 2`），随后 1 条 `Pi Agent UI keeps failing; not rebuilding again`；此后再无周期 90s 的重建
+- [ ] **Retry 可用**：点错误卡的 Retry → 面板回到聊天 UI，日志出现 `Pi Agent UI: loading http://127.0.0.1:<port>/`
+- [ ] **崩溃卡按钮**：浏览器页签强杀渲染进程 → 崩溃卡上确实有可点的 Retry 按钮（050 遗留项，051 已修根因）
+- [ ] **重建风暴限速**：关掉最后一个 Pi 标签页 → 内容立刻回来一次；5 秒内再关一次 → 日志出现 `closed to empty right after an automatic recreate` 且不再新建浏览器
+- [ ] **关机期风暴**：关闭 IDE → 日志中 `closed to empty` 至多 1~2 条（051 前 12 秒内 11 条）
+- [ ] **零 IDE 错误弹窗**：全段 0 条 `UnhandledException` / `IDE Internal Errors`

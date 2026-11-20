@@ -53,9 +53,12 @@ import java.awt.dnd.DropTargetAdapter
 import java.awt.dnd.DropTargetDragEvent
 import java.awt.dnd.DropTargetDropEvent
 import java.awt.dnd.DropTargetEvent
+import java.awt.event.ComponentAdapter
+import java.awt.event.ComponentEvent
 import javax.swing.BorderFactory
 import javax.swing.JComponent
 import javax.swing.JPanel
+import javax.swing.JTextArea
 import javax.swing.SwingUtilities
 import javax.swing.Timer
 
@@ -467,19 +470,58 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
     init {
         layout = BorderLayout()
         border = BorderFactory.createEmptyBorder()
+        // 051: a hidden tool window can lose its page (the renderer may be
+        // reaped while the window sits in the background), and the health
+        // watch deliberately stays quiet while the panel is hidden — a
+        // background tab may legitimately be throttled. So the check has to
+        // run again the moment the user comes back, instead of leaving a
+        // dead browser on screen for up to one whole tick.
+        addComponentListener(object : ComponentAdapter() {
+            override fun componentShown(e: ComponentEvent?) {
+                SwingUtilities.invokeLater { checkBridgeSilence() }
+            }
+        })
         mountUi()
         startHealthWatch()
     }
 
-    /** (Re)creates the browser and navigates to this project's UI URL. */
+    /**
+     * (Re)creates the browser and navigates to this project's UI URL.
+     *
+     * 051: the whole body is guarded. A failure used to leave the panel with
+     * nothing in it — the white rectangle the user reported — and when it
+     * happened on the EDT it took the IDE's error handler down with it.
+     * Every failure now ends on an error card that names the cause and
+     * offers a retry, so the plugin stays usable.
+     */
     private fun mountUi() {
         removeAll()
         disposeBrowser()
         mountedAt = System.currentTimeMillis()
+        try {
+            mountBrowser()
+        } catch (t: Throwable) {
+            if (t is VirtualMachineError) throw t
+            log.warn("Pi Agent UI could not be mounted", t)
+            showFailure(
+                title = "The embedded browser could not start",
+                detail = listOf(
+                    "Mounting the UI failed: ${t.message ?: t.javaClass.name}",
+                    "",
+                    "The plugin itself is still running — press Retry to try again.",
+                ),
+                url = null,
+                releaseBrowser = true,
+            )
+        }
+    }
 
+    /** The mount itself; every step that can fail ends on an error card. */
+    private fun mountBrowser() {
         val url = try {
             LocalUiServer.getInstance().uiUrlFor(project, instanceId)
         } catch (t: Throwable) {
+            if (t is VirtualMachineError) throw t
             log.warn("Pi Agent UI server unavailable", t)
             showFailure(
                 title = "The local UI service could not start",
@@ -542,6 +584,7 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
             add(created.component, BorderLayout.CENTER)
             created.loadURL(url)
         } catch (t: Throwable) {
+            if (t is VirtualMachineError) throw t
             log.warn("JCEF browser could not be created", t)
             showFailure(
                 title = "The embedded browser could not start",
@@ -553,18 +596,40 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
                     "in a browser to keep working in the meantime.",
                 ),
                 url = url,
+                releaseBrowser = true,
             )
         }
         revalidate()
         repaint()
     }
 
-    private fun showFailure(title: String, detail: List<String>, url: String?) {
+    /**
+     * Puts an error card where the browser used to be.
+     *
+     * 051: this is the panel's last line of defence against the white
+     * rectangle. Every failure path ends here, and the card is built
+     * defensively too, so a failure while REPORTING a failure still leaves
+     * the user with something readable instead of an empty panel.
+     *
+     * @param releaseBrowser whether to dispose the embedded browser as well.
+     *   Only worth it when the browser is demonstrably dead.
+     */
+    private fun showFailure(
+        title: String,
+        detail: List<String>,
+        url: String?,
+        releaseBrowser: Boolean = false,
+    ) {
         removeAll()
-        add(
-            PiUiErrorPanel(title, detail, url, onRetry = ::manualRetry),
-            BorderLayout.NORTH,
-        )
+        if (releaseBrowser) disposeBrowser()
+        val card = try {
+            PiUiErrorPanel(title, detail, url, onRetry = ::manualRetry)
+        } catch (t: Throwable) {
+            if (t is VirtualMachineError) throw t
+            log.warn("Pi Agent error card could not be built", t)
+            JTextArea(title + "\n\n" + detail.joinToString("\n")).apply { isEditable = false }
+        }
+        add(card, BorderLayout.CENTER)
         revalidate()
         repaint()
     }
@@ -576,12 +641,26 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
      */
     private fun manualRetry() {
         rebuildGaveUp = false
-        synchronized(rebuildStamps) { rebuildStamps.clear() }
+        consecutiveFailures = 0
         mountUi()
     }
 
-    /** Timestamps of the automatic rebuilds, for the crash-loop guard. */
-    private val rebuildStamps = ArrayDeque<Long>()
+    /**
+     * 051: rebuilds spent since the page last answered.
+     *
+     * This replaced a SLIDING WINDOW of rebuild timestamps, and that window
+     * WAS the bug: it was 60 seconds wide while the silence threshold that
+     * triggers a rebuild is 90 seconds, so every rebuild was the only entry
+     * in its own window and the "give up" limit could never be spent. The
+     * panel rebuilt the embedded browser every 90 seconds for as long as the
+     * page stayed dead — a white rectangle the user could do nothing about
+     * (idea.log 2026-11-20: "Rebuilding Pi Agent UI (no bridge poll for 90s)"
+     * at 13:30:17, 13:31:47, 13:33:17, 13:34:47).
+     *
+     * Counting CONSECUTIVE failures cannot be outrun by any threshold: one
+     * healthy poll resets the budget.
+     */
+    private var consecutiveFailures = 0
 
     /**
      * Set once the crash-loop guard gave up, so the health watch stops
@@ -603,58 +682,93 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
      * Skipped when the panel is not showing: a hidden tool window may throttle
      * or freeze its page without anything being wrong, and rebuilding then
      * would throw away a perfectly good page (and any scroll position).
+     *
+     * 051: the decision itself is [PanelHealth.decide] — a pure function,
+     * unit-tested without a project, a browser or a clock. It fixes two
+     * things:
+     *
+     * - only polls made AFTER the current mount count, so the previous
+     *   page's last poll cannot keep a dead page looking alive for ever;
+     * - the rebuild budget is counted in consecutive failures, so the panel
+     *   stops after [PanelHealth.MAX_CONSECUTIVE_FAILURES] attempts instead
+     *   of rebuilding every 90 seconds for ever.
      */
     private fun checkBridgeSilence() {
         if (disposed || rebuildGaveUp || browser == null || !isShowing) return
-        // Count from the later of "document loaded" and "last poll": a freshly
-        // mounted panel is silent for a moment before its first request.
-        val silentFor = minOf(
-            BridgeService.getInstance(project).sinceFrontendPollMs(instanceId),
-            System.currentTimeMillis() - mountedAt,
-        )
-        if (silentFor <= BRIDGE_SILENCE_MS) return
-        rebuildAfterCrash("no bridge poll for ${silentFor / 1000}s")
+        val now = System.currentTimeMillis()
+        val mountAge = now - mountedAt
+        val pollAge = try {
+            PanelHealth.pollAgeSinceMount(
+                currentPollAgeMs = BridgeService.getInstance(project).sinceFrontendPollMs(instanceId),
+                mountAgeMs = mountAge,
+            )
+        } catch (t: Throwable) {
+            if (t is VirtualMachineError) throw t
+            // A bridge we cannot read counts as a silent page: the
+            // consecutive-failure budget decides what happens next.
+            log.warn("Pi Agent health check could not read the bridge state", t)
+            Long.MAX_VALUE
+        }
+        val reason = if (pollAge == Long.MAX_VALUE) {
+            "the page never polled the bridge"
+        } else {
+            "no bridge poll for ${pollAge / 1000}s"
+        }
+        when (PanelHealth.decide(pollAge, mountAge, consecutiveFailures)) {
+            PanelHealthDecision.ALIVE -> {
+                if (consecutiveFailures != 0) {
+                    log.info("Pi Agent UI is answering again after $consecutiveFailures failed attempt(s)")
+                    consecutiveFailures = 0
+                }
+            }
+            PanelHealthDecision.PENDING -> Unit
+            PanelHealthDecision.REBUILD -> rebuildAfterCrash(reason)
+            PanelHealthDecision.GIVE_UP -> giveUp(reason)
+        }
     }
 
     /**
      * Rebuilds the browser after the page stopped working. Must run on the EDT.
      *
-     * Guarded by [MAX_REBUILDS_PER_WINDOW]: an IDE whose Web Browser component
-     * dies on every load would otherwise rebuild forever in the background.
-     * Past the limit the panel parks on an error card with a manual retry, so
-     * the user gets a reason instead of a flashing panel.
+     * 051: the budget is [PanelHealth.MAX_CONSECUTIVE_FAILURES] attempts in a
+     * row. An IDE whose Web Browser component dies on every load used to
+     * rebuild for ever; now the panel parks on an error card with a manual
+     * retry, so the user gets a reason instead of a flashing white panel.
      */
     private fun rebuildAfterCrash(reason: String) {
         ApplicationManager.getApplication().invokeLater {
             if (disposed) return@invokeLater
-            val now = System.currentTimeMillis()
-            val attempts = synchronized(rebuildStamps) {
-                while (rebuildStamps.isNotEmpty() && now - rebuildStamps.first() > REBUILD_WINDOW_MS) {
-                    rebuildStamps.removeFirst()
-                }
-                rebuildStamps.addLast(now)
-                rebuildStamps.size
-            }
-            if (attempts > MAX_REBUILDS_PER_WINDOW) {
-                log.warn("Pi Agent UI keeps failing; not rebuilding again ($reason)")
-                rebuildGaveUp = true
-                val url = runCatching { LocalUiServer.getInstance().uiUrlFor(project, instanceId) }.getOrNull()
-                showFailure(
-                    title = "The embedded browser keeps failing",
-                    detail = listOf(
-                        "The IDE's Chromium component had to be restarted $attempts times in the last",
-                        "minute, so the panel stopped reopening itself. Last reason: $reason",
-                        "",
-                        "This is the IDE's Web Browser component rather than the plugin: restarting",
-                        "the IDE usually clears it. The UI is also reachable from a normal browser",
-                        "at the address below.",
-                    ),
-                    url = url,
-                )
-                return@invokeLater
-            }
-            log.info("Rebuilding Pi Agent UI ($reason)")
+            consecutiveFailures += 1
+            log.info("Rebuilding Pi Agent UI ($reason) — attempt $consecutiveFailures")
             mountUi()
+        }
+    }
+
+    /**
+     * 051: the rebuild budget is spent. Park on an actionable card instead of
+     * a white rectangle: the user gets the reason, a Retry button and the
+     * address to open elsewhere — the plugin stays usable, and pressing
+     * Retry starts the budget over.
+     */
+    private fun giveUp(reason: String) {
+        ApplicationManager.getApplication().invokeLater {
+            if (disposed) return@invokeLater
+            rebuildGaveUp = true
+            log.warn("Pi Agent UI keeps failing; not rebuilding again ($reason)")
+            val url = runCatching { LocalUiServer.getInstance().uiUrlFor(project, instanceId) }.getOrNull()
+            showFailure(
+                title = "The embedded browser keeps failing",
+                detail = listOf(
+                    "The IDE's Chromium component had to be restarted $consecutiveFailures times in a row,",
+                    "so the panel stopped reopening itself. Last reason: $reason",
+                    "",
+                    "This is the IDE's Web Browser component rather than the plugin: restarting",
+                    "the IDE usually clears it. Press Retry to try again now — the UI is also",
+                    "reachable from a normal browser at the address below.",
+                ),
+                url = url,
+                releaseBrowser = true,
+            )
         }
     }
 
@@ -710,18 +824,10 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
          */
         const val UNCLAIMED_DROP_DELAY_MS = 600
 
-        /**
-         * Silence tolerated before rebuilding. The frontend polls every 20s, so
-         * this is more than four missed rounds — long enough that a slow
-         * machine cannot trip it, short enough that a dead page heals itself
-         * before the user gives up on it.
-         */
-        const val BRIDGE_SILENCE_MS = 90_000L
-
-        /** Sliding window for the crash-loop guard. */
-        const val REBUILD_WINDOW_MS = 60_000L
-
-        /** Rebuilds tolerated inside [REBUILD_WINDOW_MS] before giving up. */
-        const val MAX_REBUILDS_PER_WINDOW = 2
+        // 051: the silence threshold and the rebuild budget live in
+        // [PanelHealth] — a pure helper, unit-tested without a project, a
+        // browser or a clock. They used to be constants here, next to a
+        // sliding window that was SHORTER than the threshold itself, which
+        // is what made the panel rebuild for ever.
     }
 }

@@ -4,34 +4,32 @@ import com.intellij.openapi.progress.ProcessCanceledException
 import java.util.concurrent.CancellationException
 
 /**
- * The one funnel for every call into the platform browser.
+ * The single funnel for every platform call the plugin makes.
  *
- * The platform's remote browser is not exception-safe once its native state
- * is missing: `RemoteBrowser.canGoBack()` unboxes a null `Boolean` and
- * throws `NullPointerException: Cannot invoke "java.lang.Boolean.booleanValue()"`.
- * Kotlin's `?.` cannot see that - the throw happens INSIDE the platform call -
- * so it escaped the EDT callback of [BrowserPanel] and the IDE raised an
- * "IDE Internal Errors" balloon (049 walkthrough: `PiBrowserKernel.canGoBack`
- * -> `BrowserPanel.onStateChanged`).
+ * 049/050: a platform browser call that throws must degrade to the caller's
+ * default value, never escape as an "IDE Internal Errors" balloon. The
+ * trigger was the platform's own remote browser: `RemoteBrowser.canGoBack()`
+ * unboxes a null `Boolean` and throws `NullPointerException` once its
+ * native state is missing.
  *
- * Two shapes reach it, both real: the renderer is gone (browser torn down or
- * crashed) and the startup race (the very first state change arrives before
- * the remote browser published its navigation state).
+ * 051: catching `Exception` was still not enough. A dead native peer also
+ * answers with `Error` subclasses — `NoClassDefFoundError` when the JCEF
+ * classes cannot be linked any more, `LinkageError` when the runtime and the
+ * shipped browser disagree — and those sailed straight past the funnel into
+ * the EDT, which is exactly the crash the user reported ("the plugin went
+ * blank after an exception"). The funnel therefore catches `Throwable`.
  *
- * Every platform call now goes through [guard]: a dead browser yields the
- * caller's default value instead of an IDE error dialog, and the failure is
- * logged once with the operation name.
+ * Three things are deliberately NOT swallowed:
  *
- * Cancellation is deliberately NOT swallowed: [ProcessCanceledException] and
- * [CancellationException] are the platform's cooperative-cancellation
- * signals, not failures, and eating them breaks IDE invariants.
+ * - [ProcessCanceledException] and [CancellationException]: cooperative
+ *   cancellation is not a failure, and turning it into a default value
+ *   breaks the platform's own invariants;
+ * - [VirtualMachineError]: an exhausted heap or a blown stack is fatal by
+ *   contract. Reporting it as a "browser glitch" and carrying on would hide
+ *   the real cause.
  */
 internal object BrowserSafety {
 
-    /**
-     * Runs [block]; on any failure returns [default] and reports [onError].
-     * Cancellation exceptions are re-thrown untouched.
-     */
     fun <T> guard(
         what: String,
         default: T,
@@ -43,10 +41,12 @@ internal object BrowserSafety {
         throw e
     } catch (e: CancellationException) {
         throw e
-    } catch (e: Exception) {
+    } catch (e: VirtualMachineError) {
+        throw e
+    } catch (t: Throwable) {
         onError(
-            "browser: " + what + " failed (" + e.javaClass.simpleName + ": " +
-                (e.message ?: "no message") + ")",
+            "browser: " + what + " failed (" + t.javaClass.simpleName + ": " +
+                (t.message ?: "no message") + ")",
         )
         default
     }
