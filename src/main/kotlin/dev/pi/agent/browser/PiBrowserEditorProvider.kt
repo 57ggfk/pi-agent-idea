@@ -44,6 +44,15 @@ internal class PiBrowserFileEditor(private val project: Project, private val fil
 
     override fun getPreferredFocusedComponent(): JComponent? = null
 
+    /**
+     * IDEA 2026.2 (262) deprecated the default implementation of
+     * `FileEditor.getFile()`: an editor that does not override it makes the
+     * platform log a SEVERE on every EditorChange event and pass `null` to
+     * the message bus ("PiBrowserFileEditor getFile() returned null").
+     * The preview file is known at construction time, so hand it back.
+     */
+    override fun getFile(): VirtualFile = file
+
     override fun getName(): String = dev.pi.agent.PiAgentBundle.message("toolwindow.browser.tab")
 
     override fun setState(state: com.intellij.openapi.fileEditor.FileEditorState) {}
