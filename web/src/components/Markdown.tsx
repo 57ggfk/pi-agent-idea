@@ -123,6 +123,205 @@ function linkifyTextNodes(root: ParentNode) {
 const COPY_FLASH_MS = 1200;
 
 /**
+ * 048: 每块的换行状态。
+ *
+ * **不能**放在组件的 ref 里：pi 的 `message_end` 会用权威消息整条替换
+ * assistant item（新的 item id → React 重挂载 → ref 归零），流式结束的那
+ * 一刻状态就丢了。所以状态放在模块级，键取「语言 + 源码开头」——与消息、
+ * 与组件实例都无关，重挂载后照样认得。
+ */
+const wrapStates = new Map<string, boolean>();
+/** 状态条目的上限（防止长会话无限增长）。 */
+const WRAP_STATE_MAX = 200;
+
+function wrapStateKey(lang: string, text: string): string {
+  return `${lang}:${text.slice(0, 48)}`;
+}
+
+function readWrapState(key: string): boolean {
+  const exact = wrapStates.get(key);
+  if (exact !== undefined) return exact;
+  // 流式期间源码在增长：源码没写满 48 字时键会变，早先记下的键是当前键的
+  // 前缀 → 沿用它（用户在源码还没写完时就切了换行，那个状态不能丢）。
+  for (const [k, v] of wrapStates) {
+    if (v && k.length >= 12 && key.startsWith(k)) return true;
+  }
+  return false;
+}
+
+function writeWrapState(key: string, on: boolean) {
+  if (!wrapStates.has(key) && wrapStates.size >= WRAP_STATE_MAX) {
+    const oldest = wrapStates.keys().next();
+    if (!oldest.done) wrapStates.delete(oldest.value);
+  }
+  wrapStates.set(key, on);
+}
+
+/**
+ * 048: 代码块标题栏 —— 左侧语言类型、右侧操作按钮。
+ *
+ * 语言名不翻译：它是代码块的属性（跟 IDE 的代码块标题一致），不是界面文案。
+ * 未标注语言的围栏按 `text` 处理（对齐 IDE 的 "Plain Text"）。
+ */
+const LANG_LABELS: Record<string, string> = {
+  bash: "Shell",
+  c: "C",
+  cpp: "C++",
+  css: "CSS",
+  diff: "Diff",
+  go: "Go",
+  html: "HTML",
+  java: "Java",
+  javascript: "JavaScript",
+  json: "JSON",
+  kotlin: "Kotlin",
+  markdown: "Markdown",
+  mermaid: "Mermaid",
+  python: "Python",
+  rust: "Rust",
+  shell: "Shell",
+  sql: "SQL",
+  svg: "SVG",
+  typescript: "TypeScript",
+  xml: "XML",
+  yaml: "YAML",
+};
+
+function languageLabel(code: Element | null): string {
+  const lang = /language-([\w+#-]+)/.exec(code?.className ?? "")?.[1] ?? "";
+  if (!lang) return "text";
+  return LANG_LABELS[lang.toLowerCase()] ?? lang;
+}
+
+/**
+ * 048: 换行开关。默认**不换行**（保持横向滚动），开关按块保存状态。
+ *
+ * 两种状态都显式写死 `white-space`：窄屏媒体查询里的 `pre-wrap` 兜底不得
+ * 盖过用户的开关——否则窄窗口下点开关看不到任何变化。
+ */
+function applyWrap(pre: HTMLElement, on: boolean) {
+  pre.style.whiteSpace = on ? "pre-wrap" : "pre";
+  pre.style.overflowWrap = on ? "anywhere" : "";
+}
+
+/** 代码的行盒高度（px）——行号槽按它对齐。 */
+function codeLineHeight(code: HTMLElement): number {
+  const rects = Array.from(code.getClientRects());
+  // 一个 inline 元素跨 N 行时，浏览器按行盒返回多个 rect；相邻行盒顶边
+  // 的间距就是行高（含 line-height 的额外间距，比字体内容高更准）。
+  const tops = Array.from(new Set(rects.map((r) => Math.round(r.top * 2) / 2))).sort((a, b) => a - b);
+  if (tops.length >= 2) return (tops[tops.length - 1] - tops[0]) / (tops.length - 1);
+  const cs = getComputedStyle(code);
+  const lh = Number.parseFloat(cs.lineHeight);
+  if (Number.isFinite(lh)) return lh;
+  return rects[0]?.height ?? Number.parseFloat(cs.fontSize) * 1.2;
+}
+
+/** 逻辑行数：结尾的换行不另起一行。 */
+function codeLineCount(text: string): number {
+  if (!text) return 0;
+  let n = text.split("\n").length;
+  if (text.endsWith("\n")) n -= 1;
+  return Math.max(0, n);
+}
+
+/**
+ * 换行模式下每个逻辑行占了几个视觉行——用 Range 量真实排版，不估算。
+ * 不换行时每行恒为 1 行，不必量（省掉流式期间每增量的 O(行数) 开销）。
+ */
+function measureWrappedLineHeights(code: HTMLElement, text: string, count: number, lineHeight: number): number[] {
+  const nodes: { node: Text; start: number }[] = [];
+  const walker = document.createTreeWalker(code, NodeFilter.SHOW_TEXT);
+  let acc = 0;
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const t = n as Text;
+    nodes.push({ node: t, start: acc });
+    acc += t.data.length;
+  }
+  const locate = (offset: number): { node: Text; offset: number } | null => {
+    let lo = 0;
+    let hi = nodes.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      const entry = nodes[mid];
+      const len = entry.node.data.length;
+      if (offset < entry.start) hi = mid - 1;
+      else if (offset > entry.start + len) lo = mid + 1;
+      else return { node: entry.node, offset: offset - entry.start };
+    }
+    const last = nodes[nodes.length - 1];
+    return last ? { node: last.node, offset: last.node.data.length } : null;
+  };
+  const heights: number[] = [];
+  let start = 0;
+  for (let i = 0; i < count; i++) {
+    const nl = text.indexOf("\n", start);
+    const end = nl === -1 ? text.length : nl;
+    const from = locate(start);
+    const to = locate(end);
+    let rows = 1;
+    if (from && to) {
+      const range = document.createRange();
+      try {
+        range.setStart(from.node, from.offset);
+        range.setEnd(to.node, to.offset);
+        const h = range.getBoundingClientRect().height;
+        if (h > 0) rows = Math.max(1, Math.round(h / lineHeight));
+      } catch {
+        rows = 1;
+      }
+    }
+    heights.push(rows * lineHeight);
+    start = end + 1;
+  }
+  return heights;
+}
+
+/**
+ * 048: 行号槽。
+ *
+ * 槽在 `pre` **之外**（`pre` 横向滚动，越界元素会被裁掉），并且
+ * `user-select: none` + `aria-hidden` —— 鼠标框选代码时行号既不会被选中、
+ * 也不会被复制进剪贴板。源码本身一个字节都没动（复制 / 在 IDE 打开读到的
+ * 仍是纯代码文本）。
+ */
+function syncGutter(pre: HTMLElement) {
+  const shell = pre.closest<HTMLElement>(".block-shell");
+  const gutter = shell?.querySelector<HTMLElement>(":scope > .code-gutter");
+  if (!shell || !gutter) return;
+  const code = pre.querySelector("code");
+  const text = code?.textContent ?? "";
+  const count = code && code.style.display !== "none" ? codeLineCount(text) : 0;
+  if (!count) {
+    gutter.replaceChildren();
+    gutter.hidden = true;
+    return;
+  }
+  const cs = getComputedStyle(code!);
+  const lineHeight = codeLineHeight(code!);
+  gutter.style.fontFamily = cs.fontFamily;
+  gutter.style.fontSize = cs.fontSize;
+  gutter.style.lineHeight = `${lineHeight}px`;
+  // 与 pre 的上内边距一致：代码的第一行盒才和第一行行号齐平。
+  gutter.style.paddingTop = getComputedStyle(pre).paddingTop;
+  const wrapped = shell.dataset.wrap === "on";
+  const heights = wrapped ? measureWrappedLineHeights(code!, text, count, lineHeight) : null;
+  while (gutter.childElementCount > count) gutter.lastElementChild?.remove();
+  while (gutter.childElementCount < count) {
+    const span = document.createElement("span");
+    span.className = "code-line-no";
+    gutter.appendChild(span);
+  }
+  for (let i = 0; i < count; i++) {
+    const span = gutter.children[i] as HTMLElement;
+    const label = String(i + 1);
+    if (span.textContent !== label) span.textContent = label;
+    span.style.height = `${heights ? heights[i] : lineHeight}px`;
+  }
+  gutter.hidden = false;
+}
+
+/**
  * 047 FR-001: a "copy as image" affordance on every graphic render block that
  * passed the probe (SVG / Mermaid figure / KaTeX display). The button hides
  * until the block is hovered; the click rasterizes the SANITIZED rendered DOM
@@ -397,10 +596,15 @@ function stripDecorativeNewlines(html: string): string {
  * expires. The IDE button reads `code.textContent` and the `language-*`
  * class at click time (041 US3: streaming, several blocks).
  */
-function addCopyButtons(root: ParentNode, copiedUntil: Map<number, number>, openSnippet: (language: string, text: string) => Promise<boolean>) {
+function addCopyButtons(
+  root: ParentNode,
+  copiedUntil: Map<number, number>,
+  openSnippet: (language: string, text: string) => Promise<boolean>,
+) {
   const now = Date.now();
   const copyLabel = i18n.t("common.copy");
   const ideLabel = i18n.t("markdown.openInIde");
+  const wrapLabel = i18n.t("markdown.wrap");
   for (const [idx, until] of copiedUntil) {
     if (until <= now) copiedUntil.delete(idx);
   }
@@ -411,9 +615,27 @@ function addCopyButtons(root: ParentNode, copiedUntil: Map<number, number>, open
     const shell = document.createElement("div");
     shell.className = "block-shell";
     host?.insertBefore(shell, pre);
-    shell.appendChild(pre);
+
+    // ── 048 标题栏：左侧语言类型，右侧操作按钮（常驻，不再悬浮出现）──
+    const header = document.createElement("div");
+    header.className = "block-header";
+    const langLabel = document.createElement("span");
+    langLabel.className = "block-lang";
+    langLabel.textContent = languageLabel(pre.querySelector("code"));
     const actions = document.createElement("div");
     actions.className = "block-actions";
+    header.appendChild(langLabel);
+    header.appendChild(actions);
+
+    // ── 048 行号槽：在 pre 之外（pre 横向滚动会裁掉越界的元素）──
+    const gutter = document.createElement("div");
+    gutter.className = "code-gutter";
+    gutter.setAttribute("aria-hidden", "true");
+
+    shell.appendChild(header);
+    shell.appendChild(gutter);
+    shell.appendChild(pre);
+
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "code-copy-btn block-action-btn";
@@ -455,9 +677,94 @@ function addCopyButtons(root: ParentNode, copiedUntil: Map<number, number>, open
     });
     actions.appendChild(btn);
     actions.appendChild(ideBtn);
-    shell.insertBefore(actions, pre);
-    wireBlockActions(shell, actions);
+
+    // ── 048 换行开关：默认不换行；状态存在模块级（组件会被 message_end
+    //    重挂载，见 wrapStates 的注释）──
+    const codeEl = pre.querySelector("code");
+    const lang = /language-([\w+#-]+)/.exec(codeEl?.className ?? "")?.[1] ?? "";
+    const stateKey = wrapStateKey(lang, codeEl?.textContent ?? "");
+    const wrapBtn = document.createElement("button");
+    wrapBtn.type = "button";
+    wrapBtn.className = "code-wrap-btn block-action-btn";
+    wrapBtn.textContent = wrapLabel;
+    const setWrap = (on: boolean) => {
+      writeWrapState(stateKey, on);
+      shell.dataset.wrap = on ? "on" : "off";
+      applyWrap(pre, on);
+      wrapBtn.setAttribute("aria-pressed", on ? "true" : "false");
+      wrapBtn.classList.toggle("is-on", on);
+      syncGutter(pre);
+    };
+    wrapBtn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      setWrap(!readWrapState(stateKey));
+    });
+    actions.appendChild(wrapBtn);
+    setWrap(readWrapState(stateKey));
   });
+}
+
+/**
+ * 048: ```svg 围栏渲染成图。
+ *
+ * 与 Mermaid 同构：围栏里的 SVG 源码被净化后渲染成图形，源码隐藏但**仍然
+ * 可复制、可在 IDE 中打开**（复制按钮读的是 `code.textContent`，与图形无关）。
+ * 净化走 DOMPurify 的 svg profile（039 FR-002/003：单一净化入口），远程
+ * href / xlink:href 由 registerPurifyHooks 的 SVG 命名空间钩子剥除。
+ *
+ * 画不出东西的（空壳、畸形、只剩 <script>）降级回源码显示，不给「复制为图片」
+ * 入口（047 FR-007）。
+ */
+function renderSvgFence(code: HTMLElement) {
+  const pre = code.closest("pre");
+  if (!pre) return;
+  const source = code.textContent ?? "";
+  const clean = DOMPurify.sanitize(source, {
+    USE_PROFILES: { svg: true },
+    // <style> 里的 @import / url(http…) 是外链向量（039 FR-002 要求移除），
+    // DOMPurify 不清洗 style 的文本内容，只能在这里禁掉标签本身。
+    FORBID_TAGS: ["script", "foreignObject", "style"],
+  });
+  let fig = pre.querySelector<HTMLDivElement>(".svg-figure");
+  const svg = clean.trim() && /^\s*<svg[\s>]/i.test(clean) ? clean : "";
+  if (!svg) {
+    fig?.remove();
+    code.style.display = "";
+    syncGutter(pre);
+    return;
+  }
+  if (!fig) {
+    fig = document.createElement("div");
+    fig.className = "svg-figure";
+    pre.insertBefore(fig, code);
+  }
+  fig.innerHTML = svg;
+  const painted = fig.querySelector("svg");
+  let ok = true;
+  if (painted) {
+    try {
+      const bbox = (painted as SVGGraphicsElement).getBBox();
+      ok = bbox.width > 0 && bbox.height > 0;
+    } catch {
+      // getBBox needs a rendered tree — wrap anyway and let the click report.
+      ok = true;
+    }
+  } else {
+    ok = false;
+  }
+  if (!ok) {
+    // 画不出东西 → 降级回源码（和 Mermaid 的空图同构处理）。
+    fig.remove();
+    code.style.display = "";
+    syncGutter(pre);
+    return;
+  }
+  code.style.display = "none";
+  syncGutter(pre);
+  const actions = pre.closest(".block-shell")?.querySelector(".block-actions");
+  if (actions && !actions.querySelector(".copy-image-btn")) {
+    actions.appendChild(makeImageCopyButton(i18n.t("markdown.copyAsImage"), () => fig?.querySelector("svg") ?? null));
+  }
 }
 
 export default function Markdown({ text }: { text: string }) {
@@ -469,13 +776,15 @@ export default function Markdown({ text }: { text: string }) {
           marked.parse(normalizeFootnoteDefs(text), { async: false }) as string,
           {
           // 039 FR-002 (explicit whitelist posture): inline SVG renders via
-          // DOMPurify's default svg profile; these two are forbidden even if
+          // DOMPurify's default svg profile; these are forbidden even if
           // a future DOMPurify default ever loosened them. Measured with
           // DOMPurify 3.x: script / on* / foreignObject are already stripped —
           // this pins the guarantee at our call site.
+          // <style> 也禁掉：DOMPurify 不清洗 style 的文本内容，里面的
+          // @import / url(http…) 是外链向量（039 FR-002 要求移除）。
           // 远程 href 不靠 DOMPurify（实测它放行 http/https），靠
           // registerPurifyHooks 里的 SVG 命名空间剥除。
-          FORBID_TAGS: ["script", "foreignObject"],
+          FORBID_TAGS: ["script", "foreignObject", "style"],
         }),
       ),
     [text],
@@ -510,6 +819,10 @@ export default function Markdown({ text }: { text: string }) {
     });
     // 047: 「复制为图片」 on the graphic render blocks.
     addImageCopyButtons(root);
+    // 048: ```svg 围栏渲染成图（源码隐藏，但仍可复制 / 在 IDE 打开）。
+    root.querySelectorAll("pre code.language-svg").forEach((el) => {
+      renderSvgFence(el as HTMLElement);
+    });
     // 040 US2: mermaid blocks render to SVG in place; invalid source keeps
     // the code block (the degrade is the natural pre-render state).
     root.querySelectorAll("pre code.language-mermaid").forEach((el) => {
@@ -542,6 +855,7 @@ export default function Markdown({ text }: { text: string }) {
           if (stale) {
             stale.remove();
             code.style.display = "";
+            syncGutter(pre);
           }
           return;
         }
@@ -553,6 +867,8 @@ export default function Markdown({ text }: { text: string }) {
           code.style.display = "none";
         }
         fig.innerHTML = svg;
+        // 048: 源码隐藏了，行号槽也一起收起（槽量的是隐藏源码的行数）。
+        syncGutter(pre);
         // Which mermaid theme the figure was drawn with — the diagram must
         // follow the panel, not stay a light-mode widget in a dark bubble.
         fig.dataset.mermaidTheme = mermaidBuiltInTheme() ?? "default";
