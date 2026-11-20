@@ -19,6 +19,7 @@ import java.util.concurrent.TimeUnit
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import org.cef.browser.CefBrowser
 import javax.swing.JComponent
 
 /**
@@ -60,6 +61,14 @@ class PiBrowserKernel(
 
     private var browser: JBCefBrowser? = null
     private var handlers: PiBrowserHandlers? = null
+
+    /**
+     * 049 robustness: set when the kernel itself is disposed. After that
+     * every platform call is a no-op — the browser is gone and the platform's
+     * remote wrapper may throw on any navigation-state query.
+     */
+    @Volatile
+    private var disposed = false
 
     /**
      * 049 D4: the page→IDE readback channel, created once per browser (a
@@ -155,6 +164,7 @@ class PiBrowserKernel(
 
     /** Lazily creates the browser. Returns null when JCEF is unavailable. Call on EDT. */
     private fun ensureCreated(): JBCefBrowser? {
+        if (disposed) return null
         browser?.let { return it }
         if (!JBCefApp.isSupported()) {
             log.warn("browser tab: JCEF not supported")
@@ -189,6 +199,27 @@ class PiBrowserKernel(
         return created
     }
 
+    /**
+     * 049 robustness: the single funnel for platform browser calls. A dead
+     * browser (disposed kernel, torn-down renderer, or the startup window
+     * where the remote browser has not published its navigation state yet)
+     * yields [default] instead of throwing — the platform's RemoteBrowser
+     * unboxes a null Boolean on canGoBack() in exactly that window, and the
+     * escaping NPE surfaced as an "IDE Internal Errors" balloon.
+     */
+    private fun <T> safe(what: String, default: T, block: (CefBrowser) -> T): T {
+        if (disposed) return default
+        val cef = browser?.cefBrowser ?: return default
+        return BrowserSafety.guard(what, default, { msg -> log.warn(msg) }) { block(cef) }
+    }
+
+    /** Same funnel for calls that live on the [JBCefBrowser] facade itself. */
+    private fun <T> safeFacade(what: String, default: T, block: (JBCefBrowser) -> T): T {
+        if (disposed) return default
+        val b = browser ?: return default
+        return BrowserSafety.guard(what, default, { msg -> log.warn(msg) }) { block(b) }
+    }
+
     /** The Swing component hosting the browser; null until created. */
     fun component(): JComponent? = browser?.component
 
@@ -214,11 +245,11 @@ class PiBrowserKernel(
             return
         }
         onEvent(PiBrowserEvent.Navigate(url))
-        b.cefBrowser.loadURL(url)
+        safe("loadURL", Unit) { it.loadURL(url) }
     }
 
     fun reload() {
-        browser?.cefBrowser?.reload() ?: return
+        if (!safe("reload", false) { it.reload(); true }) return
         onEvent(PiBrowserEvent.Navigate(currentUrlOrNull() ?: ""))
     }
 
@@ -231,47 +262,43 @@ class PiBrowserKernel(
      * 049-era goBack juggling).
      */
     fun stop() {
-        val b = browser ?: return
+        if (browser == null) return
         stopRequested = true
-        b.cefBrowser.stopLoad()
+        safe("stopLoad", Unit) { it.stopLoad() }
         if (state == PiBrowserState.LOADING) onEvent(PiBrowserEvent.LoadEnd)
     }
 
     fun back() {
-        browser?.cefBrowser?.goBack()
+        safe("goBack", Unit) { it.goBack() }
     }
 
     fun forward() {
-        browser?.cefBrowser?.goForward()
+        safe("goForward", Unit) { it.goForward() }
     }
 
-    fun canGoBack(): Boolean = browser?.cefBrowser?.canGoBack() ?: false
+    fun canGoBack(): Boolean = safe("canGoBack", false) { it.canGoBack() }
 
-    fun canGoForward(): Boolean = browser?.cefBrowser?.canGoForward() ?: false
+    fun canGoForward(): Boolean = safe("canGoForward", false) { it.canGoForward() }
 
     /** F-209: opens the platform DevTools window for the current page. */
     fun openDevtools() {
-        browser?.openDevtools()
+        safeFacade("openDevtools", Unit) { it.openDevtools() }
     }
 
     // ---- F-204: page find ----
 
     fun find(searchText: String, forward: Boolean, matchCase: Boolean, findNext: Boolean) {
-        browser?.cefBrowser?.find(searchText, forward, matchCase, findNext)
+        safe("find", Unit) { it.find(searchText, forward, matchCase, findNext) }
     }
 
     fun stopFinding(clearSelection: Boolean = true) {
-        browser?.cefBrowser?.stopFinding(clearSelection)
+        safe("stopFinding", Unit) { it.stopFinding(clearSelection) }
     }
 
     /** RAW current URL (F-103); empty string before the first load. */
     fun currentUrl(): String = currentUrlOrNull() ?: ""
 
-    private fun currentUrlOrNull(): String? = try {
-        browser?.cefBrowser?.getURL()
-    } catch (_: Throwable) {
-        null
-    }
+    private fun currentUrlOrNull(): String? = safe("getURL", null) { it.getURL() }
 
     // ---- CEF -> state plumbing (called from CEF threads) ----
 
@@ -429,11 +456,13 @@ class PiBrowserKernel(
                 )
             pendingRead = future
             val script = PageSnapshotSanitizer.buildReadScript(query.inject("result"))
-            try {
+            var failure: String? = null
+            BrowserSafety.guard("executeJavaScript", Unit, { msg -> failure = msg }) {
                 b.cefBrowser.executeJavaScript(script, null, 0)
-            } catch (e: Throwable) {
+            }
+            if (failure != null) {
                 pendingRead = null
-                future.complete(PageSnapshot.failure("injection failed: " + LogSafe.truncate(e.message), url))
+                future.complete(PageSnapshot.failure("injection failed: " + LogSafe.truncate(failure), url))
             }
             return future
         }
@@ -524,9 +553,9 @@ class PiBrowserKernel(
     private fun injectTap() {
         val inject = tapScript ?: return
         val b = browser ?: return
-        runCatching {
+        BrowserSafety.guard("tap inject", Unit, { msg -> log.debug(msg) }) {
             b.cefBrowser.executeJavaScript(PageSnapshotSanitizer.buildTapScript(inject), null, 0)
-        }.onFailure { log.debug("tap inject failed: ${it.message}") }
+        }
     }
 
     fun addStateListener(listener: (PiBrowserState) -> Unit) {
@@ -606,8 +635,22 @@ class PiBrowserKernel(
     }
 
     override fun dispose() {
+        disposed = true
         disposeBrowser()
         listeners.clear()
+        // Drop the carrier's callbacks: a carrier that outlived the kernel
+        // must not keep invoking into a dead browser.
+        onAddressChanged = null
+        onTitleChanged = null
+        onNavigationHistory = null
+        onDownloadFinished = null
+        onDownloadProgress = null
+        onNavStateChanged = null
+        onLoadError = null
+        onAskPopup = null
+        onFindRequest = null
+        onFindClose = null
+        isFindBarOpen = { false }
     }
 
     private val stateLock = Any()
