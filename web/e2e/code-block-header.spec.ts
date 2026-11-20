@@ -163,6 +163,36 @@ test("the line numbers sit next to their code, not glued to the block edge (049)
   expect(geo.gutterPadLeft).toBe("8px");
 });
 
+test("a long line cannot push the line numbers onto their own row (048 FR-004)", async ({ page }) => {
+  // 048 真机缺陷（r57）：壳是 flex-wrap，pre 的 basis 是 auto（= max-content），
+  // 代码最长行一超过面板宽，pre 就被 wrap 到行号槽下面自己一行 —— 行号和代码分家。
+  // 真机面板只有 450px；e2e 默认 1280px 复现不了，必须收窄视口再断言。
+  await page.setViewportSize({ width: 460, height: 800 });
+  await page.goto("/?md=longline");
+  await expect(page.getByTestId("empty-state")).toBeVisible();
+  await page.getByTestId("composer-input").fill("show it");
+  await page.getByTestId("send-btn").click();
+  await expect(page.getByTestId("status-dot")).toHaveClass(/busy/, { timeout: 20_000 });
+  await expect(page.getByTestId("status-dot")).not.toHaveClass(/busy/, { timeout: 30_000 });
+  const geo = await page.evaluate(() => {
+    const shell = document.querySelector(".markdown .block-shell") as HTMLElement;
+    const gutter = shell.querySelector(".code-gutter") as HTMLElement;
+    const pre = shell.querySelector("pre") as HTMLElement;
+    const g = gutter.getBoundingClientRect();
+    const p = pre.getBoundingClientRect();
+    return {
+      sideBySide: Math.abs(g.top - p.top) < 4,
+      preStartsAfterGutter: p.left >= g.right - 1,
+      longestLineOverflows: pre.scrollWidth > pre.clientWidth,
+      gutterHidden: gutter.hidden,
+    };
+  });
+  expect(geo.gutterHidden).toBe(false);
+  expect(geo.sideBySide).toBe(true);
+  expect(geo.preStartsAfterGutter).toBe(true);
+  expect(geo.longestLineOverflows).toBe(true);
+});
+
 test("selecting the code does not drag the line numbers along (048 FR-004)", async ({ page }) => {
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await sendDiffReply(page);

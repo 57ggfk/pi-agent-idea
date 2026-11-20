@@ -2509,7 +2509,12 @@ export class MockBridge implements Bridge {
     const text =
       this.mdKnob === "table"
         ? "| Column A | Column B |\n| --- | --- |\n| one | two |\n| three | four |"
-        : this.mdKnob === "diff"
+        : this.mdKnob === "longline"
+          ? // 048 真机缺陷回归（r57）：最长行超过窄面板宽时，pre 的
+            // max-content basis 会把它 wrap 到行号槽下面自己一行。
+            // 100+ 字符的一行在 460px 视口里必然溢出。
+            "Counts:\n\n```python\nshort = 1\nname_to_lengths = {n: len(n) for n in [\"alpha\", \"beta\", \"gamma\", \"delta\", \"epsilon\", \"zeta\", \"eta\", \"theta\"]}\nprint(short)\n```\n"
+          : this.mdKnob === "diff"
           ? // 038: a ```diff block plus GFM footnotes — the two "easy" format
             // extensions asserted end-to-end.
             "Applied the change[^1] with a diff:\n\n" +
