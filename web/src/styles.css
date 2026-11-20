@@ -2374,10 +2374,11 @@ button {
   /* Same 16px inline inset as `.composer`: the message column and the input
      box share one visual edge, without depending on how wide the platform's
      scrollbar gutter happens to be. 顶部对称 16px 保住空态的垂直居中（spec
-     010 US2）。底部留白不在这里——滚动容器自身的 padding-bottom 在内容溢出
-     时不计入滚动范围（Chromium 行为，真机实测滚到底只剩 12.5px），末尾呼吸
-     空白住在 .message-col 的 padding-bottom（滚动内容内部，必然生效）。 */
-  padding: 16px 16px 16px;
+     010 US2）。底部 12px = 末尾留白（010 内测反馈从 46.5px 减半）——浮框式
+     + col flex-shrink 0 之后 col 随内容真实长高，padding 已被计入滚动范围
+     （此前 col 被压扁时会被 Chromium 吞掉）；代码块结尾另有自身 12px 底边距，
+     合计 24px，纯文本结尾 12px。 */
+  padding: 16px 16px 12px;
 }
 
 .message-col {
@@ -2398,14 +2399,6 @@ button {
   display: flex;
   flex-direction: column;
   gap: 14px;
-}
-
-/* 末尾呼吸空白（010 内测反馈）：4px + 列的 14px flex gap = 18px（36px 太高，
-   用户要求去一半）。必须是滚动内容内部的元素——滚动容器自身的 padding-bottom
-   在内容溢出时不计入滚动范围（Chromium 行为，真机实测被吞）。 */
-.message-end-gap {
-  flex: 0 0 auto;
-  height: 4px;
 }
 
 .item {

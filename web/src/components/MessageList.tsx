@@ -345,13 +345,6 @@ export default function MessageList() {
             })}
           </div>
         ) : null}
-        {/* 浮框式的末尾呼吸空白：必须是滚动内容内部的 spacer——滚动容器自身的
-            padding-bottom 在内容溢出时不计入滚动范围（Chromium 行为，真机实测
-            36px 被吞到只剩 12.5px）。4px + 列的 14px flex gap = 18px（用户
-            反馈 36px 太高，去一半）；空态不渲染，π 徽标居中不受影响。 */}
-        {items.length > 0 ? (
-          <div className="message-end-gap" data-testid="message-end-gap" aria-hidden="true" />
-        ) : null}
       </div>
       </div>
       {/* 029 FR-002: a SIBLING of the scroll container — inside it the button

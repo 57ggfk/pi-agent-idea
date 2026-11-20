@@ -57,9 +57,10 @@ test("the breathing room lives at the content end, not above the input box", asy
   // 内测反馈：浮框式后输入框上方又出现一层留白（composer 顶部 12px），与列表
   // 底部 24px 叠成两段——留白应全部住在滚动内容区的末尾，输入框直接贴边界。
   // 注意：滚动容器自身的 padding-bottom 在内容溢出时不计入滚动范围（Chromium
-  // 行为，真机实测滚到底只剩 12.5px），所以末尾留白是 message-col 里的
-  // 4px spacer + 列的 14px flex gap = 18px（用户反馈 36px 太高，去一半），
-  // 随内容滚动、必然生效。
+  // 行为）——但浮框式 + col flex-shrink 0 之后 col 随内容真实长高，padding 已
+  // 被计入（真机实测）。末尾可见留白 = 最后一条消息的底边距（代码块 12px/
+  // 纯文本 0）+ 列表底部 12px；用户要求从 46.5px 减半到 ~24px，故 spacer 整个
+  // 移除、列表 padding-bottom 定 12px。
   await page.getByTestId("composer-input").fill("end gap probe");
   await page.getByTestId("send-btn").click();
   await expect(page.getByTestId("status-dot")).toHaveClass(/busy/, { timeout: 20_000 });
@@ -67,21 +68,22 @@ test("the breathing room lives at the content end, not above the input box", asy
   const s = await page.evaluate(() => {
     const list = document.querySelector(".message-list") as HTMLElement;
     const cs = getComputedStyle(list);
-    const gap = document.querySelector("[data-testid=message-end-gap]") as HTMLElement | null;
+    const gap = document.querySelector("[data-testid=message-end-gap]");
     const last = [...document.querySelectorAll(".markdown")].pop() as HTMLElement;
     return {
       composerTop: getComputedStyle(document.querySelector(".composer") as HTMLElement).paddingTop,
       listBottom: cs.paddingBottom,
       gapPresent: !!gap,
-      gapH: gap ? gap.offsetHeight : null,
       visibleEndGap: +(list.getBoundingClientRect().bottom - last.getBoundingClientRect().bottom).toFixed(1),
     };
   });
   expect(s.composerTop).toBe("0px");
-  expect(s.listBottom).toBe("16px");
-  expect(s.gapPresent).toBe(true);
-  expect(s.gapH).toBe(4);
-  expect(s.visibleEndGap).toBeGreaterThanOrEqual(16);
+  expect(s.listBottom).toBe("12px");
+  expect(s.gapPresent).toBe(false);
+  // mock 回复以纯文本结尾（无代码块底边距）→ 可见留白 = 列表 padding 12px
+  //（行高残余给 ±2px 公差）
+  expect(s.visibleEndGap).toBeGreaterThanOrEqual(10);
+  expect(s.visibleEndGap).toBeLessThanOrEqual(16);
 });
 
 test("the chip row is capped at ~two rows with internal scroll (safety valve)", async ({ page }) => {
