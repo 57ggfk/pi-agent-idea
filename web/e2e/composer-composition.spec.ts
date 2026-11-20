@@ -53,6 +53,18 @@ test("the composer floats: no divider line and no strip band (floating-box)", as
   expect(s.background).toBe("rgba(0, 0, 0, 0)");
 });
 
+test("the breathing room lives at the content end, not above the input box", async ({ page }) => {
+  // 内测反馈：浮框式后输入框上方又出现一层留白（composer 顶部 12px），与列表
+  // 底部 24px 叠成两段——留白应全部住在滚动内容区的末尾，输入框直接贴边界。
+  const s = await page.evaluate(() => {
+    const cs = getComputedStyle(document.querySelector(".composer") as HTMLElement);
+    const ml = getComputedStyle(document.querySelector(".message-list") as HTMLElement);
+    return { composerTop: cs.paddingTop, listBottom: ml.paddingBottom };
+  });
+  expect(s.composerTop).toBe("0px");
+  expect(s.listBottom).toBe("36px");
+});
+
 test("the chip row is capped at ~two rows with internal scroll (safety valve)", async ({ page }) => {
   await attach(page, 10);
   const info = await page.evaluate(() => {
@@ -60,7 +72,7 @@ test("the chip row is capped at ~two rows with internal scroll (safety valve)", 
     const cs = getComputedStyle(el);
     return { maxH: cs.maxHeight, overflowY: cs.overflowY, h: el.getBoundingClientRect().height };
   });
-  expect(info.maxH).toBe("190px");
+  expect(info.maxH).toBe("160px");
   expect(info.overflowY).toBe("auto");
-  expect(info.h).toBeLessThanOrEqual(190);
+  expect(info.h).toBeLessThanOrEqual(160);
 });
