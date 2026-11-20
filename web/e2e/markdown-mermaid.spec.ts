@@ -125,3 +125,60 @@ test("zero regression: the copy button still works on the mermaid source (040 FR
   const clip = await page.evaluate(() => navigator.clipboard.readText());
   expect(clip).toContain("A --> ];");
 });
+
+/**
+ * Relative luminance of a CSS color (0 = black, 1 = white). Fully
+ * transparent colors return -1 ("no opinion") so a caller can take the
+ * brightest of several candidates.
+ */
+function luminance(color: string): number {
+  const m = color.match(/rgba?\(([^)]+)\)/);
+  if (!m) return -1;
+  const parts = m[1].split(",").map((v) => Number(v.trim()));
+  const [r, g, b] = parts;
+  const alpha = parts.length > 3 ? parts[3] : 1;
+  if (alpha === 0) return -1;
+  const lin = (c: number) => {
+    const v = c / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+
+test("the diagram follows the panel theme (2026-11-20 real-machine review)", async ({ page }) => {
+  await sendMermaidReply(page);
+  const palette = () =>
+    page.evaluate(() => {
+      const fig = document.querySelector(".markdown .mermaid-figure") as HTMLElement;
+      const svg = document.querySelector(".markdown .mermaid-figure svg") as SVGSVGElement;
+      const rect = svg.querySelector(".node rect") as SVGRectElement;
+      const label = svg.querySelector(".nodeLabel, .label") as SVGElement | null;
+      const ls = label ? getComputedStyle(label) : null;
+      return {
+        theme: document.documentElement.dataset.theme,
+        mermaidTheme: fig.dataset.mermaidTheme ?? "",
+        fill: rect ? getComputedStyle(rect).fill : "",
+        labelColor: ls ? ls.color : "",
+        labelFill: ls ? ls.fill : "",
+      };
+    });
+
+  const light = await palette();
+  expect(light.theme).toBe("light");
+  expect(light.mermaidTheme).toBe("default");
+  // Light panel → light diagram (mermaid's own light palette).
+  expect(luminance(light.fill)).toBeGreaterThan(0.5);
+
+  // Switch the panel to the dark theme: the diagram must follow it. Before
+  // the fix it kept mermaid's light theme, so a dark IDE showed a white-boxed
+  // diagram next to the IDE's own dark mermaid preview.
+  await page.getByTestId("options-btn").click();
+  await page.getByTestId("opt-theme-dark").click();
+  await page.keyboard.press("Escape");
+  await expect.poll(async () => (await palette()).theme).toBe("dark");
+  await expect.poll(async () => (await palette()).mermaidTheme).toBe("dark");
+  await expect.poll(async () => luminance((await palette()).fill)).toBeLessThan(0.2);
+  const dark = await palette();
+  // Dark boxes, light labels — the diagram is readable in the dark bubble.
+  expect(Math.max(luminance(dark.labelColor), luminance(dark.labelFill))).toBeGreaterThan(0.5);
+});
