@@ -23,6 +23,10 @@ async function sendMermaid(page: import("@playwright/test").Page) {
 
 test("the action buttons live in the block's header bar and are always visible", async ({ page }) => {
   await sendMermaid(page);
+  // The copy-as-image entry only exists once the diagram has been painted —
+  // it arrives later than the other buttons, so wait for it before reading
+  // the bar's order.
+  await expect(page.locator(".markdown .block-shell .copy-image-btn").first()).toBeVisible({ timeout: 30_000 });
   const state = await page.evaluate(() => {
     const shell = document.querySelector(".markdown .block-shell") as HTMLElement;
     const header = shell.querySelector(".block-header") as HTMLElement;
@@ -34,6 +38,8 @@ test("the action buttons live in the block's header bar and are always visible",
       const b = el.getBoundingClientRect();
       return { top: b.top, left: b.left, right: b.right, bottom: b.bottom };
     };
+    const imgBtn = actions.querySelector(".copy-image-btn") as HTMLElement | null;
+    const copyBtn = actions.querySelector(".code-copy-btn") as HTMLElement | null;
     return {
       opacity: Number(s.opacity),
       pointerEvents: s.pointerEvents,
@@ -44,6 +50,11 @@ test("the action buttons live in the block's header bar and are always visible",
       headerBox: box(header),
       preBox: box(pre),
       buttons: Array.from(actions.querySelectorAll("button")).map((b) => b.textContent),
+      // 049: 「复制为图片」在操作栏的最左——它比其它按钮晚到（图形画出来
+      // 才有），append 会掉到最右边，所以是插到最前的。
+      imgFirst: !!imgBtn && actions.firstElementChild === imgBtn,
+      imgLeftOfCopy:
+        !!imgBtn && !!copyBtn && imgBtn.getBoundingClientRect().left < copyBtn.getBoundingClientRect().left,
     };
   });
   // Always visible — the bar is part of the block now, not a hover overlay.
@@ -57,6 +68,9 @@ test("the action buttons live in the block's header bar and are always visible",
   expect(state.headerBox.bottom).toBeLessThanOrEqual(state.preBox.top + 0.5);
   expect(state.buttons).toContain("Copy");
   expect(state.buttons).toContain("Open in IDE");
+  // 「复制为图片」在最左，且确实在「复制」按钮左边。
+  expect(state.imgFirst).toBe(true);
+  expect(state.imgLeftOfCopy).toBe(true);
 });
 
 test("the buttons are clickable without hovering the block first", async ({ page }) => {
