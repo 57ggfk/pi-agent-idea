@@ -1,7 +1,9 @@
 package dev.pi.agent.browser
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -176,5 +178,48 @@ class AgentBrowserToolResponseTest {
         val json = AgentBrowserTool.listResponse(emptyList()).toString()
         assertEquals(listOf("ok", "tabs"), keys(json))
         assertTrue("\"tabs\":[]" in json)
+    }
+
+    // ---- 057: the operation layer — action fields ride the snapshot answer ----
+
+    @Test
+    fun `action fields sit between console and tab without disturbing the locked order`() {
+        val json = AgentBrowserTool.snapshotResponse(
+            ok = true, reason = null, state = "LOADED", url = "http://127.0.0.1:3000/",
+            title = "Home", ready = "complete", text = "hello",
+            console = listOf("console.error: late"), autoDetected = false, candidates = emptyList(),
+            scrollY = null, tab = "t1",
+            actionFields = buildJsonObject {
+                put("found", true)
+                put("tag", "button")
+                put("elementText", "Submit order")
+            },
+        ).toString()
+        assertEquals(
+            listOf("ok", "state", "url", "title", "ready", "text", "console", "found", "tag", "elementText", "tab"),
+            keys(json),
+            "the click verdict rides at the tail; tab stays the very last field",
+        )
+        assertTrue("\"found\":true" in json)
+        assertTrue("\"elementText\":\"Submit order\"" in json)
+    }
+
+    @Test
+    fun `action failure answers carry reason error url and tab in that order`() {
+        val json = AgentBrowserTool.actionFailure(
+            reason = "evaluate failed: ReferenceError: boom is not defined",
+            error = "ReferenceError: boom is not defined",
+            url = "http://127.0.0.1:3000/",
+            tab = "e1",
+        ).toString()
+        assertEquals(listOf("ok", "reason", "error", "url", "tab"), keys(json))
+
+        // Transport-level failures (no page / timeout / in-flight) have no
+        // page-side error to name — the error field is omitted.
+        val plain = AgentBrowserTool.actionFailure(
+            reason = "action timed out; the page may still be loading or blocked",
+            error = null, url = "", tab = "t2",
+        ).toString()
+        assertEquals(listOf("ok", "reason", "tab"), keys(plain))
     }
 }

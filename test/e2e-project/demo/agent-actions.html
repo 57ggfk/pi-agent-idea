@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>agent-actions fixture</title>
+<style>
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; line-height: 1.6; }
+  h1 { font-size: 20px; }
+  .row { margin: 14px 0; }
+  #inp { padding: 6px 10px; width: 300px; }
+  #btn { padding: 6px 18px; cursor: pointer; }
+  #out { margin-top: 18px; padding: 10px 14px; background: #f5f7fa; border-radius: 8px; min-height: 22px; font-family: monospace; }
+</style>
+</head>
+<body>
+  <h1>057 agent-actions fixture（即开即用，无需服务端逻辑）</h1>
+  <div class="row">
+    <label for="inp">输入框 <code>#inp</code>：</label>
+    <input id="inp" placeholder="type here">
+  </div>
+  <div class="row">
+    <button id="btn">点我 <code>#btn</code></button>
+    <label style="margin-left: 18px"><input type="checkbox" id="chk"> 复选框 <code>#chk</code></label>
+  </div>
+  <div id="out">（尚未点击）</div>
+  <p>click <code>#btn</code> 会写一行到 <code>#out</code> 并 console.log 同一行——供 pi_browser 的 click / type / evaluate / read / console 真机验证。</p>
+  <script>
+    document.getElementById('btn').addEventListener('click', function () {
+      var line = 'btn clicked at ' + new Date().toISOString() + ' — inp=' + document.getElementById('inp').value;
+      document.getElementById('out').textContent = line;
+      console.log('[fixture] ' + line);
+    });
+  </script>
+</body>
+</html>

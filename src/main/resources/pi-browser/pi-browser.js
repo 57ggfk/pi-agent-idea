@@ -73,6 +73,21 @@ function formatList(data) {
 }
 
 /**
+ * 057 action verdicts — what click/type/evaluate DID to the page, appended
+ * to the snapshot line (the snapshot itself confirms the page state after
+ * the synthetic events).
+ */
+function formatActionExtras(data) {
+  const parts = [];
+  if (data.found === true) parts.push(`found: true` + (data.tag ? ` <${data.tag}>` : ""));
+  if (data.found === false) parts.push("found: false" + (data.reason ? ` — ${data.reason}` : ""));
+  if (typeof data.typed === "number") parts.push(`typed: ${data.typed}`);
+  if (typeof data.value === "string") parts.push(`value: ${String(data.value).replace(/\s+/g, " ").slice(0, 300)}`);
+  if (data.error) parts.push(`error: ${String(data.error).slice(0, 200)}`);
+  return parts.length ? " — " + parts.join(" | ") : "";
+}
+
+/**
  * 053: console readback — "total X dropped Y" plus a bounded line preview.
  * Lines carry their monotonic indexes (`[12] console.error: …`); the result
  * names the JSONL file the agent can grep for lines beyond the preview.
@@ -100,7 +115,7 @@ export default function (pi) {
     name: "pi_browser",
     label: "Pi Browser",
     description:
-      "Drive the IDE's embedded browser tab. 'open' navigates it to a URL (also selects the tab) and returns the loaded page's state, title and a text excerpt; omit url to auto-detect the local dev server port (F-214, loopback LISTEN probe); 'read' returns the same for the current page — pass selector (+format html/text) to excerpt one element's outerHTML/innerText; 'reload' reloads; 'scroll' moves the viewport (direction down/up, amount px) and returns the newly visible text plus scrollY; 'console' reads the page's console errors on demand (since/limit paging over monotonic indexes; a JSONL file is returned for grep). Use it to verify web apps you build.",
+      "Drive the IDE's embedded browser tab. 'open' navigates it to a URL (also selects the tab) and returns the loaded page's state, title and a text excerpt; omit url to auto-detect the local dev server port (F-214, loopback LISTEN probe); 'read' returns the same for the current page — pass selector (+format html/text) to excerpt one element's outerHTML/innerText; 'reload' reloads; 'scroll' moves the viewport (direction down/up, amount px) and returns the newly visible text plus scrollY; 'console' reads the page's console errors on demand (since/limit paging over monotonic indexes; a JSONL file is returned for grep); 'list' enumerates the open browser tabs; 'click'/'type' operate an element by CSS selector with synthetic events (the answer carries a fresh page snapshot); 'evaluate' runs JavaScript in the page and returns its value. Use it to verify web apps you build.",
     promptSnippet:
       "Open a URL in the IDE's embedded browser tab and read back page state (title/text/console errors) for verifying web UIs",
     promptGuidelines: [
@@ -109,9 +124,10 @@ export default function (pi) {
       "For long pages use action 'scroll' (direction/amount) to reach content the text excerpt missed, and 'read' with a CSS selector to excerpt one element's markup; page back through 'console' (since/limit) when the ride-along tail is not enough — the console result names a JSONL file you can grep for older lines.",
       "Open supports two forms: target 'tab' puts the page in the Pi Agent tool-window tab, 'editor' in an editor-tab preview; follow-up read/scroll/console go to the form your last open used, so pass target again only when you want to switch.",
       "Every open/list result names the tab it used (tab: t1, e2, … — run action 'list' to enumerate all live tabs); pass that tab on later actions to operate on that exact tab even after you or the user switch tabs, and omit tab to keep following the tab your last open landed on.",
+      "click and type target elements by CSS selector (synthetic events, React-compatible input) and evaluate runs JavaScript in the page — they carry page side effects, so re-run 'read' afterwards to verify the DOM actually changed; found:false means the selector matched nothing (check the selector or the page state first).",
     ],
     parameters: Type.Object({
-      action: StringEnum(["open", "read", "reload", "scroll", "console", "list"]),
+      action: StringEnum(["open", "read", "reload", "scroll", "console", "list", "click", "type", "evaluate"]),
       url: Type.Optional(Type.String({ description: "Absolute URL; omit to auto-detect the dev server" })),
       target: Type.Optional(StringEnum(["tab", "editor"], {
         description: "which browser form to use: 'tab' = the Pi Agent tool-window tab, 'editor' = an editor-tab preview; omit to keep the form the last open used",
@@ -121,10 +137,18 @@ export default function (pi) {
       })),
       direction: Type.Optional(StringEnum(["down", "up"], { description: "scroll: where to move the viewport (default down)" })),
       amount: Type.Optional(Type.Number({ description: "scroll: distance in px, clamped to 1..10000 (default 800)" })),
-      selector: Type.Optional(Type.String({ description: "read: CSS selector — excerpt that element instead of the whole page" })),
+      selector: Type.Optional(Type.String({
+        description: "CSS selector — read excerpts that element; click/type operate on that element (required there, max 200 chars)",
+      })),
       format: Type.Optional(StringEnum(["html", "text"], { description: "read: outerHTML (structure) or innerText (visible text); default text" })),
       limit: Type.Optional(Type.Number({ description: "console: max preview lines, 1..200 (default 20)" })),
       since: Type.Optional(Type.Number({ description: "console: only lines with index > since (default 0; use the last index you saw to page)" })),
+      text: Type.Optional(Type.String({
+        description: "type: the text to enter into the element (required, max 5000 chars; contenteditable included)",
+      })),
+      js: Type.Optional(Type.String({
+        description: "evaluate: JavaScript to run in the page (required, max 10000 chars); its completion value is returned as a string",
+      })),
     }),
     annotations: {
       // Opening pages and scrolling are visible, world-reaching actions: in
@@ -156,12 +180,14 @@ export default function (pi) {
         if (params.format) body.format = params.format;
         if (params.limit != null) body.limit = params.limit;
         if (params.since != null) body.since = params.since;
+        if (params.text != null) body.text = params.text;
+        if (params.js) body.js = params.js;
         const data = await callIde(body);
         if (data && data.ok === true) {
           const text =
             params.action === "console" ? formatConsole(data) :
             params.action === "list" ? formatList(data) :
-            formatSnapshot(data);
+            formatSnapshot(data) + formatActionExtras(data);
           return {
             content: [{ type: "text", text }],
             details: data,
