@@ -620,3 +620,14 @@
 
 - [x] **getFile() 缺陷**：PiBrowserFileEditor 未覆写 FileEditor.getFile()，IDEA 262 每次 EditorChange 记 SEVERE（"must override it"）并向平台返回 null。修复后真机：动作触发后新建「pi-preview: preview-sample.html」页签并渲染出页面；idea.log 11:06–11:10 全段 **0 条 PiBrowserFileEditor 日志、0 条 SEVERE**（修复前同一路径 09:41 成片刷屏）
 - [x] **预览刷新缺陷**：servePreview 在响应后删掉快照文件，与注册表「token 5 分钟内可重复取用」的约定冲突 → 同一 token 二次取用必 404（并发时 500）。修复后真机：预览页签点刷新钮 → 页面时间戳由 11:09:24 变 11:10:03（重新渲染，非错误卡）；idea.log **0 条 preview serve failed / UI request failed**；快照文件 886 bytes 在服务与刷新之后仍留在 `%TEMP%\pi-agent-preview9774978225299840308\preview-sample-mwoehprh.html`
+
+### 049 工具条复检真机验证（2026-11-20，分支 release/0.5.10-browser-build）
+
+输入：用户看图指出三个问题——① 每个按钮太宽；② DevTools 与「在系统浏览器打开」两个钮要收进下拉，下拉钮放在 Go 右侧；③ 打开 DevTools 弹窗空白（点右上角才能关掉）。
+
+样本与路径：e2e-project 的 probe-browser.html → 查找操作（Ctrl+Shift+A）→「Open in Editor (Pi preview)」→ 新建「pi-preview: probe-browser.html」页签。
+
+- [x] **按钮收窄**：导航行只剩后退/前进/刷新三个方形图标钮（24×24 = 16px 图标 + 余量），原先被平台默认度量拉到 ~60px 宽的按钮框消失；地址栏重新吸收整行剩余宽度，Go 与新下拉钮恒在行尾
+- [x] **下拉收编**：Go 右侧新增「⋮」下拉钮，点开为标题「Browser actions」的菜单，两项分别为 **Open DevTools**（放大镜图标）与 **Open in system browser**（箭头图标，未加载页面时置灰）
+- [x] **预览渲染无回归**：预览页签照旧渲染出 PI-BROWSER-PROBE-H1 / path= / open target=_blank / anchor blank，地址栏回显 http://127.0.0.1:50108/preview/<token>
+- [ ] **DevTools 弹窗空白——根因查明，修复方案待用户拍板**：窗口实拍（624×631 全白），AX 树可见原生标题栏与地址栏 devtools://devtools/bundled/devtools_app.html?remoteBase=...；前端本身正常（bundled 资源加载完成，_createAppUI 440ms / _showAppUI 85ms / _initializeTarget 27ms，CDP 378 条命令）——**空白出在合成层**：12:32:43.870（DevTools 窗口创建那一刻）起 CEF GPU 进程连环崩溃 exit_code=-2147483645（STATUS_BREAKPOINT），到 12:35 累计 180 次 GPU 退出 + 98 次 Failed to send GpuControl.CreateCommandBuffer，窗口拿不到 command buffer → 画不出内容。修法是 IDE 级开关 -Dide.browser.jcef.gpu.disable=true（或 registry 键 ide.browser.jcef.gpu.disable）后重启 IDE（JCEF 知识库「预览白屏/黑屏」条目 IDEA-299007）；另一条路线是开 CDP 端口 + 系统浏览器打开真 DevTools（本机 CDP 未开：9222 未监听、无 DevToolsActivePort 文件）
