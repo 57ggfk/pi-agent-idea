@@ -86,12 +86,22 @@ test("a failed copy flashes ✗ and recovers (047 US4/FR-005)", async ({ page })
   await expect(btn).toHaveText(/复制为图片|Copy as image/, { timeout: 3000 });
 });
 
-test("degraded and code blocks carry no copy-as-image entry (047 FR-007)", async ({ page }) => {
+test("degraded blocks carry no copy-as-image entry (047 FR-007)", async ({ page }) => {
   await send(page, "svg");
-  // Both fenced svg source blocks stay code blocks: only Copy + Open in IDE.
-  const preButtons = page.locator(".markdown .block-shell .copy-image-btn");
-  await expect(preButtons).toHaveCount(0);
-  await expect(page.locator(".markdown .block-shell .code-copy-btn")).toHaveCount(2);
+  await expect(page.getByTestId("status-dot")).toHaveClass(/busy/, { timeout: 20_000 });
+  await expect(page.getByTestId("status-dot")).not.toHaveClass(/busy/, { timeout: 30_000 });
+  // 048: a ```svg fence renders as a graphic → it DOES get the entry now.
+  const rendered = page.locator(".markdown .block-shell", { has: page.locator(".svg-figure") });
+  await expect(rendered).toHaveCount(1);
+  await expect(rendered.locator(".copy-image-btn")).toHaveCount(1);
+  // The fenced malicious sample paints nothing → it degrades to its source
+  // and keeps no entry (047 FR-007), but the source is still copyable.
+  const degraded = page.locator(".markdown .block-shell", {
+    has: page.locator("code.language-svg", { hasText: "alert(1)" }),
+  });
+  await expect(degraded).toHaveCount(1);
+  await expect(degraded.locator(".copy-image-btn")).toHaveCount(0);
+  await expect(degraded.locator(".code-copy-btn")).toHaveCount(1);
   // The malicious bare SVG is stripped down to a rect — still an svg element,
   // so it keeps the entry (it renders something); the malformed one renders
   // no svg element at all, so no frame wraps it.
