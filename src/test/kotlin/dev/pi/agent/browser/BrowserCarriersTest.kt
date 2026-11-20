@@ -4,6 +4,7 @@ import com.intellij.openapi.project.Project
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -68,5 +69,18 @@ class BrowserCarriersTest {
             it.parameterTypes.contentEquals(arrayOf(Project::class.java, Boolean::class.javaPrimitiveType, BrowserCarrier::class.java))
         }
         assertEquals(1, withCarrier.size, "BrowserPanel(Project, boolean, BrowserCarrier) must exist")
+    }
+
+    /**
+     * 054 agent 双形态：pi_browser 的 target 参数 → 载体映射（纯函数）。
+     * 缺省保持 null——调用方回退到 agent 上次打开的载体；"tab"/"editor"
+     * 之外编码层已拒绝，这里兜底为 null 保持全函数。
+     */
+    @Test
+    fun `carrierFor maps the agent target param`() {
+        assertEquals(BrowserCarrier.TOOLWINDOW, BrowserCarriers.carrierFor("tab"), "'tab' = tool-window tab")
+        assertEquals(BrowserCarrier.EDITOR, BrowserCarriers.carrierFor("editor"), "'editor' = editor-form preview")
+        assertNull(BrowserCarriers.carrierFor(null), "absent target falls back to the last-used carrier")
+        assertNull(BrowserCarriers.carrierFor("window"), "values outside the codec set map to null")
     }
 }

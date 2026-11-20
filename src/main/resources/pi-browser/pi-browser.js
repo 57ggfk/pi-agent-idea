@@ -91,10 +91,14 @@ export default function (pi) {
       "Use pi_browser to verify web UIs you build: after starting a dev server, call pi_browser with action 'open' (omit url to auto-detect the loopback dev-server port), then check the returned title, text excerpt and console lines before reporting success.",
       "When pi_browser reports state FAILED or a failed snapshot, react on the error (and console lines) instead of claiming success.",
       "For long pages use action 'scroll' (direction/amount) to reach content the text excerpt missed, and 'read' with a CSS selector to excerpt one element's markup; page back through 'console' (since/limit) when the ride-along tail is not enough — the console result names a JSONL file you can grep for older lines.",
+      "Open supports two forms: target 'tab' puts the page in the Pi Agent tool-window tab, 'editor' in an editor-tab preview; follow-up read/scroll/console go to the form your last open used, so pass target again only when you want to switch.",
     ],
     parameters: Type.Object({
       action: StringEnum(["open", "read", "reload", "scroll", "console"]),
       url: Type.Optional(Type.String({ description: "Absolute URL; omit to auto-detect the dev server" })),
+      target: Type.Optional(StringEnum(["tab", "editor"], {
+        description: "which browser form to use: 'tab' = the Pi Agent tool-window tab, 'editor' = an editor-tab preview; omit to keep the form the last open used",
+      })),
       direction: Type.Optional(StringEnum(["down", "up"], { description: "scroll: where to move the viewport (default down)" })),
       amount: Type.Optional(Type.Number({ description: "scroll: distance in px, clamped to 1..10000 (default 800)" })),
       selector: Type.Optional(Type.String({ description: "read: CSS selector — excerpt that element instead of the whole page" })),
@@ -124,6 +128,7 @@ export default function (pi) {
       try {
         const body = { action: params.action };
         if (params.url) body.url = params.url;
+        if (params.target) body.target = params.target;
         if (params.direction) body.direction = params.direction;
         if (params.amount != null) body.amount = params.amount;
         if (params.selector) body.selector = params.selector;

@@ -60,6 +60,27 @@ class AgentBrowserRequestCodecTest {
         assertNull(AgentBrowserRequestCodec.bridgeTokenViolation("http://127.0.0.1:3000/", token))
     }
 
+    // ---- 054: agent dual-form target (tool-window tab vs editor-form preview) ----
+
+    @Test
+    fun `parses target and rejects values outside the carrier set`() {
+        val open = AgentBrowserRequestCodec.parse("""{"action":"open","url":"http://127.0.0.1:3000/","target":"editor"}""")
+        assertEquals("editor", (open as AgentParseResult.Valid).request.target)
+
+        val tab = AgentBrowserRequestCodec.parse("""{"action":"read","target":"tab"}""")
+        assertEquals("tab", (tab as AgentParseResult.Valid).request.target)
+
+        val absent = AgentBrowserRequestCodec.parse("""{"action":"read"}""")
+        assertNull((absent as AgentParseResult.Valid).request.target, "target-less body parses like the pre-054 contract")
+
+        val invalid = AgentBrowserRequestCodec.parse("""{"action":"read","target":"window"}""")
+        assertEquals(
+            "target must be \"tab\" or \"editor\"",
+            (invalid as AgentParseResult.Invalid).reason,
+            "the model must see which values exist instead of a silent ignore",
+        )
+    }
+
     // ---- 053: scroll + console actions, read selector/format (spec 053 B1) ----
 
     @Test
