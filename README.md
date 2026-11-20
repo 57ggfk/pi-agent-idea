@@ -145,6 +145,10 @@ IntelliJ Platform Gradle Plugin 2.10.5、Node 20+，见「开发」。
 - Windows 上启动 pi 报 `CreateProcess error=193, %1 不是有效的 Win32 应用程序`：这是启动批处理时
   `cmd` 解析到了错误的文件。插件已改用 `%ComSpec%` 的绝对路径启动批处理；若仍复现，先在 IDE 的
   Terminal 里 `echo %ComSpec%` 确认它指向可执行的 `cmd.exe`。
+- DevTools 弹窗或预览页一片空白：先确认是不是 GPU 进程在反复崩溃。插件盯着 IDE 的 Chromium GPU
+  子进程，60 秒内重启 3 次就弹一次通知，带「禁用 GPU 并重启 IDE」一键按钮（走注册表
+  `ide.browser.jcef.gpu.disable`，用户不必手改任何配置文件），另附手动修法。详见
+  [GPU 排障说明](docs/GPU_TROUBLESHOOTING.md)。
 
 ## 开发
 
