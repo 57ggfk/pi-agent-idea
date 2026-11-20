@@ -122,12 +122,22 @@ object DevServerProbe {
             if (os.contains("mac")) ProcessBuilder("sh", "-c", "lsof -nP -iTCP -sTCP:LISTEN")
             else ProcessBuilder("sh", "-c", "ss -ltn")
         }.redirectErrorStream(true).start()
-        if (!process.waitFor(NETSTAT_TIMEOUT_S, java.util.concurrent.TimeUnit.SECONDS)) {
-            process.destroyForcibly()
-            null
-        } else {
-            process.inputStream.bufferedReader().readText()
-        }
+        // F-214 round 4 (REAL root cause): waitFor BEFORE reading the output
+        // deadlocks - netstat's output exceeded the pipe buffer, the process
+        // blocked on writing while this thread blocked on waitFor, the 10s
+        // timeout destroyed it, and the parse got EMPTY output ("nothing
+        // listening" with the server demonstrably up). Read the stream to EOF
+        // first (unblocks the writer), with a watchdog destroying the process
+        // past the budget.
+        val watchdog = java.util.Timer("netstat-watchdog", true)
+        watchdog.schedule(object : java.util.TimerTask() {
+            override fun run() {
+                process.destroyForcibly()
+            }
+        }, NETSTAT_TIMEOUT_S * 1000L)
+        val raw = process.inputStream.bufferedReader().readText()
+        watchdog.cancel()
+        raw
     } catch (_: Exception) {
         null
     }
