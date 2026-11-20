@@ -1,0 +1,2 @@
+- 聊天消息里的链接右键新增「在 Pi 编辑器打开」，与浏览器页签内右键的四个目的地保持一致
+- Right-clicking a link in the chat now offers "Open in Pi editor" too, matching the four destinations of the browser tab's link menu

@@ -792,3 +792,9 @@
 - [x] **7) evaluate 返回第一个页签的 document.title 与快照一致**：evaluate js=document.title tab=t1 → "— value: \"modes Demo\""；与该页签四处证据一致：read tab=t1 快照标题、open [t1] 返回标题、CDP /json/list 该页 target title、index-dark.html 源码 `<title> modes Demo</title>`
 - [x] **8) read 不带 tab 跟随最后一次 open 的页签（055 语义保持）**：两次观测：① 第二波第 9 步（当时最后 open 为 bubbles）→ read → "[t2] LOADED …/bubbles.html"；② 回归波 open target=editor 产生 e4 后 read 不带参数 → "[e4] LOADED http://127.0.0.1:8933/demo/index.html"，pi 原文确认「后续不带 target/tab 参数的 read 也自动跟随到了最新打开的 e4」
 - [x] **9) 回归：open target=editor 仍开编辑器载体并返回 e 开头 id；overflow 菜单双形态置灰不变；read/scroll/console 不带任何参数行为同 055**：① open url=http://127.0.0.1:8933/demo/index.html target=editor → "[e4] LOADED …"（e 前缀）；061-editor-open.png：编辑区出现「pi-preview: index.html」编辑器载体页签（日间 Lumina 渲染正确），与工具窗 t3 页签并存。② overflow 双形态：页签形态（工具窗 ⋮）置灰「在 Pi 浏览器页签打开」、其余可用（061-overflow-tabform.png + 放大 061-overflow-tabform-zoom.png）；编辑器形态（编辑器载体 ⋮）置灰「在 Pi 编辑器打开」、其余可用（061-overflow-editorform.png + 放大 061-overflow-editorform-zoom.png）——与 054/055 一致。③ 无参数三连：read → "[t3] LOADED …/demo/agent-actions.html"、scroll direction=down amount=120 → "[t3]"（页面不足一屏无新内容，仍回全量文本快照）、console → "Pi browser console: total 0 dropped 0 — 0 line(s) matched … only error and warning levels are kept"——三者均跟随当前选中页签 t3，与 055 语义一致。环境备注：IDE 通知气泡已先关闭（061-notif-cleared.png），composer 点击未被吞
+
+### 058 白底画布 + chat 链接第 4 项真机复验（2026-11-22，重装轮 062/063）
+
+- [x] **1) 白底画布兜底**：无配色声明的夹具页在两载体（编辑器 pi-preview + 工具窗页签）均白底黑字可读，自带配色页（bubbles 深蓝）不受影响（058-verify.png）
+- [x] **2) chat 链接右键第 4 项**：agent 回复里的 URL 链接右键 → 原生项 + 追加四项（在系统浏览器打开/在 Pi 浏览器打开/复制链接地址/在 Pi 编辑器打开）（058-menu2.png）→ 点第 4 项 → 「pi-preview: bubbles.html」编辑器载体打开渲染正确（058-editor-open.png）
+- [x] **3) 回归**：浏览器页签内链接菜单四追加项不变；ASK 选择器仍三行（LinkRouting.linkOptions 未动）；右键非链接文本只有原生菜单（058-menu.png 中段验证）
