@@ -183,6 +183,10 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
             m.addItem(PiBrowserHandlers.MENU_ID_OPEN_SYSTEM, PiAgentBundle.message("browser.link.option.SYSTEM_BROWSER"))
             m.addItem(PiBrowserHandlers.MENU_ID_OPEN_EMBEDDED, PiAgentBundle.message("browser.link.option.EMBEDDED"))
             m.addItem(PiBrowserHandlers.MENU_ID_COPY_LINK, PiAgentBundle.message("browser.link.option.COPY"))
+            // 058 用户指令：054 当时刻意留在浏览器面板的第 4 项（当时 LinkOption
+            // 被 ASK 选择器共用的顾虑），现在补进 chat 面板——复用浏览器面板的
+            // 菜单 id 与 bundle 键，ASK 选择器（LinkRouting.linkOptions）不动。
+            m.addItem(PiBrowserHandlers.MENU_ID_OPEN_PI_EDITOR, PiAgentBundle.message("browser.open.in.editor.menu"))
         }
 
         override fun onContextMenuCommand(
@@ -199,6 +203,11 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
                 PiBrowserHandlers.MENU_ID_OPEN_EMBEDDED -> PiBrowserManager.getInstance(project).open(url)
                 PiBrowserHandlers.MENU_ID_COPY_LINK -> ApplicationManager.getApplication().invokeLater {
                     CopyPasteManager.getInstance().setContents(StringSelection(url))
+                }
+                // 058: 同浏览器面板第 4 项——编辑器形态新页签，EDT hop
+                //（CEF 回调线程不得触碰 FileEditorManager）。
+                PiBrowserHandlers.MENU_ID_OPEN_PI_EDITOR -> ApplicationManager.getApplication().invokeLater {
+                    dev.pi.agent.browser.PiBrowserEditorProvider.openUrlInEditor(project, url, null)
                 }
                 else -> return false // native items -> CEF
             }
