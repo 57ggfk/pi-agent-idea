@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title> modes Demo</title>
+<style>
+  :root {
+    --bg: #f5f7fa;
+    --surface: #ffffff;
+    --text: #1a202c;
+    --text-secondary: #4a5568;
+    --accent: #3b82f6;
+    --accent-hover: #2563eb;
+    --border: #e2e8f0;
+    --shadow: 0 4px 16px rgba(0,0,0,0.08);
+    --hero-grad: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  }
+  html.dark {
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --text: #f1f5f9;
+    --text-secondary: #94a3b8;
+    --accent: #60a5fa;
+    --accent-hover: #3b82f6;
+    --border: #334155;
+    --shadow: 0 4px 16px rgba(0,0,0,0.4);
+    --hero-grad: linear-gradient(135deg, #1e40af, #6d28d9);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; transition: background-color .3s, color .3s, border-color .3s; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+  nav {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 16px 32px; background: var(--surface); border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 10;
+  }
+  .logo { font-size: 20px; font-weight: 700; background: var(--hero-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .nav-links { display: flex; gap: 20px; align-items: center; }
+  .nav-links a { color: var(--text-secondary); text-decoration: none; font-size: 14px; }
+  .nav-links a:hover { color: var(--accent); }
+  #themeToggle {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 20px;
+    padding: 6px 14px; cursor: pointer; font-size: 14px; color: var(--text);
+  }
+  #themeToggle:hover { border-color: var(--accent); }
+  .hero { text-align: center; padding: 80px 20px 40px; }
+  .hero h1 { font-size: 42px; margin-bottom: 16px; background: var(--hero-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hero p { color: var(--text-secondary); font-size: 17px; max-width: 560px; margin: 0 auto 32px; }
+  .btn {
+    display: inline-block; background: var(--hero-grad); color: #fff; border: none;
+    padding: 12px 32px; border-radius: 24px; font-size: 15px; cursor: pointer;
+    text-decoration: none;
+  }
+  .btn:hover { opacity: .9; transform: translateY(-1px); }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 24px; padding: 40px 32px 80px; max-width: 1000px; margin: 0 auto; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    padding: 24px; box-shadow: var(--shadow);
+  }
+  .card:hover { transform: translateY(-4px); }
+  .card .icon { font-size: 32px; margin-bottom: 12px; }
+  .card h3 { margin-bottom: 8px; font-size: 17px; }
+  .card p { color: var(--text-secondary); font-size: 14px; line-height: 1.6; }
+  .counter-box { text-align: center; padding-bottom: 60px; }
+  .counter-box button {
+    margin: 0 8px; padding: 10px 22px; border-radius: 10px; cursor: pointer; font-size: 15px;
+    background: var(--surface); color: var(--text); border: 1px solid var(--border);
+  }
+  .counter-box button:hover { border-color: var(--accent); color: var(--accent); }
+  #count { font-size: 48px; font-weight: 700; margin: 0 4px; color: var(--accent); }
+  footer { text-align: center; padding: 24px; color: var(--text-secondary); font-size: 13px; border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+<nav>
+  <div class="logo">Lumina</div>
+  <div class="nav-links">
+    <a href="#">首页</a>
+    <a href="#">功能</a>
+    <a href="#">文档</a>
+    <button id="themeToggle">🌙 夜间模式</button>
+  </div>
+</nav>
+
+<section class="hero">
+  <h1>优雅的双模式设计</h1>
+  <p>这是一个演示页面，当前为夜间模式。点击右上角按钮即可 <a href="index.html" style="color:var(--accent)">跳转回日间模式</a>。</p>
+  <a class="btn" href="#">立即开始</a>
+</section>
+
+<section class="cards">
+  <div class="card">
+    <div class="icon">🎨</div>
+    <h3>CSS 变量主题</h3>
+    <p>全部配色基于 CSS 自定义属性，切换模式只需一行代码，无需重复样式。</p>
+  </div>
+  <div class="card">
+    <div class="icon">⚡</div>
+    <h3>平滑过渡动画</h3>
+    <p>所有颜色变化带有 0.3 秒过渡效果，主题切换丝般顺滑，毫无闪烁。</p>
+  </div>
+  <div class="card">
+    <div class="icon">💾</div>
+    <h3>记忆用户偏好</h3>
+    <p>主题选择会保存在 localStorage 中，刷新页面后自动恢复上次的选择。</p>
+  </div>
+</section>
+
+<section class="counter-box">
+  <h3 style="margin-bottom:16px">交互小演示</h3>
+  <button id="minus">−</button>
+  <span id="count">0</span>
+  <button id="plus">+</button>
+</section>
+
+<footer>© 2025 Lumina · 当前：<b>夜间模式</b> · <a id="jumpLink" href="index.html" style="color:var(--accent)">切换到日间模式 →</a></footer>
+
+<script>
+  const html = document.documentElement;
+  const toggle = document.getElementById('themeToggle');
+
+  // 点击切换按钮跳转回日间模式页面
+  toggle.addEventListener('click', () => {
+    window.location.href = 'index.html';
+  });
+
+  // 底部也提供跳转入口
+  document.getElementById('jumpLink').addEventListener('click', (e) => {
+    e.preventDefault();
+    window.location.href = 'index.html';
+  });
+
+  // 夜间版固定使用 dark 主题
+  html.classList.add('dark');
+  toggle.textContent = '☀️ 日间模式';
+
+  let count = 0;
+  const countEl = document.getElementById('count');
+  document.getElementById('plus').onclick = () => countEl.textContent = ++count;
+  document.getElementById('minus').onclick = () => countEl.textContent = --count;
+</script>
+</body>
+</html>
