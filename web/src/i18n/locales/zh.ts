@@ -14,6 +14,8 @@ export const zh: Dict = {
   "markdown.openInIde": "在 IDE 打开",
   "markdown.copyAsImage": "复制为图片",
   "markdown.wrap": "换行",
+  // 049: 渲染/源码模式切换（aria-pressed=true 表示当前看的是源码）
+  "markdown.source": "源码",
   "common.loading": "加载中…",
 
   // -- tooltips（012 US2）------------------------------------------------------
