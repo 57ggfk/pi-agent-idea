@@ -197,7 +197,7 @@ test("a text-only session never opens a preview (T140 zero regression)", async (
 // -- 018 US2: composer thumbnails open the same modal -------------------------
 
 test.describe("composer image cards", () => {
-  test("thumbnails render at ~64px and open the preview modal with the composer list", async ({ page }) => {
+  test("thumbnails render at ~48px and open the preview modal with the composer list", async ({ page }) => {
     await page.setInputFiles('input[type="file"]', [
       { name: "pic-1.png", mimeType: "image/png", buffer: PNG },
       { name: "pic-2.png", mimeType: "image/png", buffer: PNG },
@@ -206,8 +206,9 @@ test.describe("composer image cards", () => {
     await expect(cards).toHaveCount(2);
     await expect(page.getByTestId("image-chips")).toContainText("pic-1.png");
 
+    // 018 US2 起步 64px；浮框式内测反馈窄面板偏大，缩到 48px（预览辨识度保留）
     const size = await cards.first().locator("img").evaluate((el) => el.getBoundingClientRect().width);
-    expect(Math.abs(size - 64)).toBeLessThanOrEqual(2);
+    expect(Math.abs(size - 48)).toBeLessThanOrEqual(2);
 
     // click the first thumb → modal shows 1/2 with the file name
     await cards.first().locator("img").click();

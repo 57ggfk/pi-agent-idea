@@ -3019,7 +3019,8 @@ button {
      内边距让卡片与框线保持 6px 呼吸；约两行封顶、内部滚动是安全阀——20 张
      以上的极端情况不再让 composer 反客为主吃掉消息区。 */
   padding: 6px 6px 0;
-  max-height: 190px;
+  /* 48px 卡两行（154px）封顶——安全阀随缩略图缩放同步收紧。 */
+  max-height: 160px;
   overflow-y: auto;
 }
 
@@ -3048,8 +3049,10 @@ button {
   color: var(--text);
 }
 
-/* Composer image cards (018 US2): a 64px thumbnail instead of a name-only
-   chip. Clicking the thumb opens the shared preview modal; the × removes. */
+/* Composer image cards (018 US2): a thumbnail instead of a name-only
+   chip. Clicking the thumb opens the shared preview modal; the × removes.
+   内测反馈 64px 在 450px 窄面板偏大，缩到 48px——预览辨识度保留，单卡
+   高度 85→73px（40px 会退成色块，不划算）。 */
 .image-card {
   position: relative;
   display: inline-flex;
@@ -3062,8 +3065,8 @@ button {
 }
 
 .image-card-thumb {
-  width: 64px;
-  height: 64px;
+  width: 48px;
+  height: 48px;
   object-fit: cover;
   border-radius: 4px;
   cursor: zoom-in;
@@ -3072,7 +3075,7 @@ button {
 }
 
 .image-card-name {
-  max-width: 64px;
+  max-width: 48px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
