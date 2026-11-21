@@ -66,12 +66,39 @@ class PiBrowserManager(private val project: Project) {
             panel.load(url)
             return panel
         }
+        val panel = createTab(manager)
+        panel.load(url)
+        return panel
+    }
+
+    /**
+     * 054: opens a NEW browser tab WITHOUT navigating — the placeholder shows
+     * until the user (or the agent) types an address. Used by the tool
+     * window's "New browser tab" header button. EDT call.
+     */
+    fun newTab() {
+        if (project.isDisposed) return
+        if (!ApplicationManager.getApplication().isDispatchThread) {
+            ApplicationManager.getApplication().invokeLater { newTab() }
+            return
+        }
+        val toolWindow = ToolWindowManager.getInstance(project).getToolWindow(TOOLWINDOW_ID) ?: return
+        toolWindow.show(null)
+        val manager = toolWindow.contentManager
+        if (manager.contents.count { it.getComponent() is BrowserPanel } >= MAX_TABS) return
+        createTab(manager)
+    }
+
+    /**
+     * Creates and selects a fresh browser tab (no navigation). 048 P-7 hard
+     * rule (round 2 enforcement): ONE windowed browser per tool window — the
+     * walkthrough's multi-tab build created one per TAB, and the hidden tabs'
+     * native HWNDs stacked over the visible page and ate every click (the
+     * F-202/F-110 re-verify's dead page interaction). Tab 1 keeps windowed;
+     * tabs 2+ are OSR (editor-carrier proven).
+     */
+    private fun createTab(manager: com.intellij.ui.content.ContentManager): BrowserPanel {
         ensureTabListener(manager)
-        // 048 P-7 hard rule (round 2 enforcement): ONE windowed browser per
-        // tool window. The walkthrough's multi-tab build created one per TAB —
-        // the hidden tabs' native HWNDs stacked over the visible page and ate
-        // every click (the F-202/F-110 re-verify's dead page interaction).
-        // Tab 1 keeps windowed; tabs 2+ are OSR (editor-carrier proven).
         val offscreen = windowedTabCreated
         windowedTabCreated = true
         val panel = BrowserPanel(project, offscreen)
@@ -84,7 +111,6 @@ class PiBrowserManager(private val project: Project) {
         Disposer.register(content, panel)
         manager.addContent(content)
         manager.setSelectedContent(content)
-        panel.load(url)
         return panel
     }
 
