@@ -17,6 +17,7 @@ import com.intellij.ui.content.ContentManagerEvent;
 import com.intellij.ui.content.ContentManagerListener;
 import dev.pi.agent.ui.PiUiErrorPanel;
 import dev.pi.agent.PiAgentBundle;
+import dev.pi.agent.browser.BrowserPanel;
 import dev.pi.agent.bridge.BridgeService;
 import dev.pi.agent.process.PiConnectionState;
 import dev.pi.agent.process.PiProcessManager;
@@ -73,7 +74,9 @@ public class PiAgentToolWindowFactory implements ToolWindowFactory {
         // 019 D7/D8: the "+" action lives in the tool window header. Pass the
         // project explicitly — title actions do not reliably carry one in their
         // AnActionEvent data context, which used to leave "+" disabled.
-        toolWindow.setTitleActions(List.of(new NewInstanceAction(project)));
+        // 054: the "New browser tab" button sits NEXT to the instance "+" —
+        // same header, same ordering semantics (never pushes the "+" out).
+        toolWindow.setTitleActions(List.of(new NewBrowserAction(project), new NewInstanceAction(project)));
     }
 
     /**
@@ -108,6 +111,40 @@ public class PiAgentToolWindowFactory implements ToolWindowFactory {
      * which made {@code liveInstanceIds().size()} stay at 4 forever and left
      * "+" permanently disabled after closing any tab (C3, 2026-11-15).
      */
+    /**
+     * 054: "New browser tab" header action - opens a fresh browser Content
+     * WITHOUT navigating (the placeholder shows until an address is typed).
+     * Greys out at the browser-tab ceiling (PiBrowserManager.MAX_TABS, 048
+     * P-7 rule: tabs 2+ are OSR). Deliberately does NOT count against the Pi
+     * instance limit (spec US8: browser tabs own no pi process).
+     */
+    private final class NewBrowserAction extends AnAction {
+        private final Project project;
+
+        NewBrowserAction(Project project) {
+            super(PiAgentBundle.message("toolwindow.new.browser"),
+                    PiAgentBundle.message("toolwindow.new.browser.tooltip"), null);
+            this.project = project;
+        }
+
+        @Override
+        public void update(@NotNull AnActionEvent e) {
+            ToolWindow toolWindow = toolWindowOf(project);
+            int browserTabs = 0;
+            if (toolWindow != null) {
+                for (Content content : toolWindow.getContentManager().getContents()) {
+                    if (content.getComponent() instanceof BrowserPanel) browserTabs++;
+                }
+            }
+            e.getPresentation().setEnabled(toolWindow != null && browserTabs < dev.pi.agent.browser.PiBrowserManager.MAX_TABS);
+        }
+
+        @Override
+        public void actionPerformed(@NotNull AnActionEvent e) {
+            dev.pi.agent.browser.PiBrowserManager.getInstance(project).newTab();
+        }
+    }
+
     private final class NewInstanceAction extends AnAction {
         private final Project project;
 
