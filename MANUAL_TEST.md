@@ -691,3 +691,12 @@
 - [ ] **tool console 响应 {ok,total,dropped,count,lines,file}**（AgentBrowserToolResponseTest：count=matched、lines `[index] text`、空 buffer ok:true+reason、无页签 ok:false）——未真机验收
 - [ ] **pi-browser.js schema**（node --check 过、formatSnapshot 逐字未动、formatConsole 1500 字符封顶——实现批回报）——真机 pi 会话未验
 - [ ] **pi 会话端到端六项**（spec 053 §七：长页 scroll scrollY 变化、selector 命中/未命中、>5 条 console 错误回读 total/lines/file、read 无参数 049 回归、since 分页、idea.log 复核）——未执行
+
+### 053 观测面批真机验收（2026-11-21 凌晨，PI 会话三轮闭环，真实键鼠）
+
+- [x] scroll 子动作：AI 自建 tall-test.html（3000px+实时 scrollY 横栏）→ pi_browser open（scrollY=0）→ scroll down 600 → 返回文本 scrollY=600 TALL-TEST-BOTTOM → read DOM 精确读取 `<span id="scrollYValue">600</span>`——滚距精确无偏差
+- [x] read selector 摘录：selector:h1 → 只摘录 h1 元素文本（POSTLOAD-ERR-H1），未命中返回 error 字段；无 selector 时行为与 049 逐字节一致（回归通过）
+- [x] console 回读：postload-err.html 延迟 3s fire 6 条 console.error（文字各异含 ERR-MARK）→ open 后等 5s → console 操作返回 total=6 dropped=0 + 全部 6 条文字；limit=3 分页生效（6 matched 3 shown）
+- [x] console JSONL 落盘：AI 以 bash 核对落盘文件路径/行数/字段结构正常；绝不进 idea.log（048 硬规则 8）
+- [x] pi_browser 工具全链路：三轮会话中 open/read/scroll/console 四种动作真实调用共 10+ 次，全部 0.0-0.3s 返回，工具卡片在聊天中正常渲染
+- [x] verifier 门禁修复：2026.2 目标在本仓库 resolve 不可达（detached configuration 缺 intellij-repository）→ 移除并文档化（262 行 ABI 检测由每轮真机验收覆盖）→ verifyPlugin BUILD SUCCESSFUL
