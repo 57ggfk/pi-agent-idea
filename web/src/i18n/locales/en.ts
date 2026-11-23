@@ -116,6 +116,10 @@ export const en = {
   "chat.actions.copied": "Copied",
   "chat.actions.copyFailed": "Copy failed",
   "chat.actions.group": "Message actions",
+  "chat.thinking": "Thinking",
+  "chat.steerTag": "Steered",
+  "chat.attachedImage": "attached image",
+  "chat.transcript": "Message transcript",
 
   // -- tool cards ---------------------------------------------------------------
   "tool.showAll": "Show all ({{count}} lines)",
@@ -125,6 +129,18 @@ export const en = {
   "tool.images": "{{count}} images",
   "tool.images_one": "{{count}} image",
   "tool.images_other": "{{count}} images",
+  "tool.error": "error",
+  "tool.openInIde": "click to open in IDE",
+
+  // -- status bar -----------------------------------------------------------------
+  "status.piExited": "pi exited: {{msg}}",
+  "status.restart": "Restart",
+  "status.exitDetails": "Details",
+  "status.exitDetailsTitle": "stderr output",
+  "status.ctx": "ctx {{pct}}%",
+  "status.ctxTitle": "Context window usage",
+  "status.costTitle": "Session cost",
+  "status.msgs": "{{n}} msgs",
 
   // -- message queue ------------------------------------------------------------
   "queue.mode.steer": "Steer",
@@ -224,6 +240,8 @@ export const en = {
   "options.approve": "Auto-approve tool calls",
   "options.approveOn": "Edits and commands run without asking",
   "options.approveOff": "Ask before edits and commands; read-only tools still run freely",
+  "options.settingFailed": "Could not apply this setting: {{msg}}",
+  "options.persistFailed": "Applied, but could not be saved for the next start: {{msg}}",
 
   // -- sessions view ------------------------------------------------------------
   "sessions.filter": "Filter sessions…",

@@ -5689,3 +5689,69 @@ button {
 .skill-group-title[data-source="package"] {
   color: var(--accent-text);
 }
+
+/* -- 0510: exit banner details, visible option failures, keyboard controls ---- */
+
+/* The exit banner keeps a one-line headline; the raw stderr moves into a
+   collapsed details pane — it is diagnostic noise until someone asks for it. */
+.exit-banner-msg {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.exit-details {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.exit-details > summary {
+  cursor: pointer;
+  text-decoration: underline dotted;
+}
+
+.exit-details-body {
+  margin: 4px 0 2px;
+  padding: 4px 6px;
+  max-height: 160px;
+  overflow: auto;
+  background: var(--bg-input);
+  border: 1px solid var(--error);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* A switch that failed says so, right where it was flipped. */
+.options-error {
+  margin: 6px 10px 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--error);
+  border-radius: 4px;
+  background: var(--error-bg);
+  color: var(--error);
+  font-size: var(--fs-xs);
+  word-break: break-word;
+}
+
+/* The queue-mode menu entries are real buttons: a <div onMouseDown> is
+   unreachable with the keyboard and swallows Enter. */
+.send-mode-menu button.slash-item {
+  width: 100%;
+  border: none;
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+
+/* The file path in a tool card is a real button too. */
+button.tool-file-link {
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+}

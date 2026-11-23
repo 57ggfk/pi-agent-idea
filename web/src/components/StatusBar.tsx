@@ -30,6 +30,16 @@ export default function StatusBar() {
   const cost = stats?.cost;
   const totalMessages = stats?.totalMessages;
 
+  // stderr is diagnostic noise, not the headline. Keep the tail of it for a
+  // collapsed details pane instead of dumping it into the banner line.
+  const stderrTail = exitStderr.trim()
+    ? exitStderr
+        .split("\n")
+        .filter((line) => line.trim() !== "")
+        .slice(-20)
+        .join("\n")
+    : "";
+
   // Context fill level drives the bar color (green → amber → red).
   const ctxLevel = percent == null ? "ok" : percent >= 90 ? "critical" : percent >= 70 ? "warn" : "ok";
 
@@ -37,13 +47,18 @@ export default function StatusBar() {
     <div className="statusbar" data-testid="statusbar">
       {piStatus === "exited" ? (
         <div className="exit-banner" data-testid="exit-banner">
-          <span>
-            pi exited: {exitMessage}
-            {exitStderr ? ` — ${exitStderr.split("\n").slice(-3).join(" | ").slice(0, 300)}` : ""}
+          <span className="exit-banner-msg" data-testid="exit-banner-msg">
+            {t("status.piExited", { msg: exitMessage })}
           </span>
+          {stderrTail ? (
+            <details className="exit-details" data-testid="exit-details">
+              <summary title={t("status.exitDetailsTitle")}>{t("status.exitDetails")}</summary>
+              <pre className="exit-details-body">{stderrTail}</pre>
+            </details>
+          ) : null}
           <button className="btn btn-restart" data-testid="restart-btn" onClick={() => void restartPi()}>
             <Icon name="refresh" className="ic-sm" />
-            Restart
+            {t("status.restart")}
           </button>
         </div>
       ) : null}
@@ -71,24 +86,24 @@ export default function StatusBar() {
         ) : null}
         <span className="spacer" />
         {percent != null ? (
-          <span className="status-ctx" data-testid="status-context" title="Context window usage">
+          <span className="status-ctx" data-testid="status-context" title={t("status.ctxTitle")}>
             <span className={`ctx-bar ctx-${ctxLevel}`} data-testid="status-context-bar">
               <span
                 className="ctx-bar-fill"
                 style={{ width: `${Math.min(100, Math.max(2, percent))}%` }}
               />
             </span>
-            ctx {Math.round(percent)}%
+            {t("status.ctx", { pct: Math.round(percent) })}
           </span>
         ) : null}
         {cost != null ? (
-          <span className="status-opt" data-testid="status-cost" title="Session cost">
+          <span className="status-opt" data-testid="status-cost" title={t("status.costTitle")}>
             ${cost.toFixed(4)}
           </span>
         ) : null}
         {totalMessages != null ? (
           <span className="status-opt" data-testid="status-messages">
-            {totalMessages} msgs
+            {t("status.msgs", { n: totalMessages })}
           </span>
         ) : null}
         {bridgeKind === "mock" ? (

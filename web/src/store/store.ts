@@ -575,6 +575,12 @@ interface PiStore {
   /** pi-managed toggles; null until get_state / config.getPrefs answered. */
   autoCompaction: boolean | null;
   autoRetry: boolean | null;
+  /**
+   * Last failure of an options-menu switch. A switch that silently reverts
+   * reads as a broken app, so the popover shows this next to it instead of
+   * dropping the failure into the transcript.
+   */
+  settingsError: string | null;
 
   setTab(tab: Tab): void;
   setThemePreference(preference: ThemePreference): void;
@@ -1351,6 +1357,7 @@ export const usePiStore = create<PiStore>((set, get) => {
     approvalMode: "yolo",
     autoCompaction: null,
     autoRetry: null,
+    settingsError: null,
 
     models: [],
     thinkingLevel: "medium",
@@ -2683,11 +2690,13 @@ export const usePiStore = create<PiStore>((set, get) => {
     async setApprovalMode(mode: "ask" | "yolo") {
       if (!bridge) return;
       const prev = get().approvalMode;
-      set({ approvalMode: mode });
+      set({ approvalMode: mode, settingsError: null });
       try {
         await bridge.request("approval.setPolicy", { mode, allow: [] });
       } catch (e) {
         set({ approvalMode: prev });
+        // Say it failed: the switch snapping back on its own looks broken.
+        set({ settingsError: t("options.settingFailed", { msg: (e as Error)?.message ?? String(e) }) });
         console.warn("approval.setPolicy failed", e);
       }
     },
@@ -2695,11 +2704,12 @@ export const usePiStore = create<PiStore>((set, get) => {
     async setAutoCompaction(enabled: boolean) {
       if (!bridge) return;
       const prev = get().autoCompaction;
-      set({ autoCompaction: enabled });
+      set({ autoCompaction: enabled, settingsError: null });
       try {
         await rpc(bridge, { type: "set_auto_compaction", enabled });
       } catch (e) {
         set({ autoCompaction: prev });
+        set({ settingsError: t("options.settingFailed", { msg: (e as Error)?.message ?? String(e) }) });
         console.warn("set_auto_compaction failed", e);
       }
     },
@@ -2707,13 +2717,18 @@ export const usePiStore = create<PiStore>((set, get) => {
     async setAutoRetry(enabled: boolean) {
       if (!bridge) return;
       const prev = get().autoRetry;
-      set({ autoRetry: enabled });
+      set({ autoRetry: enabled, settingsError: null });
       try {
         await rpc(bridge, { type: "set_auto_retry", enabled });
-        // Persist so a restarted pi process gets the same choice.
-        void bridge.request("config.setPrefs", { autoRetry: enabled }).catch(() => undefined);
+        // Persist so a restarted pi process gets the same choice. The switch
+        // itself is already applied, so a persistence failure is reported on
+        // its own instead of pretending the setting was lost.
+        void bridge.request("config.setPrefs", { autoRetry: enabled }).catch((e) => {
+          set({ settingsError: t("options.persistFailed", { msg: (e as Error)?.message ?? String(e) }) });
+        });
       } catch (e) {
         set({ autoRetry: prev });
+        set({ settingsError: t("options.settingFailed", { msg: (e as Error)?.message ?? String(e) }) });
         console.warn("set_auto_retry failed", e);
       }
     },

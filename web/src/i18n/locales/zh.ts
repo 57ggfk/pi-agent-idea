@@ -117,6 +117,10 @@ export const zh: Dict = {
   "chat.actions.copied": "已复制",
   "chat.actions.copyFailed": "复制失败",
   "chat.actions.group": "消息操作",
+  "chat.thinking": "思考中",
+  "chat.steerTag": "插话",
+  "chat.attachedImage": "附加的图片",
+  "chat.transcript": "消息记录",
 
   // -- tool cards ---------------------------------------------------------------
   "tool.showAll": "显示全部（{{count}} 行）",
@@ -126,6 +130,18 @@ export const zh: Dict = {
   "tool.images": "{{count}} 张图片",
   "tool.images_one": "{{count}} 张图片",
   "tool.images_other": "{{count}} 张图片",
+  "tool.error": "错误",
+  "tool.openInIde": "点击在 IDE 中打开",
+
+  // -- status bar -----------------------------------------------------------------
+  "status.piExited": "pi 已退出：{{msg}}",
+  "status.restart": "重启",
+  "status.exitDetails": "查看详情",
+  "status.exitDetailsTitle": "stderr 输出",
+  "status.ctx": "上下文 {{pct}}%",
+  "status.ctxTitle": "上下文窗口占用",
+  "status.costTitle": "会话开销",
+  "status.msgs": "{{n}} 条消息",
 
   // -- message queue ------------------------------------------------------------
   "queue.mode.steer": "插话",
@@ -223,6 +239,8 @@ export const zh: Dict = {
   "options.approve": "自动批准工具调用",
   "options.approveOn": "编辑与命令无需确认直接执行",
   "options.approveOff": "编辑与命令先询问；只读工具仍然自由执行",
+  "options.settingFailed": "设置未生效：{{msg}}",
+  "options.persistFailed": "已生效，但未能保存到下次启动：{{msg}}",
 
   // -- sessions view ------------------------------------------------------------
   "sessions.filter": "筛选会话…",
