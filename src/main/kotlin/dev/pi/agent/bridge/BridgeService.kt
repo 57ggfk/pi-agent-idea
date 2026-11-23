@@ -805,17 +805,40 @@ class BridgeService(private val project: Project) : Disposable {
      * in-memory, read-only file with the best matching language. Nothing is
      * written to disk; an unknown language degrades to plain text instead of
      * an error (US2).
+     *
+     * The open runs on the EDT and the reply is sent only after it happened.
+     * The handler runs on Dispatchers.IO, so the old fire-and-forget reply
+     * said "ok" even when the editor had closed the tab again — the panel
+     * had nothing to report and the user saw nothing at all (real machine,
+     * 2026-11-23: a ```lua block opened and vanished in 10ms).
      */
     private fun openSnippetInEditor(params: JsonObject): JsonObject {
         val text = (params["text"] as? JsonPrimitive)?.content
             ?: return buildJsonObject { put("ok", false); put("error", "missing text") }
         val language = (params["language"] as? JsonPrimitive)?.content ?: ""
         val vf = SnippetFiles.buildVirtualFile(language, text, snippetSeq.getAndIncrement())
-        com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater {
-            if (project.isDisposed) return@invokeLater
-            com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).openFile(vf, true)
+        val app = ApplicationManager.getApplication()
+        var failure: Throwable? = null
+        val open = Runnable {
+            try {
+                if (project.isDisposed) throw IllegalStateException("project is disposed")
+                com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).openFile(vf, true)
+            } catch (e: Throwable) {
+                failure = e
+            }
         }
-        return buildJsonObject { put("ok", true) }
+        if (app.isDispatchThread) open.run() else app.invokeAndWait(open)
+        failure?.let {
+            LOG.warn("openSnippet: the snippet tab did not open", it)
+            return buildJsonObject {
+                put("ok", false)
+                put("error", it.message ?: "cannot open the snippet")
+            }
+        }
+        return buildJsonObject {
+            put("ok", true)
+            put("fileType", vf.fileType.name)
+        }
     }
 
     /**
