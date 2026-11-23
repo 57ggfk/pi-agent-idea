@@ -14,9 +14,11 @@ data class ConsoleEntry(val index: Int, val text: String)
 
 /**
  * One `since(index, limit)` readback: the counters the response reports plus
- * the entries with index > since, oldest first.
+ * the entries with index > since, oldest first. [matched] counts ALL lines
+ * past `since` (before the [entries] preview cap) so the model knows the
+ * full scale and can page through with `since`.
  */
-data class ConsoleWindow(val total: Int, val dropped: Int, val entries: List<ConsoleEntry>)
+data class ConsoleWindow(val total: Int, val dropped: Int, val matched: Int, val entries: List<ConsoleEntry>)
 
 /**
  * Bounded buffer of the browser tab's page console output (F-206, 049 P2
@@ -79,7 +81,8 @@ class BrowserConsoleBuffer(
 
     /** 053 B3: the counters and one window in a single lockstep read. */
     fun window(index: Int, limit: Int): ConsoleWindow = synchronized(lock) {
-        ConsoleWindow(totalCounter, droppedCounter, if (limit <= 0) emptyList() else lines.filter { it.index > index }.take(limit))
+        val matched = lines.filter { it.index > index }
+        ConsoleWindow(totalCounter, droppedCounter, matched.size, if (limit <= 0) emptyList() else matched.take(limit))
     }
 
     /**

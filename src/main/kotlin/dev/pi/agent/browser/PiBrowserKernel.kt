@@ -34,8 +34,9 @@ import javax.swing.JComponent
  * Hard rules baked in (plan §0 probe evidence):
  *  - exactly ONE windowed browser per kernel — native HWNDs drift and cover
  *    Swing siblings (P-7), so no second instance ever gets created here;
- *  - the only JS bridge is the agent's READ-ONLY page snapshot (049 D4) —
- *    no tokens, nothing from BridgeService;
+ *  - the only JS bridge is the agent's read-only channel: page snapshot +
+ *    viewport scroll + console tap (049 D4, revised by 053 to「只读 DOM +
+ *    视口滚动」) — no tokens, nothing from BridgeService;
  *  - crash detection via `onRenderProcessTerminated` — `JBCefHealthMonitor`
  *    does not exist on the 233–263 line (P-6);
  *  - after navigation the frame is force-repainted (P-9 stale-frame residue).
@@ -445,7 +446,11 @@ class PiBrowserKernel(
      * agent tool call. Returns immediately with a failure snapshot when there
      * is no live page to read.
      */
-    fun readPage(timeoutMs: Long = DEFAULT_READ_TIMEOUT_MS): CompletableFuture<PageSnapshot> {
+    fun readPage(
+        timeoutMs: Long = DEFAULT_READ_TIMEOUT_MS,
+        selector: String? = null,
+        format: String? = null,
+    ): CompletableFuture<PageSnapshot> {
         val url = lastKnownUrl
         val b = browser
         if (b == null) {
@@ -470,7 +475,7 @@ class PiBrowserKernel(
                     timeoutMs, TimeUnit.MILLISECONDS,
                 )
             pendingRead = future
-            val script = PageSnapshotSanitizer.buildReadScript(query.inject("result"))
+            val script = PageSnapshotSanitizer.buildReadScript(query.inject("result"), selector = selector, format = format)
             var failure: String? = null
             BrowserSafety.guard("executeJavaScript", Unit, { msg -> failure = msg }) {
                 b.cefBrowser.executeJavaScript(script, null, 0)

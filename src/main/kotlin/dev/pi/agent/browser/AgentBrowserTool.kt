@@ -33,14 +33,31 @@ object AgentBrowserTool {
      */
     private const val PANEL_WAIT_MS = 5_000L
 
+    // ---- 053 constants (internal: the copy is unit-locked) ----
+
+    /** Shared empty-tab failure for read/reload/scroll/console. */
+    internal const val NO_TAB_REASON = "browser tab is not open; use open first"
+
+    /** 053 B2: scroll defaults — one "page-ish" step down. */
+    internal const val DEFAULT_SCROLL_DIRECTION = "down"
+    internal const val DEFAULT_SCROLL_AMOUNT_PX = 800
+
+    /** 053 B3: console preview size (the full history lives in the JSONL file). */
+    internal const val DEFAULT_CONSOLE_PREVIEW_LINES = 20
+    internal const val MAX_CONSOLE_PREVIEW_LINES = AgentBrowserRequestCodec.MAX_CONSOLE_LIMIT
+    internal const val CONSOLE_EMPTY_REASON =
+        "no console error/warning lines captured yet; only error and warning levels are kept"
+
     fun execute(project: Project, request: AgentBrowserRequest, bridgeToken: String?): JsonObject {
         val violation = AgentBrowserRequestCodec.bridgeTokenViolation(request.url, bridgeToken)
         if (violation != null) return failure(violation)
 
         return when (request.action) {
-            AgentAction.READ -> read(project)
+            AgentAction.READ -> read(project, request)
             AgentAction.OPEN -> open(project, request.url ?: "")
             AgentAction.RELOAD -> reload(project)
+            AgentAction.SCROLL -> scroll(project, request)
+            AgentAction.CONSOLE -> console(project, request)
         }
     }
 
@@ -98,7 +115,7 @@ object AgentBrowserTool {
     private fun reload(project: Project): JsonObject {
         val manager = PiBrowserManager.getInstance(project)
         val panel = manager.browserPanel()
-            ?: return failure("browser tab is not open; use open first")
+            ?: return failure(NO_TAB_REASON)
         if (runOnEdt { panel.agentReload() } == null) {
             return failure("browser tab did not initialize")
         }
@@ -107,11 +124,62 @@ object AgentBrowserTool {
         return finishWithSnapshot(kernel, state)
     }
 
-    private fun read(project: Project): JsonObject {
+    private fun read(project: Project, request: AgentBrowserRequest): JsonObject {
         val manager = PiBrowserManager.getInstance(project)
         val panel = manager.browserPanel()
-            ?: return failure("browser tab is not open; use open first")
-        return finishWithSnapshot(panel.agentKernel(), panel.agentKernel().state.name)
+            ?: return failure(NO_TAB_REASON)
+        val kernel = panel.agentKernel()
+        // 053 B2: a selector excerpts that element instead of the whole page.
+        return finishWithSnapshot(
+            kernel,
+            kernel.state.name,
+            selector = request.selector,
+            format = request.format,
+        )
+    }
+
+    /**
+     * 053 B2: move the viewport (the D4 revision — read-only DOM + viewport
+     * scrolling), then answer with the SAME snapshot format, the post-scroll
+     * `scrollY` attached. The kernel owns the single-flight and the timeout;
+     * a failed scroll answers with a plain failure, never a stale snapshot.
+     */
+    private fun scroll(project: Project, request: AgentBrowserRequest): JsonObject {
+        val manager = PiBrowserManager.getInstance(project)
+        val panel = manager.browserPanel()
+            ?: return failure(NO_TAB_REASON)
+        val kernel = panel.agentKernel()
+        val direction = request.scrollDirection ?: DEFAULT_SCROLL_DIRECTION
+        val amount = request.scrollAmount ?: DEFAULT_SCROLL_AMOUNT_PX
+        val result = try {
+            kernel.scrollPage(direction, amount).get(LOAD_WAIT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
+        } catch (e: Exception) {
+            ScrollResult.failure("scroll did not return: " + LogSafe.truncate(e.message))
+        }
+        if (!result.ok) {
+            return failure(result.reason ?: "scroll failed", kernel.lastKnownUrl)
+        }
+        return finishWithSnapshot(kernel, kernel.state.name, scrollY = result.scrollY)
+    }
+
+    /**
+     * 053 B3: on-demand console readback — `{ok,total,dropped,count,lines,
+     * file}`. `count` is how many lines match `since` (the full scale);
+     * `lines` is the bounded preview (default 20, max 200, each line already
+     * LogSafe.truncate'd at capture). Older lines live in the JSONL file the
+     * response names — the agent greps it instead of the plugin shipping the
+     * whole history into the context.
+     */
+    private fun console(project: Project, request: AgentBrowserRequest): JsonObject {
+        val manager = PiBrowserManager.getInstance(project)
+        val panel = manager.browserPanel()
+            ?: return failure(NO_TAB_REASON)
+        val kernel = panel.agentKernel()
+        val since = (request.consoleSince ?: 0).coerceAtLeast(0)
+        val limit = (request.consoleLimit ?: DEFAULT_CONSOLE_PREVIEW_LINES)
+            .coerceIn(1, MAX_CONSOLE_PREVIEW_LINES)
+        val window = kernel.consoleWindow(since, limit)
+        return consoleResponse(window, since, kernel.consoleFilePath())
     }
 
     private fun finishWithSnapshot(
@@ -119,9 +187,13 @@ object AgentBrowserTool {
         state: String,
         autoDetected: Boolean = false,
         candidates: List<Int> = emptyList(),
+        scrollY: Int? = null,
+        selector: String? = null,
+        format: String? = null,
     ): JsonObject {
         val snapshot = try {
-            kernel.readPage().get(PageSnapshotSanitizer.MAX_TEXT_CHARS.toLong() + 5_000L, java.util.concurrent.TimeUnit.MILLISECONDS)
+            kernel.readPage(selector = selector, format = format)
+                .get(PageSnapshotSanitizer.MAX_TEXT_CHARS.toLong() + 5_000L, java.util.concurrent.TimeUnit.MILLISECONDS)
         } catch (e: Exception) {
             PageSnapshot.failure("read did not return: " + LogSafe.truncate(e.message), kernel.lastKnownUrl)
         }
@@ -129,27 +201,87 @@ object AgentBrowserTool {
         // success or failure — so the model sees WHY a page misbehaves instead
         // of guessing from an empty text excerpt. Bounded by the buffer itself.
         val console = kernel.recentConsoleLines(5)
-        if (!snapshot.ok) {
-            return buildJsonObject {
-                put("ok", false)
-                put("reason", snapshot.reason ?: "page snapshot failed")
-                put("state", state)
-                put("url", snapshot.url)
-                appendConsole(console)
-            }
-        }
-        return buildJsonObject {
+        return snapshotResponse(
+            ok = snapshot.ok,
+            reason = snapshot.reason,
+            state = state,
+            url = snapshot.url,
+            title = snapshot.title,
+            ready = snapshot.readyState,
+            text = snapshot.text,
+            console = console,
+            autoDetected = autoDetected,
+            candidates = candidates,
+            scrollY = scrollY,
+            selector = selector,
+        )
+    }
+
+    /**
+     * The pure response assembly behind every snapshot answer (unit-tested):
+     * the 049 field order is untouched when the 053 extras are absent —
+     * scrollY inserts after text, selector echoes after url when present.
+     */
+    internal fun snapshotResponse(
+        ok: Boolean,
+        reason: String?,
+        state: String,
+        url: String,
+        title: String,
+        ready: String,
+        text: String,
+        console: List<String>,
+        autoDetected: Boolean,
+        candidates: List<Int>,
+        scrollY: Int?,
+        selector: String? = null,
+    ): JsonObject = buildJsonObject {
+        if (!ok) {
+            put("ok", false)
+            put("reason", reason ?: "page snapshot failed")
+            put("state", state)
+            put("url", url)
+            if (selector != null) put("selector", selector)
+            if (scrollY != null) put("scrollY", scrollY)
+            appendConsole(console)
+        } else {
             put("ok", true)
             put("state", state)
-            put("url", snapshot.url)
-            put("title", snapshot.title)
-            put("ready", snapshot.readyState)
-            put("text", snapshot.text)
+            put("url", url)
+            if (selector != null) put("selector", selector)
+            put("title", title)
+            put("ready", ready)
+            put("text", text)
+            if (scrollY != null) put("scrollY", scrollY)
             if (autoDetected) {
                 put("detected", true)
                 put("candidates", buildJsonArray { candidates.forEach { add(it) } })
             }
             appendConsole(console)
+        }
+    }
+
+    /**
+     * The pure console response assembly (unit-tested): ok stays true for an
+     * empty buffer (zero captured errors IS the answer for a verification
+     * call), with a reason field explaining what is and is not captured.
+     */
+    internal fun consoleResponse(window: ConsoleWindow, since: Int, file: String?): JsonObject {
+        val lines = window.entries.map { "[${it.index}] ${it.text}" }
+        return buildJsonObject {
+            put("ok", true)
+            put("total", window.total)
+            put("dropped", window.dropped)
+            put("count", window.matched)
+            if (lines.isEmpty()) {
+                put(
+                    "reason",
+                    if (window.total == 0) CONSOLE_EMPTY_REASON
+                    else "no new lines after index $since (total is ${window.total}); the buffer was cleared by a navigation or since is ahead of the captured lines — lower since",
+                )
+            }
+            put("lines", buildJsonArray { lines.forEach { add(it) } })
+            if (file != null) put("file", file)
         }
     }
 
