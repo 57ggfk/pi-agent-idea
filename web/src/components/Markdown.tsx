@@ -1141,7 +1141,16 @@ export default function Markdown({ text }: { text: string }) {
     const path = link.dataset.path;
     if (!path) return;
     e.preventDefault();
-    void openFile(path, Number(link.dataset.line ?? "0"));
+    void openFile(path, Number(link.dataset.line ?? "0")).then((ok) => {
+      if (ok) return;
+      // Same ✗ flash as the code-block buttons: a link that opens nothing
+      // must not look like a link that worked.
+      const original = link.textContent ?? "";
+      link.textContent = "✗";
+      setTimeout(() => {
+        link.textContent = original;
+      }, 1200);
+    });
   };
 
   return (

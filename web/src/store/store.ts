@@ -697,7 +697,7 @@ interface PiStore {
   cancelEditMessage(): void;
   /** Sends the edited text, branching the old version off first (FR-009). */
   sendEdited(text: string): Promise<void>;
-  openFile(path: string, line: number): Promise<void>;
+  openFile(path: string, line: number): Promise<boolean>;
   showFileDiff(path: string): Promise<void>;
   /**
    * Answers a pending extension_ui_request: `confirm` takes a boolean,
@@ -2641,12 +2641,17 @@ export const usePiStore = create<PiStore>((set, get) => {
       }
     },
 
-    async openFile(path: string, line: number) {
-      if (!bridge) return;
+    async openFile(path: string, line: number): Promise<boolean> {
+      if (!bridge) return false;
       try {
-        await bridge.request("ide.openFile", { path, line });
+        const res = await bridge.request<{ ok?: boolean }>("ide.openFile", { path, line });
+        // The transport rejects when the IDE threw (e.g. "file not found"),
+        // and the payload can carry ok:false as well. Either way the link
+        // opened nothing — and a link that silently does nothing is
+        // indistinguishable from a click that never landed.
+        return res?.ok !== false;
       } catch {
-        // non-fatal: the IDE may refuse to open the path
+        return false;
       }
     },
 

@@ -858,6 +858,8 @@ export class MockBridge implements Bridge {
       // 041 #9: echo the path so an e2e can assert which path a click hands
       // to the bridge (same echo pattern as ide.openSnippet below).
       const p = params as { path?: string } | undefined;
+      // `?openFile=fail` exercises the ✗ flash: the IDE refused the path.
+      if (query()?.get("openFile") === "fail") return Promise.reject(new Error("mock refusal"));
       globalThis.sessionStorage?.setItem("pi-mock-open-file", p?.path ?? "");
       return Promise.resolve({ ok: true } as T);
     }

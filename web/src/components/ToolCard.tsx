@@ -103,6 +103,9 @@ export default function ToolCard({
   forceOpen?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  // The IDE refused the path: show it, like the code-block buttons do. A
+  // link that opens nothing must not look like a link that worked.
+  const [openFailed, setOpenFailed] = useState(false);
   const isOpen = open || forceOpen === true;
   const { t } = useT();
   const running = !block.done && block.result !== undefined;
@@ -142,10 +145,14 @@ export default function ToolCard({
             title={`${block.argsJson} · ${t("tool.openInIde")}`}
             onClick={(e) => {
               e.stopPropagation();
-              void usePiStore.getState().openFile(filePath, 1);
+              void usePiStore.getState().openFile(filePath, 1).then((ok) => {
+                if (ok) return;
+                setOpenFailed(true);
+                setTimeout(() => setOpenFailed(false), 1200);
+              });
             }}
           >
-            {argSummary(block.argsJson, block.toolName)}
+            {openFailed ? "✗" : argSummary(block.argsJson, block.toolName)}
           </button>
         ) : (
           <span className="tool-args" title={block.argsJson}>

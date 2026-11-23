@@ -119,6 +119,22 @@ test("the tool card file path is a real button", async ({ page }) => {
   await expect(fileLink).toHaveAttribute("type", "button");
 });
 
+test("a file link the IDE refuses says so instead of doing nothing", async ({ page }) => {
+  await page.goto("/?openFile=fail");
+  await page.getByTestId("composer-input").fill("edit something");
+  await page.getByTestId("send-btn").click();
+  const editCard = page.locator(".tool-card", { has: page.locator(".tool-name", { hasText: "edit" }) });
+  await expect(editCard).toBeVisible({ timeout: 30_000 });
+
+  // The IDE refused the path: the button has to say so, or the click looks
+  // like it worked (the store used to swallow the failure).
+  const fileLink = editCard.locator(".tool-file-link");
+  await fileLink.click();
+  await expect(fileLink).toHaveText("✗");
+  // …and it recovers: the path is back.
+  await expect(fileLink).toContainText("src/main.tsx", { timeout: 3000 });
+});
+
 test("the transcript can be focused so the keyboard can scroll it", async ({ page }) => {
   await expect(page.getByTestId("message-list")).toHaveAttribute("tabindex", "0");
 });
