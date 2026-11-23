@@ -39,6 +39,10 @@ test("the exit banner headlines the failure and keeps stderr behind a collapsed 
   await expect(headline).toContainText("pi exited");
   await expect(headline).toContainText("exit code 1");
   await expect(headline).not.toContainText("Error: boom");
+  // The reason must not be clipped: a banner that hides half of it says
+  // nothing (real machine: "pi 已退出：pi process cl…").
+  const clipped = await headline.evaluate((el) => el.scrollWidth > el.clientWidth + 1);
+  expect(clipped, "the exit reason is clipped instead of wrapping").toBe(false);
 
   // stderr is still available, but only on demand.
   const body = page.locator(".exit-details-body");

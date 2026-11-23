@@ -44,24 +44,28 @@ export default function StatusBar() {
   const ctxLevel = percent == null ? "ok" : percent >= 90 ? "critical" : percent >= 70 ? "warn" : "ok";
 
   return (
-    <div className="statusbar" data-testid="statusbar">
+    // The exit banner is a sibling of the status bar, not a child: the status
+    // bar is a fixed 28px row, so an error notice inside it was clipped — and
+    // the composer painted over the part that stuck out (real machine).
+    <div className="statusbar-wrap">
       {piStatus === "exited" ? (
         <div className="exit-banner" data-testid="exit-banner">
           <span className="exit-banner-msg" data-testid="exit-banner-msg">
             {t("status.piExited", { msg: exitMessage })}
           </span>
+          <button className="btn btn-restart" data-testid="restart-btn" onClick={() => void restartPi()}>
+            <Icon name="refresh" className="ic-sm" />
+            {t("status.restart")}
+          </button>
           {stderrTail ? (
             <details className="exit-details" data-testid="exit-details">
               <summary title={t("status.exitDetailsTitle")}>{t("status.exitDetails")}</summary>
               <pre className="exit-details-body">{stderrTail}</pre>
             </details>
           ) : null}
-          <button className="btn btn-restart" data-testid="restart-btn" onClick={() => void restartPi()}>
-            <Icon name="refresh" className="ic-sm" />
-            {t("status.restart")}
-          </button>
         </div>
       ) : null}
+      <div className="statusbar" data-testid="statusbar">
       <div className="statusbar-row">
         <span className={`status-dot ${piStatus} ${isStreaming ? "busy" : ""}`} data-testid="status-dot" />
         <span data-testid="status-version">pi {piVersion || "—"}</span>
@@ -109,6 +113,7 @@ export default function StatusBar() {
         {bridgeKind === "mock" ? (
           <span className="status-opt status-mock">MOCK</span>
         ) : null}
+      </div>
       </div>
     </div>
   );

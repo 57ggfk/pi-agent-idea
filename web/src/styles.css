@@ -5692,18 +5692,45 @@ button {
 
 /* -- 0510: exit banner details, visible option failures, keyboard controls ---- */
 
-/* The exit banner keeps a one-line headline; the raw stderr moves into a
-   collapsed details pane — it is diagnostic noise until someone asks for it. */
+/* The exit banner is its own block above the status bar: inside the fixed
+   28px status-bar row it was clipped, and the composer painted over it. */
+.statusbar-wrap {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The exit banner keeps the reason readable and the raw stderr behind a
+   collapsed details pane — stderr is diagnostic noise until someone asks. */
+.exit-banner {
+  flex-wrap: wrap;
+  padding: 6px 12px;
+}
+
+/* The reason wraps instead of being clipped: an exit banner that hides half
+   the reason ("pi 已退出：pi process cl…") hides the only thing it says. */
 .exit-banner-msg {
+  flex: 1 1 200px;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .exit-details {
   flex: 0 1 auto;
   min-width: 0;
+  max-width: 100%;
+}
+
+/* A collapsed details must not reserve room for the text it hides — the
+   hidden <pre> would otherwise widen the toggle and squeeze the reason. */
+.exit-details:not([open]) .exit-details-body {
+  display: none;
+}
+
+/* Opened, the stderr takes a full row of its own so it stays readable. */
+.exit-details[open] {
+  flex: 1 1 100%;
+  order: 9;
 }
 
 .exit-details > summary {
@@ -5712,6 +5739,7 @@ button {
 }
 
 .exit-details-body {
+  width: 100%;
   margin: 4px 0 2px;
   padding: 4px 6px;
   max-height: 160px;
