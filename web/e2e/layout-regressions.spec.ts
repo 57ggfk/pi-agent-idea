@@ -452,3 +452,115 @@ test("the approval prompt shares the content column at 1200px", async ({ page })
     expect(Math.abs(card.right - r.column.right), "approval prompt ends right of the message column").toBeLessThanOrEqual(1);
   }
 });
+
+/** One axis for the whole transcript. The tool card, the prose and the code
+ *  block are all members of the content column, so they start and end where
+ *  the column does. A card that reaches the column's right edge while the
+ *  code block below it stops 60px short reads as "the command row is about
+ *  to hit the limit" (real machine: 780px card against a 718px markdown —
+ *  the markdown had been capped at 92% for no reason). */
+test("every block in the message column shares the column's width", async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 900 });
+  await page.goto("/");
+  await page.evaluate(() => {
+    const s = (
+      window as unknown as { __piStore: { setState: (p: Record<string, unknown>) => void } }
+    ).__piStore;
+    s.setState({
+      items: [
+        {
+          id: 1,
+          role: "assistant",
+          done: true,
+          blocks: [
+            {
+              kind: "toolcall",
+              id: "tc-1",
+              toolName: "bash",
+              argsJson: JSON.stringify({ command: "echo hello" }),
+              done: true,
+              result: { output: "hello", isError: false, durationMs: 3 },
+            },
+            { kind: "text", text: "正文一句。\n\n\`\`\`ts\nconst a = 1;\n\`\`\`\n", done: true },
+          ],
+        },
+      ],
+    });
+  });
+  await expect(page.getByTestId("tool-card").first()).toBeVisible();
+  await expect(page.locator(".markdown .block-shell").first()).toBeVisible();
+
+  const r = await page.evaluate(() => {
+    const box = (sel: string) => {
+      const el = document.querySelector(sel);
+      if (!el) return null;
+      const b = el.getBoundingClientRect();
+      return { left: b.left, right: b.right, width: b.width };
+    };
+    const col = document.querySelector(".message-col")!.getBoundingClientRect();
+    const offenders: string[] = [];
+    for (const el of Array.from(document.querySelectorAll(".message-col *"))) {
+      const b = el.getBoundingClientRect();
+      if (b.right > col.right + 1) {
+        offenders.push(el.tagName.toLowerCase() + "." + String(el.className || "").split(" ").filter(Boolean).join("."));
+      }
+    }
+    return {
+      col: { left: col.left, right: col.right },
+      card: box(".tool-card"),
+      body: box(".item-assistant .item-body"),
+      markdown: box(".item-assistant .markdown"),
+      block: box(".markdown .block-shell"),
+      offenders: offenders.slice(0, 5),
+    };
+  });
+
+  for (const [name, b] of [
+    ["tool card", r.card],
+    ["item body", r.body],
+    ["markdown", r.markdown],
+    ["code block", r.block],
+  ] as const) {
+    expect(b, name + " is missing").not.toBeNull();
+    expect(Math.abs(b!.left - r.col.left), name + " does not start at the column's left edge").toBeLessThanOrEqual(1);
+    expect(Math.abs(b!.right - r.col.right), name + " does not end at the column's right edge").toBeLessThanOrEqual(1);
+  }
+  expect(r.offenders, "a block sticks out past the content column").toHaveLength(0);
+});
+
+/** A markdown image has no intrinsic width limit. Without one it grows past
+ *  the column and the list's horizontal overflow clips it away (real machine:
+ *  a 1400px image overhung the column by 620px and the panel by 324px, and
+ *  `.message-list` has `overflow-x: hidden` — the picture was simply gone). */
+test("a wide image in a message stays inside the content column", async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 900 });
+  await page.goto("/");
+  await page.evaluate(() => {
+    const s = (
+      window as unknown as { __piStore: { setState: (p: Record<string, unknown>) => void } }
+    ).__piStore;
+    s.setState({
+      items: [
+        { id: 1, role: "assistant", done: true, blocks: [{ kind: "text", text: "看图：", done: true }] },
+      ],
+    });
+  });
+  await expect(page.locator(".item-assistant .markdown").first()).toBeVisible();
+
+  const r = await page.evaluate(async () => {
+    const md = document.querySelector(".item-assistant .markdown")!;
+    const img = document.createElement("img");
+    img.src = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+    img.style.width = "1400px";
+    img.style.height = "40px";
+    md.appendChild(img);
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    const col = document.querySelector(".message-col")!.getBoundingClientRect();
+    const b = img.getBoundingClientRect();
+    const de = document.documentElement;
+    return { overRight: b.right - col.right, width: b.width, docOverflow: de.scrollWidth - de.clientWidth };
+  });
+
+  expect(r.overRight, "the image sticks out past the content column").toBeLessThanOrEqual(1);
+  expect(r.docOverflow, "the document overflows horizontally").toBeLessThanOrEqual(0);
+});

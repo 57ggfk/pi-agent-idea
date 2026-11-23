@@ -1242,6 +1242,15 @@ button {
   height: auto;
 }
 
+/* A markdown image carries no intrinsic width limit: without one it grows
+   past the column and `.message-list`'s horizontal overflow clips it away
+   (real machine: a 1400px image overhung the column by 620px and the panel
+   by 324px — the picture was simply gone, with no scrollbar to find it). */
+.markdown img {
+  max-width: 100%;
+  height: auto;
+}
+
 /* 040 US2: rendered mermaid diagrams — same container constraint, centered,
    with the hidden source kept selectable for the copy button. */
 .markdown .mermaid-figure {
@@ -2470,15 +2479,12 @@ button {
   align-self: stretch;
   /* The message box fills the content column: the cards around the prose
      (tool cards, the thinking block) are UI and line up with the input box
-     and the queue rows. The prose keeps its narrower measure below. */
+     and the queue rows. The prose and its code blocks share that column
+     too — capping them at 92% left every code block 62px short of the tool
+     card above it, which read as the command row overrunning the column
+     (real machine: 780px card against a 718px markdown). */
   max-width: 100%;
   padding: 2px 0;
-}
-
-/* Prose keeps the 92% measure it always had — only the boxes around it
-   grew to the full column. */
-.item-assistant .item-body > .markdown {
-  max-width: 92%;
 }
 
 .item-header {
