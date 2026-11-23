@@ -73,4 +73,67 @@ class PageSnapshotSanitizerTest {
         // that mutate — a grep-level guarantee for the hard rule 1 revision.
         assertFalse(Regex("\\.(submit|click|focus|write)\\s*\\(").containsMatchIn(script))
     }
+
+    // ---- 053 B2: structured read (selector element excerpt) ----
+
+    @Test
+    fun `read script without selector stays byte-for-byte identical`() {
+        val inject = "window.cefQuery_1({request: '' + result});"
+        val expected = """(function() {
+  var result;
+  try {
+    result = JSON.stringify({
+      title: String(document.title || ''),
+      ready: String(document.readyState || ''),
+      text: String((document.body && document.body.innerText) || '').slice(0, ${PageSnapshotSanitizer.MAX_TEXT_CHARS})
+    });
+  } catch (e) {
+    result = JSON.stringify({ title: '', ready: 'error', text: '', error: String((e && e.message) || e) });
+  }
+  $inject
+})()"""
+        assertEquals(expected, PageSnapshotSanitizer.buildReadScript(inject))
+        assertEquals(expected, PageSnapshotSanitizer.buildReadScript(inject, selector = null, format = null))
+    }
+
+    @Test
+    fun `read script with selector queries the element and reports misses`() {
+        val script = PageSnapshotSanitizer.buildReadScript("INJ", selector = "#root > .item", format = "html")
+        assertTrue("document.querySelector" in script)
+        assertTrue("\"#root > .item\"" in script)
+        assertTrue("outerHTML" in script)
+        assertTrue("no element matches selector" in script)
+        assertTrue("INJ" in script)
+        assertTrue("slice(0, ${PageSnapshotSanitizer.MAX_TEXT_CHARS})" in script)
+        // Still read-only: no DOM writes even in the selector branch.
+        assertFalse(Regex("\\.(submit|click|focus|write)\\s*\\(").containsMatchIn(script))
+    }
+
+    @Test
+    fun `read script text format excerpts innerText and defaults without format`() {
+        val textScript = PageSnapshotSanitizer.buildReadScript("INJ", selector = "table", format = "text")
+        assertTrue("innerText" in textScript)
+        assertFalse("outerHTML" in textScript)
+        // Absent format falls back to the text excerpt (the pre-053 behavior).
+        val defaultScript = PageSnapshotSanitizer.buildReadScript("INJ", selector = "table")
+        assertTrue("innerText" in defaultScript)
+        assertFalse("outerHTML" in defaultScript)
+    }
+
+    @Test
+    fun `selector is embedded as an escaped js string literal`() {
+        val sneaky = PageSnapshotSanitizer.buildReadScript("INJ", selector = """a"; alert(1); p[onclick="x"]""")
+        // The quote that would close the literal is escaped, so the payload
+        // stays inert string content of the selector literal.
+        assertTrue("""a\"; alert(1); p[onclick=\"x\"]""" in sneaky)
+    }
+
+    @Test
+    fun `html excerpt passes the same clean-and-cap path on the way back`() {
+        val raw = """{"title":"t","ready":"complete","text":"<div>a\u0000b</div>${"x".repeat(4000)}"}"""
+        val snap = PageSnapshotSanitizer.fromJs(raw, "http://x/", "")
+        assertTrue(snap.ok)
+        assertFalse(snap.text.contains('\u0000'))
+        assertEquals(PageSnapshotSanitizer.MAX_TEXT_CHARS, snap.text.length)
+    }
 }
