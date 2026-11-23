@@ -1,0 +1,2 @@
+pi_browser 工具新增 console 动作：按需回读页面 console 错误（单调序号 + 驱逐计数 + since/limit 分页，只返回行数与有界预览省 token），并自动在 IDE 系统目录落盘 JSONL（仅 error/warning 截断行、超限轮转）供 agent grep 更早的行。
+The pi_browser tool gains a console action: on-demand readback of page console errors (monotonic indexes + dropped counter + since/limit paging, returning line counts and a bounded preview to save tokens), with an auto-rotated JSONL capture in the IDE system directory (truncated error/warning lines only) the agent can grep for older lines.
