@@ -3,6 +3,7 @@ package dev.pi.agent.browser
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlin.test.Test
 
 /**
@@ -57,5 +58,95 @@ class AgentBrowserRequestCodecTest {
         // nothing to protect.
         assertNull(AgentBrowserRequestCodec.bridgeTokenViolation(url, null))
         assertNull(AgentBrowserRequestCodec.bridgeTokenViolation("http://127.0.0.1:3000/", token))
+    }
+
+    // ---- 053: scroll + console actions, read selector/format (spec 053 B1) ----
+
+    @Test
+    fun `parses scroll with direction and clamped amount`() {
+        val scroll = AgentBrowserRequestCodec.parse("""{"action":"scroll","direction":"up","amount":500}""")
+        val req = assertIs<AgentParseResult.Valid>(scroll).request
+        assertEquals(AgentAction.SCROLL, req.action)
+        assertEquals("up", req.scrollDirection)
+        assertEquals(500, req.scrollAmount)
+
+        // Amount clamps into 1..10000; direction defaults to null (the tool
+        // picks "down") and absent params stay null, not 0.
+        assertEquals(
+            1,
+            (AgentBrowserRequestCodec.parse("""{"action":"scroll","amount":0}""") as AgentParseResult.Valid)
+                .request.scrollAmount,
+        )
+        assertEquals(
+            AgentBrowserRequestCodec.MAX_SCROLL_AMOUNT,
+            (AgentBrowserRequestCodec.parse("""{"action":"scroll","amount":999999}""") as AgentParseResult.Valid)
+                .request.scrollAmount,
+        )
+        val bare = (AgentBrowserRequestCodec.parse("""{"action":"scroll"}""") as AgentParseResult.Valid).request
+        assertEquals(AgentAction.SCROLL, bare.action)
+        assertNull(bare.scrollDirection)
+        assertNull(bare.scrollAmount)
+    }
+
+    @Test
+    fun `parses console limit and since with clamping`() {
+        val console = AgentBrowserRequestCodec.parse("""{"action":"console","limit":5,"since":12}""")
+        val req = assertIs<AgentParseResult.Valid>(console).request
+        assertEquals(AgentAction.CONSOLE, req.action)
+        assertEquals(5, req.consoleLimit)
+        assertEquals(12, req.consoleSince)
+
+        assertEquals(
+            1,
+            (AgentBrowserRequestCodec.parse("""{"action":"console","limit":0}""") as AgentParseResult.Valid)
+                .request.consoleLimit,
+        )
+        assertEquals(
+            AgentBrowserRequestCodec.MAX_CONSOLE_LIMIT,
+            (AgentBrowserRequestCodec.parse("""{"action":"console","limit":99999}""") as AgentParseResult.Valid)
+                .request.consoleLimit,
+        )
+        assertEquals(
+            0,
+            (AgentBrowserRequestCodec.parse("""{"action":"console","since":-3}""") as AgentParseResult.Valid)
+                .request.consoleSince,
+        )
+        val bare = (AgentBrowserRequestCodec.parse("""{"action":"console"}""") as AgentParseResult.Valid).request
+        assertNull(bare.consoleLimit)
+        assertNull(bare.consoleSince)
+    }
+
+    @Test
+    fun `parses read selector and format for the structured excerpt`() {
+        val read = AgentBrowserRequestCodec.parse("""{"action":"read","selector":"#root > .item","format":"html"}""")
+        val req = assertIs<AgentParseResult.Valid>(read).request
+        assertEquals(AgentAction.READ, req.action)
+        assertEquals("#root > .item", req.selector)
+        assertEquals("html", req.format)
+
+        // Unknown format value degrades; selector alone is fine (format defaults).
+        assertTrue(
+            AgentBrowserRequestCodec.parse("""{"action":"read","format":"png"}""") is AgentParseResult.Invalid,
+        )
+        val bare = (AgentBrowserRequestCodec.parse("""{"action":"read","selector":"table"}""") as AgentParseResult.Valid)
+            .request
+        assertEquals("table", bare.selector)
+        assertNull(bare.format)
+    }
+
+    @Test
+    fun `invalid direction and unknown parameters degrade to model-readable reasons`() {
+        val badDirection = AgentBrowserRequestCodec.parse("""{"action":"scroll","direction":"sideways"}""")
+        val dirReason = assertIs<AgentParseResult.Invalid>(badDirection).reason
+        assertTrue("direction" in dirReason, "reason=$dirReason")
+
+        val badAmount = AgentBrowserRequestCodec.parse("""{"action":"scroll","amount":"abc"}""")
+        val amountReason = assertIs<AgentParseResult.Invalid>(badAmount).reason
+        assertTrue("amount" in amountReason, "reason=$amountReason")
+
+        val unknownParam = AgentBrowserRequestCodec.parse("""{"action":"read","selctor":"#a"}""")
+        val paramReason = assertIs<AgentParseResult.Invalid>(unknownParam).reason
+        assertTrue("\"selctor\"" in paramReason, "reason=$paramReason")
+        assertTrue("limit" in paramReason, "reason should list the known parameters: $paramReason")
     }
 }

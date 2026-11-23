@@ -38,4 +38,17 @@ class AgentBrowserToolPollTest {
         assertEquals("ready", v)
         assertEquals(3, calls)
     }
+
+    // ---- 053 B2: scroll's model-readable failure copy ----
+
+    @Test
+    fun `scroll failure copy covers the empty-tab and timeout paths`() {
+        // Empty tab (no browser tool-window panel): same hint read/reload give.
+        assertEquals("browser tab is not open; use open first", AgentBrowserTool.NO_TAB_REASON)
+        // Kernel-side timeout (completeOnTimeout on the scroll future).
+        assertEquals(
+            "scroll timed out; the page may still be loading or blocked",
+            ScrollResult.timedOut().reason,
+        )
+    }
 }
