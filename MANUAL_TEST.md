@@ -710,3 +710,26 @@
 - [x] **一次运行只提醒一次**：同一实例里 3 次崩溃只弹一次通知
 - [x] **面板无回归**：`pi agent UI server started` → `Pi Agent UI: loading` → `bridge poll connected`，面板照旧渲染
 - [ ] **macOS 上级别可能被平台预热抢先**（`JBCefStartup` 带 `os="mac"`）：该次会话会记一条 WARN 并提示用 `-Dide.browser.jcef.log.level=error`；本轮真机只有 Windows，未实测
+
+### 053 pi_browser 观测面强化真机验收（2026-11-23，未执行——verifyPlugin 门禁未过，全部如实留痕）
+
+批次：① scroll 子动作 + read 的 selector 摘录（outerHTML/innerText）；② console 按需回读（单调序号/dropped/since/limit + JSONL 落盘供 grep）。实现已提交（926f9bd…1a6a90a 共 8 个提交：7 代码 + 1 文档），spec `specs/053-browser-observability/spec.md`（真机清单 §七）。门禁：测试门禁过、collectChangelog+buildPlugin 过、**verifyPlugin exit=1 未过** → 真机验收整体挂起：**10 项 0 过，无日志行/无截图（未运行）**，清单随 0.5.10 发版验证轮回归。
+
+**门禁留痕**（2026-11-23 文档轮汇总）：
+
+- [x] **测试门禁过**：全量 `gradlew test` BUILD SUCCESSFUL，XML 实数 tests=537 / failures=0 / errors=0 / skipped=5（既有 skip）、64 个测试类；实现批 2026-11-21 01:27:08 实跑（XML 文件时间戳），文档轮聚合复核一致
+- [x] **collectChangelog / buildPlugin 过**：exit=0（实现批回报）；`collectChangelog -PdryRun=true` 文档轮复核 BUILD SUCCESSFUL in 6s
+- [ ] **verifyPlugin exit=1——未过（真机验收挂起的直接原因）**：文档轮 2026-11-23 重跑两次均死于依赖解析 `Could not resolve idea:ideaIC:2026.2`（`cache-redirector.jetbrains.com` / `artifacts-caching-proxy.aws.intellij.net` 的 POM 请求与 `download.jetbrains.com/idea/ideaIC-2026.2-win.zip` 均 Remote host terminated the handshake）。6 个校验 IDE 里唯 2026.2 本机无缓存（0.5.9 后按 F-110 教训新增，build.gradle.kts:465），编译基线 2024.3.1 已缓存（build.gradle.kts:40）——属环境网络问题，**053 代码兼容性=未验证（非验证失败）**。日志：`build/verifyplugin-053-docs-rerun.log`（27s）/ `build/verifyplugin-053-docs-rerun2.log`（38s）；重跑命令 `./gradlew verifyPlugin --console=plain`
+
+**真机验收逐项**（全未勾；括号内为实现批已过的单测层证据，非真机）：
+
+- [ ] **codec scroll/console 解析与钳制**（AgentBrowserRequestCodecTest 8/0：amount 钳 1..10000、limit 1..200、since≥0、非法 direction/未知参数降级 model 可读 Invalid）——未真机验收
+- [ ] **read selector 摘录两路**（PageSnapshotSanitizerTest 12/0：querySelector outerHTML/innerText、未命中 error 字段、选择器转义、无 selector 脚本与 049 逐字节一致）——未真机验收
+- [ ] **scroll 脚本只读视口**（PageScrollTest 8/0：仅 window.scrollBy、不写 DOM、不含 token、异常 error 降级、构造端钳制）——未真机验收
+- [ ] **kernel scrollPage 复用唯一 JBCefJSQuery 通道**（纯逻辑 PageScrollTest 覆盖；JCEF handler 通道按纪律属真机清单）——未真机验收
+- [ ] **tool scroll 分支**（AgentBrowserToolPollTest 4/0：TIMEOUT 与空页签文案；AgentBrowserToolResponseTest 6/0：scrollY 插 text 后、字段序与 049 全等）——未真机验收
+- [ ] **console 缓冲单调序号/dropped/since/容量 300**（BrowserConsoleBufferTest 12/0；LogSafe 截断与 error/warning 过滤不变）——未真机验收
+- [ ] **console JSONL 落盘**（ConsoleLogFileTest 5/0 临时目录：append/cap/rotate；048 硬规则 8 的 idea.log 复核待真机）——未真机验收
+- [ ] **tool console 响应 {ok,total,dropped,count,lines,file}**（AgentBrowserToolResponseTest：count=matched、lines `[index] text`、空 buffer ok:true+reason、无页签 ok:false）——未真机验收
+- [ ] **pi-browser.js schema**（node --check 过、formatSnapshot 逐字未动、formatConsole 1500 字符封顶——实现批回报）——真机 pi 会话未验
+- [ ] **pi 会话端到端六项**（spec 053 §七：长页 scroll scrollY 变化、selector 命中/未命中、>5 条 console 错误回读 total/lines/file、read 无参数 049 回归、since 分页、idea.log 复核）——未执行
