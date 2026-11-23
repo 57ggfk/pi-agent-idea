@@ -360,3 +360,95 @@ for (const width of [360, 680, 900]) {
     expect(r.listEndsAboveBar, "queue bar overlaps the message list").toBe(true);
   });
 }
+
+/** The queue is a third column of the same panel, so it shares the content
+ *  column with the messages and the input box. A queue that runs to the
+ *  panel edges reads as a separate panel, and its row buttons land far
+ *  outside the column the rest of the UI uses (real machine: 1180px rows
+ *  against a 780px input box, overhanging 200px on each side). */
+for (const width of [360, 680, 1200]) {
+  test(`queue rows share the content column at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 760 });
+    await page.goto("/");
+    await page.getByTestId("composer-input").fill("start");
+    await page.getByTestId("send-btn").click();
+    await page.waitForSelector('[data-testid="abort-btn"]', { timeout: 15_000 });
+    await page.getByTestId("send-mode-caret").click();
+    await page.getByTestId("send-mode-followUp").click();
+    await page
+      .getByTestId("composer-input")
+      .fill("a queued entry with a reasonably long preview text that must truncate, not overflow");
+    await page.getByTestId("send-btn").click();
+    await expect(page.getByTestId("queue-row").first()).toBeVisible();
+
+    const r = await page.evaluate(() => {
+      const box = (sel: string) => {
+        const el = document.querySelector(sel);
+        if (!el) return null;
+        const b = el.getBoundingClientRect();
+        return { left: b.left, right: b.right, width: b.width };
+      };
+      return {
+        row: box(".queue-row"),
+        band: box(".queue-col"),
+        composer: box(".composer-box"),
+        column: box(".message-col"),
+        card: box(".tool-card"),
+      };
+    });
+
+    const row = r.row!;
+    const composer = r.composer!;
+    // The row starts and ends exactly where the input box does.
+    expect(Math.abs(row.left - composer.left), "queue row starts left of the input box").toBeLessThanOrEqual(1);
+    expect(Math.abs(row.right - composer.right), "queue row ends right of the input box").toBeLessThanOrEqual(1);
+    expect(row.width, "queue row is wider than the input box").toBeLessThanOrEqual(composer.width + 1);
+    // …and where the message column does.
+    if (r.column) {
+      expect(Math.abs(row.left - r.column.left), "queue row starts left of the message column").toBeLessThanOrEqual(1);
+      expect(Math.abs(row.right - r.column.right), "queue row ends right of the message column").toBeLessThanOrEqual(1);
+    }
+    // The band around the rows stops at the column too — a band that ran to
+    // the panel edges left two empty wings of grey beside the rows.
+    if (r.band) {
+      expect(Math.abs(r.band.left - composer.left), "queue band starts left of the input box").toBeLessThanOrEqual(1);
+      expect(Math.abs(r.band.right - composer.right), "queue band ends right of the input box").toBeLessThanOrEqual(1);
+    }
+    // The cards in the transcript are UI, not prose: they fill the column.
+    if (r.card) {
+      expect(Math.abs(r.card.left - composer.left), "tool card starts left of the input box").toBeLessThanOrEqual(1);
+      expect(Math.abs(r.card.right - composer.right), "tool card ends right of the input box").toBeLessThanOrEqual(1);
+    }
+  });
+}
+
+/** The approval prompt is a member of the content column like everything
+ *  else — it used to span the whole panel and stuck out on both sides. */
+test("the approval prompt shares the content column at 1200px", async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 760 });
+  await page.goto("/?approval=1");
+  await expect(page.getByTestId("empty-state")).toBeVisible();
+  await page.getByTestId("composer-input").fill("run the check");
+  await page.getByTestId("send-btn").click();
+  await expect(page.getByTestId("approval-card")).toBeVisible();
+
+  const r = await page.evaluate(() => {
+    const box = (sel: string) => {
+      const el = document.querySelector(sel);
+      if (!el) return null;
+      const b = el.getBoundingClientRect();
+      return { left: b.left, right: b.right, width: b.width };
+    };
+    return { card: box(".approval-card"), composer: box(".composer-box"), column: box(".message-col") };
+  });
+
+  const card = r.card!;
+  const composer = r.composer!;
+  expect(Math.abs(card.left - composer.left), "approval prompt starts left of the input box").toBeLessThanOrEqual(1);
+  expect(Math.abs(card.right - composer.right), "approval prompt ends right of the input box").toBeLessThanOrEqual(1);
+  expect(card.width, "approval prompt is wider than the input box").toBeLessThanOrEqual(composer.width + 1);
+  if (r.column) {
+    expect(Math.abs(card.left - r.column.left), "approval prompt starts left of the message column").toBeLessThanOrEqual(1);
+    expect(Math.abs(card.right - r.column.right), "approval prompt ends right of the message column").toBeLessThanOrEqual(1);
+  }
+});

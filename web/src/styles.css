@@ -19,6 +19,17 @@
   --r-lg: 10px;
   --r-xl: 12px;
 
+  /* The shared content column. The message column, the input box and the
+     queue column all read their width from here: when one of them kept its
+     own width the panel grew three columns that disagreed about where the
+     content starts and ends (real machine: the queue row was 400px wider
+     than the input box, overhanging 200px on each side). */
+  --content-max: 780px;
+  /* The shared inline inset of that column. */
+  --col-gutter: 16px;
+  /* The narrow-panel inset (the container query below swaps it in). */
+  --col-gutter-narrow: 8px;
+
   --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto,
     "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas,
@@ -2378,7 +2389,7 @@ button {
      + col flex-shrink 0 之后 col 随内容真实长高，padding 已被计入滚动范围
      （此前 col 被压扁时会被 Chromium 吞掉）；代码块结尾另有自身 12px 底边距，
      合计 24px，纯文本结尾 12px。 */
-  padding: 16px 16px 12px;
+  padding: 16px var(--col-gutter) 12px;
 }
 
 .message-col {
@@ -2394,7 +2405,7 @@ button {
   min-height: 100%;
   flex-shrink: 0;
   min-width: 0;
-  max-width: 780px;
+  max-width: var(--content-max);
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -2457,7 +2468,17 @@ button {
 
 .item-assistant {
   align-self: stretch;
+  /* The message box fills the content column: the cards around the prose
+     (tool cards, the thinking block) are UI and line up with the input box
+     and the queue rows. The prose keeps its narrower measure below. */
+  max-width: 100%;
   padding: 2px 0;
+}
+
+/* Prose keeps the 92% measure it always had — only the boxes around it
+   grew to the full column. */
+.item-assistant .item-body > .markdown {
+  max-width: 92%;
 }
 
 .item-header {
@@ -2768,13 +2789,13 @@ button {
      column share one left/right edge at any width. 顶部 0：浮框式没有分割线，
      输入框直接贴内容区边界，呼吸留白全部住在列表末尾（见 .message-list
      底部 36px）——内测反馈「输入框上方不要留白，留白补到内容区末尾」。 */
-  padding: 0 16px 12px;
+  padding: 0 var(--col-gutter) 12px;
 }
 
 .composer-inner {
   width: 100%;
   min-width: 0;
-  max-width: 780px;
+  max-width: var(--content-max);
   margin: 0 auto;
   /* The file/slash menus are absolute children of this box. */
   position: relative;
@@ -3818,9 +3839,14 @@ button {
   background: var(--accent-contrast);
 }
 
-/* Approval card */
+/* Approval card — the ask box above the queue. It is a member of the
+   content column like everything else, so it shares the column's width
+   instead of spanning the whole panel (it used to be full-bleed and stuck
+   out on both sides of every other element). */
 .approval-card {
-  margin: 0 12px 8px;
+  width: calc(100% - 2 * var(--col-gutter));
+  max-width: var(--content-max);
+  margin: 0 auto 8px;
   padding: 10px 12px;
   border: 1px solid var(--warning-border);
   border-radius: var(--r-lg);
@@ -4154,15 +4180,28 @@ button {
     font-size: 12px;
   }
 
-  .composer {
-    padding: 0 8px 6px;
+  /* Keep the message column, the input box, the queue band and the ask
+     card on the same 8px inset — the old 0px here guaranteed an 8px mismatch
+     at narrow widths, and each member left out would be one more column
+     disagreeing about where the content starts. One variable swap moves
+     them all at once: the rules keep referring to --col-gutter, so the
+     value that wins the cascade is the one they read. A padding override
+     here would lose the race against the queue bar's own rule, which sits
+     later in this file. */
+  .message-list,
+  .composer,
+  .queue-bar,
+  .approval-card {
+    --col-gutter: var(--col-gutter-narrow);
   }
 
-  /* Keep the message column and the composer on the same 8px inset — the old
-     0px here guaranteed an 8px mismatch at narrow widths. Vertical padding
-     stays symmetric like the wide rule above (spec 010 US2). */
+  /* The vertical padding differs from the wide rule above (spec 010 US2). */
+  .composer {
+    padding-bottom: 6px;
+  }
+
   .message-list {
-    padding: 12px 8px 12px;
+    padding-top: 12px;
   }
 
   .sessions-toolbar {
@@ -4174,7 +4213,7 @@ button {
   }
 
   .approval-card {
-    margin: 0 8px 6px;
+    margin: 0 auto 6px;
   }
 
   .exit-banner {
@@ -4592,12 +4631,34 @@ button {
    min-width: 0 so a long preview ellipsises instead of forcing horizontal
    scroll at 360px (constitution II).
    --------------------------------------------------------------------------- */
+/* The queue bar is only the wrapper. The band (background, top border)
+   belongs to the column and is the scroll container itself, so its edges
+   never move and its top border never scrolls away — a band that ran to the
+   panel edges left two empty grey wings beside the rows and read as a
+   second panel (real machine: rows 1180px wide against a 780px input box,
+   overhanging 200px on each side). */
 .queue-bar {
+  /* The gutter keeps the band on the content column below 780px, where the
+     column is narrower than the cap and the bar would otherwise run to the
+     panel edges. */
+  padding: 0 var(--col-gutter);
+  display: flex;
+  flex-direction: column;
+}
+
+/* The queue shares the message column's width: the rows and the banners
+   sit in the same column as the messages and the input box, and the band's
+   background and top border stop at the column edge with them. */
+.queue-col {
+  width: 100%;
+  min-width: 0;
+  max-width: var(--content-max);
+  margin: 0 auto;
   max-height: 34vh;
   overflow-y: auto;
   border-top: 1px solid var(--border);
   background: var(--bg-subtle);
-  padding: 4px 10px;
+  padding: 4px 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
