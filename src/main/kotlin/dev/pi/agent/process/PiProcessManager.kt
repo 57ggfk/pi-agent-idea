@@ -59,6 +59,25 @@ internal object PiStartArgs {
 }
 
 /**
+ * 组装给用户看的退出详情：**退出码最多出现一次**。
+ *
+ * `PiRpcClient` 的 EOF 消息本身就带着 `(exit code N)`，这里再拼一次就会变成
+ * `pi process closed stdout (exit code 1) (exit code 1)`——面板里是原样渲染的，
+ * 重复后缀是用户能直接看见的缺陷。退出码为 0、或压根拿不到退出码时，
+ * 消息保持原样（不加后缀）。
+ *
+ * 提成纯函数是为了能脱离 IDE 单测（见 `exitDetail`）。
+ */
+internal fun exitDetail(message: String, exitCode: Int?): String {
+    if (exitCode == null || exitCode == 0) return message
+    val marker = "(exit code $exitCode)"
+    // Trimmed so an empty message yields "(exit code N)" and not a leading space.
+    val base = message.trim()
+    if (base.contains(marker)) return base
+    return if (base.isEmpty()) marker else "$base $marker"
+}
+
+/**
  * One pi instance's mutable state (019 D1). Everything that used to be a
  * field on [PiProcessManager] lives here so a project can host N independent
  * `pi --mode rpc` processes (one per tool-window Content).
@@ -218,10 +237,7 @@ class PiProcessManager(private val project: Project) : Disposable {
                     } catch (_: InterruptedException) {
                     }
                     val tail = slot.stderrTail
-                    val detail = buildString {
-                        append(message)
-                        if (exitCode != null && exitCode != 0) append(" (exit code $exitCode)")
-                    }
+                    val detail = exitDetail(message, exitCode)
                     setSlotState(slot, PiConnectionState.Exited(detail, tail.ifBlank { null }))
                     slot.clientRef.set(null)
                     slot.processRef.set(null)

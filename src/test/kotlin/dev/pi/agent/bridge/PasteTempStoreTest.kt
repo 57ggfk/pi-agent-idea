@@ -15,7 +15,13 @@ class PasteTempStoreTest {
     @Test
     fun `root sits under the user home and keeps the pi-paste marker`() {
         val root = PasteTempStore.root("/Users/tester")
-        assertEquals("/Users/tester/.pi-agent/pi-paste", root.toString())
+        // 逐**段**比较，不写死分隔符：Windows 上 Path.of 拼出来的是反斜杠，
+        // 写死 "/Users/tester/.pi-agent/pi-paste" 在这台机器上必挂。段本身
+        // 两边一致，所以 POSIX / Windows 用同一条断言。
+        assertEquals(
+            listOf("Users", "tester", ".pi-agent", "pi-paste"),
+            root.map { it.toString() },
+        )
         // The frontend recognises temp references by this marker (044 FR-014).
         assertTrue(root.toString().contains("pi-paste"))
     }
@@ -42,15 +48,24 @@ class PasteTempStoreTest {
         try {
             val root = PasteTempStore.ensureRoot(home.toString())
             assertTrue(Files.isDirectory(root))
-            val perms = Files.getPosixFilePermissions(root)
-            assertEquals(
-                setOf(
-                    PosixFilePermission.OWNER_READ,
-                    PosixFilePermission.OWNER_WRITE,
-                    PosixFilePermission.OWNER_EXECUTE,
-                ),
-                perms,
-            )
+            // 目录可用：写得进去（这条所有平台都成立）。
+            val probe = root.resolve("probe.txt")
+            Files.writeString(probe, "x")
+            assertTrue(Files.exists(probe))
+            // 只有真正支持 POSIX 权限的文件系统才断言 0700：Windows 的 NTFS
+            // 没有 posix 视图，getPosixFilePermissions 会抛
+            // UnsupportedOperationException（生产的 restrict() 本来就跳过）。
+            if (root.fileSystem.supportedFileAttributeViews().contains("posix")) {
+                val perms = Files.getPosixFilePermissions(root)
+                assertEquals(
+                    setOf(
+                        PosixFilePermission.OWNER_READ,
+                        PosixFilePermission.OWNER_WRITE,
+                        PosixFilePermission.OWNER_EXECUTE,
+                    ),
+                    perms,
+                )
+            }
         } finally {
             home.toFile().deleteRecursively()
         }

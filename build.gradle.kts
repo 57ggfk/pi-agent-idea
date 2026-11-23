@@ -164,6 +164,12 @@ val syncWebUi = tasks.register<Sync>("syncWebUi") {
 val buildInfoDir = layout.buildDirectory.dir("generated/buildinfo")
 val generateBuildInfo = tasks.register("generateBuildInfo") {
     outputs.dir(buildInfoDir)
+    // 每次都重新生成：输出内容取决于 `git rev-parse --short HEAD` 和当前时间，
+    // 这两样 Gradle 都没法当作 input 跟踪——只要目录还在，Gradle 就判 UP-TO-DATE，
+    // jar 里带的 commitId / buildTime 永远停在上一次构建那天。
+    // Always regenerate: the content depends on git HEAD and the wall clock,
+    // neither of which Gradle can track as an input.
+    outputs.upToDateWhen { false }
     doLast {
         val commit = try {
             val proc = ProcessBuilder("git", "rev-parse", "--short", "HEAD")
