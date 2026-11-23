@@ -1,0 +1,2 @@
+pi_browser 工具新增 scroll 动作（视口滚动，默认向下 800px，可选方向与像素）与 read 的 selector 参数（按 CSS 选择器摘录元素的 outerHTML/innerText，未命中给出可读原因），agent 能验证长页与 DOM 结构。
+The pi_browser tool gains a scroll action (viewport scrolling, default down 800px, optional direction and amount) and a selector parameter on read (excerpt an element's outerHTML/innerText by CSS selector, with a readable reason on miss), so agents can verify long pages and DOM structure.
