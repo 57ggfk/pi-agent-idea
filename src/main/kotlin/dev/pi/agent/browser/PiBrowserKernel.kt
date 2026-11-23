@@ -84,8 +84,20 @@ class PiBrowserKernel(
     /** 049 readPage: the one in-flight snapshot request, or null. */
     private var pendingRead: CompletableFuture<PageSnapshot>? = null
 
+    /** 053 B2: the one in-flight scroll request, or null (same single-flight shape). */
+    private var pendingScroll: CompletableFuture<ScrollResult>? = null
+
+    /**
+     * 053 B3: the JSONL console capture under the IDE system dir. Lazy so
+     * unit tests and PathManager-less environments never touch it; null when
+     * there is no system dir (best-effort by design, 048 hard rule 8).
+     */
+    private val consoleFile by lazy { ConsoleLogFile.default() }
+
     /** F-206: bounded page console errors, cleared on every navigate. */
-    private val consoleBuffer = BrowserConsoleBuffer()
+    private val consoleBuffer = BrowserConsoleBuffer(max = 300) { entry ->
+        consoleFile?.append(entry.index, entry.text)
+    }
 
     private val listeners = java.util.concurrent.CopyOnWriteArrayList<(PiBrowserState) -> Unit>()
 
@@ -475,11 +487,54 @@ class PiBrowserKernel(
     fun recentConsoleLines(limit: Int = 5): List<String> = consoleBuffer.recent(limit)
 
     /**
-     * CEF message-router callback (CEF browser-process thread). Routes three
+     * 053 B2: viewport scroll over the SAME read-only JSQuery channel as
+     * [readPage] — the D4 revision ("read-only DOM + viewport scrolling")
+     * lets scrollBy be the one mutation this channel performs. Single-flight
+     * like the read; hung/CSP-locked pages degrade to a failure result.
+     */
+    fun scrollPage(direction: String, amountPx: Int, timeoutMs: Long = DEFAULT_READ_TIMEOUT_MS): CompletableFuture<ScrollResult> {
+        val url = lastKnownUrl
+        val b = browser ?: return CompletableFuture.completedFuture(ScrollResult.noPage())
+        if (state == PiBrowserState.CRASHED) {
+            return CompletableFuture.completedFuture(ScrollResult.rendererDown())
+        }
+        val query = jsQuery ?: return CompletableFuture.completedFuture(ScrollResult.stillStarting())
+        synchronized(this) {
+            if (pendingScroll != null) {
+                return CompletableFuture.completedFuture(ScrollResult.inFlight())
+            }
+            val future = CompletableFuture<ScrollResult>()
+                .completeOnTimeout(ScrollResult.timedOut(), timeoutMs, TimeUnit.MILLISECONDS)
+            pendingScroll = future
+            val script = PageScroll.buildScrollScript(query.inject("result"), direction, amountPx)
+            var failure: String? = null
+            BrowserSafety.guard("executeJavaScript", Unit, { msg -> failure = msg }) {
+                b.cefBrowser.executeJavaScript(script, null, 0)
+            }
+            if (failure != null) {
+                pendingScroll = null
+                future.complete(ScrollResult.failure("injection failed: " + LogSafe.truncate(failure)))
+            }
+            return future
+        }
+    }
+
+    /**
+     * 053 B3: the agent's console readback — counters plus a since-window in
+     * one lockstep read of the buffer.
+     */
+    fun consoleWindow(since: Int, limit: Int): ConsoleWindow = consoleBuffer.window(since, limit)
+
+    /** 053 B3: JSONL capture path for the tool response; null outside an IDE. */
+    fun consoleFilePath(): String? = consoleFile?.path
+
+    /**
+     * CEF message-router callback (CEF browser-process thread). Routes four
      * shapes over ONE query: page snapshots (the F-206 original path), console
      * taps and JS dialog shims (round-2 replacements for the reflection
      * devToolsClient mount and the CefJSDialogHandler that never fire on the
-     * remote/CEF-144 channel).
+     * remote/CEF-144 channel), and — since 053 B2 — viewport scroll results
+     * (dispatched on the JSON.stringify kind tag).
      */
     private fun onReadResult(request: String?): JBCefJSQuery.Response {
         val req = request ?: return JBCefJSQuery.Response(null)
@@ -499,6 +554,13 @@ class PiBrowserKernel(
                     val type = obj["type"]?.jsonPrimitive?.content ?: "alert"
                     val text = obj["text"]?.jsonPrimitive?.content ?: ""
                     hopEdt { showJsDialog(type, text) }
+                }
+            }
+            req.contains("\"kind\":\"scroll\"") -> {
+                val future = pendingScroll
+                if (future != null) {
+                    future.complete(ScrollResult.fromJs(req))
+                    pendingScroll = null
                 }
             }
             else -> {
@@ -629,6 +691,8 @@ class PiBrowserKernel(
         handlers = null
         runCatching { pendingRead?.complete(PageSnapshot.failure("browser closed during read", lastKnownUrl)) }
         pendingRead = null
+        runCatching { pendingScroll?.complete(ScrollResult.closed()) }
+        pendingScroll = null
         runCatching { jsQuery?.dispose() }
         jsQuery = null
         consoleBuffer.clear()
