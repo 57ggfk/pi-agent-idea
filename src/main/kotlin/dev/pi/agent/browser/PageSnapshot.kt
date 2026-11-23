@@ -124,22 +124,85 @@ object PageSnapshotSanitizer {
      * `JBCefJSQuery.inject("result")` and references the `result` variable
      * this IIFE declares — the whole thing is read-only by construction
      * (title/readyState/innerText excerpt out, nothing in, nothing written).
+     *
+     * 053 B2: with a [selector] the script excerpts THAT element instead of
+     * the whole page — [format] picks `outerHTML` (structure) or `innerText`
+     * (visible text, the pre-053 default). A miss degrades to the error
+     * field, which [fromJs] turns into a failure snapshot naming the
+     * selector; the excerpt rides the same cleanText cap on the way back.
      */
-    fun buildReadScript(injectStatement: String, maxChars: Int = MAX_TEXT_CHARS): String {
+    fun buildReadScript(
+        injectStatement: String,
+        maxChars: Int = MAX_TEXT_CHARS,
+        selector: String? = null,
+        format: String? = null,
+    ): String {
+        if (selector.isNullOrBlank()) {
+            return """
+                (function() {
+                  var result;
+                  try {
+                    result = JSON.stringify({
+                      title: String(document.title || ''),
+                      ready: String(document.readyState || ''),
+                      text: String((document.body && document.body.innerText) || '').slice(0, $maxChars)
+                    });
+                  } catch (e) {
+                    result = JSON.stringify({ title: '', ready: 'error', text: '', error: String((e && e.message) || e) });
+                  }
+                  $injectStatement
+                })()
+            """.trimIndent()
+        }
+        val jsSelector = jsString(selector.take(MAX_SELECTOR_CHARS))
+        // format is codec-validated ("html"/"text"); anything else reads text.
+        val extract = if (format == "html") "el.outerHTML" else "el.innerText"
         return """
             (function() {
               var result;
+              var sel = $jsSelector;
               try {
-                result = JSON.stringify({
-                  title: String(document.title || ''),
-                  ready: String(document.readyState || ''),
-                  text: String((document.body && document.body.innerText) || '').slice(0, $maxChars)
-                });
+                var el = document.querySelector(sel);
+                if (!el) {
+                  result = JSON.stringify({ title: '', ready: 'no-match', text: '', error: 'no element matches selector: ' + sel });
+                } else {
+                  result = JSON.stringify({
+                    title: String(document.title || ''),
+                    ready: String(document.readyState || ''),
+                    text: String($extract || '').slice(0, $maxChars)
+                  });
+                }
               } catch (e) {
                 result = JSON.stringify({ title: '', ready: 'error', text: '', error: String((e && e.message) || e) });
               }
               $injectStatement
             })()
         """.trimIndent()
+    }
+
+    /** Selector cap for the script side; the codec clamps first, this is the belt. */
+    const val MAX_SELECTOR_CHARS = 200
+
+    /**
+     * Embeds [raw] as a JS string literal: JSON-style escaping (quotes,
+     * backslashes, control characters) is valid inside a JS string, so a
+     * hostile selector stays inert string content — never code.
+     */
+    private fun jsString(raw: String): String {
+        val sb = StringBuilder(raw.length + 2)
+        sb.append('"')
+        for (ch in raw) {
+            when {
+                ch == '\\' -> sb.append("\\\\")
+                ch == '"' -> sb.append("\\\"")
+                ch == '\n' -> sb.append("\\n")
+                ch == '\r' -> sb.append("\\r")
+                ch == '\t' -> sb.append("\\t")
+                ch < ' ' || ch.code in 0x7F..0x9F -> sb.append("\\u%04x".format(ch.code))
+                else -> sb.append(ch)
+            }
+        }
+        sb.append('"')
+        return sb.toString()
     }
 }
