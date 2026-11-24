@@ -564,3 +564,55 @@ test("a wide image in a message stays inside the content column", async ({ page 
   expect(r.overRight, "the image sticks out past the content column").toBeLessThanOrEqual(1);
   expect(r.docOverflow, "the document overflows horizontally").toBeLessThanOrEqual(0);
 });
+
+/** The message list's scrollbar takes 10px on the right, which used to pull
+ *  the column 5px left of the input box — the composer then sat 5px right of
+ *  the content above it (real machine: column 258.5..1038.5 against composer
+ *  263.5..1043.5 in a 1307px panel; the user could see it as "the input box
+ *  is a bit off to the right"). The gutter is now reserved in every scroll
+ *  state and paid for on the left, so both stay on the panel's centre line. */
+test("the input box and the message column share one axis while the transcript scrolls", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1200, height: 620 });
+  await page.goto("/");
+  await page.evaluate(() => {
+    const s = (
+      window as unknown as { __piStore: { setState: (p: Record<string, unknown>) => void } }
+    ).__piStore;
+    const T = String.fromCharCode(96);
+    const fence = T + T + T;
+    const blocks: unknown[] = [];
+    for (let i = 0; i < 60; i++) {
+      blocks.push({ kind: "text", text: "第 " + i + " 段。" + fence + "ts\nconst a = " + i + ";\n" + fence, done: true });
+    }
+    s.setState({ items: [{ id: 1, role: "assistant", done: true, blocks }] });
+  });
+  await expect(page.locator(".message-col").first()).toBeVisible();
+
+  const r = await page.evaluate(() => {
+    const list = document.querySelector(".message-list") as HTMLElement;
+    const box = (sel: string) => {
+      const el = document.querySelector(sel)!;
+      const b = el.getBoundingClientRect();
+      return { left: b.left, right: b.right, width: b.width };
+    };
+    const col = box(".message-col");
+    const composer = box(".composer-box");
+    return {
+      scrollable: list.scrollHeight > list.clientHeight,
+      scrollbar: list.offsetWidth - list.clientWidth,
+      col,
+      composer,
+      panelCenter: window.innerWidth / 2,
+      colCenter: (col.left + col.right) / 2,
+    };
+  });
+
+  // Without a scrollbar the two would line up by accident.
+  expect(r.scrollable, "the transcript must actually scroll for this to mean anything").toBe(true);
+  expect(Math.abs(r.col.left - r.composer.left), "the input box starts right of the message column").toBeLessThanOrEqual(1);
+  expect(Math.abs(r.col.right - r.composer.right), "the input box ends right of the message column").toBeLessThanOrEqual(1);
+  expect(Math.abs(r.colCenter - r.panelCenter), "the column is not centred on the panel").toBeLessThanOrEqual(1);
+});
+

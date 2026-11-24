@@ -2409,7 +2409,15 @@ button {
      + col flex-shrink 0 之后 col 随内容真实长高，padding 已被计入滚动范围
      （此前 col 被压扁时会被 Chromium 吞掉）；代码块结尾另有自身 12px 底边距，
      合计 24px，纯文本结尾 12px。 */
-  padding: 16px var(--col-gutter) 12px;
+  /* The scrollbar eats 10px on the right, which used to pull the column
+     5px left of the composer — the input box then sat 5px right of the
+     content above it (real machine: column 258.5..1038.5, composer
+     263.5..1043.5 in a 1307px panel). The gutter is now reserved in every
+     scroll state and paid for on the left, so the column stays centred on
+     the panel and the composer lines up with it whether or not the
+     transcript overflows. */
+  scrollbar-gutter: stable;
+  padding: 16px var(--col-gutter) 12px calc(var(--col-gutter) + var(--sb-size));
 }
 
 .message-col {
@@ -2806,7 +2814,10 @@ button {
      column share one left/right edge at any width. 顶部 0：浮框式没有分割线，
      输入框直接贴内容区边界，呼吸留白全部住在列表末尾（见 .message-list
      底部 36px）——内测反馈「输入框上方不要留白，留白补到内容区末尾」。 */
-  padding: 0 var(--col-gutter) 12px;
+  /* The composer reserves the same 10px the message list reserves for its
+     scrollbar (see .message-list), so the input box and the message column
+     are the same box at every width — not just the same centre. */
+  padding: 0 calc(var(--col-gutter) + var(--sb-size)) 12px;
 }
 
 .composer-inner {
@@ -3861,7 +3872,10 @@ button {
    instead of spanning the whole panel (it used to be full-bleed and stuck
    out on both sides of every other element). */
 .approval-card {
-  width: calc(100% - 2 * var(--col-gutter));
+  /* The ask box is a child of the tool window, not of the message column,
+     so it has to reserve the same 10px the message list reserves for its
+     scrollbar — otherwise it is 10px wider than the column on each side. */
+  width: calc(100% - 2 * (var(--col-gutter) + var(--sb-size)));
   max-width: var(--content-max);
   margin: 0 auto 8px;
   padding: 10px 12px;
@@ -4657,8 +4671,10 @@ button {
 .queue-bar {
   /* The gutter keeps the band on the content column below 780px, where the
      column is narrower than the cap and the bar would otherwise run to the
-     panel edges. */
-  padding: 0 var(--col-gutter);
+     panel edges. It also reserves the same 10px the message list reserves for
+     its scrollbar, so the queue column is the same box as the message column
+     and the input box — not just the same centre. */
+  padding: 0 calc(var(--col-gutter) + var(--sb-size));
   display: flex;
   flex-direction: column;
 }
