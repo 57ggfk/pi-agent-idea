@@ -62,6 +62,56 @@ test("zero regression: code blocks and footnotes still render beside math (040 F
   await expect(page.locator(".markdown pre code.hljs").first()).toHaveCount(1);
 });
 
+test("a formula that follows Chinese punctuation renders (040 revision 2)", async ({ page }) => {
+  await sendMathPrompt(page);
+  // The reported case: the opening $ followed a full-width colon, so the
+  // upstream rule never even tried to match it — the whole formula stayed
+  // raw `$…$` text. It must now be a KaTeX structure, and the raw dollar
+  // text must be gone.
+  const audit = await page.evaluate(() => {
+    const root = Array.from(document.querySelectorAll(".markdown")).find((el) =>
+      el.textContent!.includes("Energy:"),
+    )!;
+    const text = root.textContent ?? "";
+    // KaTeX's <annotation> does not survive DOMPurify, so assert on the
+    // MathML glyphs instead: \pi -> π, \sim -> ∼. They can only be there
+    // if the formula was parsed and rendered as math.
+    const mathText = Array.from(root.querySelectorAll("math"))
+      .map((m) => m.textContent ?? "")
+      .join(" ");
+    return {
+      rawLeft: text.includes("素数定理：$"),
+      katex: root.querySelectorAll(".katex").length,
+      mathml: root.querySelectorAll("math").length,
+      hasPi: mathText.includes("π"),
+      hasSim: mathText.includes("∼"),
+    };
+  });
+  expect(audit.rawLeft).toBe(false);
+  expect(audit.hasPi).toBe(true);
+  expect(audit.hasSim).toBe(true);
+  expect(audit.mathml).toBeGreaterThanOrEqual(3);
+  expect(audit.katex).toBeGreaterThanOrEqual(7);
+});
+
+test("a money phrase keeps its dollar signs and never becomes a formula (040 revision 2)", async ({ page }) => {
+  await sendMathPrompt(page);
+  // The formula body must not span a bare $, otherwise "价格 $5 到 $10" is
+  // swallowed as one math span and KaTeX paints the whole sentence red.
+  const audit = await page.evaluate(() => {
+    const root = Array.from(document.querySelectorAll(".markdown")).find((el) =>
+      el.textContent!.includes("Energy:"),
+    )!;
+    const text = root.textContent ?? "";
+    return {
+      moneyRaw: text.includes("价格 $5 到 $10"),
+      katexError: root.querySelectorAll(".katex-error").length,
+    };
+  });
+  expect(audit.moneyRaw).toBe(true);
+  expect(audit.katexError).toBe(0);
+});
+
 test("a formula whose closing $ is followed by a clause mark still renders (040 revision)", async ({ page }) => {
   await sendMathPrompt(page);
   // The mock's "Trailing marks" line ends each formula with `;` `)` `、`.

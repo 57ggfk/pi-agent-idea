@@ -2530,7 +2530,7 @@ export class MockBridge implements Bridge {
               // 040 revision: the last line carries formulas whose closing `$`
               // is followed by a clause mark (`;` `)` `、`) — the upstream rule
               // left those as raw text, which is what the revision fixes.
-              "Energy:\n\n$E=mc^2$ inline, and a block:\n\n$$\\sum_{i=1}^{n} x_i$$\n\nTrailing marks: $x+1$; $y+2$); $z+3$、\n\nNow a nasty one: $\\text{<script>alert(1)</script>}$\n"
+              "Energy:\n\n$E=mc^2$ inline, and a block:\n\n$$\\sum_{i=1}^{n} x_i$$\n\nTrailing marks: $x+1$; $y+2$); $z+3$、\n\nChinese punctuation: 素数定理：$\\pi(x)\\sim\\frac{x}{\\ln x}$\n\nMoney stays text: 价格 $5 到 $10\n\nNow a nasty one: $\\text{<script>alert(1)</script>}$\n"
             : this.mdKnob === "mermaid"
             ? // 040 US2: one valid diagram + two broken diagrams (distinct
               // sources = distinct failure keys) — the valid one renders, the

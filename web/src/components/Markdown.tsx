@@ -22,10 +22,13 @@ marked.use(markedFootnote());
 // 040 FR-001: LaTeX math ($…$ inline, $$…$$ block — the AI-output standard).
 // throwOnError:false renders invalid input as source text instead of throwing
 // (US1 degrades gracefully); output still passes DOMPurify below (FR-002).
-// markedKatexExtended = upstream marked-katex-extension with ONE change: the
-// closing `$` may be followed by more trailing characters (`;` `)` `、` `」`
-// …), so a formula at the end of a clause actually renders. The currency
-// guard is untouched — see lib/katexInline.ts.
+// markedKatexExtended = upstream marked-katex-extension with TWO changes:
+// 040 — the closing `$` may be followed by more trailing characters (`;` `)`
+// `、` `」` …); 040（第二次）— a formula may also START right after punctuation
+// (`素数定理：$…$`), and every punctuation mark counts as a trailing
+// character instead of a hand-written shortlist. Both keep the currency
+// guard: a `$` that touches a word character is never math — see
+// lib/katexInline.ts.
 marked.use(markedKatexExtended({ throwOnError: false }));
 
 // Links must never navigate the SPA: the IDE (Kotlin) intercepts the click and

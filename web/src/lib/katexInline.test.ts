@@ -54,3 +54,43 @@ describe("040 revision: the trailing characters after the closing $", () => {
     expect(matchesExtendedInline("$5 到 $10")).toBe(false);
   });
 });
+
+describe("040 revision 2: the character before the opening $", () => {
+  it("renders the reported formula that follows Chinese punctuation", () => {
+    // The reported case: the whole formula stayed raw text because the
+    // opening $ followed a full-width colon, not a space.
+    const html = render("素数定理：$\\pi(x)\\sim\\frac{x}{\\ln x}$");
+    expect(isMath(html)).toBe(true);
+    expect(html).not.toContain("$\\pi(x)");
+  });
+
+  it("renders a formula that follows punctuation of any kind", () => {
+    for (const lead of ["素数定理：", "（", "「", "《", "，", "。", "；", "！", "？", "…"]) {
+      expect(isMath(render(`${lead}$E=mc^2$`)), `lead=${lead}`).toBe(true);
+    }
+  });
+
+  it("renders a formula whose closing $ is followed by a CJK closer", () => {
+    for (const tail of ["》", "〉", "］", "｝", "」", "】", "）", "、", "。", "%"]) {
+      expect(isMath(render(`《$E=mc^2$${tail}`)), `tail=${tail}`).toBe(true);
+    }
+  });
+
+  it("still refuses a $ that touches a word character", () => {
+    expect(isMath(render("变量$x$ 后面"))).toBe(false);
+    expect(isMath(render("当$x>0$时"))).toBe(false);
+    expect(isMath(render("售价$5$"))).toBe(false);
+  });
+
+  it("still refuses currency", () => {
+    expect(isMath(render("价格 $5 到 $10"))).toBe(false);
+    expect(isMath(render("cost $100"))).toBe(false);
+  });
+
+  it("does not swallow a money phrase that carries two dollar signs", () => {
+    // Real-machine probe: the formula body spanned the inner $, so the whole
+    // sentence became one math span and KaTeX painted it as an error.
+    expect(isMath(render("价格 $5 到 $10 变量$x$"))).toBe(false);
+    expect(isMath(render("预算 $100 到 $200 之内"))).toBe(false);
+  });
+});
