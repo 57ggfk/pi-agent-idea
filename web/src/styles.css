@@ -73,6 +73,9 @@
   --error-bg: #fdeeee;
   --danger-soft: #fdeeee;
   --code-bg: #f6f7f9;
+  /* The table header row gets its own quiet grey: one step above the cell
+     background, so the header reads as a header without shouting. */
+  --table-head-bg: #f0f2f5;
   --shadow-pop: 0 10px 28px rgba(16, 24, 40, 0.14), 0 1px 2px rgba(16, 24, 40, 0.06);
   /* Scrollbars stay a couple of steps quieter than the text they sit next to. */
   --sb-size: 10px;
@@ -114,6 +117,9 @@
   --error-bg: #3a2426;
   --danger-soft: #3a2426;
   --code-bg: #1a1b1e;
+  /* Dark counterpart of the light header grey: a shade above the panel
+     background, so the header keeps the same weight in both themes. */
+  --table-head-bg: #2b2d31;
   --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.4);
   --sb-thumb: rgba(160, 164, 171, 0.18);
   --sb-thumb-hover: rgba(160, 164, 171, 0.36);
@@ -392,6 +398,11 @@ button {
 }
 
 .markdown thead th {
+  /* The header row sits on its own grey (var(--table-head-bg)), which flips
+     with the theme: a light grey on white in the light IDE, a shade above
+     the panel in the dark one. Cells stay on the page background, so the
+     header reads as a header in both. */
+  background: var(--table-head-bg);
   border-bottom: 1px solid var(--border-strong);
 }
 
