@@ -9,6 +9,7 @@ import { i18n } from "../i18n";
 import { copyText } from "../lib/clipboard";
 import { rasterizeElement } from "../lib/copyAsImage";
 import { parseDiffHeaderPath } from "../lib/diffPaths";
+import { parseDelimited, type DelimitedTable } from "../lib/dsvTable";
 import { normalizeFootnoteDefs } from "../lib/footnotePreprocess";
 import { markedKatexExtended } from "../lib/katexInline";
 import { renderMermaid, mermaidBuiltInTheme, type MermaidTheme } from "../lib/mermaidRender";
@@ -242,7 +243,7 @@ function langOf(code: Element | null): string {
 }
 
 /** 049: 哪些语言的代码块默认渲染成图（因而需要「渲染 ⇄ 源码」切换）。 */
-const RENDERABLE_LANGS = new Set(["svg", "mermaid"]);
+const RENDERABLE_LANGS = new Set(["svg", "mermaid", "csv", "tsv"]);
 
 /**
  * 048: 代码块标题栏 —— 左侧语言类型、右侧操作按钮。
@@ -254,6 +255,7 @@ const LANG_LABELS: Record<string, string> = {
   bash: "Shell",
   c: "C",
   cpp: "C++",
+  csv: "CSV",
   css: "CSS",
   diff: "Diff",
   go: "Go",
@@ -270,6 +272,7 @@ const LANG_LABELS: Record<string, string> = {
   sql: "SQL",
   svg: "SVG",
   typescript: "TypeScript",
+  tsv: "TSV",
   xml: "XML",
   yaml: "YAML",
 };
@@ -900,6 +903,107 @@ function renderSvgFence(code: HTMLElement): boolean {
 }
 
 /**
+ * 050: code 元素 → 它渲染出来的表格容器。
+ *
+ * 模块级 WeakMap：React 每帧重建 .markdown 的 innerHTML，旧的容器随旧元素一起
+ * 消失（WeakMap 不会泄漏）；而「渲染 ⇄ 源码」切换时 code 元素不变，靠它认出
+ * 同一个块该换掉哪张表 —— 不靠 DOM 结构猜（pre 的前一个兄弟是行号槽，不是表）。
+ */
+const csvTableWraps = new WeakMap<Element, HTMLDivElement>();
+
+/**
+ * 050: ```csv / ```tsv 围栏渲染成表格。
+ *
+ * 与 048 的 ```svg 围栏同构（同步渲染、失败降级回源码）：
+ *   - 解析成功 → 插 .csv-table-wrap（内含 <table>，表头进 thead），源码隐藏；
+ *   - 解析失败（这不是一张表）→ 返回 false，由 049 的机制降级回源码，
+ *     「渲染」按钮点下去闪 ✗，不给点了没反应的按钮。
+ *
+ * 表格放在 .block-shell 里、pre **之外**（有自己的横向滚动容器）：放进 pre 会
+ * 被 pre 的 overflow-x:auto 再套一层滚动，宽表两头不靠。
+ *
+ * 单元格一律用 textContent 写入：内容里的 HTML 不会被解析（FR-008）。
+ */
+function renderDelimitedTable(code: HTMLElement): boolean {
+  const pre = code.closest("pre");
+  if (!pre) return false;
+  const source = code.textContent ?? "";
+  const parsed = parseDelimited(source, langOf(code).toLowerCase());
+  if (!parsed) return false;
+
+  let wrap = csvTableWraps.get(code);
+  if (!wrap || !wrap.isConnected) {
+    wrap = document.createElement("div");
+    wrap.className = "csv-table-wrap";
+    // 插在 pre 之前：表格在上、源码在下（与 mermaid/svg 的观感一致）。
+    pre.parentElement?.insertBefore(wrap, pre);
+    csvTableWraps.set(code, wrap);
+  }
+  wrap.replaceChildren();
+
+  // 截断标注（FR-005）：表格上方，如实告诉用户下面不是全部数据。
+  for (const note of truncationNotes(parsed)) {
+    const el = document.createElement("div");
+    el.className = "csv-table-note";
+    el.textContent = note;
+    wrap.appendChild(el);
+  }
+
+  const table = document.createElement("table");
+  const thead = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  for (const label of parsed.header) {
+    const th = document.createElement("th");
+    th.textContent = label;
+    headRow.appendChild(th);
+  }
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+  const tbody = document.createElement("tbody");
+  for (const row of parsed.rows) {
+    const tr = document.createElement("tr");
+    for (const cell of row) {
+      const td = document.createElement("td");
+      td.textContent = cell;
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+
+  code.style.display = "none";
+  // 表格在 pre **之外**（自己的横向滚动容器），pre 里只剩被隐藏的源码 ——
+  // 不收起来的话，pre 的上下内边距会在表格底下留一条 16px 的空条
+  // （实测：表格底 310、空 pre 底 326）。源码模式再把它放回来。
+  pre.style.display = "none";
+  syncGutter(pre);
+  return true;
+}
+
+/** 050: 截断标注的文案（行 / 列各一条）。 */
+function truncationNotes(parsed: DelimitedTable): string[] {
+  const notes: string[] = [];
+  if (parsed.truncatedRows) {
+    notes.push(
+      i18n.t("markdown.tableRowsTruncated", {
+        total: String(parsed.totalRows),
+        shown: String(parsed.rows.length),
+      }),
+    );
+  }
+  if (parsed.truncatedCols) {
+    notes.push(
+      i18n.t("markdown.tableColsTruncated", {
+        total: String(parsed.totalCols),
+        shown: String(parsed.header.length),
+      }),
+    );
+  }
+  return notes;
+}
+
+/**
  * 049: 源码模式 —— 收起图形、显示源码、撤掉「复制为图片」入口。
  *
  * 这是「源码模式」的唯一入口（渲染失败降级也走这里），保证两种模式互斥：
@@ -908,7 +1012,13 @@ function renderSvgFence(code: HTMLElement): boolean {
 function showSourceBlock(pre: HTMLElement, code: HTMLElement) {
   pre.querySelector(".mermaid-figure")?.remove();
   pre.querySelector(".svg-figure")?.remove();
+  // 050: CSV/TSV 表格不在 pre 内（在 .block-shell 里），按 code 精确移除。
+  csvTableWraps.get(code)?.remove();
+  csvTableWraps.delete(code);
   code.style.display = "";
+  // 050: CSV 表格渲染时把空 pre 收起来了（见 renderDelimitedTable）——
+  // 回到源码模式必须放回来，否则代码是「隐藏的」。
+  pre.style.display = "";
   // 渲染标记作废：切回渲染模式时必须重新渲染（否则会被「已渲染过」跳过）。
   delete code.dataset.mermaidDone;
   pre.closest(".block-shell")?.querySelector(".copy-image-btn")?.remove();
@@ -1047,7 +1157,13 @@ async function applyBlockViewMode(
   code.dataset.viewMode = intent;
   let rendered = false;
   if (intent === "render") {
-    rendered = lang.toLowerCase() === "svg" ? renderSvgFence(code) : await renderMermaidBlock(code, theme);
+    const tag = lang.toLowerCase();
+    rendered =
+      tag === "svg"
+        ? renderSvgFence(code)
+        : tag === "csv" || tag === "tsv"
+          ? renderDelimitedTable(code)
+          : await renderMermaidBlock(code, theme);
     // 用户在渲染途中切到了源码 → 渲染结果作废（renderMermaidBlock 自查）。
     if (code.dataset.viewMode !== "render") return false;
   }

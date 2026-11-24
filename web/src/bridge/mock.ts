@@ -2557,6 +2557,9 @@ export class MockBridge implements Bridge {
               "```svg\n" +
               '<svg viewBox="0 0 20 20" width="20"><script>alert(1)</script></svg>\n' +
               "```"
+              : this.mdKnob === "csv" || this.mdKnob === "csv-big" || this.mdKnob === "csv-wide"
+                ? // 050: the delimited-text fixtures — see csvScenarioText.
+                  csvScenarioText(this.mdKnob ?? "")
               : `Here is my plan for **${prompt.slice(0, 60)}**:\n\n` +
                 "1. Inspect the repository layout\n" +
                 "2. Run a quick sanity check\n\n" +
@@ -3005,6 +3008,90 @@ const MOCK_FILES: string[] = [
   "web/src/components/Composer.tsx",
   "web/e2e/chat.spec.ts",
 ];
+
+/**
+ * 050: the `?md=csv` fixtures — the delimited-text cases the e2e asserts on.
+ *
+ * Three knobs, not one: the mock streams one chunk per whitespace-delimited
+ * run (40ms apart), so a 205-row table alone would add ~8s of wall clock to
+ * every test that used it. `csv` carries the parsing cases, `csv-big` the
+ * row truncation, `csv-wide` the column truncation + horizontal scrolling.
+ *
+ * The samples are deliberately nasty: a quoted field holding the delimiter
+ * (RFC4180), a doubled quote, a quoted field holding a newline, a TSV body
+ * tagged as `csv` (models do that), and two blocks that are not tables at all.
+ */
+function csvScenarioText(knob: string): string {
+  if (knob === "csv-big") {
+    const rows = ["id,name"];
+    for (let i = 1; i <= 205; i++) rows.push(`${i},name${i}`);
+    return ["Big:", "", "```csv", ...rows, "```"].join("\n");
+  }
+  if (knob === "csv-wide") {
+    const cells = (n: number, prefix: string) =>
+      Array.from({ length: n }, (_, i) => `${prefix}${String(i + 1).padStart(2, "0")}`).join(",");
+    return [
+      "Wide:",
+      "",
+      "```csv",
+      cells(30, "col"),
+      cells(30, "value"),
+      cells(30, "other"),
+      "```",
+      "",
+      "Too many columns:",
+      "",
+      "```csv",
+      cells(60, "field"),
+      cells(60, "value"),
+      "```",
+    ].join("\n");
+  }
+  return [
+    "Small:",
+    "",
+    "```csv",
+    "name,role,note",
+    'Alice,dev,"likes, commas"',
+    'Bob,ops,"says ""hi"""',
+    "```",
+    "",
+    "Tsv:",
+    "",
+    "```tsv",
+    "name\tage",
+    "Alice\t31",
+    "Bob\t28",
+    "```",
+    "",
+    "Mislabeled (a TSV body in a csv fence):",
+    "",
+    "```csv",
+    "name\trole",
+    "Alice\tdev",
+    "```",
+    "",
+    "Newline:",
+    "",
+    "```csv",
+    "note,value",
+    '"multi',
+    'line",7',
+    "```",
+    "",
+    "Not a table:",
+    "",
+    "```csv",
+    "just one line of prose",
+    "```",
+    "",
+    "One row only:",
+    "",
+    "```csv",
+    "only,one,row",
+    "```",
+  ].join("\n");
+}
 
 function chunkWords(text: string): string[] {
   return text.match(/\S+\s*/g) ?? [text];

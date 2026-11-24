@@ -406,6 +406,22 @@ button {
   border-bottom: 1px solid var(--border-strong);
 }
 
+/* 050: CSV / TSV 表格。表格本体复用 .markdown table 的弱边框与表头灰底
+   （同一套视觉），这里只补两样它没有的：横向滚动容器与截断标注。
+   放在 .block-shell（flex + wrap）里要独占一行，否则会与行号槽并排。 */
+.markdown .csv-table-wrap {
+  flex: 1 1 100%;
+  max-width: 100%;
+  /* 宽表横向滚动：消息列是 overflow-x: hidden，不给容器就会被裁掉。 */
+  overflow-x: auto;
+}
+
+.markdown .csv-table-note {
+  font-size: var(--fs-xs);
+  color: var(--text-tertiary);
+  margin-bottom: 4px;
+}
+
 .markdown pre {
   position: relative;
   background: var(--code-bg);

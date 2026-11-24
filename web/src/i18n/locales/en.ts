@@ -15,6 +15,8 @@ export const en = {
   "markdown.wrap": "Wrap",
   // 049: 渲染/源码模式切换（aria-pressed=true 表示当前看的是源码）
   "markdown.source": "Source",
+  "markdown.tableRowsTruncated": "Truncated: {{total}} rows in total, showing the first {{shown}}",
+  "markdown.tableColsTruncated": "Truncated: {{total}} columns in total, showing the first {{shown}}",
   "common.delete": "Delete",
   "common.loading": "Loading…",
 

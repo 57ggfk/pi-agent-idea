@@ -16,6 +16,8 @@ export const zh: Dict = {
   "markdown.wrap": "换行",
   // 049: 渲染/源码模式切换（aria-pressed=true 表示当前看的是源码）
   "markdown.source": "源码",
+  "markdown.tableRowsTruncated": "已截断：共 {{total}} 行，仅显示前 {{shown}} 行",
+  "markdown.tableColsTruncated": "已截断：共 {{total}} 列，仅显示前 {{shown}} 列",
   "common.loading": "加载中…",
 
   // -- tooltips（012 US2）------------------------------------------------------
