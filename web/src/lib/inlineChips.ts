@@ -43,9 +43,9 @@ export function removeRange(text: string, start: number, end: number): string {
 /**
  * The range a Backspace at the empty selection's caret should swallow whole
  * (spec 018 US1 — one backspace removes the pill; no per-character nibbling
- * through hidden text). Inserted tokens carry a trailing space, so a caret
- * resting after that space (the common end-of-draft position) removes the
- * token together with its separator.
+ * through hidden text). Inserted tokens carry the 045 unified trailing (two
+ * spaces), so a caret resting after that trailing (the common end-of-draft
+ * position) removes the token together with it.
  */
 export function tokenBackspaceAt(
   tokens: InlineToken[],
@@ -54,7 +54,9 @@ export function tokenBackspaceAt(
 ): { start: number; end: number } | null {
   for (const t of tokens) {
     if (t.end === caret) return { start: t.start, end: t.end };
-    if (t.end + 1 === caret && text[t.end] === " ") return { start: t.start, end: t.end + 1 };
+    if ((t.end + 1 === caret || t.end + 2 === caret) && /^ {1,2}$/.test(text.slice(t.end, caret))) {
+      return { start: t.start, end: caret };
+    }
   }
   return null;
 }

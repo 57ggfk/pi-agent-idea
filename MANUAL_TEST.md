@@ -1,11 +1,11 @@
 # 手工验收清单（真机 IDEA）
 
-> 插件：Pi Agent v0.5.0 · 目标：IntelliJ IDEA 2023.3+（全系 JetBrains IDE，233–263.\*）
+> 插件：Pi Agent v0.5.10 · 目标：IntelliJ IDEA 2023.3+（全系 JetBrains IDE，233–263.\*）
 > 前置：本机装有 pi（`pi --version`）；IDEA 可用任意模型配置。
 
 ## 安装
 
-- [ ] `Settings → Plugins → ⚙ → Install Plugin from Disk…` 选择 `build/distributions/pi-agent-idea-0.5.0.zip`（或直接解压到插件目录：macOS `~/Library/Application Support/JetBrains/IntelliJIdea2026.2/plugins/`，Windows `%APPDATA%\JetBrains\IntelliJIdea2026.2\plugins\`，Linux `~/.local/share/JetBrains/IntelliJIdea2026.2/plugins/`）→ 重启 IDE
+- [ ] `Settings → Plugins → ⚙ → Install Plugin from Disk…` 选择 `build/distributions/pi-agent-idea-0.5.10.zip`（或直接解压到插件目录：macOS `~/Library/Application Support/JetBrains/IntelliJIdea2026.2/plugins/`，Windows `%APPDATA%\JetBrains\IntelliJIdea2026.2\plugins\`，Linux `~/.local/share/JetBrains/IntelliJIdea2026.2/plugins/`）→ 重启 IDE
 - [ ] 重启后 `Settings → Plugins` 中出现 **Pi Agent**，无加载报错（`Help → Show Log` 无 SEVERE）
 
 ## Chat（对话）
@@ -485,3 +485,46 @@
 - [x] 关闭 IDE（Alt+F4 →「确认退出」→「退出」）→ 无残留 pi / pi.cmd 进程（r1、r2 均为 0）
 - [ ] 双实例长任务并行流式、A 流式中在 B 新建并发送、杀 A 的 pi 进程只有 A 崩溃重建（本轮未跑，留人工）
 - [ ] 观察项：重启后首屏偶发停在「Connecting to pi…」需页面级 reload 一次；标题栏「新建 Pi 实例」按钮图标偏暗；复用号后标签顺序不按实例号排序（均不阻塞功能）
+
+## 0.5.10 代码块渲染与富内容（spec 039/040/048/049/050 新增）
+
+> 0.5.10 发版批次的真机复验已在 2026-11-20 ~ 2026-11-24 完成（WebStorm 2026.2.1），证据见各 spec 目录与 specs/0.5.10-run-report.md；下面保留可重复执行的目视清单。
+
+### Markdown 富内容渲染（039 / 040）
+
+- [ ] 消息里写 `![x](data:image/svg+xml;base64,...)` 形式的内联 SVG → 直接渲染成图形，不显示源码
+- [ ] 内联 SVG 里带 `<script>` 或外部 http(s) 引用 → 被净化拦截（不执行、不发外部请求）
+- [ ] 消息里写行内公式 `$E=mc^2$` 与块级 `$$...$$` → 渲染成 KaTeX 排版
+- [ ] 消息里写 ```` ```mermaid ```` 围栏 → 画成流程图；语法写错时保留源码显示且不残留红色报错块
+- [ ] 中文句子里紧跟标点的公式（如「素数定理：`$\pi(x)\sim\frac{x}{\ln x}$`」）→ 正常渲染；价格类金额（如「$5 到 $10」）→ 不被误当公式
+
+### 代码块标题栏与行号（048）
+
+- [ ] 代码块顶部出现标题栏：左侧是语言标签，右侧是动作按钮
+- [ ] 换行开关默认关闭；长行不折行，横向滚动条出现
+- [ ] 左侧有行号且与代码并排（不因长行被挤到上一行）；选中一段代码复制 → 剪贴板里**不含行号**
+- [ ] ```` ```svg ```` 围栏 → 渲染成图
+
+### 渲染 ⇄ 源码切换（049）
+
+- [ ] ```` ```svg ```` / ```` ```mermaid ```` 块标题栏可点「源码」→ 切回原始文本；再点切回渲染
+- [ ] 渲染模式下换行按钮变灰不可点；切到源码模式后可开
+
+### CSV / TSV 渲染成表格（050）
+
+- [ ] 消息里写 ```` ```csv ```` 围栏 → 直接渲染成表格：第一行是表头（灰底），其余是数据行
+- [ ] 单元格内容与原文逐字一致：字段里带逗号、带引号（成对双引号转义）都正确显示；不含任何 HTML 标签残留
+- [ ] ```` ```tsv ```` 围栏同样渲染成表格
+- [ ] 表格列数很多时 → 表格可横向滚动，右边界不被面板裁掉
+- [ ] 超过 200 行的表格 → 仍渲染成表格，表格上方标出总行数（如「已截断：共 300 行，仅显示前 200 行」），不退回源码
+- [ ] 内容不是表格（比如只有一行、没有分隔符）→ 正常显示为源码，不报错
+- [ ] 点「源码」→ 切回原始 CSV 文本，逐字与模型输出一致
+
+## 0.5.10 provider 被删后的启动恢复（spec 051）
+
+> 051 的真机核实已在 2026-11-25 完成（LAPTOP-6GBMLO5G / D:\code\fis\cmfc-fis），证据见 specs/051-stale-model-provider/ 与 specs/0.5.10-run-report.md 的 051 段；下面保留可重复执行的目视清单。
+
+- [ ] 项目上次用的 provider 被从 `~/.pi/agent/models.json` 删除后重启面板 → 面板仍能起来（改用默认模型），顶部提示条（非错误色）写明是哪个 provider、哪个模型没了
+- [ ] provider 还在、只是没登录（如 openrouter 无凭据）→ 保留原偏好，插件不擅自替用户改掉模型选择
+- [ ] pi 仍以 Unknown provider 退出 → 自动去掉模型覆盖重启一次，不反复循环
+- [ ] 退出横幅标题直接显示 pi 的报错正文（如 `Error: Unknown provider "ds"`），完整 stderr 仍在「查看详情」的折叠区里

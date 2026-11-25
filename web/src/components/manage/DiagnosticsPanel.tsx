@@ -1,24 +1,52 @@
 import { useCallback, useEffect, useState } from "react";
 import { usePiStore } from "../../store/store";
 import type { Bridge } from "../../bridge/types";
-import { manageApi, type EnvUpdateResult, type EnvironmentResult } from "../../manage";
+import { manageApi, type EnvUpdateResult, type EnvironmentResult, type ToolStatus } from "../../manage";
 import { useT } from "../../i18n/useT";
+import { shortPath } from "../../lib/shortPath";
 import {
   SOURCE_IDS,
-  SOURCE_LABELS,
+  SOURCE_LABEL_KEYS,
   summarize,
   summarizeState,
   type SourceId,
   type SourceStatus,
 } from "../../store/sources";
 
-const STATUS_LABEL: Record<SourceStatus, string> = {
-  ready: "Ready",
-  loading: "Loading",
-  failed: "Failed",
-  unsupported: "Not supported",
-  idle: "Not loaded",
-};
+/** i18n keys per status — the panel's labels follow the UI language (008/036). */
+const STATUS_LABEL_KEY = {
+  ready: "manage.diag.status.ready",
+  loading: "manage.diag.status.loading",
+  failed: "manage.diag.status.failed",
+  unsupported: "manage.diag.status.unsupported",
+  idle: "manage.diag.status.idle",
+} as const satisfies Record<SourceStatus, string>;
+
+/**
+ * One tool line in the environment card (036 FR-001/FR-002): `node vX.Y.Z`
+ * plus its path — full path on wide panels, `~/`-shortened on narrow ones
+ * (the shared .skill-path-* CSS switch). A missing tool is an explicit
+ * "not found", never a blank.
+ */
+function ToolLine({ label, tool, homeDir, testid }: { label: string; tool?: ToolStatus; homeDir?: string; testid: string }) {
+  const { t } = useT();
+  return (
+    <span className="diag-env-row" data-testid={testid}>
+      <span className="diag-env-label">{label}</span>
+      {tool?.found ? (
+        <>
+          <b data-testid={`${testid}-version`}>{tool.version || t("manage.env.unknown")}</b>
+          <span className="diag-env-path mono">
+            <span className="skill-path-full" data-testid={`${testid}-path-full`}>{tool.path}</span>
+            <span className="skill-path-short" data-testid={`${testid}-path-short`}>{shortPath(tool.path, homeDir)}</span>
+          </span>
+        </>
+      ) : (
+        <span className="manage-env-missing" data-testid={`${testid}-missing`}>{t("manage.env.notFound")}</span>
+      )}
+    </span>
+  );
+}
 
 /**
  * One place to answer "what is the plugin actually unhappy about?" (spec 003
@@ -99,19 +127,14 @@ export default function DiagnosticsPanel({ api, bridge }: { api: ReturnType<type
     <div className="diagnostics" data-testid="diagnostics-panel" data-state={overall}>
       <div className="diagnostics-summary" data-testid="diag-summary" data-state={overall}>
         {overall === "ok" ? (
-          <span>All good — every data source loaded.</span>
+          <span>{t("manage.diag.summary.ok")}</span>
         ) : overall === "failed" ? (
-          <span>
-            {summary.failed} source{summary.failed > 1 ? "s" : ""} failing. Retry below, or restart pi from
-            the status bar.
-          </span>
+          <span>{t("manage.diag.summary.failed", { count: summary.failed })}</span>
         ) : overall === "loading" ? (
-          <span>Loading…</span>
+          <span>{t("manage.diag.summary.loading")}</span>
         ) : (
           // Not a fault: a source nobody has asked for yet simply has no data.
-          <span>
-            {summary.idle} source{summary.idle > 1 ? "s" : ""} not loaded yet.
-          </span>
+          <span>{t("manage.diag.summary.idle", { count: summary.idle })}</span>
         )}
       </div>
 
@@ -131,6 +154,20 @@ export default function DiagnosticsPanel({ api, bridge }: { api: ReturnType<type
           <span>{t("manage.env.detecting")}</span>
         )}
         {env?.agentDir ? <span className="mono diag-env-dir">~/.pi/agent</span> : null}
+        {/* 036 US1/US2: the card answers the full "what is on this machine?" question. */}
+        {env ? <ToolLine label="node" tool={env.node} homeDir={env.homeDir} testid="env-node" /> : null}
+        {env ? <ToolLine label="npm" tool={env.npm} homeDir={env.homeDir} testid="env-npm" /> : null}
+        {env ? (
+          <span className="diag-env-row" data-testid="env-plugin">
+            <span className="diag-env-label">{t("manage.env.plugin")}</span>
+            <b data-testid="plugin-version">{env.pluginVersion || t("manage.env.unknown")}</b>
+            <span className="diag-env-path" data-testid="plugin-build">
+              {t("manage.env.built")} {env.buildTime || t("manage.env.unknown")}
+              {" · "}
+              {env.commitId || t("manage.env.unknown")}
+            </span>
+          </span>
+        ) : null}
         {env?.found ? (
           <button className="btn diag-env-update" data-testid="pi-update" disabled={updating} onClick={requestEnvUpdate}>
             {updating ? t("manage.env.updating") : t("manage.env.update")}
@@ -169,17 +206,18 @@ export default function DiagnosticsPanel({ api, bridge }: { api: ReturnType<type
       <ul className="diag-list">
         {SOURCE_IDS.map((id: SourceId) => {
           const state = sources[id];
+          const label = t(SOURCE_LABEL_KEYS[id]);
           const detail =
             state.status === "failed"
               ? state.error
               : state.status === "unsupported"
-                ? "not implemented by this bridge"
+                ? t("manage.diag.detail.unsupported")
                 : "";
           return (
             <li key={id} className="diag-item">
               <div className="panel-row" data-testid={`diag-row-${id}`} data-status={state.status}>
                 <span className="panel-row-main">
-                  <span className="panel-row-title">{SOURCE_LABELS[id]}</span>
+                  <span className="panel-row-title">{label}</span>
                   <span className="panel-row-sub diag-error" data-testid={`diag-error-${id}`}>
                     {detail}
                   </span>
@@ -189,7 +227,7 @@ export default function DiagnosticsPanel({ api, bridge }: { api: ReturnType<type
                   data-testid={`diag-status-${id}`}
                   data-status={state.status}
                 >
-                  {STATUS_LABEL[state.status]}
+                  {t(STATUS_LABEL_KEY[state.status])}
                   {state.status === "failed" && state.retries > 1 ? ` ×${state.retries}` : ""}
                 </span>
                 <span className="panel-row-actions">
@@ -200,19 +238,19 @@ export default function DiagnosticsPanel({ api, bridge }: { api: ReturnType<type
                     disabled={state.inflight || state.status === "unsupported"}
                     title={
                       state.status === "unsupported"
-                        ? "This bridge does not implement the call"
-                        : `Re-read ${SOURCE_LABELS[id].toLowerCase()}`
+                        ? t("manage.diag.retryUnsupportedTitle")
+                        : t("manage.diag.retryTitle", { name: label })
                     }
                     onClick={() => void retrySource(id)}
                   >
-                    {state.inflight ? "Retrying…" : "Retry"}
+                    {state.inflight ? t("manage.diag.retrying") : t("manage.diag.retry")}
                   </button>
                 </span>
               </div>
               {/* Truncation belongs in the menu summary, not here (FR-011). */}
               {state.status === "failed" && state.fullError && state.fullError !== state.error ? (
                 <details className="diag-details" data-testid={`diag-details-${id}`}>
-                  <summary>Full error</summary>
+                  <summary>{t("manage.diag.fullError")}</summary>
                   <pre className="diag-full mono">{state.fullError}</pre>
                 </details>
               ) : null}

@@ -416,3 +416,64 @@ C1 与 C3 无依赖可并行立项；拍板哪几条我就开 spec。
 - **C3（019 多实例）**：到 C3 时另拉 `release/0.5.9-20261115`（明日日期），按 019 plan 四阶段执行。
 - **发布**：暂不发版；031–034 与下一阶段内容同车。发版时回归清单见 MANUAL_TEST 待勾项。
 - 老分支 `release/0.5.8-20261112` 保留作 031–034 的开发档案（r35–r44 安装包历史）。
+
+---
+
+# 0.5.10 批次（2026-11-16 追加）
+
+> 版本分支：`release/0.5.10`（自 `origin/release/0.5.9` = `416360f` 拉出）。
+> 本批只做需求收集与 spec 编写（用户 2026-11-16 明确：只写 spec，不写 plan/tasks、不实现）。
+
+| # | 规格 | 类型 | 一句话 | 状态 |
+|---|---|---|---|---|
+| 036 | [诊断信息增强 + 路径主目录缩写](./036-diagnostics-info-and-paths/spec.md) | 需求 | 诊断页加 node/npm 版本+路径、插件版本+构建时间(人类可读时间戳+commit ID)；设置页/诊断页的主目录下路径缩写为 `~/`（响应式宽显全、窄显缩写） | spec 定稿（Draft，四条疑问 Q1–Q4 已拍板）；plan/tasks 待后续 |
+| 037 | [扩展包面板缺陷——市场链接白屏 + 假空态](./037-package-panel-defects/spec.md) | 缺陷 | 市场 npm/仓库链接改系统浏览器打开、消除 JCEF 白屏弹窗；扩展包面板加载时先显示加载态不再闪「未安装任何扩展包」 | spec 定稿（Draft）；plan/tasks 待后续 |
+| 038 | [Markdown 增强（易）——diff 高亮 + 脚注](./038-markdown-diff-footnote/spec.md) | 需求 | ` ```diff ` 增删行高亮；GFM 脚注上标+文末列表+跳转 | spec 定稿（Draft）；plan/tasks 待后续 |
+| 039 | [Markdown 增强（中）——内联 SVG](./039-markdown-svg/spec.md) | 需求 | 内联 SVG 渲染为图形，DOMPurify 严格白名单防 XSS，尺寸受约束 | spec 定稿（Draft，安全口径+IDE 能力复用已核实）；plan/tasks 待后续 |
+| 040 | [Markdown 增强（难）——KaTeX + Mermaid](./040-markdown-math-mermaid/spec.md) | 需求 | `$…$`/`$$…$$` 数学公式；` ```mermaid ` 图表；新依赖 + Mermaid 真机探针前置 | spec 定稿（Draft，依赖口径/探针前置已拍板）；plan/tasks 待后续 |
+| 041 | [代码块在 IDE 中打开（关联语法高亮）](./041-open-code-snippet-in-ide/spec.md) | 需求 | 代码块加「在 IDE 打开」按钮，新增桥接把代码段作为内存只读文件按语言高亮打开；一次覆盖 IDE 支持的所有语言，零新依赖 | spec 定稿（Draft，定位/触发/文件形态三条已拍板）；与 038–040 互补不替代；plan/tasks 待后续 |
+| 042 | [应用内浏览器（方向性记录）](./042-in-app-browser/spec.md) | 需求·方向 | 预览+开发交互的内置浏览器：URL 地址栏可编辑、工具窗页签+编辑器呈现、DevTools、页面批注回流会话；对标 Codex/Cursor/VS Code/Doer | **方向性 Draft**（只记录愿景/竞品/分层/探针，Q1–Q4 已澄清）；不拆 plan/tasks、不实现；037 不改、OAuth 不碰 |
+| 043 | [内置浏览器协议与证书策略](./043-browser-protocol-cert/spec.md) | 需求 | 042 配套基座：内置 JCEF 加载 http、四类无效证书（自签名/过期/域名不符/私有 CA），三种配置形态（总开关/信任证书文件/域名白名单），默认严格 | spec 定稿（Draft，范围/证书类型/配置形态三条已拍板）；仅内置浏览器面，pi/npm/OAuth 不碰；plan/tasks 待后续 |
+| 044 | [粘贴大段文字优化（折叠占位 + 另存文件引用）](./044-paste-large-text/spec.md) | 需求 | 粘贴 >3 行或 >800 字符折叠为 `pasted Markdown (N 行)` chip；点击展开/hover 预览/Shift+粘贴跳过；按内容识别类型；另存系统临时文件+`@path`（会话级清理、断链须提示）；完整原文照常发送 | spec 定稿（Draft，阈值/展开/类型/组织 + 临时文件三问共七条已拍板）；前端折叠 + 一个写临时文件 RPC；plan/tasks 待后续 |
+| 045 | [注入内容统一收尾换行规则](./045-injection-trailing-newline/spec.md) | 需求 | 所有注入通路（粘贴折叠/编辑器引用/文件引用）统一收尾：多行追加 `\n`、单行追加两个空格；在统一收口点实现一次、判重不叠加 | spec 定稿（Draft，范围/规则/独立 spec/版本四条已拍板 2026-11-17）；plan/tasks 待后续 |
+| 046 | [关闭仅剩实例时自动重建](./046-instance-recreate-on-last-close/spec.md) | 缺陷 | 关闭最后一个 Pi Agent Content 时自动新建干净 Content（等价刷新），避免空白工具窗与强关 IDE 重开"一直加载不出来"；遵守 019 两条硬教训 | spec 定稿（Draft，触发时机/重建形态/独立 spec/版本四条已拍板 2026-11-17）；根因待真机取证；plan/tasks 待后续 |
+| 047 | [渲染内容复制为图片](./047-copy-rendered-as-image/spec.md) | 需求 | SVG/Mermaid/KaTeX 三类渲染块加「复制为图片」，PNG 写系统剪贴板；不预设取图手段（不要求转 SVG），分格式独立交付、探针判做不了的格式可先搁置（Q5） | spec 定稿（Draft，范围/独立 spec/搁置策略/版本 0.5.10 已定 2026-11-17）；**真机已探：SVG→PNG 通、JCEF 有 async clipboard（旧"必须走桥接"作废），Q3 剪贴板通道待写图往返探针复核**；plan/tasks 待后续 |
+| 048 | [代码块标题栏（语言 + 按钮）/ 换行开关 / 行号 / svg 围栏渲染](./048-code-block-header/spec.md) | 需求 | 代码块顶部加标题栏（左语言、右按钮，按钮常驻）；换行开关默认关闭；左侧行号且选择文本不带行号；```svg 围栏渲染成图 | 已实现（2026-11-20 用户新需求；Q1–Q6 已拍板；真机 IDEA 2026.2 实测标题栏/行号/换行/svg 围栏均通过）；e2e 7 条新增 + 4 项负向验证变红；**FR-003 于 049 收窄（换行只在源码模式生效）** |
+| 049 | [代码块「渲染 ⇄ 源码」模式切换（换行只在源码模式生效）](./049-code-block-view-mode/spec.md) | 需求 | ```svg / ```mermaid 块标题栏加模式开关，两种模式来回切；换行开关只在源码模式生效 | 已实现（2026-11-20 用户新需求；Q1–Q5 已拍板；e2e 7 条新增 + 4 项负向验证变红；顺带修掉 mermaid 图形被并发 null 请求拆掉的老账） |
+| 050 | [CSV / TSV 代码块渲染成表格](./050-csv-tsv-table/spec.md) | 需求 | ```csv / ```tsv 围栏默认渲染成表格（表头进 thead、单元格与原文逐字一致）；超 200 行截断渲染并标注；宽表横向滚动；可切回源码 | 已实现（2026-11-24 用户新需求；Q1–Q5 已拍板；需求单 GitHub issue #3（中英双语）；e2e 11 条全绿；纯前端、零新依赖，Kotlin 与桥接协议未动） |
+| 051 | [provider 被删后 pi 起不来（校验 + 兜底 + 病因上屏）](./051-stale-model-provider/spec.md) | 缺陷 | 项目记住的 provider 被删 → pi 以 `Unknown provider` 拒绝启动 → 面板对该项目彻底瘫痪且无法自救（真机：cmfc-fis）；改为：启动前用 `pi auth check` 校验（分得清「provider 没了」与「没登录」）、pi 拒绝时兜底重启一次、退出横幅直接显示 pi 的真实报错 | 已实现（2026-11-25 用户报障；判据=pi 自己的 `provider_not_found` vs `credentials_not_configured`，本地配置文件分不开；偏好不销毁、provider 加回来自动用回；Kotlin 新增 `PiModelPreflight`/`PiExitDiagnostics`，桥接多两个字段） |
+
+**0.5.10 反馈批次修订（2026-11-17，用户拍板「全部进 0.5.10」）**：内测 10 条反馈统一梳理——3 条并入现有 spec 修订、2 条新建 spec、1 条调研归档：
+
+| 反馈 | 落点 | 处理 |
+|---|---|---|
+| #1 悬浮展示框缝隙即消失、按钮点不到 | 044 修订（hover 延迟 ~200ms + 缩短缝隙 + 明确关闭路径） | 缺陷 |
+| #3 悬浮展示框有时关不掉 | 044 修订（同上，杜绝状态残留） | 缺陷 |
+| #2a 折叠后看不到光标 | 044 修订（折叠后光标可见）+ 045 统一收尾 | 缺陷+需求 |
+| #2b 展开编辑后折叠消失 | 044 修订（编辑后仍可折回，按编辑后内容存回；≤阈值退化为普通文本） | 缺陷 |
+| #4 大文本没自动转临时文件 / 阈值 | 044 修订（Q7+FR-011 改写：>2000 行**自动转存**，chip 手动入口保留，写失败兜底） | 需求·行为改写 |
+| #2c 注入内容追加换行 | **新 045**（多行 `\n` / 单行两空格，所有注入通路统一） | 需求 |
+| #5 Mermaid 语法错下方多出 `Syntax error` | 040 修订（清理 mermaid 注入的游离 error DOM，重渲染不累积） | 缺陷 |
+| #6 直接贴 SVG 源码的渲染/代码块边界 | 039 修订（明确内联=渲染、围栏=源码，边界锁定；优化口径留 plan） | 澄清+需求 |
+| #10 代码片段在 IDE 只识别纯文本 | 041 修订（扩语言别名 + 扩展名反查兜底） | 缺陷 |
+| #9 生成的 SVG 文件无法从 IDE 打开 | 041 修订（svg 别名 + resolveFile 路径，根因待真机确认） | 缺陷 |
+| #7 关闭仅剩实例自动重建 | **新 046**（关到空即新建，规避空白/强关重开卡加载） | 缺陷 |
+| #8 生成新文件有必要展示 diff 吗 | **调研项，不立 spec**：对比 IDE 原生行为（生成即打开文件、diff 仅用于改动既有文件）与 pi 现有 `ide.showFileDiff`（`BridgeService.kt:827`，需 baseline，无 baseline 时退化为打开文件）；结论倾向"新建文件无基线可 diff，展示 diff 意义有限"，调研细化到 plan 阶段 | 调研 |
+
+**追加需求（2026-11-17，反馈批次之后）**：
+
+| 需求 | 落点 | 处理 |
+|---|---|---|
+| 扩展格式支持 SVG / Mermaid / KaTeX 复制为图片 | **新 047**（三类渲染块加「复制为图片」，剪贴板通道 Q3 待真机复核；不预设取图手段、不要求转 SVG；探针判做不了的格式按 Q5 搁置） | 需求 |
+
+**三条拍板口径（2026-11-17）**：① 全部进 0.5.10；② 超阈值由"提示"改为"自动转临时文件"；③ 注入收尾换行作用于**所有**注入内容（非仅 044）。
+
+**Markdown 格式扩展分三档**（038→039→040，按成本递增、可分别交付）：易=diff/脚注（复用现有栈）；中=SVG（净化白名单，无新依赖）；难=KaTeX/Mermaid（新依赖 + 渲染时机，Mermaid 须先真机探针）。
+
+**IDE 自身能力复用结论（用户 2026-11-16 要求核实）**：UI 是独立 web server（`LocalUiServer.kt`）+ JCEF 加载，`plugin.xml` 未声明 IDE Markdown/预览依赖 → **不能复用 IDE 自带 Markdown/数学/图表渲染**，038–040 一律在前端渲染栈内实现；可复用的 IDE/系统能力：`BrowserUtil.browse` 外部链接打开（037 白屏修复即用此通路），以及 **IDE 语言高亮 + 编辑器**（041 代码块「在 IDE 打开」——复用 `LightVirtualFile` + `LanguageManager` + `FileEditorManager`，均属已依赖的 `com.intellij.modules.platform`，零新依赖）。注意 041 复用的是「代码语法高亮/查看」而非「Markdown/图/公式渲染」，与上述结论不冲突。
+
+**关键既有事实**（写进 spec 可行性结论）：node/npm 的 path+version 在 `PiEnvironment.detect()` 已探测；`shortPath` 缩写与 `.skill-path-full/.short` 响应式 CSS 均已存在；插件版本运行时无现成读取、构建时间/commit ID 需构建期生成——故本条无技术难题，风险集中在降级显示与缩写边界。
+
+**042 内置浏览器方向（2026-11-16 轻量调研）**：Codex App / Cursor Design Mode / VS Code 浏览器工具 / 华为云码道 Doer 的共识是「浏览器=渲染验证/反馈面，非通用浏览器」；差异化在批注回流会话携带**结构化上下文**（选择器+样式+截图），各家普遍回避登录态/cookie。据此把 042 定为**方向性 spec**：P0 预览基座 → P1 开发交互(DevTools/日志) → P2 批注回流会话 → P3 agent 自主浏览(仅登记方向)；实现前 7 项探针（JCEF 多实例 OSR / DevTools 可用性 / 元素选取+CSP / 批注覆盖层 / 双形态承载 / URL 安全边界 / 批注数据形状）。**037 外链仍走系统浏览器、014 OAuth 仍系统浏览器，均不改**；可复用 019 多 Content 基建但须隔离 instance 计数。
+
+**042 探索稿并入（2026-11-17）**：更早的技术方案探索（原 `031-embedded-browser` 分支，2026-11-13，占位号 031 已被 compaction-i18n 占用）rebase 至本分支后移入 [042 目录 exploration.md](./042-in-app-browser/exploration.md)，并按本批已拍板口径重梳理（探索稿 Q1–Q6 全部关闭，Q1/Q4 被 042 更广口径取代）。技术基座吸收进 042 spec：**安全硬约束 6 条**（token 永不进内置浏览器 URL、P0 零桥接、CEF 状态隔离待证、file:// 不走主路径、出站通道默认为零、日志脱敏）+ **渲染 windowed 结论** + **崩溃判定差异**（`JBCefHealthMonitor`/`onLoadError`）+ **新失败面**（下载/弹窗）+ **补充探针 4 项**（合计 11 项，见 exploration.md §8 合并清单）；本机 CDP 常开（9222）+ `probe-033-cdp.mjs` 裸 CDP 先例可直接复用为探针工具。

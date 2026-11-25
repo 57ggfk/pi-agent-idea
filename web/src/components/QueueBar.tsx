@@ -52,7 +52,7 @@ function QueueRow({ item, index }: { item: QueueItem; index: number }) {
         <span
           className="queue-image-count"
           data-testid="queue-image-count"
-          title={t("tool.images_other", { count: item.images.length })}
+          title={t("tool.images", { count: item.images.length })}
         >
           <Icon name="image" className="ic-sm" />
           {item.images.length}
@@ -162,29 +162,34 @@ export default function QueueBar() {
 
   return (
     <div className="queue-bar" data-testid="queue-bar">
-      {queue.drift && !driftAck ? (
-        <div className="queue-banner queue-banner-drift" data-testid="queue-drift">
-          <span>{t("queue.drift")}</span>
-          <button className="link-btn" data-testid="queue-drift-dismiss" onClick={queueDismissDrift}>
-            {t("common.close")}
-          </button>
-        </div>
-      ) : null}
-      {queue.paused ? (
-        <div className="queue-banner queue-banner-paused" data-testid="queue-paused">
-          <span>{pauseLabel}</span>
-          <span className="queue-banner-hint">{t("queue.pausedHint")}</span>
-          <button className="btn btn-send" data-testid="queue-resume" onClick={() => void queueResume()}>
-            {t("queue.resume")}
-          </button>
-          <button className="btn btn-abort" data-testid="queue-clear" onClick={() => void queueClear()}>
-            {t("queue.clear")}
-          </button>
-        </div>
-      ) : null}
-      {queue.items.map((item, i) => (
-        <QueueRow key={item.id} item={item} index={i} />
-      ))}
+      {/* The bar is a full-bleed band, but its contents share the content
+          column with the messages and the input box — a queue that runs to
+          the panel edges reads as a separate panel. */}
+      <div className="queue-col">
+        {queue.drift && !driftAck ? (
+          <div className="queue-banner queue-banner-drift" data-testid="queue-drift">
+            <span>{t("queue.drift")}</span>
+            <button className="link-btn" data-testid="queue-drift-dismiss" onClick={queueDismissDrift}>
+              {t("common.close")}
+            </button>
+          </div>
+        ) : null}
+        {queue.paused ? (
+          <div className="queue-banner queue-banner-paused" data-testid="queue-paused">
+            <span>{pauseLabel}</span>
+            <span className="queue-banner-hint">{t("queue.pausedHint")}</span>
+            <button className="btn btn-send" data-testid="queue-resume" onClick={() => void queueResume()}>
+              {t("queue.resume")}
+            </button>
+            <button className="btn btn-abort" data-testid="queue-clear" onClick={() => void queueClear()}>
+              {t("queue.clear")}
+            </button>
+          </div>
+        ) : null}
+        {queue.items.map((item, i) => (
+          <QueueRow key={item.id} item={item} index={i} />
+        ))}
+      </div>
     </div>
   );
 }

@@ -19,6 +19,17 @@
   --r-lg: 10px;
   --r-xl: 12px;
 
+  /* The shared content column. The message column, the input box and the
+     queue column all read their width from here: when one of them kept its
+     own width the panel grew three columns that disagreed about where the
+     content starts and ends (real machine: the queue row was 400px wider
+     than the input box, overhanging 200px on each side). */
+  --content-max: 780px;
+  /* The shared inline inset of that column. */
+  --col-gutter: 16px;
+  /* The narrow-panel inset (the container query below swaps it in). */
+  --col-gutter-narrow: 8px;
+
   --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto,
     "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas,
@@ -62,6 +73,9 @@
   --error-bg: #fdeeee;
   --danger-soft: #fdeeee;
   --code-bg: #f6f7f9;
+  /* The table header row gets its own quiet grey: one step above the cell
+     background, so the header reads as a header without shouting. */
+  --table-head-bg: #f0f2f5;
   --shadow-pop: 0 10px 28px rgba(16, 24, 40, 0.14), 0 1px 2px rgba(16, 24, 40, 0.06);
   /* Scrollbars stay a couple of steps quieter than the text they sit next to. */
   --sb-size: 10px;
@@ -103,6 +117,9 @@
   --error-bg: #3a2426;
   --danger-soft: #3a2426;
   --code-bg: #1a1b1e;
+  /* Dark counterpart of the light header grey: a shade above the panel
+     background, so the header keeps the same weight in both themes. */
+  --table-head-bg: #2b2d31;
   --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.4);
   --sb-thumb: rgba(160, 164, 171, 0.18);
   --sb-thumb-hover: rgba(160, 164, 171, 0.36);
@@ -381,7 +398,28 @@ button {
 }
 
 .markdown thead th {
+  /* The header row sits on its own grey (var(--table-head-bg)), which flips
+     with the theme: a light grey on white in the light IDE, a shade above
+     the panel in the dark one. Cells stay on the page background, so the
+     header reads as a header in both. */
+  background: var(--table-head-bg);
   border-bottom: 1px solid var(--border-strong);
+}
+
+/* 050: CSV / TSV 表格。表格本体复用 .markdown table 的弱边框与表头灰底
+   （同一套视觉），这里只补两样它没有的：横向滚动容器与截断标注。
+   放在 .block-shell（flex + wrap）里要独占一行，否则会与行号槽并排。 */
+.markdown .csv-table-wrap {
+  flex: 1 1 100%;
+  max-width: 100%;
+  /* 宽表横向滚动：消息列是 overflow-x: hidden，不给容器就会被裁掉。 */
+  overflow-x: auto;
+}
+
+.markdown .csv-table-note {
+  font-size: var(--fs-xs);
+  color: var(--text-tertiary);
+  margin-bottom: 4px;
 }
 
 .markdown pre {
@@ -394,24 +432,165 @@ button {
   font-size: 12px;
 }
 
-/* Copy button injected into fenced code blocks */
-.code-copy-btn {
-  position: absolute;
-  top: 4px;
-  right: 4px;
+/* 048 内容块外壳：标题栏（左侧语言 + 右侧按钮）+ 行号槽 + 代码本体。
+   外壳负责边框与圆角，壳内的 pre 不再自带边框（否则双层边框）。
+   flex + wrap：标题栏独占一行（flex-basis 100%），行号槽与 pre 并排。 */
+.markdown .block-shell {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  /* pre 的浏览器默认外边距（1em）在壳内会把代码整体顶开、行号对不齐，
+     间距挪到壳上（保持块与正文之间的呼吸感）。 */
+  margin: 12px 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--code-bg);
+  overflow: hidden;
+}
+
+.markdown .block-shell > pre {
+  /* basis 必须 0 而不是 auto：壳是 flex-wrap，basis=auto 对 pre 取
+     max-content，代码最长行一超过面板宽，pre 整个被 wrap 到行号槽
+     下面自己一行 —— 行号和代码分家（048 真机缺陷，r57 复现）。
+     basis=0 后 pre 永远和行号槽同排，长行由 overflow-x 接管。 */
+  flex: 1 1 0%;
+  /* flex 子项默认 min-width:auto —— 不置 0 的话长行会把外壳撑宽、
+     pre 自己的 overflow-x:auto 就不生效了。 */
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  /* 049：代码离行号槽的右分隔线只留 6px —— 行号与它那一行代码之间本来
+     隔着「槽的右内边距 + 分隔线 + pre 的左内边距」三段，合计 19px，
+     数字看着像漂在代码左边很远的地方（实测截图）。收到 11px 之后，
+     数字与代码才像一对。 */
+  padding-left: 6px;
+}
+
+/* 048 标题栏：左侧语言类型，右侧操作按钮（常驻可见，不再悬浮出现） */
+.block-header {
+  flex: 0 0 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 6px 3px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+  min-height: 22px;
+}
+
+.block-lang {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 标题栏里的按钮区不再是悬浮条：静态定位、常驻可见。 */
+.block-header .block-actions {
+  position: static;
+  opacity: 1;
+  pointer-events: auto;
+  padding-bottom: 0;
+  box-shadow: none;
+  /* 049: 标题栏右侧可能同时有 复制 / 在 IDE 打开 / 源码 / 换行 / 复制为图片
+     五个按钮——窄面板里宁可让按钮换行，也不能被壳裁掉。 */
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* 048 换行开关的按下态（aria-pressed 由 JS 同步） */
+.block-action-btn.is-on,
+.block-action-btn[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+/* 049 禁用态：渲染成图时没有「行」可换，「换行」开关置灰。
+   只动颜色与透明度——字号、边框、间距、底色与其它按钮保持一致（048 的
+   「所有块按钮同一套外观」依赖这一点）。 */
+.block-action-btn:disabled,
+.block-action-btn:disabled:hover {
+  color: var(--text-tertiary);
+  border-color: var(--border);
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* 048 行号槽：在 pre 之外（pre 横向滚动会裁掉越界的元素）。
+   user-select:none —— 鼠标框选代码时行号既不会被选中、也不会进剪贴板。
+   字体/行高由 JS 按代码本体的计算样式同步，保证行号与代码行齐平。
+   049 间距修订：数字不再紧贴代码块的左边框（原来左内边距为 0，数字几乎
+   粘在边框上），右内边距也收窄 —— 数字夹在「贴边」与「离代码远」之间，
+   看着别扭（实测截图）。现在左 8px / 右 4px，数字与代码成一对。 */
+.code-gutter {
+  flex: 0 0 auto;
+  user-select: none;
+  -webkit-user-select: none;
+  padding: 0 4px 0 8px;
+  border-right: 1px solid var(--border);
+  background: var(--bg-subtle);
+  color: var(--text-tertiary);
+  text-align: right;
+  overflow: hidden;
+}
+
+.code-line-no {
+  display: block;
+}
+
+/* 041/047 统一按钮外观：内容块上的所有操作按钮（复制 / 在 IDE 打开 /
+   复制为图片 / 换行）共用一套样式——小号、1px 边、4px 圆角、同一底色，不再各长
+   各的（此前「复制为图片」自成一档，看着跟旁边按钮不像一套）。 */
+.block-action-btn {
   background: var(--bg-input);
   color: var(--text-secondary);
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 1px 6px;
   font-size: 10px;
+  line-height: 1.6;
   cursor: pointer;
-  opacity: 0.85;
+  white-space: nowrap;
+  /* The bar floats above the block, outside it — a faint shadow keeps the
+     buttons readable when they overlap the text above the block. */
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
 }
 
-.code-copy-btn:hover {
+.block-action-btn:hover {
   border-color: var(--accent);
   color: var(--text);
+}
+
+/* 内容块的操作条（行内图形块用）：放在块的**上方外侧**（右上角、块之外），
+   悬浮才出现。
+   .block-shell 是壳——代码块自身 overflow-x:auto（横向滚动）会把越界的
+   绝对定位裁掉，操作条必须是 pre 的兄弟节点才能真正「在块之外」。
+   .block-actions 的透明下内边距是「安全桥」：鼠标从块里往上移到按钮的
+   途中没有空隙，按钮不会中途消失（指针进按钮即取消隐藏，见 wireBlockActions）。 */
+.block-actions {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  display: flex;
+  gap: 4px;
+  padding-bottom: 4px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease-in-out;
+  z-index: 3;
+}
+
+.copyable-frame.is-actions-visible > .block-actions {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /* Clickable path[:line] references inside messages */
@@ -631,9 +810,11 @@ button {
 /* Composer */
 .composer {
   flex: 0 0 auto;
-  border-top: 1px solid var(--border);
+  /* 浮框式（输入区分隔竞品调研拍板）：不再有分割线与条带底色——消息区与输入
+     区之间只有留白（message-list 底部 24px）+ 输入框自身的边框与 focus 高亮。
+     16 家竞品「分割线+条带底色+框边框」三条信号并用 0 先例，IDE 编码面板
+     5/6 是无分割线无条带的浮框。 */
   padding: 8px 10px;
-  background: var(--bg-secondary);
   /* Anchors the drag-and-drop hint (spec 016) over the whole composer. */
   position: relative;
 }
@@ -1030,6 +1211,94 @@ button {
 .hljs-name {
   color: var(--text);
   font-weight: 600;
+}
+
+/* ```diff blocks (038 FR-001): the common hljs bundle ships the diff grammar;
+   only the token colors were missing. Green = added, red = removed, the
+   same convention the diff itself prints as +/- prefixes. */
+.hljs-addition {
+  color: var(--success);
+}
+
+.hljs-deletion {
+  color: var(--error);
+}
+
+.hljs-meta {
+  color: var(--text-secondary);
+}
+
+/* GFM footnotes (038 FR-003): sup refs inherit the accent; the generated
+   section's sr-only English label must stay invisible, and the backref
+   arrows read as quiet links. */
+.markdown .footnotes .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.markdown .footnotes {
+  margin-top: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.markdown sup a[data-footnote-ref] {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.markdown .footnotes a[data-footnote-backref] {
+  color: var(--accent);
+  text-decoration: none;
+  margin-left: 4px;
+}
+
+/* 039 FR-001: inline SVG stays inside the message bubble — scale down to the
+   container instead of overflowing the tool window. */
+.markdown svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* A markdown image carries no intrinsic width limit: without one it grows
+   past the column and `.message-list`'s horizontal overflow clips it away
+   (real machine: a 1400px image overhung the column by 620px and the panel
+   by 324px — the picture was simply gone, with no scrollbar to find it). */
+.markdown img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* 040 US2: rendered mermaid diagrams — same container constraint, centered,
+   with the hidden source kept selectable for the copy button. */
+.markdown .mermaid-figure {
+  text-align: center;
+  overflow: hidden;
+}
+
+.markdown .mermaid-figure svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* 048: ```svg 围栏渲染出的图形 —— 与 Mermaid 图形同构（居中、尺寸受约束）。 */
+.markdown .svg-figure {
+  text-align: center;
+  overflow: hidden;
+}
+
+.markdown .svg-figure svg {
+  max-width: 100%;
+  height: auto;
 }
 
 /* Manage view */
@@ -2151,10 +2420,20 @@ button {
   overflow-x: hidden;
   /* Same 16px inline inset as `.composer`: the message column and the input
      box share one visual edge, without depending on how wide the platform's
-     scrollbar gutter happens to be. Vertical padding is symmetric so the
-     empty state's `margin: auto` centers on the *visible* middle, not 6px
-     above it (spec 010 US2). */
-  padding: 16px 16px 16px;
+     scrollbar gutter happens to be. 顶部对称 16px 保住空态的垂直居中（spec
+     010 US2）。底部 12px = 末尾留白（010 内测反馈从 46.5px 减半）——浮框式
+     + col flex-shrink 0 之后 col 随内容真实长高，padding 已被计入滚动范围
+     （此前 col 被压扁时会被 Chromium 吞掉）；代码块结尾另有自身 12px 底边距，
+     合计 24px，纯文本结尾 12px。 */
+  /* The scrollbar eats 10px on the right, which used to pull the column
+     5px left of the composer — the input box then sat 5px right of the
+     content above it (real machine: column 258.5..1038.5, composer
+     263.5..1043.5 in a 1307px panel). The gutter is now reserved in every
+     scroll state and paid for on the left, so the column stays centred on
+     the panel and the composer lines up with it whether or not the
+     transcript overflows. */
+  scrollbar-gutter: stable;
+  padding: 16px var(--col-gutter) 12px calc(var(--col-gutter) + var(--sb-size));
 }
 
 .message-col {
@@ -2162,10 +2441,15 @@ button {
   /* Give the column the full height of the scroll container even when it is
      empty: `margin: auto` on `.empty-state` needs free space to absorb, or
      the π logo hugs the top of the panel. With messages this is a no-op —
-     content overflows past 100% and flows from the top as before. */
+     content overflows past 100% and flows from the top as before.
+     flex-shrink 0：列表是 flex 容器，作为 item 的 col 原本会被压扁在
+     min-height 地板上（内容全部溢出 col 盒子之外，真机实测 col 高恒 523px
+     而内容 1008px）——ResizeObserver 因此永远看不到内容生长。不收缩后 col
+     随内容真实长高，末尾 spacer / 附件卡的生长才可观测。 */
   min-height: 100%;
+  flex-shrink: 0;
   min-width: 0;
-  max-width: 780px;
+  max-width: var(--content-max);
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -2228,6 +2512,13 @@ button {
 
 .item-assistant {
   align-self: stretch;
+  /* The message box fills the content column: the cards around the prose
+     (tool cards, the thinking block) are UI and line up with the input box
+     and the queue rows. The prose and its code blocks share that column
+     too — capping them at 92% left every code block 62px short of the tool
+     card above it, which read as the command row overrunning the column
+     (real machine: 780px card against a 718px markdown). */
+  max-width: 100%;
   padding: 2px 0;
 }
 
@@ -2536,14 +2827,19 @@ button {
   min-width: 0;
   max-width: 100%;
   /* 16px inline == `.message-list`'s inset, so the input box and the message
-     column share one left/right edge at any width. */
-  padding: 0 16px 12px;
+     column share one left/right edge at any width. 顶部 0：浮框式没有分割线，
+     输入框直接贴内容区边界，呼吸留白全部住在列表末尾（见 .message-list
+     底部 36px）——内测反馈「输入框上方不要留白，留白补到内容区末尾」。 */
+  /* The composer reserves the same 10px the message list reserves for its
+     scrollbar (see .message-list), so the input box and the message column
+     are the same box at every width — not just the same centre. */
+  padding: 0 calc(var(--col-gutter) + var(--sb-size)) 12px;
 }
 
 .composer-inner {
   width: 100%;
   min-width: 0;
-  max-width: 780px;
+  max-width: var(--content-max);
   margin: 0 auto;
   /* The file/slash menus are absolute children of this box. */
   position: relative;
@@ -2622,6 +2918,128 @@ button {
   margin: 0 -3px;
 }
 
+/* 044: folded paste chip — same pill geometry as .ref-token (byte-equal
+   text keeps the mirror flow aligned), distinct hue so a fold is not
+   mistaken for an @reference. */
+.paste-chip {
+  pointer-events: auto;
+  cursor: pointer;
+  border-radius: 5px;
+  background: var(--bg-tertiary, var(--bg-secondary));
+  color: var(--text-secondary);
+  box-shadow: 0 0 0 1px var(--border-strong, var(--border));
+  padding: 0 3px;
+  margin: 0 -3px;
+}
+
+/* 044 FR-004: the collapse affordance sits on the input wrap's top-right. */
+.paste-collapse-btn {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  z-index: 3;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  padding: 1px 8px;
+  cursor: pointer;
+}
+
+.paste-collapse-btn:hover {
+  color: var(--text);
+  border-color: var(--border-strong, var(--border));
+}
+
+/* 047: the graphic render blocks get a hover-revealed 「复制为图片」 button.
+   The frame keeps the block's layout (inline-block shrink-wrap) and hosts the
+   action bar; the bar sits ABOVE the graphic and outside it (see .block-actions),
+   the button must NOT swallow clicks aimed at the block. */
+.copyable-frame {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+
+/* 窄图形（行内小图标）的操作条比图形本身还宽，放到图形上方就会盖住上一行的
+   文字——给图形留出一条「槽位」，操作条落在槽位里，谁也不挡。
+   padding-top 把图形整体下移（同行文字一起下移，保持基线对齐），
+   操作条改为贴在框顶（top:0），正好落在槽位中。 */
+.copyable-frame[data-lane] {
+  /* 槽位高度由 JS 按操作条实际高度写入（style.paddingTop），保证条永远
+     完全落在图形上方。 */
+}
+
+.copyable-frame[data-lane] > .block-actions {
+  top: 0;
+  bottom: auto;
+}
+
+/* 窄图形的操作条比图形宽：往有空间的一侧长（消息列会横向裁剪，长过头按钮
+   就被切掉、点不到了）。 */
+.copyable-frame[data-lane][data-align="left"] > .block-actions {
+  left: 0;
+  right: auto;
+}
+
+/* 044 FR-005: read-only hover preview floating above the input wrap.
+   044 #1/#3: flush against the input wrap (no gap) — the 4px dead zone used
+   to snap the preview shut while the pointer crossed into it. */
+.paste-preview {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  z-index: 4;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  padding: 8px 10px;
+  max-height: 220px;
+  overflow: hidden;
+  pointer-events: auto;
+}
+
+.paste-preview-head {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.paste-preview-body {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  max-height: 150px;
+  overflow: hidden;
+}
+
+.paste-preview-actions {
+  margin-top: 6px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* 044 FR-011: the >2000-line suggestion bar above the composer. */
+.paste-big-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
 .composer-controls {
   display: flex;
   align-items: center;
@@ -2669,6 +3087,14 @@ button {
   flex-wrap: wrap;
   gap: 6px;
   margin-bottom: 6px;
+  /* 图片卡在 composer-box 边框内部（浮框式：附件跟着框走，VS Code/Cline/
+     ChatGPT 同款结构——附件行是带边框容器的第一个子节点，容器长高包住）。
+     内边距让卡片与框线保持 6px 呼吸；约两行封顶、内部滚动是安全阀——20 张
+     以上的极端情况不再让 composer 反客为主吃掉消息区。 */
+  padding: 6px 6px 0;
+  /* 48px 卡两行（154px）封顶——安全阀随缩略图缩放同步收紧。 */
+  max-height: 160px;
+  overflow-y: auto;
 }
 
 .image-chip {
@@ -2696,8 +3122,10 @@ button {
   color: var(--text);
 }
 
-/* Composer image cards (018 US2): a 64px thumbnail instead of a name-only
-   chip. Clicking the thumb opens the shared preview modal; the × removes. */
+/* Composer image cards (018 US2): a thumbnail instead of a name-only
+   chip. Clicking the thumb opens the shared preview modal; the × removes.
+   内测反馈 64px 在 450px 窄面板偏大，缩到 48px——预览辨识度保留，单卡
+   高度 85→73px（40px 会退成色块，不划算）。 */
 .image-card {
   position: relative;
   display: inline-flex;
@@ -2710,8 +3138,8 @@ button {
 }
 
 .image-card-thumb {
-  width: 64px;
-  height: 64px;
+  width: 48px;
+  height: 48px;
   object-fit: cover;
   border-radius: 4px;
   cursor: zoom-in;
@@ -2720,7 +3148,7 @@ button {
 }
 
 .image-card-name {
-  max-width: 64px;
+  max-width: 48px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3455,9 +3883,17 @@ button {
   background: var(--accent-contrast);
 }
 
-/* Approval card */
+/* Approval card — the ask box above the queue. It is a member of the
+   content column like everything else, so it shares the column's width
+   instead of spanning the whole panel (it used to be full-bleed and stuck
+   out on both sides of every other element). */
 .approval-card {
-  margin: 0 12px 8px;
+  /* The ask box is a child of the tool window, not of the message column,
+     so it has to reserve the same 10px the message list reserves for its
+     scrollbar — otherwise it is 10px wider than the column on each side. */
+  width: calc(100% - 2 * (var(--col-gutter) + var(--sb-size)));
+  max-width: var(--content-max);
+  margin: 0 auto 8px;
   padding: 10px 12px;
   border: 1px solid var(--warning-border);
   border-radius: var(--r-lg);
@@ -3791,15 +4227,28 @@ button {
     font-size: 12px;
   }
 
-  .composer {
-    padding: 0 8px 6px;
+  /* Keep the message column, the input box, the queue band and the ask
+     card on the same 8px inset — the old 0px here guaranteed an 8px mismatch
+     at narrow widths, and each member left out would be one more column
+     disagreeing about where the content starts. One variable swap moves
+     them all at once: the rules keep referring to --col-gutter, so the
+     value that wins the cascade is the one they read. A padding override
+     here would lose the race against the queue bar's own rule, which sits
+     later in this file. */
+  .message-list,
+  .composer,
+  .queue-bar,
+  .approval-card {
+    --col-gutter: var(--col-gutter-narrow);
   }
 
-  /* Keep the message column and the composer on the same 8px inset — the old
-     0px here guaranteed an 8px mismatch at narrow widths. Vertical padding
-     stays symmetric like the wide rule above (spec 010 US2). */
+  /* The vertical padding differs from the wide rule above (spec 010 US2). */
+  .composer {
+    padding-bottom: 6px;
+  }
+
   .message-list {
-    padding: 12px 8px 12px;
+    padding-top: 12px;
   }
 
   .sessions-toolbar {
@@ -3811,7 +4260,7 @@ button {
   }
 
   .approval-card {
-    margin: 0 8px 6px;
+    margin: 0 auto 6px;
   }
 
   .exit-banner {
@@ -3999,6 +4448,28 @@ button {
 
 .diag-env-dir {
   flex: 0 0 auto;
+}
+
+/* 036: node/npm/plugin rows in the environment card; paths reuse the
+   .skill-path-full/.skill-path-short responsive switch (FR-008). */
+.diag-env-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.diag-env-label {
+  flex: 0 0 auto;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.diag-env-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .diag-env-update {
@@ -4207,12 +4678,36 @@ button {
    min-width: 0 so a long preview ellipsises instead of forcing horizontal
    scroll at 360px (constitution II).
    --------------------------------------------------------------------------- */
+/* The queue bar is only the wrapper. The band (background, top border)
+   belongs to the column and is the scroll container itself, so its edges
+   never move and its top border never scrolls away — a band that ran to the
+   panel edges left two empty grey wings beside the rows and read as a
+   second panel (real machine: rows 1180px wide against a 780px input box,
+   overhanging 200px on each side). */
 .queue-bar {
+  /* The gutter keeps the band on the content column below 780px, where the
+     column is narrower than the cap and the bar would otherwise run to the
+     panel edges. It also reserves the same 10px the message list reserves for
+     its scrollbar, so the queue column is the same box as the message column
+     and the input box — not just the same centre. */
+  padding: 0 calc(var(--col-gutter) + var(--sb-size));
+  display: flex;
+  flex-direction: column;
+}
+
+/* The queue shares the message column's width: the rows and the banners
+   sit in the same column as the messages and the input box, and the band's
+   background and top border stop at the column edge with them. */
+.queue-col {
+  width: 100%;
+  min-width: 0;
+  max-width: var(--content-max);
+  margin: 0 auto;
   max-height: 34vh;
   overflow-y: auto;
   border-top: 1px solid var(--border);
   background: var(--bg-subtle);
-  padding: 4px 10px;
+  padding: 4px 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -5303,4 +5798,117 @@ button {
 .skill-group-title[data-source="external"],
 .skill-group-title[data-source="package"] {
   color: var(--accent-text);
+}
+
+/* -- 0510: exit banner details, visible option failures, keyboard controls ---- */
+
+/* The exit banner is its own block above the status bar: inside the fixed
+   28px status-bar row it was clipped, and the composer painted over it. */
+.statusbar-wrap {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The exit banner keeps the reason readable and the raw stderr behind a
+   collapsed details pane — stderr is diagnostic noise until someone asks. */
+.exit-banner {
+  flex-wrap: wrap;
+  padding: 6px 12px;
+}
+
+/* 051: the panel says out loud that it fell back to the default model
+   (the remembered provider no longer exists). It is not an error — pi is
+   running fine — so it wears the warning tone, not the error one. */
+.notice-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  border-bottom: 1px solid var(--warning-border);
+}
+
+.notice-banner-msg {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The reason wraps instead of being clipped: an exit banner that hides half
+   the reason ("pi 已退出：pi process cl…") hides the only thing it says. */
+.exit-banner-msg {
+  flex: 1 1 200px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.exit-details {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* A collapsed details must not reserve room for the text it hides — the
+   hidden <pre> would otherwise widen the toggle and squeeze the reason. */
+.exit-details:not([open]) .exit-details-body {
+  display: none;
+}
+
+/* Opened, the stderr takes a full row of its own so it stays readable. */
+.exit-details[open] {
+  flex: 1 1 100%;
+  order: 9;
+}
+
+.exit-details > summary {
+  cursor: pointer;
+  text-decoration: underline dotted;
+}
+
+.exit-details-body {
+  width: 100%;
+  margin: 4px 0 2px;
+  padding: 4px 6px;
+  max-height: 160px;
+  overflow: auto;
+  background: var(--bg-input);
+  border: 1px solid var(--error);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* A switch that failed says so, right where it was flipped. */
+.options-error {
+  margin: 6px 10px 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--error);
+  border-radius: 4px;
+  background: var(--error-bg);
+  color: var(--error);
+  font-size: var(--fs-xs);
+  word-break: break-word;
+}
+
+/* The queue-mode menu entries are real buttons: a <div onMouseDown> is
+   unreachable with the keyboard and swallows Enter. */
+.send-mode-menu button.slash-item {
+  width: 100%;
+  border: none;
+  background: none;
+  color: inherit;
+  text-align: left;
+}
+
+/* The file path in a tool card is a real button too. */
+button.tool-file-link {
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
 }

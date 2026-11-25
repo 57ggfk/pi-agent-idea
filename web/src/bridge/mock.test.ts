@@ -396,3 +396,27 @@ describe("MockBridge compact (031)", () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe("MockBridge 050 CSV fixtures", () => {
+  it("the ?md=csv fixture ships the delimited-text samples the e2e asserts on", async () => {
+    vi.stubGlobal("location", { search: "?md=csv" });
+    try {
+      const bridge = new MockBridge();
+      const replies = collectAssistantReplies(bridge);
+      const settled = waitForSettle(bridge);
+      await rpc(bridge, { type: "prompt", message: "show me the data" });
+      await settled;
+      const text = replies.join("\n");
+      // The e2e asserts on these samples — they have to survive verbatim.
+      expect(text).toContain("```csv");
+      expect(text).toContain("```tsv");
+      expect(text).toContain('Alice,dev,"likes, commas"');
+      expect(text).toContain('Bob,ops,"says ""hi"""');
+      expect(text).toContain("name\tage");
+      expect(text).toContain("just one line of prose");
+      expect(text).toContain("only,one,row");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  }, 30_000);
+});

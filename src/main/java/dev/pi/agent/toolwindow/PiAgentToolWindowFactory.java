@@ -1,5 +1,6 @@
 package dev.pi.agent.toolwindow;
 
+import com.intellij.icons.AllIcons;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
 import com.intellij.openapi.diagnostic.Logger;
@@ -11,6 +12,7 @@ import com.intellij.openapi.wm.ToolWindowFactory;
 import com.intellij.openapi.wm.ToolWindowManager;
 import com.intellij.ui.content.Content;
 import com.intellij.ui.content.ContentFactory;
+import com.intellij.ui.content.ContentManager;
 import com.intellij.ui.content.ContentManagerEvent;
 import com.intellij.ui.content.ContentManagerListener;
 import dev.pi.agent.ui.PiUiErrorPanel;
@@ -96,7 +98,7 @@ public class PiAgentToolWindowFactory implements ToolWindowFactory {
 
         NewInstanceAction(Project project) {
             super(PiAgentBundle.message("toolwindow.new.instance"),
-                    PiAgentBundle.message("toolwindow.new.instance.tooltip"), null);
+                    PiAgentBundle.message("toolwindow.new.instance.tooltip"), AllIcons.General.Add);
             this.project = project;
         }
 
@@ -160,6 +162,46 @@ public class PiAgentToolWindowFactory implements ToolWindowFactory {
             // bucket and its queue mirror when the first tab was closed.
             manager.stopInstance(id);
             BridgeService.getInstance(project).closeInstance(id);
+            recreateIfLast(project);
+        }
+
+        /**
+         * 046: after an accepted close, if NO Pi Agent Content remains, rebuild
+         * one right away through the same creation path as the header "+"
+         * (FR-002) — the "closed to empty" tool window is what produced the
+         * blank panel, and its stale persisted state is the feedstock for the
+         * "loads forever" startup (real-machine forensics, 2026-11-17). The id
+         * comes from the real Content tabs (FR-003, 019 lesson ①). A cancelled
+         * close never reaches here (FR-005): it returns above with the same
+         * instance rebuilt. No loop is possible (FR-007): this only runs on a
+         * contentRemoved of a PiAgentPanel content, and a rebuilt Content whose
+         * panel failed to construct is an error card — not a PiAgentPanel — so
+         * closing it cannot re-enter this branch; a mid-run close still goes
+         * through the IDE-native dialog first (019 lesson ②).
+         *
+         * <p>Deferred one EDT pass (real-machine find): inside the
+         * contentRemoved dispatch the platform may not have finished the
+         * removal yet, and an emptied tool window is auto-hidden right after —
+         * a rebuild queued inside the event lost that race (the fresh content
+         * vanished with the hidden window). Running later sees the settled
+         * state; if the window already hid, {@code show()} brings it back with
+         * its fresh content.
+         */
+        private void recreateIfLast(Project project) {
+            com.intellij.openapi.application.ApplicationManager.getApplication().invokeLater(() -> {
+                if (project.isDisposed()) return;
+                ToolWindow toolWindow = toolWindowOf(project);
+                if (toolWindow == null) return;
+                ContentManager manager = toolWindow.getContentManager();
+                for (Content content : manager.getContents()) {
+                    if (content.getComponent() instanceof PiAgentPanel) return;
+                }
+                LOG.info("Pi Agent tool window closed to empty; recreating a clean content");
+                createInstanceContent(project, toolWindow, nextInstanceId(toolWindow));
+                if (!toolWindow.isVisible()) {
+                    toolWindow.show();
+                }
+            });
         }
     }
 
@@ -175,6 +217,11 @@ public class PiAgentToolWindowFactory implements ToolWindowFactory {
                 used.add(panel.getId());
             }
         }
+        return smallestUnusedId(used);
+    }
+
+    /** The id allocator itself, extracted pure for unit testing (046). */
+    static int smallestUnusedId(Set<Integer> used) {
         int n = 1;
         while (used.contains(n)) n++;
         return n;

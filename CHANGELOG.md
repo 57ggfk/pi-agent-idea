@@ -1,5 +1,157 @@
 # Changelog
 
+## 0.5.10 — 2026-11-25
+
+**新增**
+- 诊断页新增 node / npm 版本与路径、插件版本和构建信息（构建时间与提交号），缺失项明确显示"未找到/未知"而不是留白
+- 支持渲染 Markdown 脚注：引用处显示上标编号，文末汇总脚注列表，点击可跳转
+- 消息中的内联 SVG 图形现在直接渲染显示，脚本与外部引用等危险内容一律净化拦截
+- 支持渲染 LaTeX 数学公式：行内 $…$ 与块级 $$…$$ 显示为 KaTeX 排版，公式里的危险内容照常净化
+- 支持渲染 Mermaid 图表：`mermaid` 代码块直接画成流程图等图形，语法错误时保留源码显示，图表随窗口自适应缩放
+- 代码块右上角新增"在 IDE 打开"按钮：内容在 IDE 以只读内存文件打开并按语言语法高亮，不落盘、关闭即弃
+- 超过 2000 行的大段粘贴现在自动转存为临时文件引用，不再只弹提示；转存失败保留折叠块并给出可关闭的提示
+- 粘贴大段文字时输入框折叠为占位标签，可点击展开编辑、悬停预览、按住 Shift 粘贴跳过折叠，发送内容始终完整
+- 超大粘贴内容可一键存为临时文件并插入 @ 引用，pi 发送时自动读取文件全文
+- 所有注入到输入框的内容统一收尾：多行内容后自动换行、单行内容后加两个空格，光标落在收尾之后可直接输入
+- 关闭最后一个 Pi 会话标签页时立即自动新建一个干净的新会话，不再留下空白工具窗，也避免残留状态导致重开后一直加载
+- SVG 图形、Mermaid 图表与 KaTeX 公式块新增「复制为图片」：一键把渲染成品以 PNG 写入系统剪贴板，可直接粘贴到文档或聊天
+- 代码块顶部多了一条标题栏，左边写着语言类型，右边是复制、在 IDE 打开、复制为图片等按钮，不用鼠标悬浮也能点到
+- 代码块的标题栏里多了一个「换行」开关，默认不换行（保持横向滚动），需要时点一下就能让长行折行显示
+- 代码块左侧加上了行号，框选代码时只会选中代码本身，行号不会被带进剪贴板
+- 用 svg 围栏写的代码块现在会直接渲染成图形，不再是一堆源码标签，源码仍然可以复制、也可以在 IDE 里打开
+- SVG 和 Mermaid 代码块的标题栏里多了一个「源码」开关，点一下就在「渲染成图」和「看源码」之间来回切
+- CSV 和 TSV 代码块现在直接渲染成表格：表头置顶，单元格内容与原文一致，宽表可以横向滚动
+
+**变更**
+- 会话内容与输入区之间加了呼吸留白（底部 16→24px），输入框不再顶着分割线——顶部内边距 0→12px 与底部对称
+- 输入区改为浮框式：去掉分割线与条带底色，消息区与输入框之间只留呼吸空白；图片缩略卡移入输入框边框内部随框长高，并以约两行封顶内部滚动
+- 会话末尾留白进一步收敛到 12–24px——上一轮的收尾元素整段移除，代码块结尾 24px、纯文本结尾 12px（此前的减半只算了其中一段）
+- 会话末尾的留白从 36px 减到 18px——上一轮调出来的空白太高，去掉一半刚刚好
+- 输入框里的图片缩略卡从 64px 缩到 48px——窄面板上更轻巧，点击看大图的能力不变
+- 消息里的表格表头现在有一层浅灰底，明暗两种主题下都能一眼看出表头
+- 输入框上方不再留白——呼吸空白全部挪到会话内容末尾（36px，随内容滚动），读历史时内容直接贴到输入框上沿
+- 工具窗的「新建 Pi 实例」标题动作配上加号图标——再开一个 Pi 标签页的入口一眼可见，不再是无图标的裸动作
+- 中文界面不再中英夹杂——provider 一词统一译作「提供商」（31 处，模型选择器里既有的「供应商」也一并对齐），英文文案不动
+- 设置页与诊断页中用户主目录下的路径按窗口宽度显示为 ~/ 缩写或完整路径
+- 消息里的 `diff` 代码块按新增绿、删除红高亮显示
+- 深色主题下的 Mermaid 流程图不再是一堆白底方块，改成跟随面板配色，和 IDE 自带的图预览风格一致
+- 内容块上的操作按钮（复制、在 IDE 中打开、复制为图片）统一成了一套外观，三种按钮不再各长各的
+- 代码块标题栏里的「复制为图片」按钮挪到了最左边，紧挨在「复制」按钮前面
+- 代码块的行号不再紧贴左边框，往代码那边挪了一点，和它的代码行更像一对
+- 「换行」开关只在看到源码时才有意义——图已经渲染出来时它是灰的、点不动，切到源码就能折行显示了
+
+**修复**
+- 管理面板里的 MCP 服务器、诊断信息和设置提示不再整片显示英文
+- 消息区里的工具卡片、正文和代码块现在结束于同一条右边线，不再一块顶到头、一块缩在里面
+- IDE 启动后立刻打开工具窗，不再显示模拟的 pi 与假路径
+- 诊断页显示的构建提交号与构建时间会随新构建更新
+- 消息区出现滚动条时，输入框不再比上面的内容向右偏半格——输入框、消息内容和队列始终在同一条中线上
+- 会话末尾的留白滚动到底现在真的可见了——此前留白写在滚动容器上被 Chromium 吞掉（36px 只剩 12.5px），改为消息列内部的收尾元素
+- 退出提示不再被状态栏裁掉，退出原因完整显示
+- pi 退出提示不再直接铺出原始错误输出，改为可展开的详情
+- pi 退出原因里的退出码不再重复出现两次
+- IDE 打不开某个文件时，文件链接会提示失败而不是毫无反应
+- 消息里的超宽图片不再超出内容栏并被整块裁掉
+- 队列模式菜单、工具卡文件路径与消息区都能用键盘操作
+- 代码块的语言不被 IDE 识别时，「在 IDE 打开」也会以纯文本打开
+- 队列条目、审批问句与工具卡片现在与输入框、消息列同宽，不再铺满整个面板
+- 修复切进富内容会话后不自动滚到底、跳底按钮不出现的问题——消息列改为真实长高（不再被压扁在最小高度地板上、内容溢出盒子之外），并用 ResizeObserver 跟随内容生长
+- 设置开关失败时会说明失败原因，不再悄悄弹回
+- 状态栏、思考块、插话标记等界面文案随界面语言切换显示
+- 扩展包市场的 npm / 仓库链接改为在系统默认浏览器打开，不再弹出空白窗口
+- 扩展包面板加载期间显示加载状态，不再闪现"未安装任何扩展包"假空态，加载失败时显示错误原因
+- Markdown 里的内联 SVG 不再保留指向远程地址的链接，渲染前会把 http/https 引用剥掉
+- 消息里 SVG 内嵌的样式表不再被执行，含外链地址的样式也不会再被加载
+- 中文句子里的公式现在能正常渲染——公式紧跟在冒号、括号等标点后面时，不再原样显示成 $…$
+- 行内公式后面紧跟逗号、句号、括号等标点时也能正常渲染
+- 一句话里出现两个 $ 时（比如金额区间），整句不再被当成公式标成红字
+- 修复 Mermaid 图表语法错误时消息下方累积多余 "Syntax error" 空白区域的问题，多次重渲染不再叠加
+- 消息里 diff 块头部显示的文件路径现在可以点击，直接在 IDE 中打开对应文件，不再是纯文本
+- 「在 IDE 打开」识别更多语言并按文件扩展名判断类型，更多语言能正确语法高亮而不是被当作纯文本
+- 粘贴大段文字折叠成占位后立刻继续输入，光标不会被抢走，文字不会再落进占位里
+- 修复粘贴预览浮层缝隙即消失、按钮点不到、偶发关不掉的问题：悬停浮层保持显示，可用 Esc、滚动或展开明确关闭
+- 展开粘贴内容编辑后仍可折回：折回按编辑后的内容存回，编辑后变短的内容自动退化为普通文本
+- 引用的临时文件被清理后发送会被明确提示并拦截，不再静默提交失效引用
+- 超大粘贴自动转存后的文件引用不再是一整条系统临时目录路径，缩短后一行放得下，悬停可看完整路径
+- 窄面板里长行的代码块不再把行号挤到代码上方单独一行——行号始终和代码并排，长行横向滚动
+- 退出提示直接显示 pi 自己的报错，不再只有一句「进程已退出」
+- 上次使用的 provider 被删除后不再导致 pi 起不来：面板会改用默认模型启动，并说明是哪个 provider 没了
+
+**Added**
+- The diagnostics card now shows node / npm versions and paths, the plugin version and its build info (timestamp + commit); missing entries say so explicitly instead of staying blank
+- Markdown footnotes are now rendered: inline refs become superscript links, definitions collect into a footnotes section, and clicking jumps between them
+- Inline SVG in messages now renders directly, with scripts and external references always stripped by the sanitizer
+- LaTeX math now renders inline ($…$) and as display blocks ($$…$$) in KaTeX style, with dangerous content inside formulas still sanitized
+- Mermaid diagrams now render directly from `mermaid` blocks; invalid syntax keeps the source visible and diagrams scale with the panel
+- Code blocks get an "Open in IDE" button: the snippet opens in the IDE as a read-only in-memory file with the matching syntax highlighting — no disk file, discard on close
+- Very large pastes (over 2000 lines) now save to a temp file reference automatically instead of only suggesting it; a failed save keeps the folded chip with a dismissible notice
+- Large text pastes fold into a compact placeholder chip in the composer — click to expand and edit, hover to preview, Shift+paste to skip folding; the full content is always sent
+- Very large pastes can be saved to a temp file and inserted as an @ reference; pi reads the full file content when the message is sent
+- Everything injected into the composer now ends with a unified trailing: a newline after multi-line content, two spaces after single-line, with the caret placed right after it
+- Closing the last Pi session tab now instantly rebuilds a clean one instead of leaving the tool window blank, which also prevents stale leftovers from causing endless loading after a restart
+- SVG shapes, Mermaid diagrams and KaTeX display blocks gain "Copy as image": one click puts the rendered result on the system clipboard as a PNG, ready to paste
+- Code blocks now carry a header bar with the language on the left and the actions (copy, open in IDE, copy as image) on the right — they are always visible, no hovering needed
+- The code block header gained a wrap toggle — off by default (lines keep scrolling sideways), one click and long lines wrap
+- Code blocks now show line numbers on the left — selecting the code picks up the code only, the line numbers stay out of the clipboard
+- Code blocks written in an svg fence now render as graphics instead of raw markup — the source is still copyable and still opens in the IDE
+- The header of SVG and Mermaid code blocks gained a “Source” switch — one click flips between the rendered graphic and the raw source
+- CSV and TSV code blocks now render as tables: the header sits on top, the cells keep the original text, and a wide table scrolls sideways
+
+**Changed**
+- More breathing room between the conversation and the composer (bottom padding 16→24px), and the input box no longer touches the divider — top padding 0→12px, symmetric with the bottom
+- The composer now floats: the divider line and strip band are gone — separation is whitespace plus the input box's own border; image thumbnails moved inside the box border (growing with content) and the chip row caps at ~two rows with internal scroll
+- The end-of-conversation whitespace settles at 12–24px — the previous spacer is removed entirely (code-block endings land at 24px, plain text at 12px; the earlier halving only counted one segment of the stack)
+- The end-of-conversation whitespace drops from 36px to 18px — the previous round's gap came out too tall, halving it feels right
+- Composer image thumbnails shrink from 64px to 48px — lighter on narrow panels, click-to-preview unchanged
+- The table header in messages now has a light grey background, so the header row reads at a glance in both the light and the dark theme
+- No more gap above the input box — all breathing room moved to the end of the conversation (36px, scrolls with content), so history scrolls right up against the composer
+- The "New Pi Instance" toolwindow header action now shows a plus icon — the add-a-tab affordance is visible at a glance instead of a bare iconless action
+- The Chinese UI no longer mixes scripts: the provider term is now translated consistently across 31 strings (the model picker's existing wording is aligned too); the English copy is untouched
+- Paths under the user's home directory in the settings and diagnostics panels now display as ~/… short form or full path depending on panel width
+- `diff` code blocks in replies now highlight added lines green and removed lines red
+- Mermaid diagrams now follow the panel theme — in the dark IDE they are drawn in the panel's own colors instead of light boxes
+- The block action buttons (copy, open in IDE, copy as image) now share one consistent look instead of each having its own
+- The “Copy as image” button now sits at the far left of the code block header, right before the Copy button
+- Line numbers now sit with a little breathing room from the block edge, closer to the code they belong to
+- The wrap toggle now only applies where it makes sense — it is greyed out while a diagram is shown and comes back to life in source mode
+
+**Fixed**
+- MCP servers, diagnostics and setting hints in the management panel are no longer left as fully English blocks
+- Tool cards, prose and code blocks in the transcript now end on the same right edge instead of one running to the limit while another stays inset
+- Opening the tool window right after the IDE starts no longer shows a mock pi and fake paths
+- The commit id and build time on the diagnostics page now follow the new build
+- When the transcript scrolls, the input box no longer sits half a scrollbar to the right of the content above it — the input box, the transcript and the queue stay on one centre line
+- The end-of-conversation whitespace is now actually visible when you scroll to the bottom — it used to be written on the scroll container where Chromium drops bottom padding (36px shrank to 12.5px); it now lives as an element inside the scrolled content
+- The exit notice is no longer clipped by the status bar and the reason shows in full
+- The pi exit notice no longer spills raw error output; it is now behind an expandable detail
+- The exit code in the pi exit reason is no longer repeated twice
+- When the IDE cannot open a file, the file link says so instead of doing nothing
+- An oversized image in a message no longer overflows the content column and gets clipped away
+- The queue-mode menu, tool card file paths and the transcript are now keyboard operable
+- A code block whose language the IDE does not know still opens in the IDE, as plain text
+- Queue rows, the approval prompt and tool cards now share the width of the input box instead of spanning the whole panel
+- Fixed switching into content-rich sessions not auto-scrolling to the bottom with no jump button — the message column now grows with its real content (no longer squashed at the min-height floor with children overflowing its box) and a ResizeObserver follows late growth
+- A settings switch that fails now says why instead of silently snapping back
+- Status bar, thinking block and steer badge text now follow the UI language
+- Marketplace npm / repository links now open in the system browser instead of popping up an empty window
+- The packages panel shows a loading state while the list loads instead of flashing the empty copy, and load failures surface their error
+- Inline SVG in Markdown no longer keeps remote http/https references — they are stripped before rendering
+- Styles embedded in SVG inside messages are no longer applied, and stylesheets pointing at external addresses are not loaded any more
+- Formulas in Chinese sentences now render — a formula that follows a colon, a bracket or any other punctuation mark is no longer left as raw $…$ text
+- Inline math now renders when it is immediately followed by punctuation such as a comma, a period or a bracket
+- A sentence that carries two $ signs — an amount range, say — is no longer swallowed as one formula and painted red
+- Fixed stray "Syntax error" areas piling up below messages when a Mermaid diagram has invalid syntax; re-renders no longer accumulate them
+- File paths shown in diff block headers inside messages are now clickable and open the file in the IDE, instead of being plain text
+- "Open in IDE" recognizes more languages and resolves file type by extension, so more snippets open with proper syntax highlighting instead of plain text
+- Typing right after a large paste folds into a placeholder no longer loses the caret — your text no longer lands inside the placeholder
+- Fixed the paste preview overlay vanishing in the gap before its button could be clicked: it now stays while hovered and closes clearly via Esc, scrolling or expanding
+- Expanded pastes stay foldable after editing: refolding stores the edited content, and content shortened below the threshold degrades to plain text
+- Sending is now blocked with an explicit notice when a referenced temp file has been cleaned up, instead of silently submitting a stale reference
+- The file reference for an auto-saved large paste is no longer a full system temp path — it now fits on one line, and hovering shows the full path
+- A long code line on a narrow panel no longer pushes the line numbers onto their own row above the code — they stay beside it while the line scrolls horizontally
+- The exit notice now headlines pi's own error instead of a bare "process exited" message
+- The panel no longer fails to start when the remembered provider was deleted: it starts with the default model and says which provider is gone
+
 ## 0.5.9 — 2026-11-16
 
 **新增**

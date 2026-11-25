@@ -4,7 +4,20 @@ import { needsRefresh } from "../store/sources";
 import { autosize, autosizeAndReveal, clampComposerHeight, resetComposerHeight } from "../lib/autosize";
 import { collectPathRefs, type PathRef } from "../lib/clipboardRefs";
 import { findTokens, removeRange, tokenBackspaceAt } from "../lib/inlineChips";
+import { injectionTrailing, trailingFor } from "../lib/injectionTrailing";
+import {
+  countLines,
+  detectPasteKind,
+  expandPastes,
+  pasteToken,
+  replaceToken,
+  shouldAutoSaveAsFile,
+  shouldCollapse,
+  type PasteKind,
+} from "../lib/pasteCollapse";
+import { findTempRefPaths } from "../lib/tempRefs";
 import { useT } from "../i18n/useT";
+import type { TFunction } from "i18next";
 import ModelPicker from "./ModelPicker";
 import SendButton from "./SendButton";
 import ThinkingPicker from "./ThinkingPicker";
@@ -59,6 +72,27 @@ type Density = 0 | 1 | 2;
 // `看@src` works — requiring a space broke the menu for CJK input — while
 // `user@example.com` still reads as an email, not as a file token.
 const AT_QUERY_RE = /(?:^|[^\w@])@([^\s@]*)$/;
+
+// 044: paste chips in the draft. The token wording is language-neutral by
+// design (restore key = the id), so the scan regex mirrors pasteCollapse's.
+const PASTE_TOKEN_SCAN = /\[Pasted ([A-Za-z]+) #(\d+) \+(\d+) lines\]/g;
+
+/** Hover preview body cap (FR-005): enough to judge, small enough to read. */
+const PASTE_PREVIEW_MAX = 400;
+
+/** Localized kind name for chip labels (FR-003): Markdown/JSON are universal. */
+function pasteKindLabel(t: TFunction, kind: PasteKind): string {
+  switch (kind) {
+    case "code":
+      return t("composer.pasteKind.code");
+    case "log":
+      return t("composer.pasteKind.log");
+    case "text":
+      return t("composer.pasteKind.text");
+    default:
+      return kind;
+  }
+}
 
 type MenuState = "list" | "loading" | "failed" | "empty";
 
@@ -131,6 +165,54 @@ export default function Composer() {
   const [text, setText] = useState("");
   const [mode, setMode] = useState<SendMode>("auto");
   const [images, setImages] = useState<PendingImage[]>([]);
+  // 044: folded pastes — the textarea carries the language-neutral token,
+  // this map holds the full original per token id, and doSend expands it
+  // (FR-007). `expandedPaste` is the last chip the user expanded and has not
+  // edited since: while the content is still intact in the box, a collapse
+  // affordance can fold it back (US2 再折回).
+  const [pastes, setPastes] = useState<Map<number, string>>(new Map());
+  const [expandedPaste, setExpandedPaste] = useState<
+    { id: number; content: string; kind: PasteKind; lines: number; start: number; end: number } | null
+  >(null);
+  // Hover preview for a paste chip (FR-005): read-only, never changes the box.
+  const [pastePreview, setPastePreview] = useState<{ id: number; content: string; kind: PasteKind; lines: number } | null>(null);
+  // 044 #1/#3: closing the hover preview is deferred ~200ms so the pointer can
+  // cross from the chip into the overlay (and its buttons) without the gap
+  // snapping it shut; entering the overlay cancels the timer.
+  const previewCloseTimer = useRef<number | null>(null);
+  // 044 #2b: mirrors the latest draft for callbacks that must read "current
+  // text" after their own applyText (auto-save replaces the token).
+  const textRef = useRef(text);
+  textRef.current = text;
+  // 044 #2b region tracking: expand/collapse's own applyText writes exact
+  // bounds; this flag tells the tracking effect to skip those transitions.
+  const selfChangeRef = useRef(false);
+  const prevDraftRef = useRef(text);
+
+  /** 044 #1/#3: the preview must survive the chip→overlay pointer trip, so
+   *  leaving the chip only schedules a close (~200ms) and entering the
+   *  overlay cancels it. */
+  const cancelPreviewClose = useCallback(() => {
+    if (previewCloseTimer.current !== null) {
+      window.clearTimeout(previewCloseTimer.current);
+      previewCloseTimer.current = null;
+    }
+  }, []);
+  const schedulePreviewClose = useCallback(() => {
+    cancelPreviewClose();
+    previewCloseTimer.current = window.setTimeout(() => {
+      previewCloseTimer.current = null;
+      setPastePreview(null);
+    }, 200);
+  }, [cancelPreviewClose]);
+  // FR-011: pastes beyond the file threshold are offered a save-as-file route.
+  const [bigPasteHint, setBigPasteHint] = useState<{ id: number; content: string; kind: PasteKind; lines: number } | null>(null);
+  // 044 FR-014: temp paste files referenced by the draft but already cleaned.
+  const [tempRefWarning, setTempRefWarning] = useState<string[] | null>(null);
+  const nextPasteIdRef = useRef(1);
+  // FR-006: ClipboardEvent carries no modifier state in Chromium/JCEF, so the
+  // Shift gesture is tracked at the window level and read at paste time.
+  const shiftDownRef = useRef(false);
   const [dropActive, setDropActive] = useState(false);
   const [highlightIndex, setHighlightIndex] = useState(0);
   // Menus dismissed with Escape stay closed until the text changes.
@@ -155,6 +237,8 @@ export default function Composer() {
   const composerResetSeq = usePiStore((s) => s.composerResetSeq);
   const clearPendingPrompt = usePiStore((s) => s.clearPendingPrompt);
   const resolveRefs = usePiStore((s) => s.resolveRefs);
+  const savePasteToTempFile = usePiStore((s) => s.savePasteToTempFile);
+  const checkTempRefs = usePiStore((s) => s.checkTempRefs);
   const takeDroppedRefs = usePiStore((s) => s.takeDroppedRefs);
   const openComposerPreview = usePiStore((s) => s.openComposerPreview);
   const editing = usePiStore((s) => s.editing);
@@ -184,6 +268,10 @@ export default function Composer() {
    *  here so the height is recomputed after React commits the new value. */
   const applyText = useCallback((next: string) => {
     setText(next);
+    // 044 #2b: keep the mirror ref in sync synchronously — callbacks fired in
+    // the same tick (auto-save after a fold) must read the applied draft, not
+    // the pre-render one.
+    textRef.current = next;
     requestAnimationFrame(() => {
       const ta = taRef.current;
       if (ta && !composingRef.current) autosize(ta, ta.closest(".app") as HTMLElement | null);
@@ -204,40 +292,144 @@ export default function Composer() {
   // Spec 018 US1: the text is the single source of truth — a reference is the
   // `@path` text itself, and the mirror overlay paints a pill over each token.
   const tokens = useMemo(() => findTokens(text), [text]);
+
+  /** The full content of the paste a chip stands for — used for expand and preview. */
+  const pasteContent = useCallback(
+    (id: number) => {
+      const direct = pastes.get(id);
+      if (direct !== undefined) return direct;
+      // An expanded chip's entry is gone from the map; the content lives in
+      // expandedPaste until edited.
+      return expandedPaste?.id === id ? expandedPaste.content : undefined;
+    },
+    [pastes, expandedPaste],
+  );
+
+  /** Click on a chip: the token becomes the full original text, selected so
+   *  it is immediately editable/copyable; the collapse affordance appears
+   *  while it stays untouched (FR-004). Declared before the mirror memo —
+   *  the memo's chip pills call it during render. */
+  const expandPaste = useCallback(
+    (id: number, kind: PasteKind, lines: number, start: number, end: number) => {
+      const content = pastes.get(id);
+      if (content === undefined) return;
+      const ta = taRef.current;
+      // Snapshot the selection before expanding: the deferred select-all below
+      // must not fire if the caret moved on in the meantime (044 #2b e2e find:
+      // a late rAF re-selected the box and the next keystroke ate the text
+      // the user had just typed).
+      const selBefore = ta ? [ta.selectionStart, ta.selectionEnd] : null;
+      const next = text.slice(0, start) + content + text.slice(end);
+      selfChangeRef.current = true;
+      applyText(next);
+      setPastes((prev) => {
+        const m = new Map(prev);
+        m.delete(id);
+        return m;
+      });
+      cancelPreviewClose();
+      setPastePreview(null);
+      setExpandedPaste({ id, content, kind, lines, start, end: start + content.length });
+      requestAnimationFrame(() => {
+        if (ta && selBefore && ta.selectionStart === selBefore[0] && ta.selectionEnd === selBefore[1]) {
+          ta.focus();
+          ta.setSelectionRange(start, start + content.length);
+        }
+      });
+    },
+    [applyText, pastes, text],
+  );
+
   /** The mirror's children: the full text (identical flow → identical
    *  wrapping), with each token span styled as a pill whose padding is
    *  cancelled by negative margins so line-break decisions stay byte-equal
-   *  to the textarea's. A trailing newline gets a visible extra line. */
+   *  to the textarea's. A trailing newline gets a visible extra line.
+   *  044: paste tokens paint the same-byte chip pill (click = expand, hover =
+   *  preview); 044 tokens carry no `@`, so the two scanners never collide. */
   const mirrorContent = useMemo(() => {
     const parts: ReactNode[] = [];
     let pos = 0;
+    const events: Array<{
+      start: number;
+      end: number;
+      render: (key: string) => ReactNode;
+    }> = [];
     for (const tok of tokens) {
-      if (tok.start > pos) parts.push(text.slice(pos, tok.start));
-      parts.push(
-        <span
-          key={`tok-${tok.start}`}
-          className="ref-token"
-          data-testid="ref-token"
-          data-path={tok.path}
-          // Click selects the whole token (then Backspace/typing replaces it).
-          onMouseDown={(e) => {
-            e.preventDefault();
-            const ta = taRef.current;
-            if (ta) {
-              ta.focus();
-              ta.setSelectionRange(tok.start, tok.end);
-            }
-          }}
-        >
-          {`@${tok.path}`}
-        </span>,
-      );
-      pos = tok.end;
+      events.push({
+        start: tok.start,
+        end: tok.end,
+        render: (key) => (
+          <span
+            key={key}
+            className="ref-token"
+            data-testid="ref-token"
+            data-path={tok.path}
+            // The pill paints over the textarea's own text, so its content is
+            // byte-identical to the token — a shorter label would shift the
+            // mirror's line breaks. The full path therefore lives in the
+            // tooltip (真机审查 P1-1: the reference had no ellipsis/tooltip).
+            title={tok.path}
+            // Click selects the whole token (then Backspace/typing replaces it).
+            onMouseDown={(e) => {
+              e.preventDefault();
+              const ta = taRef.current;
+              if (ta) {
+                ta.focus();
+                ta.setSelectionRange(tok.start, tok.end);
+              }
+            }}
+          >
+            {`@${tok.path}`}
+          </span>
+        ),
+      });
+    }
+    PASTE_TOKEN_SCAN.lastIndex = 0;
+    for (let m = PASTE_TOKEN_SCAN.exec(text); m; m = PASTE_TOKEN_SCAN.exec(text)) {
+      // Scan groups: 1 = kind, 2 = id, 3 = lines (mirror of pasteToken's text).
+      const id = Number(m[2]);
+      const kind = m[1] as PasteKind;
+      const lines = Number(m[3]);
+      const start = m.index;
+      const end = start + m[0].length;
+      events.push({
+        start,
+        end,
+        render: (key) => (
+          <span
+            key={key}
+            className="paste-chip"
+            data-testid="paste-chip"
+            data-paste-id={id}
+            role="button"
+            aria-label={t("composer.pasteChip", { kind: pasteKindLabel(t, kind), count: lines })}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              expandPaste(id, kind, lines, start, end);
+            }}
+            onMouseEnter={() => {
+              cancelPreviewClose();
+              const content = pasteContent(id);
+              if (content !== undefined) setPastePreview({ id, content, kind, lines });
+            }}
+            onMouseLeave={schedulePreviewClose}
+          >
+            {m[0]}
+          </span>
+        ),
+      });
+    }
+    events.sort((a, b) => a.start - b.start);
+    for (const ev of events) {
+      if (ev.start > pos) parts.push(text.slice(pos, ev.start));
+      parts.push(ev.render(`ev-${ev.start}`));
+      pos = ev.end;
     }
     parts.push(text.slice(pos));
     if (text.endsWith("\n")) parts.push("\n");
     return parts;
-  }, [text, tokens]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text, tokens, pastes, expandedPaste, pasteContent]);
 
   /** Keeps the mirror aligned when the capped textarea scrolls internally. */
   const syncMirrorScroll = useCallback(() => {
@@ -248,6 +440,196 @@ export default function Composer() {
       mirror.scrollLeft = ta.scrollLeft;
     }
   }, []);
+
+  /** FR-006: track Shift at the window level (ClipboardEvent has no modifiers
+   *  in Chromium/JCEF); paste reads this instead of the event. */
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.key === "Shift") shiftDownRef.current = true;
+    };
+    const up = (e: KeyboardEvent) => {
+      if (e.key === "Shift") shiftDownRef.current = false;
+    };
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+    };
+  }, []);
+
+  /** 044 #1/#3: explicit close paths beyond the hover timer — Esc and any
+   *  scroll (capture phase, the whole window) dismiss the preview so it can
+   *  never linger. */
+  useEffect(() => {
+    if (!pastePreview) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        cancelPreviewClose();
+        setPastePreview(null);
+      }
+    };
+    const onScroll = () => {
+      cancelPreviewClose();
+      setPastePreview(null);
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [pastePreview, cancelPreviewClose]);
+
+  /** 044 #2b: while a paste is expanded, edits inside its range grow/shrink
+   *  the region so 「折回」 always folds the CURRENT text — the old "one edit
+   *  and the affordance is gone" behavior is retired. expand/collapse's own
+   *  applyText already wrote exact bounds and is skipped via selfChangeRef. */
+  useEffect(() => {
+    const prev = prevDraftRef.current;
+    prevDraftRef.current = text;
+    if (selfChangeRef.current) {
+      selfChangeRef.current = false;
+      return;
+    }
+    if (!expandedPaste || prev === text) return;
+    let p = 0;
+    const minLen = Math.min(prev.length, text.length);
+    while (p < minLen && prev[p] === text[p]) p++;
+    let s = 0;
+    while (s < minLen - p && prev[prev.length - 1 - s] === text[text.length - 1 - s]) s++;
+    const oldChangeEnd = prev.length - s;
+    const delta = text.length - prev.length;
+    setExpandedPaste((ep) => {
+      if (!ep) return ep;
+      let { start, end } = ep;
+      if (p < end && oldChangeEnd >= start) {
+        // The change touches the region (an insertion exactly at the region's
+        // start counts: the caret sat on the content head — excluding it made
+        // every keystroke shift the window and lose the edit).
+        if (p < start) start = p;
+        if (end <= oldChangeEnd) {
+          // The change swallows the region tail (replace across the end): the
+          // region now ends where the inserted run ends.
+          end = p + (text.length - p - (prev.length - oldChangeEnd));
+        } else {
+          end += delta;
+        }
+      } else if (oldChangeEnd < start) {
+        // Change entirely before the region: shift both bounds.
+        start += delta;
+        end += delta;
+      }
+      if (end <= start) return null;
+      return start === ep.start && end === ep.end ? ep : { ...ep, start, end };
+    });
+  }, [text, expandedPaste]);
+
+  /** Folds the expanded content back into its chip (044 #2b): the CURRENT
+   *  edited text is stored as the paste content (edits survive the round
+   *  trip). If the edited content no longer exceeds the fold thresholds the
+   *  affordance just retires — it degrades to plain text. */
+  const collapseExpanded = useCallback(() => {
+    if (!expandedPaste) return;
+    const { id, start, end } = expandedPaste;
+    const current = text.slice(start, end);
+    setExpandedPaste(null);
+    if (!shouldCollapse(current)) {
+      // Degenerate: what remains is short prose — keep it as plain text and
+      // drop the map entry (no token references it any more).
+      setPastes((prev) => {
+        const m = new Map(prev);
+        m.delete(id);
+        return m;
+      });
+      return;
+    }
+    const kind = detectPasteKind(current);
+    const lines = countLines(current.replace(/\r\n/g, "\n"));
+    const token = pasteToken(id, kind, lines);
+    selfChangeRef.current = true;
+    applyText(text.slice(0, start) + token + text.slice(end));
+    setPastes((prev) => new Map(prev).set(id, current));
+  }, [applyText, expandedPaste, text]);
+
+  /** Folds a paste in at the current selection (FR-001/FR-002). 044 #4: pastes
+   *  beyond the file threshold auto-save to a temp file reference — no prompt
+   *  bar any more; the folded chip is the fallback if the write fails.
+   *  045: the token is followed by the unified trailing (multi-line paste →
+   *  newline, single-line → two spaces) so the caret lands on a visible spot
+   *  past the chip (044 #2a). */
+  const foldPastedText = useCallback(
+    (plain: string) => {
+      const ta = taRef.current;
+      const id = nextPasteIdRef.current++;
+      const kind = detectPasteKind(plain);
+      const lines = countLines(plain.replace(/\r\n/g, "\n"));
+      const token = pasteToken(id, kind, lines);
+      const trailing = trailingFor(plain);
+      const start = ta?.selectionStart ?? text.length;
+      const end = ta?.selectionEnd ?? text.length;
+      const next = text.slice(0, start) + token + trailing + text.slice(end);
+      applyText(next);
+      setPastes((prev) => new Map(prev).set(id, plain));
+      if (shouldAutoSaveAsFile(lines)) {
+        void savePasteAsFile({ id, content: plain, kind, lines });
+      }
+      requestAnimationFrame(() => {
+        // The caret must not be stolen from someone who is already typing:
+        // the fold's own rAF can land a frame later, and moving the caret
+        // then would drop their keystrokes INSIDE the chip token (the token
+        // stops matching the paste regex → the transcript keeps the literal
+        // "[Pasted …]" text). Only move it when the draft is still exactly
+        // what this fold produced (真机/回归 P1：粘贴后立刻打字会错位).
+        if (!ta || textRef.current !== next) return;
+        ta.focus();
+        const caret = start + token.length + trailing.length;
+        ta.setSelectionRange(caret, caret);
+      });
+    },
+    // savePasteAsFile intentionally omitted: it reads the draft through
+    // textRef, so the stale closure below cannot affect it (same-tick call).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [applyText, text],
+  );
+
+  /** FR-011/FR-012: swap a folded chip for an `@path` reference to a temp
+   * file holding the full content. Write failure keeps the chip intact
+   * (FR-013) and surfaces a dismissible notice — never a silent no-op. The
+   * draft is read through textRef so the token replacement always lands on
+   * the latest text (044 #4: the auto path runs in the same tick as the
+   * fold that created the token). */
+  const savePasteAsFile = useCallback(
+    async (info: { id: number; content: string; kind: PasteKind; lines: number }) => {
+      setBigPasteHint(null);
+      const res = await savePasteToTempFile(info.content);
+      if (!res.ok || !res.path) {
+        // Folded chip stays; the failure is perceivable (003) without a
+        // second toast system.
+        setPastePreview(null);
+        setBigPasteHint({ id: info.id, content: info.content, kind: info.kind, lines: info.lines });
+        return;
+      }
+      const r = replaceToken(textRef.current, info.id, `@${res.path}`);
+      if (r) {
+        cancelPreviewClose();
+        setPastePreview(null);
+        // 045: the fold's own trailing sits right after the token — consume it
+        // and give the reference one canonical trailing (multi-line paste →
+        // newline, single-line → two spaces).
+        const head = r.text.slice(0, r.start + `@${res.path}`.length);
+        const consume = /^(?:\n| {1,2})/.exec(r.text.slice(head.length))?.[0].length ?? 0;
+        applyText(head + trailingFor(info.content) + r.text.slice(head.length + consume));
+        setPastes((prev) => {
+          const m = new Map(prev);
+          m.delete(info.id);
+          return m;
+        });
+        setExpandedPaste(null);
+      }
+    },
+    [applyText, savePasteToTempFile],
+  );
 
   /** Picks the densest level that still fits on one line — measured, so a long
    *  model name collapses the pickers instead of pushing the row to wrap. */
@@ -341,11 +723,11 @@ export default function Composer() {
     const promptMode = pendingPrompt.mode ?? "replace";
     setSlashDismissed(false);
     setFileDismissed(false);
-    // An injected prompt ends with exactly one newline: the caret lands on a
-    // fresh line and the user starts typing *below* the prompt, not glued to
-    // it (0.5.6 real-machine feedback). restore/edit stay verbatim — the user
-    // is getting their own draft back.
-    const withNewline = (s: string) => `${s.replace(/\s+$/, "")}\n`;
+    // 045: the unified trailing rule applied ONCE here — multi-line content
+    // ends with one newline, single-line content with two spaces (Markdown
+    // hard break); equivalent existing trailing is never stacked. restore/edit
+    // stay verbatim — the user is getting their own draft back.
+    const withTrailing = (s: string) => injectionTrailing(s);
     // Every updater reports the length the value will have once committed, so
     // the rAF below can tell a stale frame from the real result. React may
     // run the updater *after* the first rAF (concurrent rendering defers the
@@ -360,7 +742,7 @@ export default function Composer() {
       textUpdateQueued = true;
       setText((prev) =>
         note(
-          prev.trim().length > 0 ? `${prev.replace(/\s+$/, "")}\n\n${withNewline(value)}` : withNewline(value),
+          prev.trim().length > 0 ? `${prev.replace(/\s+$/, "")}\n\n${withTrailing(value)}` : withTrailing(value),
         ),
       );
     } else if (promptMode === "restore") {
@@ -375,7 +757,7 @@ export default function Composer() {
       // replace — but a refs-only push (spec 015) arrives with an empty text
       // and must not wipe a draft the user is typing.
       textUpdateQueued = true;
-      setText(note(withNewline(value)));
+      setText(note(withTrailing(value)));
     }
     if (pendingPrompt.images && pendingPrompt.images.length > 0) {
       setImages(
@@ -389,11 +771,12 @@ export default function Composer() {
     if (pendingPrompt.refs && pendingPrompt.refs.length > 0) {
       // Spec 018 US1: injected references become tokens at the tail of
       // whatever the modes above produced (no caret semantics on injection).
-      // Each token carries a trailing space so a finished token never
-      // re-opens the @ menu (AT_QUERY_RE only matches a query at the very
-      // end); a draft not ending in whitespace gets a separator space, since
-      // a `word@src` glue would not even read as a token.
-      const toks = pendingPrompt.refs.map((r) => `@${r.path} `).join("");
+      // 045: each token carries the unified trailing (two spaces — a single-
+      // line injection) so a finished token never re-opens the @ menu
+      // (AT_QUERY_RE only matches a query at the very end); a draft not
+      // ending in whitespace gets a separator space, since a `word@src` glue
+      // would not even read as a token.
+      const toks = pendingPrompt.refs.map((r) => `@${r.path}  `).join("");
       textUpdateQueued = true;
       setText((prev) => {
         const next = prev.length === 0 ? toks : /\s$/.test(prev) ? `${prev}${toks}` : `${prev} ${toks}`;
@@ -504,11 +887,25 @@ export default function Composer() {
     if (needsRefresh(usePiStore.getState().sources.files)) void loadFiles();
   }, [atOpen, loadFiles]);
 
-  const doSend = () => {
+  const doSend = async () => {
     // 021: the send path is gated on the switch, not just the button (a
     // keyboard shortcut must not slip through a disabled button).
     if (pendingSwitch != null) return;
-    const body = text.trim();
+    // 044 FR-014: a temp paste file may have been cleaned while a draft or a
+    // restored edit still references it — never submit a stale @path silently.
+    const tempPaths = findTempRefPaths(text);
+    if (tempPaths.length > 0) {
+      const exists = await checkTempRefs(tempPaths);
+      const missing = tempPaths.filter((p) => !exists[p]);
+      if (missing.length > 0) {
+        setTempRefWarning(missing);
+        return;
+      }
+    }
+    setTempRefWarning(null);
+    // 044 FR-007: pi receives the full original content, never the chip
+    // tokens — the transcript stays fully viewable and copyable.
+    const body = expandPastes(text, pastes).trim();
     // Tokens live inline in the text (018 US1) — a message of only references
     // is non-empty text, so "text or images" is the whole sendability rule.
     if (!body && images.length === 0) return;
@@ -516,6 +913,10 @@ export default function Composer() {
     // must branch the old version off rather than append to it.
     const isEditing = editing != null;
     setText("");
+    setPastes(new Map());
+    setExpandedPaste(null);
+    setPastePreview(null);
+    setBigPasteHint(null);
     setImages([]);
     setHighlightIndex(0);
     setFileHighlight(0);
@@ -600,15 +1001,16 @@ export default function Composer() {
         };
       });
 
-  /** Inserts `@path ` tokens at the caret (at the end when unfocused) and
-   *  leaves the caret after the last one. The trailing space keeps a finished
+  /** Inserts `@path  ` tokens at the caret (at the end when unfocused) and
+   *  leaves the caret after the last one. 045: each token carries the unified
+   *  two-space trailing (single-line injection) — it also keeps a finished
    *  token from re-opening the @ menu (AT_QUERY_RE needs the query at the
    *  very end of the text). Uses the functional update so a resolve that
    *  resolved after more typing cannot clobber the newer draft. */
   const insertRefTokens = useCallback(
     (paths: string[]) => {
       if (paths.length === 0) return;
-      const toks = paths.map((p) => `@${p} `).join("");
+      const toks = paths.map((p) => `@${p}  `).join("");
       const ta = taRef.current;
       const focused = !!ta && document.activeElement === ta;
       let caretTo = -1;
@@ -699,14 +1101,16 @@ export default function Composer() {
     })();
   };
 
-  /** Inserts dragged text where the caret is (the drop default we suppressed). */
+  /** Inserts dragged text where the caret is (the drop default we suppressed).
+   *  045: dragged text is an injection — it gets the unified trailing. */
   const insertDroppedText = (insert: string) => {
     if (!insert) return;
     const ta = taRef.current;
     const start = ta?.selectionStart ?? text.length;
     const end = ta?.selectionEnd ?? start;
-    applyText(text.slice(0, start) + insert + text.slice(end));
-    const caret = start + insert.length;
+    const withTrailing = injectionTrailing(insert);
+    applyText(text.slice(0, start) + withTrailing + text.slice(end));
+    const caret = start + withTrailing.length;
     requestAnimationFrame(() => {
       ta?.focus();
       ta?.setSelectionRange(caret, caret);
@@ -815,6 +1219,76 @@ export default function Composer() {
           )}
         </div>
       ) : null}
+      {/* Reference chips moved inline (018 US1): tokens are rendered by the
+          mirror overlay inside the textarea wrap below, so nothing occupies a
+          separate row above the box anymore. */}
+      {/* The old "N queued messages" note is replaced by QueueBar (spec 005 US1):
+          it shows what is queued, not just how many. */}
+      {editing ? (
+        <div className="edit-mode-note" data-testid="edit-mode-note">
+          <Icon name="pencil" className="ic-sm" />
+          <span>{t("composer.editNote")}</span>
+          <button
+            type="button"
+            className="edit-mode-cancel"
+            data-testid="edit-mode-cancel"
+            aria-label={t("composer.editCancel")}
+            onClick={cancelEdit}
+          >
+            Esc
+          </button>
+        </div>
+      ) : null}
+      {/* 044 FR-014: the draft references a temp paste file that the
+          session-level cleanup has already removed — sending is blocked until
+          the reference is removed or edited. */}
+      {tempRefWarning ? (
+        <div className="paste-big-hint" data-testid="temp-ref-warning">
+          <span>
+            {t("composer.tempRefGone", { paths: tempRefWarning.join("、") })}
+          </span>
+          <button
+            type="button"
+            className="btn btn-sm"
+            data-testid="temp-ref-warning-dismiss"
+            onClick={() => setTempRefWarning(null)}
+          >
+            {t("common.dismiss")}
+          </button>
+        </div>
+      ) : null}
+      {/* 044 #4: auto-saving a huge paste to a temp file failed — the folded
+          chip kept the content; this is the perceivable failure notice. */}
+      {bigPasteHint ? (
+        <div className="paste-big-hint" data-testid="paste-save-failed">
+          <span>
+            {t("composer.pasteSaveFailed", {
+              count: bigPasteHint.lines,
+              kind: pasteKindLabel(t, bigPasteHint.kind),
+            })}
+          </span>
+          <button
+            type="button"
+            className="btn btn-sm"
+            data-testid="paste-save-failed-dismiss"
+            onClick={() => setBigPasteHint(null)}
+          >
+            {t("common.dismiss")}
+          </button>
+        </div>
+      ) : null}
+      <div className="composer-box">
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          multiple
+          style={{ display: "none" }}
+          onChange={(e) => {
+            if (e.target.files) void addFiles(e.target.files);
+            e.target.value = "";
+          }}
+        />
       {images.length > 0 ? (
         <div className="image-chips" data-testid="image-chips">
           {images.map((img, i) => {
@@ -855,38 +1329,6 @@ export default function Composer() {
           })}
         </div>
       ) : null}
-      {/* Reference chips moved inline (018 US1): tokens are rendered by the
-          mirror overlay inside the textarea wrap below, so nothing occupies a
-          separate row above the box anymore. */}
-      {/* The old "N queued messages" note is replaced by QueueBar (spec 005 US1):
-          it shows what is queued, not just how many. */}
-      {editing ? (
-        <div className="edit-mode-note" data-testid="edit-mode-note">
-          <Icon name="pencil" className="ic-sm" />
-          <span>{t("composer.editNote")}</span>
-          <button
-            type="button"
-            className="edit-mode-cancel"
-            data-testid="edit-mode-cancel"
-            aria-label={t("composer.editCancel")}
-            onClick={cancelEdit}
-          >
-            Esc
-          </button>
-        </div>
-      ) : null}
-      <div className="composer-box">
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/*"
-          multiple
-          style={{ display: "none" }}
-          onChange={(e) => {
-            if (e.target.files) void addFiles(e.target.files);
-            e.target.value = "";
-          }}
-        />
         <div className="composer-input-wrap">
           {/* Mirror overlay (018 US1): paints the token pills over the raw
               text. It is non-interactive except the pills themselves; the
@@ -894,6 +1336,51 @@ export default function Composer() {
           <div className="composer-mirror" data-testid="composer-mirror" aria-hidden="true" ref={mirrorRef}>
             {mirrorContent}
           </div>
+          {/* 044 FR-004 + #2b: the collapse affordance — lives while the paste
+              is expanded; folding captures the edited current text. */}
+          {expandedPaste ? (
+            <button
+              type="button"
+              className="paste-collapse-btn"
+              data-testid="paste-collapse"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={collapseExpanded}
+            >
+              {t("composer.pasteCollapse")}
+            </button>
+          ) : null}
+          {/* 044 FR-005: read-only hover preview for a paste chip. The "save
+              as file" affordance lives here too (FR-011): the chip pill itself
+              must stay byte-equal to the textarea, so its interactive extras
+              surface in the preview. */}
+          {pastePreview ? (
+            <div
+              className="paste-preview"
+              data-testid="paste-preview"
+              onMouseEnter={cancelPreviewClose}
+              onMouseLeave={schedulePreviewClose}
+            >
+              <div className="paste-preview-head">
+                {t("composer.pasteChip", {
+                  kind: pasteKindLabel(t, pastePreview.kind),
+                  count: pastePreview.lines,
+                })}
+                {pastePreview.content.length > PASTE_PREVIEW_MAX ? t("composer.pastePreviewMore") : ""}
+              </div>
+              <pre className="paste-preview-body">{pastePreview.content.slice(0, PASTE_PREVIEW_MAX)}</pre>
+              <div className="paste-preview-actions">
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  data-testid="paste-preview-save"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => void savePasteAsFile(pastePreview)}
+                >
+                  {t("composer.pasteSaveFile")}
+                </button>
+              </div>
+            </div>
+          ) : null}
           <textarea
           ref={taRef}
           data-testid="composer-input"
@@ -929,14 +1416,19 @@ export default function Composer() {
             // (015), but 018 US3 tightened the text flavour: only a whole
             // payload of one whitespace-free path counts. Multi-line markdown
             // pastes are text now — the default browser insertion runs.
-            const dropped = collectPathRefs(
-              sweepFiles(cb),
-              cb.getData("text/uri-list") ?? "",
-              cb.getData("text/plain") ?? "",
-            );
+            const plain = cb.getData("text/plain") ?? "";
+            const dropped = collectPathRefs(sweepFiles(cb), cb.getData("text/uri-list") ?? "", plain);
             if (dropped.length > 0) {
               e.preventDefault();
               void resolveAndInsert(dropped);
+              return;
+            }
+            // 044 FR-001: a large plain-text paste folds into a chip (the full
+            // content stays in the paste map, restored at send). Shift+paste
+            // (FR-006) and short pastes (US6) take the default insertion.
+            if (plain && !shiftDownRef.current && shouldCollapse(plain)) {
+              e.preventDefault();
+              foldPastedText(plain);
             }
           }}
           onKeyDown={(e) => {

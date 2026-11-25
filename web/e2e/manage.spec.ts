@@ -590,6 +590,47 @@ test.describe("packages panel 033", () => {
   });
 });
 
+// -- 037: loading vs empty vs error must not cross over -----------------------
+
+test.describe("packages panel 037", () => {
+  test("first load shows the loading state, never the fake empty copy", async ({ page }) => {
+    // `?pkgload` holds every packagesList answer back (037 mock knob).
+    await openManage(page, "pkgload=900");
+    await page.getByTestId("manage-tab-packages").click();
+
+    // While the first list is in flight: loading, and definitively not
+    // "No packages installed."
+    await expect(page.getByTestId("packages-loading")).toBeVisible();
+    await expect(page.getByTestId("packages-empty")).toHaveCount(0);
+
+    // The real answer lands and takes over.
+    await expect(page.getByTestId("packages-loading")).toHaveCount(0, { timeout: 10_000 });
+    await expect(page.getByTestId("package-row")).toHaveCount(1);
+    await expect(page.getByTestId("packages-empty")).toHaveCount(0);
+  });
+
+  test("explicit refresh returns to the loading state, then the list", async ({ page }) => {
+    await openManage(page, "pkgload=900");
+    await page.getByTestId("manage-tab-packages").click();
+    await expect(page.getByTestId("package-row")).toHaveCount(1);
+
+    await page.getByTestId("packages-refresh").click();
+    await expect(page.getByTestId("packages-loading")).toBeVisible();
+    await expect(page.getByTestId("packages-empty")).toHaveCount(0);
+    await expect(page.getByTestId("package-row")).toHaveCount(1, { timeout: 10_000 });
+  });
+
+  test("a genuinely empty list still shows the empty copy after load", async ({ page }) => {
+    await openManage(page, "pkgs=0&pkgload=900");
+    await page.getByTestId("manage-tab-packages").click();
+    await expect(page.getByTestId("packages-loading")).toBeVisible();
+    // Empty result — not loading, not an error.
+    await expect(page.getByTestId("packages-empty")).toBeVisible();
+    await expect(page.getByTestId("packages-loading")).toHaveCount(0);
+    await expect(page.getByTestId("packages-error")).toHaveCount(0);
+  });
+});
+
 // -- 034: skills management ---------------------------------------------------
 
 test.describe("skills panel 034", () => {

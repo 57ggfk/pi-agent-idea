@@ -2004,3 +2004,58 @@ describe("transcript notices through i18n (031)", () => {
     expect(lastText()).toBe("set_model failed: no such model");
   });
 });
+
+/**
+ * 0510 — the options-menu switches must not fail silently. A switch that
+ * reverts without a word reads as a broken app, so the failure is recorded
+ * where the popover can show it.
+ */
+describe("options switches report their failures", () => {
+  beforeEach(async () => {
+    h.state.calls.length = 0;
+    h.state.rpc.clear();
+    h.state.methods.clear();
+    await usePiStore.getState().init();
+    h.state.calls.length = 0;
+    usePiStore.setState({
+      approvalMode: "yolo",
+      autoCompaction: null,
+      autoRetry: null,
+      settingsError: null,
+    });
+  });
+
+  it("a rejected approval policy reverts the switch AND records why", async () => {
+    h.state.methods.set("approval.setPolicy", () => Promise.reject(new Error("extension not loaded")));
+    await usePiStore.getState().setApprovalMode("ask");
+    expect(usePiStore.getState().approvalMode).toBe("yolo");
+    expect(usePiStore.getState().settingsError).toContain("extension not loaded");
+  });
+
+  it("a successful switch clears the previous failure", async () => {
+    h.state.methods.set("approval.setPolicy", () => ({}));
+    usePiStore.setState({ settingsError: "old failure" });
+    await usePiStore.getState().setApprovalMode("ask");
+    expect(usePiStore.getState().approvalMode).toBe("ask");
+    expect(usePiStore.getState().settingsError).toBeNull();
+  });
+
+  it("a rejected auto-compaction is reported, not silently reverted", async () => {
+    h.state.rpc.set("set_auto_compaction", () => {
+      throw new Error("boom");
+    });
+    await usePiStore.getState().setAutoCompaction(false);
+    expect(usePiStore.getState().autoCompaction).toBeNull();
+    expect(usePiStore.getState().settingsError).toContain("boom");
+  });
+
+  it("a failed persistence says so without pretending the switch was lost", async () => {
+    h.state.methods.set("config.setPrefs", () => Promise.reject(new Error("disk full")));
+    await usePiStore.getState().setAutoRetry(false);
+    // The RPC itself worked: the switch stays on …
+    expect(usePiStore.getState().autoRetry).toBe(false);
+    // … and the persistence failure is reported on its own.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(usePiStore.getState().settingsError).toContain("disk full");
+  });
+});

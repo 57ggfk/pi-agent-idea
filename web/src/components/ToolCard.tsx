@@ -103,6 +103,9 @@ export default function ToolCard({
   forceOpen?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  // The IDE refused the path: show it, like the code-block buttons do. A
+  // link that opens nothing must not look like a link that worked.
+  const [openFailed, setOpenFailed] = useState(false);
   const isOpen = open || forceOpen === true;
   const { t } = useT();
   const running = !block.done && block.result !== undefined;
@@ -130,17 +133,32 @@ export default function ToolCard({
       >
         <span className="tool-icon">{toolIcon(block.toolName)}</span>
         <span className="tool-name">{block.toolName}</span>
-        <span
-          className={filePath ? "tool-args tool-file-link" : "tool-args"}
-          title={filePath ? `${block.argsJson}  (click to open in IDE)` : block.argsJson}
-          onClick={(e) => {
-            if (!filePath) return;
-            e.stopPropagation();
-            void usePiStore.getState().openFile(filePath, 1);
-          }}
-        >
-          {argSummary(block.argsJson, block.toolName)}
-        </span>
+        {filePath ? (
+          // A real <button>: a <span onClick> cannot be reached with the
+          // keyboard, and the file path is the one thing in a tool card worth
+          // opening. The card head toggles the output pane, hence
+          // stopPropagation — the same rule the Diff button follows.
+          <button
+            type="button"
+            className="tool-args tool-file-link"
+            data-testid="tool-file-link"
+            title={`${block.argsJson} · ${t("tool.openInIde")}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              void usePiStore.getState().openFile(filePath, 1).then((ok) => {
+                if (ok) return;
+                setOpenFailed(true);
+                setTimeout(() => setOpenFailed(false), 1200);
+              });
+            }}
+          >
+            {openFailed ? "✗" : argSummary(block.argsJson, block.toolName)}
+          </button>
+        ) : (
+          <span className="tool-args" title={block.argsJson}>
+            {argSummary(block.argsJson, block.toolName)}
+          </span>
+        )}
         <span className="tool-meta">
           {diff && filePath ? (
             <button
@@ -156,7 +174,7 @@ export default function ToolCard({
             </button>
           ) : null}
           {running ? <span className="spinner" /> : null}
-          {isError ? <span className="tool-error-tag">error</span> : null}
+          {isError ? <span className="tool-error-tag">{t("tool.error")}</span> : null}
           {duration != null ? <span className="tool-duration">{(duration / 1000).toFixed(1)}s</span> : null}
         </span>
       </div>

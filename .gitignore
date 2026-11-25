@@ -46,3 +46,11 @@ specs/*-PROMPT.md
 
 # web/node_modules is a junction/symlink to a shared store (git cannot track it)
 web/node_modules
+
+# test/e2e-project 是 runIde e2e 挂载的沙箱项目（README：Not a real codebase）。
+# 真机 session 里 pi 会在里面写文件（实测产出 bugfix-flowchart.svg /
+# dashboard-blocks.svg / shengxiao.html / sunset-cat.svg），这类一次性产物无任何
+# 用例、脚本或探针引用，不入库，避免每次真机验收都重新污染工作区。
+# 确需入库的夹具用 `git add -f`（browser 分支已有 bubbles.html 等先例）。
+test/e2e-project/*.svg
+test/e2e-project/*.html

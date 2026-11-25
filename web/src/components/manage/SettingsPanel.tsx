@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { useT } from "../../i18n/useT";
 import { OutcomeBanner } from "../ManageView";
+import { shortPath } from "../../lib/shortPath";
 import type { manageApi } from "../../manage";
 
 export default function SettingsPanel({ api }: { api: ReturnType<typeof manageApi> }) {
   const { t } = useT();
   const [path, setPath] = useState("");
+  const [homeDir, setHomeDir] = useState("");
   const [text, setText] = useState("{}");
   const [outcome, setOutcome] = useState<{ ok: boolean; error?: string; output?: string } | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -17,6 +19,7 @@ export default function SettingsPanel({ api }: { api: ReturnType<typeof manageAp
     try {
       const res = await api.settingsRead();
       setPath(res.path ?? "");
+      setHomeDir(res.homeDir ?? "");
       setText(res.text ?? "{}");
       setDirty(false);
     } catch (e) {
@@ -63,7 +66,12 @@ export default function SettingsPanel({ api }: { api: ReturnType<typeof manageAp
     <div data-testid="settings-panel">
       <OutcomeBanner outcome={outcome} />
       <div className="panel-toolbar">
-        <span className="panel-row-sub mono">{path}</span>
+        {/* 036 US3/FR-006: display-only shortening — full path on wide panels,
+            ~/… on narrow ones. `path` itself stays the real absolute value. */}
+        <span className="panel-row-sub mono diag-env-path">
+          <span className="skill-path-full">{path}</span>
+          <span className="skill-path-short">{shortPath(path, homeDir)}</span>
+        </span>
         <span className="spacer" />
         <button className="btn" data-testid="settings-reload" onClick={() => void refresh()}>
           {t("settings.reload")}
@@ -88,7 +96,7 @@ export default function SettingsPanel({ api }: { api: ReturnType<typeof manageAp
         }}
       />
       <div className="panel-row-sub">
-        Restart the pi process (Chat → + New does not suffice; use project reopen or pi /reload) after changing settings.
+        {t("manage.settings.restartHint")}
       </div>
       <div className="panel-toolbar">
         <button className="btn" data-testid="env-snapshot-btn" onClick={() => void loadSnapshot()}>

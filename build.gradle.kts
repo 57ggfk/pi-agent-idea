@@ -1,5 +1,7 @@
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 
 plugins {
     id("java")
@@ -9,7 +11,7 @@ plugins {
 }
 
 group = "dev.pi"
-version = "0.5.9"
+version = "0.5.10"
 
 repositories {
     mavenCentral()
@@ -102,9 +104,13 @@ val unixLoginShell: String? = if (isWindows) null else listOf(
     "/bin/sh",
 ).firstOrNull { it != null && File(it).isFile }
 
-val npmInstallCmd = when {
-    isWindows -> listOf("cmd", "/c", "npm", "install", "--no-audit", "--no-fund")
-    else -> listOf(unixLoginShell ?: "/bin/sh", "-lic", "npm install --no-audit --no-fund")
+// `npm ci` installs EXACTLY what the lockfile pins and never rewrites it.
+// `npm install` rewrites package-lock.json with its own metadata (e.g. the
+// "peer" flags), which both dirties the repo and makes this task
+// permanently out-of-date.
+val npmCiCmd = when {
+    isWindows -> listOf("cmd", "/c", "npm", "ci", "--no-audit", "--no-fund")
+    else -> listOf(unixLoginShell ?: "/bin/sh", "-lic", "npm ci --no-audit --no-fund")
 }
 val npmBuildCmd = when {
     isWindows -> listOf("cmd", "/c", "npm", "run", "build")
@@ -116,8 +122,15 @@ val ensureWebUiDeps = tasks.register<Exec>("ensureWebUiDeps") {
     inputs.file(layout.projectDirectory.file("web/package.json"))
     inputs.file(layout.projectDirectory.file("web/package-lock.json"))
     outputs.dir(layout.projectDirectory.dir("web/node_modules"))
-    onlyIf { !file("web/node_modules").exists() }
-    commandLine(npmInstallCmd)
+    // NO `onlyIf` gate here on purpose. The old
+    // `onlyIf { !file("web/node_modules").exists() }` meant a machine whose
+    // node_modules predated a lockfile bump NEVER refreshed its deps — the
+    // build then died inside vite with "Rollup failed to resolve import
+    // katex/dist/katex.min.css", a message that points nowhere near the real
+    // cause (a stale dependency tree). Gradle's own up-to-date check is the
+    // correct gate: lockfile changed → re-install; node_modules missing →
+    // re-install; otherwise skip.
+    commandLine(npmCiCmd)
 }
 
 val buildWebUi = tasks.register<Exec>("buildWebUi") {
@@ -145,17 +158,50 @@ val syncWebUi = tasks.register<Sync>("syncWebUi") {
     into(webUiStaging.map { it.dir("webui") })
 }
 
+// 036 FR-005: build time + commit id, generated at build time and shipped in
+// the plugin jar. The diagnostics page degrades to "unknown" when either is
+// missing (e.g. the git call fails), so the values may be empty by design.
+val buildInfoDir = layout.buildDirectory.dir("generated/buildinfo")
+val generateBuildInfo = tasks.register("generateBuildInfo") {
+    outputs.dir(buildInfoDir)
+    // 每次都重新生成：输出内容取决于 `git rev-parse --short HEAD` 和当前时间，
+    // 这两样 Gradle 都没法当作 input 跟踪——只要目录还在，Gradle 就判 UP-TO-DATE，
+    // jar 里带的 commitId / buildTime 永远停在上一次构建那天。
+    // Always regenerate: the content depends on git HEAD and the wall clock,
+    // neither of which Gradle can track as an input.
+    outputs.upToDateWhen { false }
+    doLast {
+        val commit = try {
+            val proc = ProcessBuilder("git", "rev-parse", "--short", "HEAD")
+                .redirectErrorStream(true)
+                .start()
+            val out = proc.inputStream.readBytes().toString(Charsets.UTF_8).trim()
+            if (proc.waitFor() == 0) out else ""
+        } catch (_: Exception) {
+            ""
+        }
+        val time = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
+        val props = buildInfoDir.get().asFile.resolve("pi-build.properties")
+        props.parentFile.mkdirs()
+        props.writeText(
+            "# Generated at build time; empty values degrade to unknown in the UI.\n" +
+                "buildTime=$time\ncommitId=$commit\n",
+        )
+    }
+}
+
 sourceSets {
     main {
         resources {
             srcDir(webUiStaging)
+            srcDir(generateBuildInfo)
         }
     }
 }
 
 tasks {
     processResources {
-        dependsOn(syncWebUi)
+        dependsOn(syncWebUi, generateBuildInfo)
     }
 
     test {

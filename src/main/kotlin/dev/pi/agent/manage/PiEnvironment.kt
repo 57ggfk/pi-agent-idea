@@ -194,6 +194,24 @@ object PiEnvironment {
         }
 
     /**
+     * 036 FR-001: just the node/npm pair for the diagnostics card — the exact
+     * probing [detect] does, so the two views cannot drift. Missing tools
+     * surface as `found=false` with an empty path/version; the UI renders a
+     * clear "not found" instead of a blank.
+     */
+    fun detectTools(
+        nodePath: () -> String? = { PiLocator.locateNode() },
+        npmPath: () -> String? = { PiLocator.locateNpm() },
+        versionOf: (String, List<String>) -> String? = ::toolVersion,
+    ): Pair<JsonObject, JsonObject> {
+        val node = nodePath()
+        val npm = npmPath()
+        val nodeVersion = node?.let { versionOf(it, listOf(it, "-v")) } ?: ""
+        val npmVersion = npm?.let { versionOf(it, listOf(it, "-v")) } ?: ""
+        return tool(node, nodeVersion) to tool(npm, npmVersion)
+    }
+
+    /**
      * Environment snapshot for the UI: node, npm, pi, plus everything needed to
      * decide whether installing is possible at all.
      */

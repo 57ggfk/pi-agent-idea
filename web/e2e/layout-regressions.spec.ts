@@ -360,3 +360,259 @@ for (const width of [360, 680, 900]) {
     expect(r.listEndsAboveBar, "queue bar overlaps the message list").toBe(true);
   });
 }
+
+/** The queue is a third column of the same panel, so it shares the content
+ *  column with the messages and the input box. A queue that runs to the
+ *  panel edges reads as a separate panel, and its row buttons land far
+ *  outside the column the rest of the UI uses (real machine: 1180px rows
+ *  against a 780px input box, overhanging 200px on each side). */
+for (const width of [360, 680, 1200]) {
+  test(`queue rows share the content column at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 760 });
+    await page.goto("/");
+    await page.getByTestId("composer-input").fill("start");
+    await page.getByTestId("send-btn").click();
+    await page.waitForSelector('[data-testid="abort-btn"]', { timeout: 15_000 });
+    await page.getByTestId("send-mode-caret").click();
+    await page.getByTestId("send-mode-followUp").click();
+    await page
+      .getByTestId("composer-input")
+      .fill("a queued entry with a reasonably long preview text that must truncate, not overflow");
+    await page.getByTestId("send-btn").click();
+    await expect(page.getByTestId("queue-row").first()).toBeVisible();
+
+    const r = await page.evaluate(() => {
+      const box = (sel: string) => {
+        const el = document.querySelector(sel);
+        if (!el) return null;
+        const b = el.getBoundingClientRect();
+        return { left: b.left, right: b.right, width: b.width };
+      };
+      return {
+        row: box(".queue-row"),
+        band: box(".queue-col"),
+        composer: box(".composer-box"),
+        column: box(".message-col"),
+        card: box(".tool-card"),
+      };
+    });
+
+    const row = r.row!;
+    const composer = r.composer!;
+    // The row starts and ends exactly where the input box does.
+    expect(Math.abs(row.left - composer.left), "queue row starts left of the input box").toBeLessThanOrEqual(1);
+    expect(Math.abs(row.right - composer.right), "queue row ends right of the input box").toBeLessThanOrEqual(1);
+    expect(row.width, "queue row is wider than the input box").toBeLessThanOrEqual(composer.width + 1);
+    // …and where the message column does.
+    if (r.column) {
+      expect(Math.abs(row.left - r.column.left), "queue row starts left of the message column").toBeLessThanOrEqual(1);
+      expect(Math.abs(row.right - r.column.right), "queue row ends right of the message column").toBeLessThanOrEqual(1);
+    }
+    // The band around the rows stops at the column too — a band that ran to
+    // the panel edges left two empty wings of grey beside the rows.
+    if (r.band) {
+      expect(Math.abs(r.band.left - composer.left), "queue band starts left of the input box").toBeLessThanOrEqual(1);
+      expect(Math.abs(r.band.right - composer.right), "queue band ends right of the input box").toBeLessThanOrEqual(1);
+    }
+    // The cards in the transcript are UI, not prose: they fill the column.
+    if (r.card) {
+      expect(Math.abs(r.card.left - composer.left), "tool card starts left of the input box").toBeLessThanOrEqual(1);
+      expect(Math.abs(r.card.right - composer.right), "tool card ends right of the input box").toBeLessThanOrEqual(1);
+    }
+  });
+}
+
+/** The approval prompt is a member of the content column like everything
+ *  else — it used to span the whole panel and stuck out on both sides. */
+test("the approval prompt shares the content column at 1200px", async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 760 });
+  await page.goto("/?approval=1");
+  await expect(page.getByTestId("empty-state")).toBeVisible();
+  await page.getByTestId("composer-input").fill("run the check");
+  await page.getByTestId("send-btn").click();
+  await expect(page.getByTestId("approval-card")).toBeVisible();
+
+  const r = await page.evaluate(() => {
+    const box = (sel: string) => {
+      const el = document.querySelector(sel);
+      if (!el) return null;
+      const b = el.getBoundingClientRect();
+      return { left: b.left, right: b.right, width: b.width };
+    };
+    return { card: box(".approval-card"), composer: box(".composer-box"), column: box(".message-col") };
+  });
+
+  const card = r.card!;
+  const composer = r.composer!;
+  expect(Math.abs(card.left - composer.left), "approval prompt starts left of the input box").toBeLessThanOrEqual(1);
+  expect(Math.abs(card.right - composer.right), "approval prompt ends right of the input box").toBeLessThanOrEqual(1);
+  expect(card.width, "approval prompt is wider than the input box").toBeLessThanOrEqual(composer.width + 1);
+  if (r.column) {
+    expect(Math.abs(card.left - r.column.left), "approval prompt starts left of the message column").toBeLessThanOrEqual(1);
+    expect(Math.abs(card.right - r.column.right), "approval prompt ends right of the message column").toBeLessThanOrEqual(1);
+  }
+});
+
+/** One axis for the whole transcript. The tool card, the prose and the code
+ *  block are all members of the content column, so they start and end where
+ *  the column does. A card that reaches the column's right edge while the
+ *  code block below it stops 60px short reads as "the command row is about
+ *  to hit the limit" (real machine: 780px card against a 718px markdown —
+ *  the markdown had been capped at 92% for no reason). */
+test("every block in the message column shares the column's width", async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 900 });
+  await page.goto("/");
+  await page.evaluate(() => {
+    const s = (
+      window as unknown as { __piStore: { setState: (p: Record<string, unknown>) => void } }
+    ).__piStore;
+    s.setState({
+      items: [
+        {
+          id: 1,
+          role: "assistant",
+          done: true,
+          blocks: [
+            {
+              kind: "toolcall",
+              id: "tc-1",
+              toolName: "bash",
+              argsJson: JSON.stringify({ command: "echo hello" }),
+              done: true,
+              result: { output: "hello", isError: false, durationMs: 3 },
+            },
+            { kind: "text", text: "正文一句。\n\n\`\`\`ts\nconst a = 1;\n\`\`\`\n", done: true },
+          ],
+        },
+      ],
+    });
+  });
+  await expect(page.getByTestId("tool-card").first()).toBeVisible();
+  await expect(page.locator(".markdown .block-shell").first()).toBeVisible();
+
+  const r = await page.evaluate(() => {
+    const box = (sel: string) => {
+      const el = document.querySelector(sel);
+      if (!el) return null;
+      const b = el.getBoundingClientRect();
+      return { left: b.left, right: b.right, width: b.width };
+    };
+    const col = document.querySelector(".message-col")!.getBoundingClientRect();
+    const offenders: string[] = [];
+    for (const el of Array.from(document.querySelectorAll(".message-col *"))) {
+      const b = el.getBoundingClientRect();
+      if (b.right > col.right + 1) {
+        offenders.push(el.tagName.toLowerCase() + "." + String(el.className || "").split(" ").filter(Boolean).join("."));
+      }
+    }
+    return {
+      col: { left: col.left, right: col.right },
+      card: box(".tool-card"),
+      body: box(".item-assistant .item-body"),
+      markdown: box(".item-assistant .markdown"),
+      block: box(".markdown .block-shell"),
+      offenders: offenders.slice(0, 5),
+    };
+  });
+
+  for (const [name, b] of [
+    ["tool card", r.card],
+    ["item body", r.body],
+    ["markdown", r.markdown],
+    ["code block", r.block],
+  ] as const) {
+    expect(b, name + " is missing").not.toBeNull();
+    expect(Math.abs(b!.left - r.col.left), name + " does not start at the column's left edge").toBeLessThanOrEqual(1);
+    expect(Math.abs(b!.right - r.col.right), name + " does not end at the column's right edge").toBeLessThanOrEqual(1);
+  }
+  expect(r.offenders, "a block sticks out past the content column").toHaveLength(0);
+});
+
+/** A markdown image has no intrinsic width limit. Without one it grows past
+ *  the column and the list's horizontal overflow clips it away (real machine:
+ *  a 1400px image overhung the column by 620px and the panel by 324px, and
+ *  `.message-list` has `overflow-x: hidden` — the picture was simply gone). */
+test("a wide image in a message stays inside the content column", async ({ page }) => {
+  await page.setViewportSize({ width: 1200, height: 900 });
+  await page.goto("/");
+  await page.evaluate(() => {
+    const s = (
+      window as unknown as { __piStore: { setState: (p: Record<string, unknown>) => void } }
+    ).__piStore;
+    s.setState({
+      items: [
+        { id: 1, role: "assistant", done: true, blocks: [{ kind: "text", text: "看图：", done: true }] },
+      ],
+    });
+  });
+  await expect(page.locator(".item-assistant .markdown").first()).toBeVisible();
+
+  const r = await page.evaluate(async () => {
+    const md = document.querySelector(".item-assistant .markdown")!;
+    const img = document.createElement("img");
+    img.src = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+    img.style.width = "1400px";
+    img.style.height = "40px";
+    md.appendChild(img);
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    const col = document.querySelector(".message-col")!.getBoundingClientRect();
+    const b = img.getBoundingClientRect();
+    const de = document.documentElement;
+    return { overRight: b.right - col.right, width: b.width, docOverflow: de.scrollWidth - de.clientWidth };
+  });
+
+  expect(r.overRight, "the image sticks out past the content column").toBeLessThanOrEqual(1);
+  expect(r.docOverflow, "the document overflows horizontally").toBeLessThanOrEqual(0);
+});
+
+/** The message list's scrollbar takes 10px on the right, which used to pull
+ *  the column 5px left of the input box — the composer then sat 5px right of
+ *  the content above it (real machine: column 258.5..1038.5 against composer
+ *  263.5..1043.5 in a 1307px panel; the user could see it as "the input box
+ *  is a bit off to the right"). The gutter is now reserved in every scroll
+ *  state and paid for on the left, so both stay on the panel's centre line. */
+test("the input box and the message column share one axis while the transcript scrolls", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1200, height: 620 });
+  await page.goto("/");
+  await page.evaluate(() => {
+    const s = (
+      window as unknown as { __piStore: { setState: (p: Record<string, unknown>) => void } }
+    ).__piStore;
+    const T = String.fromCharCode(96);
+    const fence = T + T + T;
+    const blocks: unknown[] = [];
+    for (let i = 0; i < 60; i++) {
+      blocks.push({ kind: "text", text: "第 " + i + " 段。" + fence + "ts\nconst a = " + i + ";\n" + fence, done: true });
+    }
+    s.setState({ items: [{ id: 1, role: "assistant", done: true, blocks }] });
+  });
+  await expect(page.locator(".message-col").first()).toBeVisible();
+
+  const r = await page.evaluate(() => {
+    const list = document.querySelector(".message-list") as HTMLElement;
+    const box = (sel: string) => {
+      const el = document.querySelector(sel)!;
+      const b = el.getBoundingClientRect();
+      return { left: b.left, right: b.right, width: b.width };
+    };
+    const col = box(".message-col");
+    const composer = box(".composer-box");
+    return {
+      scrollable: list.scrollHeight > list.clientHeight,
+      scrollbar: list.offsetWidth - list.clientWidth,
+      col,
+      composer,
+      panelCenter: window.innerWidth / 2,
+      colCenter: (col.left + col.right) / 2,
+    };
+  });
+
+  // Without a scrollbar the two would line up by accident.
+  expect(r.scrollable, "the transcript must actually scroll for this to mean anything").toBe(true);
+  expect(Math.abs(r.col.left - r.composer.left), "the input box starts right of the message column").toBeLessThanOrEqual(1);
+  expect(Math.abs(r.col.right - r.composer.right), "the input box ends right of the message column").toBeLessThanOrEqual(1);
+  expect(Math.abs(r.colCenter - r.panelCenter), "the column is not centred on the panel").toBeLessThanOrEqual(1);
+});
+

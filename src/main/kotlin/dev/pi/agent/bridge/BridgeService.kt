@@ -140,9 +140,15 @@ class BridgeService(private val project: Project) : Disposable {
                 "files.list" -> filesList(params)
                 "files.relpath" -> filesRelPath(params)
                 "files.takeDrop" -> filesTakeDrop()
+                // 044 FR-012: large paste text → temp file → @path reference.
+                "files.saveTemp" -> filesSaveTemp(params, instanceId)
+                // 044 FR-014: existence check for temp paste references.
+                "files.exist" -> filesExist(params)
                 "ide.repaint" -> repaintBrowser()
                 "ui.reload" -> uiReloaded(params)
                 "ide.openFile" -> openFileInEditor(params)
+                // 041 FR-002: open a code-block snippet in a read-only, in-memory editor.
+                "ide.openSnippet" -> openSnippetInEditor(params)
                 "ide.showFileDiff" -> showFileDiff(params)
                 "ide.openTerminal" -> dev.pi.agent.bridge.PiIdeTerminal.open(
                     project,
@@ -791,6 +797,50 @@ class BridgeService(private val project: Project) : Disposable {
         return buildJsonObject { put("ok", true) }
     }
 
+    /** 041: in-memory snippet tab counter (dedupes the tab names). */
+    private val snippetSeq = java.util.concurrent.atomic.AtomicInteger(1)
+
+    /**
+     * 041 FR-003/FR-004: opens a fenced code block in the IDE editor as an
+     * in-memory, read-only file with the best matching language. Nothing is
+     * written to disk; an unknown language degrades to plain text instead of
+     * an error (US2).
+     *
+     * The open runs on the EDT and the reply is sent only after it happened.
+     * The handler runs on Dispatchers.IO, so the old fire-and-forget reply
+     * said "ok" even when the editor had closed the tab again — the panel
+     * had nothing to report and the user saw nothing at all (real machine,
+     * 2026-11-23: a ```lua block opened and vanished in 10ms).
+     */
+    private fun openSnippetInEditor(params: JsonObject): JsonObject {
+        val text = (params["text"] as? JsonPrimitive)?.content
+            ?: return buildJsonObject { put("ok", false); put("error", "missing text") }
+        val language = (params["language"] as? JsonPrimitive)?.content ?: ""
+        val vf = SnippetFiles.buildVirtualFile(language, text, snippetSeq.getAndIncrement())
+        val app = ApplicationManager.getApplication()
+        var failure: Throwable? = null
+        val open = Runnable {
+            try {
+                if (project.isDisposed) throw IllegalStateException("project is disposed")
+                com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).openFile(vf, true)
+            } catch (e: Throwable) {
+                failure = e
+            }
+        }
+        if (app.isDispatchThread) open.run() else app.invokeAndWait(open)
+        failure?.let {
+            LOG.warn("openSnippet: the snippet tab did not open", it)
+            return buildJsonObject {
+                put("ok", false)
+                put("error", it.message ?: "cannot open the snippet")
+            }
+        }
+        return buildJsonObject {
+            put("ok", true)
+            put("fileType", vf.fileType.name)
+        }
+    }
+
     /**
      * Shows pi's changes to [path] in the native JetBrains diff window:
      * baseline (captured when pi started editing, or git HEAD as fallback)
@@ -906,7 +956,12 @@ class BridgeService(private val project: Project) : Disposable {
 
     private fun resolveFile(path: String): com.intellij.openapi.vfs.VirtualFile? {
         val io = resolveIoFile(path) ?: return null
-        return com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByIoFile(io)
+        val fs = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
+        // 041 #9: a file pi just wrote may not be in the VFS yet —
+        // findFileByIoFile only sees cached entries, so a fresh write (the
+        // exact "pi generated an SVG and I can't open it" path) gets a
+        // refresh-and-find retry before we give up.
+        return fs.findFileByIoFile(io) ?: fs.refreshAndFindFileByIoFile(io)
     }
 
     /**
@@ -1095,11 +1150,21 @@ class BridgeService(private val project: Project) : Disposable {
             }
             is PiConnectionState.Running -> buildJsonObject {
                 put("status", "running"); put("version", state.installation.version ?: "")
+                // 051: 插件替用户改了启动参数时，把这件事一并告诉前端。
+                state.notice?.let { notice ->
+                    put("notice", buildJsonObject {
+                        put("kind", notice.kind)
+                        put("provider", notice.provider)
+                        put("model", notice.model)
+                    })
+                }
             }
             is PiConnectionState.Exited -> buildJsonObject {
                 put("status", "exited")
                 put("message", state.message)
                 put("stderr", state.stderrTail ?: "")
+                // 051: pi 自己的错误行——横幅标题用它，不再只显示壳话。
+                state.cause?.let { put("cause", it) }
             }
         }
         push(buildJsonObject {
@@ -1136,6 +1201,8 @@ class BridgeService(private val project: Project) : Disposable {
         synchronized(wiredLock) { wiredInstances.remove(instanceId) }
         messageQueues.remove(instanceId)?.shutdown()
         transport.clearInstance(instanceId)
+        // 044 FR-013: session-level cleanup of the instance's paste temp files.
+        cleanupPasteTempFiles(instanceId)
     }
 
     fun isStreaming(instanceId: Int = 1): Boolean =
@@ -1239,6 +1306,103 @@ class BridgeService(private val project: Project) : Disposable {
         return buildJsonObject { put("refs", refsJson(refs)) }
     }
 
+    /**
+     * 044 FR-012: writes folded paste text to the plugin-owned short temp dir
+     * (`~/.pi-agent/pi-paste/`) — not the system temp dir, whose macOS root
+     * alone is 52 chars and pushed the inserted `@path` reference to three
+     * wrapped lines in the composer (真机审查 P1-1). The file name is
+     * `<tag>-<seq>.txt`; every written file is tracked for the session-level
+     * cleanup (FR-013: cleanup failure never throws).
+     * pi reads the file itself when the message is sent, so the model still
+     * receives the full content.
+     */
+    private fun filesSaveTemp(params: JsonObject, instanceId: Int): JsonObject {
+        val text = (params["text"] as? JsonPrimitive)?.content
+            ?: return buildJsonObject { put("ok", false); put("error", "missing text") }
+        return try {
+            val dir = pasteRoot()
+            val file = dir.resolve(PasteTempStore.fileName(pasteTag, pasteSeq.incrementAndGet()))
+            java.nio.file.Files.writeString(file, text, Charsets.UTF_8)
+            PasteTempStore.restrict(file, "rw-------")
+            // The old system-temp location was deleted by the JVM's
+            // delete-on-exit hook (Files.createTempDirectory registers it);
+            // a file under the user home gets no such net, so register it
+            // explicitly — otherwise a hard exit would keep the user's pasted
+            // text on disk.
+            file.toFile().deleteOnExit()
+            val list = pasteTempFiles.computeIfAbsent(instanceId) { java.util.concurrent.CopyOnWriteArrayList() }
+            list.add(file)
+            buildJsonObject { put("ok", true); put("path", file.toString()) }
+        } catch (e: Exception) {
+            // FR-013: a failed write keeps the folded chip on the JS side —
+            // the content is still in the paste map, nothing is lost.
+            LOG.warn("Pi Agent saveTemp failed: ${e.message}")
+            buildJsonObject { put("ok", false); put("error", e.message ?: "temp write failed") }
+        }
+    }
+
+    /** 044 FR-013: temp paste files per instance, deleted when the instance closes. */
+    private val pasteTempFiles =
+        java.util.concurrent.ConcurrentHashMap<Int, java.util.concurrent.CopyOnWriteArrayList<java.nio.file.Path>>()
+
+    /** Per-service tag: keeps file names unique across IDE restarts. */
+    private val pasteTag: String = PasteTempStore.newTag()
+
+    /** Per-service file counter (shared by every tool-window instance). */
+    private val pasteSeq = java.util.concurrent.atomic.AtomicInteger(0)
+
+    /** The short temp root; the stale sweep runs once per service. */
+    private val pasteRootReady = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    init {
+        // 044 FR-013: sweep crash leftovers as soon as the service exists — the
+        // IDE can be killed hard (SIGTERM kills the JVM outright, so neither
+        // dispose() nor the delete-on-exit hook runs), and the leftovers are
+        // the user's own pasted text. Synchronous on purpose: it is a single
+        // directory scan of a handful of files, and a background coroutine
+        // would race the first paste for the same one-shot flag.
+        runCatching { sweepPasteRoot() }
+            .onFailure { LOG.warn("Pi Agent paste sweep failed: ${it.message}") }
+    }
+
+    /**
+     * 清扫陈旧残留（超过 [PasteTempStore.STALE_AFTER_MS]）：崩溃 / 强杀留下的
+     * 文件。仍然新鲜的、以及本次会话刚写的文件都不动。
+     */
+    private fun sweepPasteRoot() {
+        if (!pasteRootReady.compareAndSet(false, true)) return
+        val dir = PasteTempStore.ensureRoot()
+        val removed = PasteTempStore.sweepStale(dir)
+        LOG.info("Pi Agent paste sweep: ${removed.size} stale file(s) removed in $dir")
+    }
+
+    private fun pasteRoot(): java.nio.file.Path {
+        sweepPasteRoot()
+        return PasteTempStore.ensureRoot()
+    }
+
+    /**
+     * 044 FR-014: existence check for a batch of paths (session-level cleanup
+     * means a historical `@…/pi-paste/…` reference can go stale). Pure reads —
+     * missing files are an expected outcome, not an error.
+     */
+    private fun filesExist(params: JsonObject): JsonObject {
+        val inputs = params["paths"] as? JsonArray ?: JsonArray(emptyList())
+        val flags = inputs.mapNotNull { (it as? JsonPrimitive)?.content }.map { path ->
+            runCatching { java.nio.file.Files.exists(java.nio.file.Path.of(path)) }.getOrDefault(false)
+        }
+        return buildJsonObject {
+            put("exists", buildJsonArray { flags.forEach { add(it) } })
+        }
+    }
+
+    /** Deletes a tool-window instance's temp paste files (FR-013); failures are logged, never thrown. */
+    private fun cleanupPasteTempFiles(instanceId: Int) {
+        val files = pasteTempFiles.remove(instanceId) ?: return
+        val removed = PasteTempStore.deleteAll(files)
+        LOG.info("Pi Agent paste cleanup: instance $instanceId, $removed/${files.size} temp file(s) removed")
+    }
+
     private fun refsJson(refs: List<DropRef>) = buildJsonArray {
         refs.forEach { ref ->
             add(buildJsonObject {
@@ -1253,8 +1417,16 @@ class BridgeService(private val project: Project) : Disposable {
 
     override fun dispose() {
         // 019 D12: every instance's queue mirror shuts down with the service.
-        messageQueues.values.forEach { it.shutdown() }
+        // A failing mirror must not skip the paste cleanup below (FR-013) —
+        // that would leak the user's pasted text into the temp dir.
+        messageQueues.values.forEach { queue -> runCatching { queue.shutdown() } }
         messageQueues.clear()
+        // 044 FR-013: whatever instances remain also lose their paste temp files.
+        val instances = pasteTempFiles.keys.toList()
+        instances.forEach { cleanupPasteTempFiles(it) }
+        if (instances.isNotEmpty()) {
+            LOG.info("Pi Agent dispose: cleaned paste temp files of ${instances.size} instance(s)")
+        }
         scope.cancel()
     }
 

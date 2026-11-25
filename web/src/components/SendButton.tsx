@@ -78,13 +78,14 @@ export default function SendButton({
       {menuOpen ? (
         <div className="send-mode-menu" data-testid="send-mode-menu">
           {modes.map((m) => (
-            <div
+            <button
               key={m.id}
+              type="button"
               className={`slash-item ${m.id === mode ? "slash-active" : ""} ${m.enabled ? "" : "mode-disabled"}`}
               data-testid={`send-mode-${m.id}`}
               aria-disabled={!m.enabled}
-              onMouseDown={(e) => {
-                e.preventDefault();
+              disabled={!m.enabled}
+              onClick={() => {
                 if (!m.enabled) return;
                 setMode(m.id);
                 setMenuOpen(false);
@@ -92,7 +93,7 @@ export default function SendButton({
             >
               <span className="slash-name">{m.label}</span>
               <span className="slash-desc">{m.hint}</span>
-            </div>
+            </button>
           ))}
         </div>
       ) : null}

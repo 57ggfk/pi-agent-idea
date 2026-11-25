@@ -278,6 +278,8 @@ object PiModels {
         if (!atomicWrite(file, newRoot.toString())) {
             return error("models.json could not be written (atomic replace failed)")
         }
+        // 051: the catalog changed — the preflight's cached verdicts are stale.
+        dev.pi.agent.process.PiModelPreflight.invalidate()
         return buildJsonObject {
             put("ok", true)
             put("name", name)
@@ -312,6 +314,9 @@ object PiModels {
         if (!atomicWrite(file, newRoot.toString())) {
             return error("models.json could not be written (atomic replace failed)")
         }
+        // 051: the catalog changed under the preflight's feet — its cached
+        // verdicts are stale now (a deleted provider must stop being "usable").
+        dev.pi.agent.process.PiModelPreflight.invalidate()
         return buildJsonObject {
             put("ok", true)
             put("name", name)

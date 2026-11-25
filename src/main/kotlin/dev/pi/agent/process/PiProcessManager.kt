@@ -19,9 +19,29 @@ import java.util.concurrent.atomic.AtomicReference
 sealed class PiConnectionState {
     data object NotStarted : PiConnectionState()
     data class Starting(val installation: PiInstallation) : PiConnectionState()
-    data class Running(val installation: PiInstallation) : PiConnectionState()
-    data class Exited(val message: String, val stderrTail: String?) : PiConnectionState()
+
+    /**
+     * @param notice 051: 插件替用户改了启动参数时必须当面说清楚。provider
+     *   已经不存在时，pi 改用默认模型启动——用户看到的是「我选的模型不见了」，
+     *   不说清楚就成了插件悄悄改了设置。
+     */
+    data class Running(val installation: PiInstallation, val notice: PiNotice? = null) : PiConnectionState()
+
+    /**
+     * @param cause 051: pi 自己打在 stderr 上的第一句错误。横幅原来只有
+     *   「pi process closed stdout (exit code 1)」这句壳话，病因被折在
+     *   「查看详情」里，用户得展开才知道自己该做什么。
+     */
+    data class Exited(val message: String, val stderrTail: String?, val cause: String? = null) : PiConnectionState()
 }
+
+/**
+ * 051: 一件要当面告诉用户的事。
+ *
+ * @param kind 目前只有 `staleModel`：上次记住的 provider pi 已经不认识，
+ *   插件改用默认模型启动（原选择仍在存储里，provider 加回来就会自动用回去）。
+ */
+data class PiNotice(val kind: String, val provider: String, val model: String)
 
 /**
  * Assembled start arguments, extracted so the trust branch is testable
@@ -59,6 +79,25 @@ internal object PiStartArgs {
 }
 
 /**
+ * 组装给用户看的退出详情：**退出码最多出现一次**。
+ *
+ * `PiRpcClient` 的 EOF 消息本身就带着 `(exit code N)`，这里再拼一次就会变成
+ * `pi process closed stdout (exit code 1) (exit code 1)`——面板里是原样渲染的，
+ * 重复后缀是用户能直接看见的缺陷。退出码为 0、或压根拿不到退出码时，
+ * 消息保持原样（不加后缀）。
+ *
+ * 提成纯函数是为了能脱离 IDE 单测（见 `exitDetail`）。
+ */
+internal fun exitDetail(message: String, exitCode: Int?): String {
+    if (exitCode == null || exitCode == 0) return message
+    val marker = "(exit code $exitCode)"
+    // Trimmed so an empty message yields "(exit code N)" and not a leading space.
+    val base = message.trim()
+    if (base.contains(marker)) return base
+    return if (base.isEmpty()) marker else "$base $marker"
+}
+
+/**
  * One pi instance's mutable state (019 D1). Everything that used to be a
  * field on [PiProcessManager] lives here so a project can host N independent
  * `pi --mode rpc` processes (one per tool-window Content).
@@ -74,6 +113,14 @@ private class InstanceSlot(val id: Int) {
     @Volatile var stderrTail: String = ""
 
     @Volatile var pendingApprove = false
+
+    /**
+     * 051: 兜底重启只许一次。
+     *
+     * 没有这个闸门，pi 会在「去掉模型覆盖」之前就退出、再被拉起、再退出——
+     * 一个每秒重复几遍的崩溃循环。
+     */
+    @Volatile var modelRecoveryAttempted = false
 }
 
 /**
@@ -157,13 +204,36 @@ class PiProcessManager(private val project: Project) : Disposable {
             setSlotState(slot, PiConnectionState.Starting(installation))
             val cwd = project.basePath ?: System.getProperty("user.home")
 
+            // 051: 校验。上次记住的 provider 可能已经从 models.json 里被删掉，
+            // 那样 pi 会直接拒绝启动，面板对这个项目彻底瘫痪（真机：cmfc-fis
+            // 的 ds）。这里先问 pi「这个 provider 你还认吗」，认才带上它。
+            val prefs = PiModelPreferences.getInstance(project)
+            val stored = prefs.get()
+            var model = stored
+            var notice: PiNotice? = null
+            if (stored != null) {
+                when {
+                    // pi 已经拒绝过它（或校验判定它没了）：不再传给它。
+                    prefs.blockedProvider() == stored.first -> {
+                        model = null
+                        notice = PiNotice("staleModel", stored.first, stored.second)
+                    }
+                    PiModelPreflight.probe(stored.first) == PiModelPreflight.Verdict.GONE -> {
+                        prefs.blockProvider(stored.first)
+                        model = null
+                        notice = PiNotice("staleModel", stored.first, stored.second)
+                    }
+                    else -> Unit
+                }
+            }
+
             // Extensions: the approval extension and the model-reload extension
             // are extracted per start so upgrades propagate. The approval policy
             // file is re-read per tool call, so toggling never needs a restart.
             // When extraction fails pi simply runs without that extension.
             val piArgs = PiStartArgs.build(
                 // Resume the user's last model choice (persisted on set_model).
-                model = PiModelPreferences.getInstance(project).get(),
+                model = model,
                 extensions = listOfNotNull(
                     PiApprovalSupport.ensureExtensionInstalled()?.absolutePath,
                     PiModelReload.ensureExtensionInstalled()?.absolutePath,
@@ -218,17 +288,33 @@ class PiProcessManager(private val project: Project) : Disposable {
                     } catch (_: InterruptedException) {
                     }
                     val tail = slot.stderrTail
-                    val detail = buildString {
-                        append(message)
-                        if (exitCode != null && exitCode != 0) append(" (exit code $exitCode)")
+
+                    // 051 兜底: pi 说「provider 不认识」时，去掉模型覆盖重启一次。
+                    // 校验（preflight）通常在启动前就拦下来了；这里是给两种情况
+                    // 兜的底——校验与启动之间 provider 被删的竞态，以及探针本身
+                    // 失败时的误判。
+                    val rejected = unknownProviderInStderr(tail)
+                    if (rejected != null && !slot.modelRecoveryAttempted) {
+                        slot.modelRecoveryAttempted = true
+                        PiModelPreferences.getInstance(project).blockProvider(rejected)
+                        // The dead client must not be handed out to anyone in
+                        // the meantime: a concurrent RPC would get a process
+                        // that is already gone.
+                        slot.clientRef.set(null)
+                        slot.processRef.set(null)
+                        recoverWithoutModel(slot, instanceId)
+                        return
                     }
-                    setSlotState(slot, PiConnectionState.Exited(detail, tail.ifBlank { null }))
+
+                    val detail = exitDetail(message, exitCode)
+                    // 051: 病因（pi 的第一句 Error）随状态一起走，横幅标题用它。
+                    setSlotState(slot, PiConnectionState.Exited(detail, tail.ifBlank { null }, exitCause(tail)))
                     slot.clientRef.set(null)
                     slot.processRef.set(null)
                 }
             })
             slot.clientRef.set(client)
-            setSlotState(slot, PiConnectionState.Running(installation))
+            setSlotState(slot, PiConnectionState.Running(installation, notice))
             // 032: 首次采集放后台线程（FR-009 不占 EDT），让第一轮对话就有环境事实；
             // 之后每轮 prompt 转发前都会刷新，无需这里再管。
             com.intellij.openapi.application.ApplicationManager.getApplication().executeOnPooledThread {
@@ -236,6 +322,28 @@ class PiProcessManager(private val project: Project) : Disposable {
             }
             return client
         }
+    }
+
+    /**
+     * 051: 去掉模型覆盖，把 pi 重新拉起来一次。
+     *
+     * 跑在独立线程上：`onClosed` 是 pi 的 RPC 读线程回调，而 `start()` 会拿
+     * manager 与 slot 两把锁——从回调里重入 `start()` 等于自己等自己。
+     * 清掉那个已经死掉的 client 必须在 slot 锁内做：第一次 `start()` 可能
+     * 还没把 client 装上去，清早了等于什么都没清。
+     */
+    private fun recoverWithoutModel(slot: InstanceSlot, instanceId: Int) {
+        Thread({
+            try {
+                synchronized(slot) {
+                    slot.clientRef.getAndSet(null)?.close()
+                    slot.processRef.getAndSet(null)?.destroy()
+                }
+                start(instanceId)
+            } catch (e: Exception) {
+                LOG.warn("failed to restart pi without the model override: ${e.message}", e)
+            }
+        }, "pi-rpc-recover-$instanceId").apply { isDaemon = true; start() }
     }
 
     @Volatile

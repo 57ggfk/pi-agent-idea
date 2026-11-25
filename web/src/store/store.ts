@@ -38,6 +38,7 @@ import {
   type ConfirmRequest,
   type ModelInfo,
   type PendingApproval,
+  type PiNotice,
   type QueueImage,
   type QueueMode,
   type QueueState,
@@ -391,6 +392,11 @@ interface PiStore {
   piVersion: string;
   exitMessage: string;
   exitStderr: string;
+  /**
+   * 051: 插件替用户改了启动参数时的告知（provider 没了 → 改用默认模型）。
+   * null 表示没什么要说的。
+   */
+  piNotice: PiNotice | null;
 
   items: ChatItem[];
   isStreaming: boolean;
@@ -575,6 +581,12 @@ interface PiStore {
   /** pi-managed toggles; null until get_state / config.getPrefs answered. */
   autoCompaction: boolean | null;
   autoRetry: boolean | null;
+  /**
+   * Last failure of an options-menu switch. A switch that silently reverts
+   * reads as a broken app, so the popover shows this next to it instead of
+   * dropping the failure into the transcript.
+   */
+  settingsError: string | null;
 
   setTab(tab: Tab): void;
   setThemePreference(preference: ThemePreference): void;
@@ -583,6 +595,22 @@ interface PiStore {
   sendImages(text: string, images: Array<{ data: string; mimeType: string }>, mode: SendMode): Promise<void>;
   /** Resolves dropped/copied paths to project-relative references (spec 015). */
   resolveRefs(inputs: Array<{ path: string; dir: boolean }>): Promise<PendingRef[]>;
+  /**
+   * 044 FR-012: writes large paste text to a temp file (instance-scoped,
+   * cleaned up when the tool-window instance closes) and returns an absolute
+   * path to insert as an `@path` reference. ok=false carries the error; the
+   * caller keeps the folded chip (nothing is lost).
+   */
+  savePasteToTempFile(text: string): Promise<{ ok: boolean; path?: string; error?: string }>;
+  /** 041 FR-002: opens a code-block snippet in a read-only in-memory IDE tab. */
+  openSnippet(language: string, text: string): Promise<boolean>;
+  /**
+   * 044 FR-014: existence check for a batch of paths (session temp files can
+   * be cleaned while a historical @path reference still mentions them).
+   * Returns a map path → exists; unreachable transport maps everything to
+   * true (fail-open: a broken checker must not block sending).
+   */
+  checkTempRefs(paths: string[]): Promise<Record<string, boolean>>;
   /**
    * Takes the paths of the file/folder drag that just entered the panel from
    * the IDE side (spec 016) — the only place the real absolute paths exist.
@@ -675,7 +703,7 @@ interface PiStore {
   cancelEditMessage(): void;
   /** Sends the edited text, branching the old version off first (FR-009). */
   sendEdited(text: string): Promise<void>;
-  openFile(path: string, line: number): Promise<void>;
+  openFile(path: string, line: number): Promise<boolean>;
   showFileDiff(path: string): Promise<void>;
   /**
    * Answers a pending extension_ui_request: `confirm` takes a boolean,
@@ -1302,6 +1330,7 @@ export const usePiStore = create<PiStore>((set, get) => {
     piVersion: "",
     exitMessage: "",
     exitStderr: "",
+    piNotice: null,
 
     items: [],
     isStreaming: false,
@@ -1335,6 +1364,7 @@ export const usePiStore = create<PiStore>((set, get) => {
     approvalMode: "yolo",
     autoCompaction: null,
     autoRetry: null,
+    settingsError: null,
 
     models: [],
     thinkingLevel: "medium",
@@ -1514,12 +1544,19 @@ export const usePiStore = create<PiStore>((set, get) => {
             version?: string;
             message?: string;
             stderr?: string;
+            cause?: string;
+            notice?: PiNotice;
           };
           set({
             piStatus: st.status,
             piVersion: st.version ?? get().piVersion,
-            exitMessage: st.message ?? "",
+            // 051: 病因优先——横幅标题是 pi 自己的错误行（`Unknown provider
+            // "ds"`），不是那句没信息量的壳话（`pi process closed stdout
+            // (exit code 1)`）。
+            exitMessage: st.cause || st.message || "",
             exitStderr: st.stderr ?? "",
+            // 051: 插件改了启动参数时要说出来（provider 没了 → 改用默认模型）。
+            piNotice: st.notice ?? null,
           });
           if (st.status === "running") refreshMeta();
         }
@@ -1704,6 +1741,45 @@ export const usePiStore = create<PiStore>((set, get) => {
         // An older IDE side without the RPC: the raw paths still work —
         // pi reads absolute paths just fine. This is only cosmetic.
         return inputs;
+      }
+    },
+
+    /** 044 FR-012: text → temp file → insertable absolute path. */
+    async savePasteToTempFile(text) {
+      if (!bridge) return { ok: false, error: "no bridge" };
+      try {
+        const res = await bridge.request<{ path?: string }>("files.saveTemp", { text });
+        return res.path ? { ok: true, path: res.path } : { ok: false, error: "no path returned" };
+      } catch (e) {
+        // Write failure must not lose the content — the caller keeps the
+        // folded chip and the user can retry or send inline (FR-013).
+        return { ok: false, error: (e as Error).message };
+      }
+    },
+
+    /** 041 FR-002/FR-007: snippet → read-only IDE tab; false lets the button flash ✗. */
+    async openSnippet(language, text) {
+      if (!bridge) return false;
+      try {
+        // The mock resolves `{ok:false}`; the JCEF transport rejects. Handle
+        // both so the failure flash behaves identically everywhere.
+        const res = await bridge.request<{ ok?: boolean }>("ide.openSnippet", { language, text });
+        return res?.ok !== false;
+      } catch {
+        return false;
+      }
+    },
+
+    /** 044 FR-014: batch existence check; fail-open on transport errors. */
+    async checkTempRefs(paths) {
+      if (paths.length === 0) return {};
+      if (!bridge) return Object.fromEntries(paths.map((p) => [p, true]));
+      try {
+        const res = await bridge.request<{ exists?: boolean[] }>("files.exist", { paths });
+        const flags = res.exists ?? [];
+        return Object.fromEntries(paths.map((p, i) => [p, flags[i] !== false]));
+      } catch {
+        return Object.fromEntries(paths.map((p) => [p, true]));
       }
     },
 
@@ -2398,7 +2474,9 @@ export const usePiStore = create<PiStore>((set, get) => {
       if (!bridge) return;
       try {
         const model = await rpc<ModelInfo>(bridge, { type: "set_model", provider, modelId });
-        set({ model });
+        // 051: 用户自己选了模型，之前那条「provider 没了，已改用默认模型」的
+        // 告知就此作废。
+        set({ model, piNotice: null });
         // Remember across restarts: the next pi process starts with this model.
         void bridge.request("config.setLastModel", { provider, model: modelId }).catch(() => undefined);
       } catch (e) {
@@ -2579,12 +2657,17 @@ export const usePiStore = create<PiStore>((set, get) => {
       }
     },
 
-    async openFile(path: string, line: number) {
-      if (!bridge) return;
+    async openFile(path: string, line: number): Promise<boolean> {
+      if (!bridge) return false;
       try {
-        await bridge.request("ide.openFile", { path, line });
+        const res = await bridge.request<{ ok?: boolean }>("ide.openFile", { path, line });
+        // The transport rejects when the IDE threw (e.g. "file not found"),
+        // and the payload can carry ok:false as well. Either way the link
+        // opened nothing — and a link that silently does nothing is
+        // indistinguishable from a click that never landed.
+        return res?.ok !== false;
       } catch {
-        // non-fatal: the IDE may refuse to open the path
+        return false;
       }
     },
 
@@ -2628,11 +2711,13 @@ export const usePiStore = create<PiStore>((set, get) => {
     async setApprovalMode(mode: "ask" | "yolo") {
       if (!bridge) return;
       const prev = get().approvalMode;
-      set({ approvalMode: mode });
+      set({ approvalMode: mode, settingsError: null });
       try {
         await bridge.request("approval.setPolicy", { mode, allow: [] });
       } catch (e) {
         set({ approvalMode: prev });
+        // Say it failed: the switch snapping back on its own looks broken.
+        set({ settingsError: t("options.settingFailed", { msg: (e as Error)?.message ?? String(e) }) });
         console.warn("approval.setPolicy failed", e);
       }
     },
@@ -2640,11 +2725,12 @@ export const usePiStore = create<PiStore>((set, get) => {
     async setAutoCompaction(enabled: boolean) {
       if (!bridge) return;
       const prev = get().autoCompaction;
-      set({ autoCompaction: enabled });
+      set({ autoCompaction: enabled, settingsError: null });
       try {
         await rpc(bridge, { type: "set_auto_compaction", enabled });
       } catch (e) {
         set({ autoCompaction: prev });
+        set({ settingsError: t("options.settingFailed", { msg: (e as Error)?.message ?? String(e) }) });
         console.warn("set_auto_compaction failed", e);
       }
     },
@@ -2652,13 +2738,18 @@ export const usePiStore = create<PiStore>((set, get) => {
     async setAutoRetry(enabled: boolean) {
       if (!bridge) return;
       const prev = get().autoRetry;
-      set({ autoRetry: enabled });
+      set({ autoRetry: enabled, settingsError: null });
       try {
         await rpc(bridge, { type: "set_auto_retry", enabled });
-        // Persist so a restarted pi process gets the same choice.
-        void bridge.request("config.setPrefs", { autoRetry: enabled }).catch(() => undefined);
+        // Persist so a restarted pi process gets the same choice. The switch
+        // itself is already applied, so a persistence failure is reported on
+        // its own instead of pretending the setting was lost.
+        void bridge.request("config.setPrefs", { autoRetry: enabled }).catch((e) => {
+          set({ settingsError: t("options.persistFailed", { msg: (e as Error)?.message ?? String(e) }) });
+        });
       } catch (e) {
         set({ autoRetry: prev });
+        set({ settingsError: t("options.settingFailed", { msg: (e as Error)?.message ?? String(e) }) });
         console.warn("set_auto_retry failed", e);
       }
     },

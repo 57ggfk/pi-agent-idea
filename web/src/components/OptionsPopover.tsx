@@ -56,6 +56,7 @@ export default function OptionsPopover() {
   const setAutoCompaction = usePiStore((s) => s.setAutoCompaction);
   const autoRetry = usePiStore((s) => s.autoRetry);
   const setAutoRetry = usePiStore((s) => s.setAutoRetry);
+  const settingsError = usePiStore((s) => s.settingsError);
   const themePreference = usePiStore((s) => s.themePreference);
   const setThemePreference = usePiStore((s) => s.setThemePreference);
 
@@ -187,6 +188,13 @@ export default function OptionsPopover() {
             hint={approvalMode === "yolo" ? t("options.approveOn") : t("options.approveOff")}
             onToggle={() => void setApprovalMode(approvalMode === "yolo" ? "ask" : "yolo")}
           />
+          {/* A switch that silently snaps back looks like a broken app: say
+              what failed, right where the user flipped it. */}
+          {settingsError ? (
+            <div className="options-error" data-testid="options-error" role="alert">
+              {settingsError}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

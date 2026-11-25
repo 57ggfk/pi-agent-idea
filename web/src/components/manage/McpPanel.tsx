@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { OutcomeBanner } from "../ManageView";
 import type { manageApi, McpListResult } from "../../manage";
+import { useT } from "../../i18n/useT";
 
 export default function McpPanel({ api }: { api: ReturnType<typeof manageApi> }) {
+  const { t } = useT();
   const [result, setResult] = useState<McpListResult | null>(null);
   const [outcome, setOutcome] = useState<{ ok: boolean; error?: string; output?: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -65,13 +67,11 @@ export default function McpPanel({ api }: { api: ReturnType<typeof manageApi> })
         enabled: args.enabled,
       });
       if (!res.ok) {
-        setOutcome({ ok: false, error: res.error || "could not change the server state" });
+        setOutcome({ ok: false, error: res.error || t("manage.mcp.stateError") });
       } else if (res.warning) {
         setNotice(res.warning);
       } else if (!args.enabled && args.wasConnected) {
-        setNotice(
-          `"${args.name}" is off from the next session on. This session stays connected to it.`,
-        );
+        setNotice(t("manage.mcp.offNextSession", { name: args.name }));
       }
       await refresh();
     } catch (e) {
@@ -107,10 +107,10 @@ export default function McpPanel({ api }: { api: ReturnType<typeof manageApi> })
       ) : null}
       <div className="panel-toolbar">
         <button className="btn" data-testid="mcp-refresh" onClick={() => void refresh()} disabled={busy}>
-          Refresh
+          {t("manage.mcp.refresh")}
         </button>
         <button className="btn" data-testid="mcp-add-toggle" onClick={() => setShowForm((s) => !s)}>
-          {showForm ? "Cancel" : "+ Add server"}
+          {showForm ? t("manage.mcp.cancel") : t("manage.mcp.addServer")}
         </button>
       </div>
 
@@ -118,37 +118,37 @@ export default function McpPanel({ api }: { api: ReturnType<typeof manageApi> })
         <div className="panel-form" data-testid="mcp-add-form">
           <input
             className="select"
-            placeholder="name (letters, digits, _ -)"
+            placeholder={t("manage.mcp.ph.name")}
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
           />
           <input
             className="select"
-            placeholder="command (stdio), e.g. npx"
+            placeholder={t("manage.mcp.ph.command")}
             value={form.command}
             onChange={(e) => setForm({ ...form, command: e.target.value })}
           />
           <input
             className="select"
-            placeholder="args (space separated)"
+            placeholder={t("manage.mcp.ph.args")}
             value={form.args}
             onChange={(e) => setForm({ ...form, args: e.target.value })}
           />
           <input
             className="select"
-            placeholder="or URL (streamable HTTP)"
+            placeholder={t("manage.mcp.ph.url")}
             value={form.url}
             onChange={(e) => setForm({ ...form, url: e.target.value })}
           />
           <button className="btn btn-send" data-testid="mcp-add-submit" onClick={() => void submit()}>
-            Add
+            {t("manage.mcp.add")}
           </button>
         </div>
       ) : null}
 
       {servers.length === 0 && !showForm ? (
         <div className="panel-empty" data-testid="mcp-empty">
-          No MCP servers configured.
+          {t("manage.mcp.empty")}
         </div>
       ) : null}
 
@@ -160,7 +160,7 @@ export default function McpPanel({ api }: { api: ReturnType<typeof manageApi> })
         // bridge stays pi's own word — that is what PiMcpConfig accepts, and
         // translating it on the way out made every write fail as "unknown scope".
         const scope = s.scope === "project" ? "project" : "global";
-        const scopeLabel = scope === "project" ? "project" : "user";
+        const scopeLabel = scope === "project" ? t("manage.mcp.scopeProject") : t("manage.mcp.scopeUser");
         return (
           <div
             className={`panel-row ${enabled ? "" : "mcp-row-disabled"}`}
@@ -177,8 +177,8 @@ export default function McpPanel({ api }: { api: ReturnType<typeof manageApi> })
                   data-inert="false"
                   title={
                     scope === "project"
-                      ? "Defined in this project's .pi/mcp.json"
-                      : "Defined in the user-level mcp.json"
+                      ? t("manage.mcp.scopeProjectTitle")
+                      : t("manage.mcp.scopeUserTitle")
                   }
                 >
                   {scopeLabel}
@@ -186,11 +186,11 @@ export default function McpPanel({ api }: { api: ReturnType<typeof manageApi> })
               </span>
               <span className="panel-row-sub">
                 {enabled
-                  ? [s.state ? String(s.state) : "", typeof s["toolCount"] === "number" ? `${s["toolCount"]} tools` : ""]
+                  ? [s.state ? String(s.state) : "", typeof s["toolCount"] === "number" ? t("manage.mcp.toolCount", { count: s["toolCount"] }) : ""]
                       .filter(Boolean)
                       .join(" · ")
-                  : "disabled · configuration kept"}
-                {s.override ? " · overridden in this project" : ""}
+                  : t("manage.mcp.disabledKept")}
+                {s.override ? ` ${t("manage.mcp.overridden")}` : ""}
               </span>
             </div>
             <div className="panel-row-actions">
@@ -198,31 +198,31 @@ export default function McpPanel({ api }: { api: ReturnType<typeof manageApi> })
                 type="button"
                 role="switch"
                 aria-checked={enabled}
-                aria-label={`${enabled ? "Disable" : "Enable"} ${name}`}
+                aria-label={`${enabled ? t("manage.mcp.disable") : t("manage.mcp.enable")} ${name}`}
                 className={`btn mcp-toggle ${enabled ? "mcp-toggle-on" : "mcp-toggle-off"}`}
                 data-testid={`mcp-toggle-${name}`}
                 disabled={busy}
                 onClick={() => void toggle({ name, scope, enabled: !enabled, wasConnected: s.state === "connected" })}
               >
-                {enabled ? "Enabled" : "Disabled"}
+                {enabled ? t("manage.mcp.enabled") : t("manage.mcp.disabled")}
               </button>
               <button
                 className="btn"
                 onClick={() => void act(api.mcpLogin({ name }))}
-                title="OAuth sign-in"
+                title={t("manage.mcp.loginTitle")}
                 disabled={!enabled}
               >
-                Login
+                {t("manage.mcp.login")}
               </button>
               <button className="btn" onClick={() => void act(api.mcpLogout({ name }))} disabled={!enabled}>
-                Logout
+                {t("manage.mcp.logout")}
               </button>
               <button
                 className="btn btn-abort"
                 data-testid={`mcp-remove-${name}`}
                 onClick={() => void act(api.mcpRemove({ name }))}
               >
-                Remove
+                {t("manage.mcp.remove")}
               </button>
             </div>
           </div>

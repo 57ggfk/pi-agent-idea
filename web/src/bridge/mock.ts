@@ -395,12 +395,19 @@ export class MockBridge implements Bridge {
   /** `?files=volatile` — the file list loses one entry after the first read. */
   private readonly volatileFiles = query()?.get("files") === "volatile";
   private fileReads = 0;
+  /** 044: fake temp-file sequence for files.saveTemp. */
+  private saveTempSeq = 0;
   /** `?drop=a,b` — the first `files.takeDrop` returns these, then nothing. */
   private dropConsumed = false;
   /** `?install=hang` — the in-flight install, resolvable only by a cancel. */
   private pendingInstall: { output: string; resolve?: (cancelled: boolean) => void } | null = null;
-  /** `?pistate=1` — report starting → running, so auto-recovery can be observed. */
-  private readonly reportPiState = query()?.get("pistate") === "1";
+  /**
+   * `?pistate=1` — report starting → running, so auto-recovery can be observed.
+   * `?pistate=notice` / `?pistate=exited` — 051's two new pi-state shapes
+   * (the stale-model notice, the exit cause).
+   */
+  private readonly piStateFixture = query()?.get("pistate") ?? "";
+  private readonly reportPiState = this.piStateFixture !== "";
   /** `?longerror=1` — pad bridge errors past the 200-char summary limit (FR-011). */
   private readonly longErrors = query()?.get("longerror") === "1";
   // MCP servers as `pi mcp list --json` reports them: a disabled entry stays in
@@ -789,6 +796,26 @@ export class MockBridge implements Bridge {
         .filter((r) => r.path.length > 0);
       return { refs } as T;
     }
+    if (method === "files.saveTemp") {
+      // 044 FR-012 mock: no real filesystem — a stable fake path so the e2e
+      // can assert the @ref insertion. The shape mirrors the real store
+      // (`~/.pi-agent/pi-paste/<tag>-<seq>.txt`, 真机审查 P1-1).
+      // `?saveTemp=fail` exercises the write failure path (the chip must
+      // stay intact).
+      if (query()?.get("saveTemp") === "fail") {
+        return { ok: false, error: "temp write failed (mock)" } as T;
+      }
+      const n = (this.saveTempSeq += 1);
+      return { ok: true, path: `/tmp/mock-home/.pi-agent/pi-paste/m0ck-${n}.txt` } as T;
+    }
+    if (method === "files.exist") {
+      // 044 FR-014 mock: temp paste paths exist unless `?temprefs=gone`
+      // simulates the session-level cleanup having removed them.
+      const gone = query()?.get("temprefs") === "gone";
+      const p = params as { paths?: string[] } | undefined;
+      const exists = (p?.paths ?? []).map((path) => !gone && path.includes("pi-paste"));
+      return { exists } as T;
+    }
     if (method === "files.relpath") {
       // Spec 015: drop/paste references get resolved to project-relative
       // paths. The mock has no filesystem to stat — paths under the mock
@@ -824,11 +851,32 @@ export class MockBridge implements Bridge {
       return Promise.resolve({ ok: true, path: `/tmp/mock-home/Downloads/${p?.suggestedName ?? "image.png"}` } as T);
     }
     if (method === "ide.copyImage") {
-      const knob = query()?.get("saveimg");
+      // 047: echo the data URL (prefix only) so an e2e can assert a PNG went
+      // through the bridge; `?copyimg=fail` exercises the ✗ flash.
+      const knob = query()?.get("copyimg") ?? query()?.get("saveimg");
       if (knob === "fail") return Promise.resolve({ ok: false, error: "the clipboard is unavailable (mock)" } as T);
+      const p = params as { data?: string } | undefined;
+      globalThis.sessionStorage?.setItem("pi-mock-copy-image", (p?.data ?? "").slice(0, 64));
       return Promise.resolve({ ok: true } as T);
     }
     if (method === "ide.openFile") {
+      // 041 #9: echo the path so an e2e can assert which path a click hands
+      // to the bridge (same echo pattern as ide.openSnippet below).
+      const p = params as { path?: string } | undefined;
+      // `?openFile=fail` exercises the ✗ flash: the IDE refused the path.
+      if (query()?.get("openFile") === "fail") return Promise.reject(new Error("mock refusal"));
+      globalThis.sessionStorage?.setItem("pi-mock-open-file", p?.path ?? "");
+      return Promise.resolve({ ok: true } as T);
+    }
+    if (method === "ide.openSnippet") {
+      // 041: echo the received params through sessionStorage so an e2e can
+      // assert language/text; `?openSnippet=fail` exercises the ✗ flash.
+      const p = params as { language?: string; text?: string } | undefined;
+      if (query()?.get("openSnippet") === "fail") return { ok: false, error: "mock failure" } as T;
+      globalThis.sessionStorage?.setItem(
+        "pi-mock-open-snippet",
+        JSON.stringify({ language: p?.language ?? "", text: (p?.text ?? "").slice(0, 200) }),
+      );
       return Promise.resolve({ ok: true } as T);
     }
     if (method === "ide.showFileDiff") {
@@ -979,6 +1027,13 @@ export class MockBridge implements Bridge {
       ) {
         return delay(1200).then(() => this.handleManage(method, params) as T);
       }
+      // 037 US2: `?pkgload=800` holds every packagesList back so the loading
+      // state — first entry AND the explicit-refresh flow — can be asserted
+      // deterministically instead of racing an instant mock answer.
+      const pkgLoadMs = Number(query()?.get("pkgload") ?? 0);
+      if (method === "manage.packagesList" && Number.isFinite(pkgLoadMs) && pkgLoadMs > 0) {
+        return delay(pkgLoadMs).then(() => this.handleManage(method, params) as T);
+      }
       return Promise.resolve(this.handleManage(method, params) as T);
     }
     if (method.startsWith("queue.")) {
@@ -1023,14 +1078,28 @@ export class MockBridge implements Bridge {
 
   private handleManage(method: string, params?: unknown): unknown {
     switch (method) {
-      case "manage.env":
+      case "manage.env": {
+        // 036: the diagnostics card also renders node/npm + plugin/build info.
+        // `?envdegrade=1` reports the tools as missing and blanks the build
+        // info, so the degrade rows have something deterministic to assert.
+        const degrade = query()?.get("envdegrade") === "1";
+        const home = "/tmp/mock-home";
+        const tool = (path: string) =>
+          degrade ? { found: false, path: "", version: "" } : { found: true, path, version: "v22.19.0" };
         return {
           ok: true,
           found: true,
           path: "/usr/local/bin/pi",
           version: this.piVersion,
-          agentDir: "/tmp/mock-home/.pi/agent",
+          agentDir: `${home}/.pi/agent`,
+          node: tool(`${home}/tools/node`),
+          npm: tool(`${home}/tools/npm`),
+          homeDir: home,
+          pluginVersion: degrade ? "" : "0.5.10-mock",
+          buildTime: degrade ? "" : "2026-11-16 20:15",
+          commitId: degrade ? "" : "abc1234",
         };
+      }
       // Standalone/mock runs already have pi unless the e2e suite asks for a
       // broken machine via `?setup=missing|nonode`; the setup card's states are
       // otherwise exercised by the dedicated component tests instead.
@@ -1642,7 +1711,12 @@ export class MockBridge implements Bridge {
         return { ok: true, wasActive };
       }
       case "manage.settingsRead":
-        return { ok: true, path: "/tmp/mock-home/.pi/agent/settings.json", text: "{\n  \"theme\": \"dark\"\n}" };
+        return {
+          ok: true,
+          path: "/tmp/mock-home/.pi/agent/settings.json",
+          text: "{\n  \"theme\": \"dark\"\n}",
+          homeDir: "/tmp/mock-home",
+        };
       case "manage.settingsWrite":
         return { ok: true, output: "saved" };
       // 032 Q6-b: ?envsnapshot=off|empty|fail rotates the viewer's three
@@ -2442,10 +2516,59 @@ export class MockBridge implements Bridge {
     const text =
       this.mdKnob === "table"
         ? "| Column A | Column B |\n| --- | --- |\n| one | two |\n| three | four |"
-        : `Here is my plan for **${prompt.slice(0, 60)}**:\n\n` +
-          "1. Inspect the repository layout\n" +
-          "2. Run a quick sanity check\n\n" +
-          "Let me start with a shell command.";
+        : this.mdKnob === "longline"
+          ? // 048 真机缺陷回归（r57）：最长行超过窄面板宽时，pre 的
+            // max-content basis 会把它 wrap 到行号槽下面自己一行。
+            // 100+ 字符的一行在 460px 视口里必然溢出。
+            "Counts:\n\n```python\nshort = 1\nname_to_lengths = {n: len(n) for n in [\"alpha\", \"beta\", \"gamma\", \"delta\", \"epsilon\", \"zeta\", \"eta\", \"theta\"]}\nprint(short)\n```\n"
+          : this.mdKnob === "diff"
+          ? // 038: a ```diff block plus GFM footnotes — the two "easy" format
+            // extensions asserted end-to-end.
+            "Applied the change[^1] with a diff:\n\n" +
+            "```diff\n--- a/src/main.tsx\n+++ b/src/main.tsx\n@@ -1,2 +1,2 @@\n-console.log(\"old\");\n+console.log(\"new\");\n context stays\n```\n\n" +
+            "More notes[^2].\n\n" +
+            "[^1]: The change record.\n" +
+            "[^2]: Follow-up notes."
+          : this.mdKnob === "math"
+            ? // 040: inline and block LaTeX via KaTeX, plus a nasty math body —
+              // the sanitizer must keep the math but strip script vectors.
+              // 040 revision: the last line carries formulas whose closing `$`
+              // is followed by a clause mark (`;` `)` `、`) — the upstream rule
+              // left those as raw text, which is what the revision fixes.
+              "Energy:\n\n$E=mc^2$ inline, and a block:\n\n$$\\sum_{i=1}^{n} x_i$$\n\nTrailing marks: $x+1$; $y+2$); $z+3$、\n\nChinese punctuation: 素数定理：$\\pi(x)\\sim\\frac{x}{\\ln x}$\n\nMoney stays text: 价格 $5 到 $10\n\nNow a nasty one: $\\text{<script>alert(1)</script>}$\n"
+            : this.mdKnob === "mermaid"
+            ? // 040 US2: one valid diagram + two broken diagrams (distinct
+              // sources = distinct failure keys) — the valid one renders, the
+              // broken ones degrade to their source blocks, and 040 #5
+              // asserts neither leaks an error node into <body>.
+              "Valid:\n\n```mermaid\ngraph TD;\n  A[Start] --> B{Q?};\n  B -- yes --> C[End];\n```\n\nBroken:\n\n```mermaid\ngraph TD;\n  A --> ];\n```\n\nBroken 2:\n\n```mermaid\ngraph TD\n  A[start] --> B( bad syntax >>>\n```\n"
+            : this.mdKnob === "svg"
+            ? // 039: a legal inline SVG plus a malicious one — the sanitizer
+              // must render the first and strip the second's vectors.
+              // 039 #6 (feedback batch): the same markup inside a ```svg fence
+              // is SOURCE — it must stay a code block (copyable / open-in-IDE,
+              // 041) and never render as a graphic; the fenced malicious sample
+              // must stay inert text too.
+              "Icon:\n\n" +
+              '<svg viewBox="0 0 20 20" width="20" height="20"><circle cx="10" cy="10" r="8" fill="#1a7f37"></circle></svg>\n\n' +
+              "Danger:\n\n" +
+              '<svg viewBox="0 0 20 20" width="20"><script>alert(1)</script><foreignObject><body>x</body></foreignObject><a xlink:href="http://evil.example"><rect width="10" height="10"></rect></a></svg>\n\n' +
+              'Malformed: <svg viewBox="0 0 20 20"><rect width="10" ' +
+              "\n\nSource (fenced):\n\n" +
+              "```svg\n" +
+              '<svg viewBox="0 0 20 20" width="20" height="20"><circle cx="10" cy="10" r="8" fill="#1a7f37"></circle></svg>\n' +
+              "```\n\n" +
+              "Fenced danger:\n\n" +
+              "```svg\n" +
+              '<svg viewBox="0 0 20 20" width="20"><script>alert(1)</script></svg>\n' +
+              "```"
+              : this.mdKnob === "csv" || this.mdKnob === "csv-big" || this.mdKnob === "csv-wide"
+                ? // 050: the delimited-text fixtures — see csvScenarioText.
+                  csvScenarioText(this.mdKnob ?? "")
+              : `Here is my plan for **${prompt.slice(0, 60)}**:\n\n` +
+                "1. Inspect the repository layout\n" +
+                "2. Run a quick sanity check\n\n" +
+                "Let me start with a shell command.";
     await sleep(30);
     emit({ type: "message_update", usage: {}, assistantMessageEvent: { type: "text_start", contentIndex: 1 } });
     for (const chunk of chunkWords(text)) {
@@ -2688,6 +2811,40 @@ export class MockBridge implements Bridge {
     // The real bridge reports the process lifecycle; the mock is silent by
     // default so a `?fail=` fixture is not healed by auto-recovery (FR-005)
     // before a test can look at the failed state.
+    //
+    // 051: `?pistate=notice` / `?pistate=exited` replay the two shapes the
+    // real bridge added — the stale-model notice and the exit cause — so the
+    // e2e drives the actual event → store → screen path.
+    if (this.piStateFixture === "notice") {
+      this.timers.push(
+        setTimeout(
+          () =>
+            this.emit("pi-state", {
+              status: "running",
+              version: "1.4.0-mock",
+              notice: { kind: "staleModel", provider: "ds", model: "deepseek-flash" },
+            }),
+          0,
+        ),
+      );
+      return;
+    }
+    if (this.piStateFixture === "exited") {
+      this.timers.push(
+        setTimeout(
+          () =>
+            this.emit("pi-state", {
+              status: "exited",
+              message: "pi process closed stdout (exit code 1)",
+              cause: 'Unknown provider "ds". Use --list-models to see available providers/models.',
+              stderr:
+                'Error: Unknown provider "ds". Use --list-models to see available providers/models.',
+            }),
+          0,
+        ),
+      );
+      return;
+    }
     this.timers.push(setTimeout(() => this.emit("pi-state", { status: "starting" }), 0));
     this.timers.push(
       setTimeout(() => this.emit("pi-state", { status: "running", version: "1.4.0-mock" }), 300),
@@ -2890,6 +3047,90 @@ const MOCK_FILES: string[] = [
   "web/src/components/Composer.tsx",
   "web/e2e/chat.spec.ts",
 ];
+
+/**
+ * 050: the `?md=csv` fixtures — the delimited-text cases the e2e asserts on.
+ *
+ * Three knobs, not one: the mock streams one chunk per whitespace-delimited
+ * run (40ms apart), so a 205-row table alone would add ~8s of wall clock to
+ * every test that used it. `csv` carries the parsing cases, `csv-big` the
+ * row truncation, `csv-wide` the column truncation + horizontal scrolling.
+ *
+ * The samples are deliberately nasty: a quoted field holding the delimiter
+ * (RFC4180), a doubled quote, a quoted field holding a newline, a TSV body
+ * tagged as `csv` (models do that), and two blocks that are not tables at all.
+ */
+function csvScenarioText(knob: string): string {
+  if (knob === "csv-big") {
+    const rows = ["id,name"];
+    for (let i = 1; i <= 205; i++) rows.push(`${i},name${i}`);
+    return ["Big:", "", "```csv", ...rows, "```"].join("\n");
+  }
+  if (knob === "csv-wide") {
+    const cells = (n: number, prefix: string) =>
+      Array.from({ length: n }, (_, i) => `${prefix}${String(i + 1).padStart(2, "0")}`).join(",");
+    return [
+      "Wide:",
+      "",
+      "```csv",
+      cells(30, "col"),
+      cells(30, "value"),
+      cells(30, "other"),
+      "```",
+      "",
+      "Too many columns:",
+      "",
+      "```csv",
+      cells(60, "field"),
+      cells(60, "value"),
+      "```",
+    ].join("\n");
+  }
+  return [
+    "Small:",
+    "",
+    "```csv",
+    "name,role,note",
+    'Alice,dev,"likes, commas"',
+    'Bob,ops,"says ""hi"""',
+    "```",
+    "",
+    "Tsv:",
+    "",
+    "```tsv",
+    "name\tage",
+    "Alice\t31",
+    "Bob\t28",
+    "```",
+    "",
+    "Mislabeled (a TSV body in a csv fence):",
+    "",
+    "```csv",
+    "name\trole",
+    "Alice\tdev",
+    "```",
+    "",
+    "Newline:",
+    "",
+    "```csv",
+    "note,value",
+    '"multi',
+    'line",7',
+    "```",
+    "",
+    "Not a table:",
+    "",
+    "```csv",
+    "just one line of prose",
+    "```",
+    "",
+    "One row only:",
+    "",
+    "```csv",
+    "only,one,row",
+    "```",
+  ].join("\n");
+}
 
 function chunkWords(text: string): string[] {
   return text.match(/\S+\s*/g) ?? [text];

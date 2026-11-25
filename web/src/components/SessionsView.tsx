@@ -135,7 +135,7 @@ export default function SessionsView() {
         <div className="session-search-results" data-testid="session-search-results">
           {sessionSearch.results.length === 0 ? (
             <div className="sessions-empty" data-testid="sessions-search-empty">
-              {t("sessions.noMatches_other", { count: sessionSearch.scanned })}
+              {t("sessions.noMatches", { count: sessionSearch.scanned })}
               {sessionSearch.truncated ? ` ${t("sessions.truncated")}` : ""}
             </div>
           ) : (
@@ -150,7 +150,7 @@ export default function SessionsView() {
                   <div className="session-hit-head">
                     <span className="session-name">{match.name || match.id || "Untitled"}</span>
                     <span className="session-hit-count" data-testid="session-hit-count">
-                      {t("sessions.hits_other", { count: match.hitCount })}
+                      {t("sessions.hits", { count: match.hitCount })}
                     </span>
                   </div>
                   {match.hits.map((hit) => (
@@ -217,7 +217,7 @@ export default function SessionsView() {
                 </div>
                 <div className="session-preview">
                   {s.name ? s.preview || s.id : s.id}
-                  {typeof s.messageCount === "number" ? ` · ${t("sessions.msgCount_other", { count: s.messageCount })}` : ""}
+                  {typeof s.messageCount === "number" ? ` · ${t("sessions.msgCount", { count: s.messageCount })}` : ""}
                 </div>
               </button>
             )}

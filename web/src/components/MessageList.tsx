@@ -26,6 +26,7 @@ function BlockView({
 }) {
   const [open, setOpen] = useState(false);
   const openImagePreview = usePiStore((s) => s.openImagePreview);
+  const { t } = useT();
   if (block.kind === "text") {
     if (!block.text) return null;
     return <Markdown text={block.text} />;
@@ -38,7 +39,7 @@ function BlockView({
       <img
         className="msg-image msg-image-clickable"
         src={imageSrc(block.data, block.mimeType)}
-        alt="attached image"
+        alt={t("chat.attachedImage")}
         data-testid="msg-image"
         onClick={() => openImagePreview(itemId, blockIndex)}
       />
@@ -55,7 +56,10 @@ function BlockView({
           onClick={() => setOpen((o) => !o)}
         >
           <Icon name="sparkles" className="ic-sm" />
-          <span className="thinking-label">Thinking{streaming ? "…" : ""}</span>
+          <span className="thinking-label">
+            {t("chat.thinking")}
+            {streaming ? "…" : ""}
+          </span>
           <Icon name="chev" className="ic-sm thinking-chevron" />
         </button>
         {open && <div className="thinking-body">{block.text}</div>}
@@ -75,6 +79,7 @@ function ItemViewImpl({
   activeHitBlockIndex: number | null;
 }) {
   const toolbar = <MessageActions item={item} actions={actions} />;
+  const { t } = useT();
   if (item.role === "system") {
     return (
       <div
@@ -100,7 +105,7 @@ function ItemViewImpl({
           row of its own. */}
       {item.steer ? (
         <div className="steer-tag" data-testid="steer-tag">
-          插话
+          {t("chat.steerTag")}
         </div>
       ) : null}
       <div className="item-header">
@@ -284,9 +289,44 @@ export default function MessageList() {
     return () => el.removeEventListener("wheel", onWheel);
   }, []);
 
+  /**
+   * 010 内测反馈补强：图片/SVG 等富内容在 message_end 之后**不经 React
+   * re-render** 地长高（晚加载），pinned 视图会悬在半空，而跳底按钮被
+   * stale pinned 吃掉（真机复现：切进「终端中渲染 SVG 围栏代码块」会话后
+   * 落点距底 120px、按钮不出现——内容长高不发 scroll 事件，pin 机器无从
+   * 得知）。观察 message-col 的尺寸变化：pinned 时跟随到底；未 pinned 时
+   * 用新几何重估按钮状态。
+   */
+  useEffect(() => {
+    const el = scrollRef.current;
+    const col = el?.querySelector(".message-col");
+    if (!el || !(col instanceof HTMLElement)) return;
+    const ro = new ResizeObserver(() => {
+      if (pinRef.current.pinned) {
+        el.scrollTop = el.scrollHeight;
+        pinRef.current = { pinned: true, lastTop: el.scrollTop, lastHeight: el.scrollHeight };
+        syncPinUi(true);
+      } else {
+        onScroll();
+      }
+    });
+    ro.observe(col);
+    return () => ro.disconnect();
+  }, []);
+
   return (
     <div className="message-list-wrap">
-      <div className="message-list" ref={scrollRef} onScroll={onScroll} data-testid="message-list">
+      {/* Keyboard-scrollable region (WCAG 2.1.1): a scrollable transcript
+          that cannot be focused cannot be scrolled with the keyboard. */}
+      <div
+        className="message-list"
+        ref={scrollRef}
+        onScroll={onScroll}
+        data-testid="message-list"
+        tabIndex={0}
+        role="region"
+        aria-label={t("chat.transcript")}
+      >
       <div className="message-col">
         {/* 021 T307: a history switch empties `items` first — the empty state
             would read as "this session is blank", so a switching placeholder
