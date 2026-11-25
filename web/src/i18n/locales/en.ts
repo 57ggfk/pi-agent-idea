@@ -143,6 +143,8 @@ export const en = {
   "status.ctxTitle": "Context window usage",
   "status.costTitle": "Session cost",
   "status.msgs": "{{n}} msgs",
+  // 051: the remembered provider is gone — pi started with the default model.
+  "status.staleModel": "The provider \"{{provider}}\" you used last time is gone (model {{model}}) — started with the default model instead",
 
   // -- message queue ------------------------------------------------------------
   "queue.mode.steer": "Steer",

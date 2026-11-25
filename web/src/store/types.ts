@@ -136,6 +136,21 @@ export interface ModelInfo {
   reasoning?: boolean;
 }
 
+/**
+ * 051: 插件替用户改了启动参数时，面板要当面说清楚。
+ *
+ * 目前只有一种：上次记住的 provider pi 已经不认识（它从 models.json 里被删
+ * 了），插件改用默认模型启动。原选择仍在存储里——provider 加回来就会自动
+ * 用回去，所以这不是「丢了设置」，而是「暂时用不了」。
+ */
+export interface PiNotice {
+  kind: "staleModel";
+  /** pi 已经不认识的 provider 名。 */
+  provider: string;
+  /** 当初记住的模型名（provider 没了，模型自然也没了）。 */
+  model: string;
+}
+
 export interface CommandInfo {
   name: string;
   description?: string;

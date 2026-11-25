@@ -5817,6 +5817,25 @@ button {
   padding: 6px 12px;
 }
 
+/* 051: the panel says out loud that it fell back to the default model
+   (the remembered provider no longer exists). It is not an error — pi is
+   running fine — so it wears the warning tone, not the error one. */
+.notice-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  border-bottom: 1px solid var(--warning-border);
+}
+
+.notice-banner-msg {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 /* The reason wraps instead of being clipped: an exit banner that hides half
    the reason ("pi 已退出：pi process cl…") hides the only thing it says. */
 .exit-banner-msg {

@@ -144,6 +144,8 @@ export const zh: Dict = {
   "status.ctxTitle": "上下文窗口占用",
   "status.costTitle": "会话开销",
   "status.msgs": "{{n}} 条消息",
+  // 051: 上次记住的 provider 被删了 —— pi 用默认模型跑起来了。
+  "status.staleModel": "上次使用的 provider「{{provider}}」已不存在（模型 {{model}}），已改用默认模型启动",
 
   // -- message queue ------------------------------------------------------------
   "queue.mode.steer": "插话",

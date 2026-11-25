@@ -1150,11 +1150,21 @@ class BridgeService(private val project: Project) : Disposable {
             }
             is PiConnectionState.Running -> buildJsonObject {
                 put("status", "running"); put("version", state.installation.version ?: "")
+                // 051: 插件替用户改了启动参数时，把这件事一并告诉前端。
+                state.notice?.let { notice ->
+                    put("notice", buildJsonObject {
+                        put("kind", notice.kind)
+                        put("provider", notice.provider)
+                        put("model", notice.model)
+                    })
+                }
             }
             is PiConnectionState.Exited -> buildJsonObject {
                 put("status", "exited")
                 put("message", state.message)
                 put("stderr", state.stderrTail ?: "")
+                // 051: pi 自己的错误行——横幅标题用它，不再只显示壳话。
+                state.cause?.let { put("cause", it) }
             }
         }
         push(buildJsonObject {

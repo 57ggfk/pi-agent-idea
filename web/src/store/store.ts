@@ -38,6 +38,7 @@ import {
   type ConfirmRequest,
   type ModelInfo,
   type PendingApproval,
+  type PiNotice,
   type QueueImage,
   type QueueMode,
   type QueueState,
@@ -391,6 +392,11 @@ interface PiStore {
   piVersion: string;
   exitMessage: string;
   exitStderr: string;
+  /**
+   * 051: 插件替用户改了启动参数时的告知（provider 没了 → 改用默认模型）。
+   * null 表示没什么要说的。
+   */
+  piNotice: PiNotice | null;
 
   items: ChatItem[];
   isStreaming: boolean;
@@ -1324,6 +1330,7 @@ export const usePiStore = create<PiStore>((set, get) => {
     piVersion: "",
     exitMessage: "",
     exitStderr: "",
+    piNotice: null,
 
     items: [],
     isStreaming: false,
@@ -1537,12 +1544,19 @@ export const usePiStore = create<PiStore>((set, get) => {
             version?: string;
             message?: string;
             stderr?: string;
+            cause?: string;
+            notice?: PiNotice;
           };
           set({
             piStatus: st.status,
             piVersion: st.version ?? get().piVersion,
-            exitMessage: st.message ?? "",
+            // 051: 病因优先——横幅标题是 pi 自己的错误行（`Unknown provider
+            // "ds"`），不是那句没信息量的壳话（`pi process closed stdout
+            // (exit code 1)`）。
+            exitMessage: st.cause || st.message || "",
             exitStderr: st.stderr ?? "",
+            // 051: 插件改了启动参数时要说出来（provider 没了 → 改用默认模型）。
+            piNotice: st.notice ?? null,
           });
           if (st.status === "running") refreshMeta();
         }
@@ -2460,7 +2474,9 @@ export const usePiStore = create<PiStore>((set, get) => {
       if (!bridge) return;
       try {
         const model = await rpc<ModelInfo>(bridge, { type: "set_model", provider, modelId });
-        set({ model });
+        // 051: 用户自己选了模型，之前那条「provider 没了，已改用默认模型」的
+        // 告知就此作废。
+        set({ model, piNotice: null });
         // Remember across restarts: the next pi process starts with this model.
         void bridge.request("config.setLastModel", { provider, model: modelId }).catch(() => undefined);
       } catch (e) {

@@ -10,6 +10,7 @@ export default function StatusBar() {
   const piVersion = usePiStore((s) => s.piVersion);
   const exitMessage = usePiStore((s) => s.exitMessage);
   const exitStderr = usePiStore((s) => s.exitStderr);
+  const piNotice = usePiStore((s) => s.piNotice);
   const sessionName = usePiStore((s) => s.sessionName);
   const bridgeKind = usePiStore((s) => s.bridgeKind);
   const isStreaming = usePiStore((s) => s.isStreaming);
@@ -48,6 +49,16 @@ export default function StatusBar() {
     // bar is a fixed 28px row, so an error notice inside it was clipped — and
     // the composer painted over the part that stuck out (real machine).
     <div className="statusbar-wrap">
+      {piNotice ? (
+        // 051: 插件替用户改了启动参数（provider 没了 → 改用默认模型）时，
+        // 当面说出来。不是错误：pi 正常跑着，只是没用上次那个模型。
+        <div className="notice-banner" data-testid="notice-banner">
+          <Icon name="info" className="ic-sm" />
+          <span className="notice-banner-msg" data-testid="notice-banner-msg">
+            {t("status.staleModel", { provider: piNotice.provider, model: piNotice.model })}
+          </span>
+        </div>
+      ) : null}
       {piStatus === "exited" ? (
         <div className="exit-banner" data-testid="exit-banner">
           <span className="exit-banner-msg" data-testid="exit-banner-msg">

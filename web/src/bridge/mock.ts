@@ -401,8 +401,13 @@ export class MockBridge implements Bridge {
   private dropConsumed = false;
   /** `?install=hang` — the in-flight install, resolvable only by a cancel. */
   private pendingInstall: { output: string; resolve?: (cancelled: boolean) => void } | null = null;
-  /** `?pistate=1` — report starting → running, so auto-recovery can be observed. */
-  private readonly reportPiState = query()?.get("pistate") === "1";
+  /**
+   * `?pistate=1` — report starting → running, so auto-recovery can be observed.
+   * `?pistate=notice` / `?pistate=exited` — 051's two new pi-state shapes
+   * (the stale-model notice, the exit cause).
+   */
+  private readonly piStateFixture = query()?.get("pistate") ?? "";
+  private readonly reportPiState = this.piStateFixture !== "";
   /** `?longerror=1` — pad bridge errors past the 200-char summary limit (FR-011). */
   private readonly longErrors = query()?.get("longerror") === "1";
   // MCP servers as `pi mcp list --json` reports them: a disabled entry stays in
@@ -2806,6 +2811,40 @@ export class MockBridge implements Bridge {
     // The real bridge reports the process lifecycle; the mock is silent by
     // default so a `?fail=` fixture is not healed by auto-recovery (FR-005)
     // before a test can look at the failed state.
+    //
+    // 051: `?pistate=notice` / `?pistate=exited` replay the two shapes the
+    // real bridge added — the stale-model notice and the exit cause — so the
+    // e2e drives the actual event → store → screen path.
+    if (this.piStateFixture === "notice") {
+      this.timers.push(
+        setTimeout(
+          () =>
+            this.emit("pi-state", {
+              status: "running",
+              version: "1.4.0-mock",
+              notice: { kind: "staleModel", provider: "ds", model: "deepseek-flash" },
+            }),
+          0,
+        ),
+      );
+      return;
+    }
+    if (this.piStateFixture === "exited") {
+      this.timers.push(
+        setTimeout(
+          () =>
+            this.emit("pi-state", {
+              status: "exited",
+              message: "pi process closed stdout (exit code 1)",
+              cause: 'Unknown provider "ds". Use --list-models to see available providers/models.',
+              stderr:
+                'Error: Unknown provider "ds". Use --list-models to see available providers/models.',
+            }),
+          0,
+        ),
+      );
+      return;
+    }
     this.timers.push(setTimeout(() => this.emit("pi-state", { status: "starting" }), 0));
     this.timers.push(
       setTimeout(() => this.emit("pi-state", { status: "running", version: "1.4.0-mock" }), 300),
