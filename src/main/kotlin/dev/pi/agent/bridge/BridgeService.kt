@@ -719,7 +719,7 @@ class BridgeService(private val project: Project) : Disposable {
             .addAction(object : com.intellij.openapi.actionSystem.AnAction(
                 dev.pi.agent.PiAgentBundle.message("export.preview.action"),
             ) {
-                // 048 (spec US3): "Preview" re-renders the session into the
+                // 060 (spec US3): "Preview" re-renders the session into the
                 // one-shot preview route at click time — a fresh token per
                 // click, never a stale one baked into the notification.
                 override fun actionPerformed(e: com.intellij.openapi.actionSystem.AnActionEvent) {

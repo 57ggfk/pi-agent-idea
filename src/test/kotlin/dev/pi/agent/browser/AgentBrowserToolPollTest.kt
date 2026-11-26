@@ -6,7 +6,7 @@ import kotlin.test.assertTrue
 import kotlin.test.Test
 
 /**
- * 049: `AgentBrowserTool.open` waits for the browser tab to appear because
+ * 061: `AgentBrowserTool.open` waits for the browser tab to appear because
  * `PiBrowserManager.open` creates the content asynchronously on the EDT — a
  * one-shot lookup raced it on the real machine and wrongly reported "tool
  * window unavailable" (反向用例 2026-11-19). This locks the poll semantics.
@@ -39,7 +39,7 @@ class AgentBrowserToolPollTest {
         assertEquals(3, calls)
     }
 
-    // ---- 053 B2: scroll's model-readable failure copy ----
+    // ---- 065 B2: scroll's model-readable failure copy ----
 
     @Test
     fun `scroll failure copy covers the empty-tab and timeout paths`() {

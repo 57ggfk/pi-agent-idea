@@ -4,9 +4,9 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * 051 contract: the Pi Agent tool window must never spin on a dead page.
+ * 063 contract: the Pi Agent tool window must never spin on a dead page.
  *
- * The 049 build rebuilt the embedded browser forever. The silence threshold
+ * The 061 build rebuilt the embedded browser forever. The silence threshold
  * (90s) was LONGER than the crash-loop window (60s), so every rebuild was the
  * only entry in the window and the "give up" limit could never trip. The
  * panel therefore restarted the browser every 90 seconds for as long as the
@@ -56,7 +56,7 @@ class PanelHealthTest {
 
     @Test
     fun `the rebuild budget is counted in failures, not in wall-clock windows`() {
-        // The exact shape of the 049 bug: the window was shorter than the
+        // The exact shape of the 061 bug: the window was shorter than the
         // silence threshold, so the counter never reached the limit.
         assertEquals(
             PanelHealthDecision.GIVE_UP,

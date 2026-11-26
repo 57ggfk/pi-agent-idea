@@ -6,17 +6,17 @@ import java.io.File
 import java.nio.charset.StandardCharsets
 
 /**
- * 053 B3: append-only JSONL capture of the browser tab's console lines —
+ * 065 B3: append-only JSONL capture of the browser tab's console lines —
  * the agent's grep channel for history beyond the in-memory window
  * ([BrowserConsoleBuffer]). Cursor-style "console 落盘可 grep".
  *
- * Privacy boundary (spec 053, the F-201 口径): the file lives ONLY in the
+ * Privacy boundary (spec 065, the F-201 口径): the file lives ONLY in the
  * IDE system dir (`<system>/pi-agent/browser-console/`), machine-local and
  * never synced or exported; it stores ONLY lines that already passed
  * [LogSafe.truncate] (severity-filtered error/warning, ≤200 chars, one
  * line); console lines may carry page URLs, so the file is user-private
  * material — it is never written to idea.log and never attached anywhere
- * (048 hard rule 8). Rotation keeps disk usage bounded no matter how chatty
+ * (060 hard rule 8). Rotation keeps disk usage bounded no matter how chatty
  * the page is. All IO is best-effort: a full or locked disk must never
  * break the browser tab or the console capture.
  */
@@ -54,7 +54,7 @@ class ConsoleLogFile(
                 if (primary.isFile && primary.length() >= maxFileBytes) rotate()
                 primary.appendText(line + "\n", StandardCharsets.UTF_8)
             } catch (_: Exception) {
-                // Best-effort by design (048 hard rule 8): disk problems are
+                // Best-effort by design (060 hard rule 8): disk problems are
                 // silently ignored — the in-memory buffer stays authoritative.
             }
         }

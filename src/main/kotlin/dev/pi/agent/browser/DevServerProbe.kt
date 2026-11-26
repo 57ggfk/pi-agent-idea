@@ -8,7 +8,7 @@ import java.time.Duration
 
 /**
  * Loopback dev-server discovery for the agent's pi_browser tool (F-214,
- * spec 049 竞品缺口 B 的 Cursor-2.0-style "dev-server awareness"): the agent
+ * spec 061 竞品缺口 B 的 Cursor-2.0-style "dev-server awareness"): the agent
  * calls `open` without a URL and the probe finds the running local server.
  *
  * Two pure, unit-tested halves plus an IO shell:

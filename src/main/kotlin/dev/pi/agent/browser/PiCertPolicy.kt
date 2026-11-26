@@ -1,7 +1,7 @@
 package dev.pi.agent.browser
 
 /**
- * Certificate-error policy hook (spec 048 T006). The default is strict: CEF
+ * Certificate-error policy hook (spec 060 T006). The default is strict: CEF
  * renders its "Privacy error" interstitial, which is a readable error page —
  * never a white screen (probe P-3 on the real machine, all three certificate
  * classes).

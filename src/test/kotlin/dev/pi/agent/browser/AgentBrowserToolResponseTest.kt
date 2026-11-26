@@ -10,8 +10,8 @@ import kotlin.test.assertTrue
 import kotlin.test.Test
 
 /**
- * Spec 053 B2/B3: the pure response mappers behind AgentBrowserTool —
- * the scroll snapshot keeps the 049 response shape (scrollY inserted, no
+ * Spec 065 B2/B3: the pure response mappers behind AgentBrowserTool —
+ * the scroll snapshot keeps the 061 response shape (scrollY inserted, no
  * reordering) and the console readback answers {ok,total,dropped,count,
  * lines,file} with the token-saving "line count + bounded preview" design.
  */
@@ -20,7 +20,7 @@ class AgentBrowserToolResponseTest {
     private fun keys(json: String): List<String> = Json.parseToJsonElement(json).jsonObject.keys.toList()
 
     @Test
-    fun `snapshot response without scrollY keeps the 049 field order`() {
+    fun `snapshot response without scrollY keeps the 061 field order`() {
         val json = AgentBrowserTool.snapshotResponse(
             ok = true, reason = null, state = "LOADED", url = "http://127.0.0.1:3000/",
             title = "Home", ready = "complete", text = "hello",
@@ -103,7 +103,7 @@ class AgentBrowserToolResponseTest {
         assertTrue("12" in reason, "reason=$reason")
     }
 
-    // ---- 056: tab addressing — the "tab" field rides at the tail of every answer ----
+    // ---- 068: tab addressing — the "tab" field rides at the tail of every answer ----
 
     @Test
     fun `tab stamps the tail of an ok snapshot without disturbing the locked order`() {
@@ -116,7 +116,7 @@ class AgentBrowserToolResponseTest {
         assertEquals(
             listOf("ok", "state", "url", "title", "ready", "text", "scrollY", "console", "tab"),
             keys(json),
-            "tab is the LAST field; the 049/053 order before it is untouched",
+            "tab is the LAST field; the 061/065 order before it is untouched",
         )
         assertTrue("\"tab\":\"t1\"" in json)
     }
@@ -180,7 +180,7 @@ class AgentBrowserToolResponseTest {
         assertTrue("\"tabs\":[]" in json)
     }
 
-    // ---- 057: the operation layer — action fields ride the snapshot answer ----
+    // ---- 069: the operation layer — action fields ride the snapshot answer ----
 
     @Test
     fun `action fields sit between console and tab without disturbing the locked order`() {

@@ -29,7 +29,7 @@ import java.io.File
 import java.lang.reflect.Proxy
 
 /**
- * The browser tab's CEF handler set (spec 048 T007). Every non-obvious choice
+ * The browser tab's CEF handler set (spec 060 T007). Every non-obvious choice
  * here was verified on the real machine (probe P-1…P-12, plan §0) — do not
  * "simplify" without re-reading them:
  *
@@ -37,7 +37,7 @@ import java.lang.reflect.Proxy
  *    point (the request handler has no popup callback and `onOpenURLFromTab`
  *    does not receive target=_blank). Returning true cancels the popup; the
  *    kernel then routes the URL per the link-target setting (F-215 M1) —
- *    never a silent drop (spec 048 US5).
+ *    never a silent drop (spec 060 US5).
  *  - downloads: without a handler CEF cancels the download and the file
  *    vanishes; `Continue` MUST get a native-backslash path or the download
  *    silently stalls (P-4). The handler is a reflective Proxy (F-110): the
@@ -204,8 +204,8 @@ internal class PiBrowserHandlers(private val kernel: PiBrowserKernel) {
 
     /**
      * Link right-clicks APPEND the destination items after a separator
-     * (054 变更 1: system browser / Pi browser tab / copy / Pi editor) —
-     * F-211: the 049 build cleared the whole model, which deleted "open in
+     * (066 变更 1: system browser / Pi browser tab / copy / Pi editor) —
+     * F-211: the 061 build cleared the whole model, which deleted "open in
      * new tab / copy link address / save image". Returning false for foreign
      * command ids hands every native item back to CEF.
      */
@@ -223,7 +223,7 @@ internal class PiBrowserHandlers(private val kernel: PiBrowserKernel) {
                 MENU_ID_COPY_LINK -> kernel.hopEdt {
                     CopyPasteManager.getInstance().setContents(StringSelection(url))
                 }
-                // 054 变更 1: the link URL opens in an editor-form tab — its
+                // 066 变更 1: the link URL opens in an editor-form tab — its
                 // own kernel, this tab stays untouched. EDT hop: the CEF
                 // callback thread must not touch FileEditorManager.
                 MENU_ID_OPEN_PI_EDITOR -> kernel.hopEdt {
@@ -372,11 +372,11 @@ internal class PiBrowserHandlers(private val kernel: PiBrowserKernel) {
         val MENU_ID_OPEN_EMBEDDED = CefMenuModel.MenuId.MENU_ID_USER_FIRST + 1
         val MENU_ID_COPY_LINK = CefMenuModel.MenuId.MENU_ID_USER_FIRST + 2
 
-        /** 054 变更 1: "Open in Pi editor" — the 4th appended destination. */
+        /** 066 变更 1: "Open in Pi editor" — the 4th appended destination. */
         val MENU_ID_OPEN_PI_EDITOR = CefMenuModel.MenuId.MENU_ID_USER_FIRST + 3
 
         /**
-         * The link menu builder (054 变更 1). Appends one separator + the four
+         * The link menu builder (066 变更 1). Appends one separator + the four
          * destination items for [url]; returns false WITHOUT touching the
          * model when the URL is blank (a blank link keeps the pure native
          * menu). Append-only by contract — never clear/remove native items
@@ -387,7 +387,7 @@ internal class PiBrowserHandlers(private val kernel: PiBrowserKernel) {
         internal fun appendLinkItems(model: CefMenuModel, url: String): Boolean {
             if (url.isBlank()) return false
             model.addSeparator()
-            // 058 审美修正：两个 Pi 目的地相邻，copy 作为工具项收尾。
+            // 070 审美修正：两个 Pi 目的地相邻，copy 作为工具项收尾。
             model.addItem(MENU_ID_OPEN_SYSTEM, PiAgentBundle.message("browser.link.option.SYSTEM_BROWSER"))
             model.addItem(MENU_ID_OPEN_EMBEDDED, PiAgentBundle.message("browser.link.option.EMBEDDED"))
             model.addItem(MENU_ID_OPEN_PI_EDITOR, PiAgentBundle.message("browser.link.option.PI_EDITOR"))

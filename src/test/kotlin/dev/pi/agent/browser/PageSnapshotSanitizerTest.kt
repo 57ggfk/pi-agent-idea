@@ -6,7 +6,7 @@ import kotlin.test.assertTrue
 import kotlin.test.Test
 
 /**
- * Spec 049 B1: the agent readback is a bounded, read-only snapshot. These
+ * Spec 061 B1: the agent readback is a bounded, read-only snapshot. These
  * tests lock the sanitizer: control characters never survive, length never
  * exceeds the cap, and malformed JS responses degrade to failure snapshots
  * instead of exceptions.
@@ -74,7 +74,7 @@ class PageSnapshotSanitizerTest {
         assertFalse(Regex("\\.(submit|click|focus|write)\\s*\\(").containsMatchIn(script))
     }
 
-    // ---- 053 B2: structured read (selector element excerpt) ----
+    // ---- 065 B2: structured read (selector element excerpt) ----
 
     @Test
     fun `read script without selector stays byte-for-byte identical`() {
@@ -114,7 +114,7 @@ class PageSnapshotSanitizerTest {
         val textScript = PageSnapshotSanitizer.buildReadScript("INJ", selector = "table", format = "text")
         assertTrue("innerText" in textScript)
         assertFalse("outerHTML" in textScript)
-        // Absent format falls back to the text excerpt (the pre-053 behavior).
+        // Absent format falls back to the text excerpt (the pre-065 behavior).
         val defaultScript = PageSnapshotSanitizer.buildReadScript("INJ", selector = "table")
         assertTrue("innerText" in defaultScript)
         assertFalse("outerHTML" in defaultScript)

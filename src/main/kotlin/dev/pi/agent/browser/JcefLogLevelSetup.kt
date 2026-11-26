@@ -4,7 +4,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.ProjectActivity
 
 /**
- * 052: raises the JCEF log level at application start.
+ * 064: raises the JCEF log level at application start.
  *
  * The platform reads the level when it creates the first browser, so the
  * plugin has to speak before that happens. Application start is the

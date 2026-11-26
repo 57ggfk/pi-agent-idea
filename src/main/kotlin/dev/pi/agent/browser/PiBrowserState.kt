@@ -1,7 +1,7 @@
 package dev.pi.agent.browser
 
 /**
- * Browser lifecycle state machine (spec 048 T001). Pure logic, no JCEF — the
+ * Browser lifecycle state machine (spec 060 T001). Pure logic, no JCEF — the
  * kernel translates CEF callbacks into [Event]s and broadcasts the resulting
  * state to carriers (tool window tab / editor panel).
  *

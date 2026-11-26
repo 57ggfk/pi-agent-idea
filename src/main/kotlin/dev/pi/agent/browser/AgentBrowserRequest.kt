@@ -7,7 +7,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.math.roundToInt
 
-/** What the pi_browser tool asked the IDE to do (spec 049 D1/D2, 053 B1, 056 list, 057 操作层). */
+/** What the pi_browser tool asked the IDE to do (spec 061 D1/D2, 065 B1, 068 list, 069 操作层). */
 enum class AgentAction {
     OPEN, READ, RELOAD, SCROLL, CONSOLE, LIST, CLICK, TYPE, EVALUATE;
 
@@ -23,8 +23,8 @@ val SCROLL_DIRECTIONS = setOf("down", "up")
 val READ_FORMATS = setOf("html", "text")
 
 /**
- * 054: which carrier the agent's browser action targets — the tool-window
- * tab (`tab`, the 048 default) or the editor-form preview (`editor`, 054
+ * 066: which carrier the agent's browser action targets — the tool-window
+ * tab (`tab`, the 060 default) or the editor-form preview (`editor`, 066
  * 变更 1: the link right-click menu's "Open in Pi editor"). Absent means
  * "wherever the last `open` landed" ([PiBrowserManager.lastAgentCarrier]).
  */
@@ -36,10 +36,10 @@ val BROWSER_TARGETS = setOf("tab", "editor")
  * the dev server port" ([DevServerProbe]) — the Cursor-2.0-style awareness
  * that saves the agent one shell round-trip per verification.
  *
- * 053 adds the observation-side parameters: [scrollDirection]/[scrollAmount]
+ * 065 adds the observation-side parameters: [scrollDirection]/[scrollAmount]
  * for SCROLL, [selector]/[format] for READ's element excerpt, and
  * [consoleLimit]/[consoleSince] for CONSOLE readback. All default to null —
- * a body without them parses byte-for-byte like the pre-053 contract.
+ * a body without them parses byte-for-byte like the pre-065 contract.
  */
 data class AgentBrowserRequest(
     val action: AgentAction,
@@ -50,37 +50,37 @@ data class AgentBrowserRequest(
     val format: String? = null,
     val consoleLimit: Int? = null,
     val consoleSince: Int? = null,
-    /** 054: "tab" = tool-window tab, "editor" = editor-form preview; null = the last-opened carrier. */
+    /** 066: "tab" = tool-window tab, "editor" = editor-form preview; null = the last-opened carrier. */
     val target: String? = null,
     /**
-     * 056: the exact panel to operate on — a [BrowserTabIds] id (`t1`, `e2`)
+     * 068: the exact panel to operate on — a [BrowserTabIds] id (`t1`, `e2`)
      * from open/list results. Absent = follow the tab the last open landed
-     * on ([PiBrowserManager.lastTabId]), then the 055 carrier fallback. When
+     * on ([PiBrowserManager.lastTabId]), then the 067 carrier fallback. When
      * both [tab] and [target] are present the TOOL layer gives [tab]
      * precedence (the codec accepts both — see AgentBrowserTool).
      */
     val tab: String? = null,
-    /** 057 TYPE: the text to write into the matched element (≤ [AgentBrowserRequestCodec.MAX_ACTION_TEXT_CHARS]). */
+    /** 069 TYPE: the text to write into the matched element (≤ [AgentBrowserRequestCodec.MAX_ACTION_TEXT_CHARS]). */
     val text: String? = null,
-    /** 057 EVALUATE: the JS to run in the page (≤ [AgentBrowserRequestCodec.MAX_EVALUATE_JS_CHARS]). */
+    /** 069 EVALUATE: the JS to run in the page (≤ [AgentBrowserRequestCodec.MAX_EVALUATE_JS_CHARS]). */
     val js: String? = null,
 )
 
 object AgentBrowserRequestCodec {
 
-    /** `amount` clamps into 1..10000 device-independent px (053 B1). */
+    /** `amount` clamps into 1..10000 device-independent px (065 B1). */
     const val MAX_SCROLL_AMOUNT = 10_000
 
-    /** `limit` clamps into 1..200 preview lines (053 B3). */
+    /** `limit` clamps into 1..200 preview lines (065 B3). */
     const val MAX_CONSOLE_LIMIT = 200
 
     /** A selector is a lookup key, not a payload — keep it a bounded one. */
     const val MAX_SELECTOR_CHARS = 200
 
-    /** 057 TYPE: the text payload is bounded (5,000 chars). */
+    /** 069 TYPE: the text payload is bounded (5,000 chars). */
     const val MAX_ACTION_TEXT_CHARS = 5_000
 
-    /** 057 EVALUATE: the JS payload is bounded (10,000 chars). */
+    /** 069 EVALUATE: the JS payload is bounded (10,000 chars). */
     const val MAX_EVALUATE_JS_CHARS = 10_000
 
     private val KNOWN_PARAMS = setOf(
@@ -124,7 +124,7 @@ object AgentBrowserRequestCodec {
         }
     }
 
-    /** 053: the observation-side parameters, shared by every action's body. */
+    /** 065: the observation-side parameters, shared by every action's body. */
     private fun parseParams(action: AgentAction, obj: JsonObject, url: String?): AgentParseResult {
         val direction = text(obj, "direction")?.trim()?.lowercase()
         if (direction != null && direction !in SCROLL_DIRECTIONS) {
@@ -134,9 +134,9 @@ object AgentBrowserRequestCodec {
             ?: if (obj.containsKey("amount")) {
                 return AgentParseResult.Invalid("amount must be a number between 1 and $MAX_SCROLL_AMOUNT")
             } else null
-        // 057: for the OPERATION actions an over-long selector is rejected —
+        // 069: for the OPERATION actions an over-long selector is rejected —
         // silent truncation could match a DIFFERENT element and mislead the
-        // model. READ keeps its 053 truncation (existing contract unchanged).
+        // model. READ keeps its 065 truncation (existing contract unchanged).
         val rawSelector = text(obj, "selector")?.trim()
         val selector = when {
             rawSelector == null -> null
@@ -161,7 +161,7 @@ object AgentBrowserRequestCodec {
         if (target != null && target !in BROWSER_TARGETS) {
             return AgentParseResult.Invalid("target must be \"tab\" or \"editor\"")
         }
-        // 056: tab ids are FORMAT-checked here (t1/e2 …); an id that looks
+        // 068: tab ids are FORMAT-checked here (t1/e2 …); an id that looks
         // right but names no live panel is a RUNTIME miss — the tool answers
         // "no browser tab t9", the codec stays transport-shaped.
         val tab = text(obj, "tab")?.trim()
@@ -170,7 +170,7 @@ object AgentBrowserRequestCodec {
                 "tab must be a tab id like t1 or e2 (as returned by open/list results), got \"$tab\"",
             )
         }
-        // 057 payloads — length caps are codec-level (over-limit = model-
+        // 069 payloads — length caps are codec-level (over-limit = model-
         // readable error, never a silent truncation of code the page runs).
         val actionText = text(obj, "text")
         if (actionText != null && actionText.length > MAX_ACTION_TEXT_CHARS) {
@@ -180,7 +180,7 @@ object AgentBrowserRequestCodec {
         if (actionJs != null && actionJs.length > MAX_EVALUATE_JS_CHARS) {
             return AgentParseResult.Invalid("js must be at most $MAX_EVALUATE_JS_CHARS characters")
         }
-        // 057 required params — the model must see WHAT is missing, not a
+        // 069 required params — the model must see WHAT is missing, not a
         // runtime no-op that looks like success.
         when (action) {
             AgentAction.CLICK -> if (selector.isNullOrBlank()) {
@@ -236,7 +236,7 @@ object AgentBrowserRequestCodec {
     }
 
     /**
-     * Hard rule 1 (048) continuation: the browser tab never loads a URL
+     * Hard rule 1 (060) continuation: the browser tab never loads a URL
      * carrying the IDE's bridge token. Returns the refusal reason, or null
      * when the URL is clean (or there is no token to check against — the
      * chat panel was never opened).

@@ -7,9 +7,9 @@ import kotlin.test.assertTrue
 import kotlin.test.Test
 
 /**
- * Spec 049 B2: the /agent-browser request contract. The endpoint answers
+ * Spec 061 B2: the /agent-browser request contract. The endpoint answers
  * malformed requests with a model-readable reason (not a transport error),
- * and bridge-token URLs are refused before any navigation (048 hard rule 1).
+ * and bridge-token URLs are refused before any navigation (060 hard rule 1).
  */
 class AgentBrowserRequestCodecTest {
 
@@ -60,7 +60,7 @@ class AgentBrowserRequestCodecTest {
         assertNull(AgentBrowserRequestCodec.bridgeTokenViolation("http://127.0.0.1:3000/", token))
     }
 
-    // ---- 054: agent dual-form target (tool-window tab vs editor-form preview) ----
+    // ---- 066: agent dual-form target (tool-window tab vs editor-form preview) ----
 
     @Test
     fun `parses target and rejects values outside the carrier set`() {
@@ -71,7 +71,7 @@ class AgentBrowserRequestCodecTest {
         assertEquals("tab", (tab as AgentParseResult.Valid).request.target)
 
         val absent = AgentBrowserRequestCodec.parse("""{"action":"read"}""")
-        assertNull((absent as AgentParseResult.Valid).request.target, "target-less body parses like the pre-054 contract")
+        assertNull((absent as AgentParseResult.Valid).request.target, "target-less body parses like the pre-066 contract")
 
         val invalid = AgentBrowserRequestCodec.parse("""{"action":"read","target":"window"}""")
         assertEquals(
@@ -81,7 +81,7 @@ class AgentBrowserRequestCodecTest {
         )
     }
 
-    // ---- 053: scroll + console actions, read selector/format (spec 053 B1) ----
+    // ---- 065: scroll + console actions, read selector/format (spec 065 B1) ----
 
     @Test
     fun `parses scroll with direction and clamped amount`() {
@@ -171,7 +171,7 @@ class AgentBrowserRequestCodecTest {
         assertTrue("limit" in paramReason, "reason should list the known parameters: $paramReason")
     }
 
-    // ---- 056: tab addressing (tab id param + list action) ----
+    // ---- 068: tab addressing (tab id param + list action) ----
 
     @Test
     fun `parses the list action`() {
@@ -195,7 +195,7 @@ class AgentBrowserRequestCodecTest {
         )
         assertNull(
             (AgentBrowserRequestCodec.parse("""{"action":"read"}""") as AgentParseResult.Valid).request.tab,
-            "tab-less body parses like the pre-056 contract",
+            "tab-less body parses like the pre-068 contract",
         )
     }
 
@@ -222,7 +222,7 @@ class AgentBrowserRequestCodecTest {
         assertEquals("tab", req.target)
     }
 
-    // ---- 057: the operation layer (click / type / evaluate) ----
+    // ---- 069: the operation layer (click / type / evaluate) ----
 
     @Test
     fun `parses click type evaluate with their payloads`() {
@@ -285,9 +285,9 @@ class AgentBrowserRequestCodecTest {
     }
 
     @Test
-    fun `read keeps its 053 selector truncation unchanged`() {
+    fun `read keeps its 065 selector truncation unchanged`() {
         // The red line: the observation side behaves exactly as it did — only
-        // the 057 actions reject over-long selectors.
+        // the 069 actions reject over-long selectors.
         val read = AgentBrowserRequestCodec.parse("""{"action":"read","selector":"${"c".repeat(250)}"}""")
         assertEquals(200, (read as AgentParseResult.Valid).request.selector?.length)
     }

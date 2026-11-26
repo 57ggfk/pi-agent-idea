@@ -6,7 +6,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * 052: the GPU-crash detector is pure logic on purpose. The platform hook we
+ * 064: the GPU-crash detector is pure logic on purpose. The platform hook we
  * would have used does not exist on the supported line (233-263) and the CEF
  * app-handler slot belongs to the platform, so the plugin reads Chromium's
  * own crash log instead.
@@ -26,7 +26,7 @@ class GpuCrashPolicyTest {
     @Test
     fun `the command buffer symptom is not counted as a crash`() {
         // "Failed to send GpuControl.CreateCommandBuffer" fires many times per
-        // crash (240 lines for 385 crashes in the 049 log) — counting it would
+        // crash (240 lines for 385 crashes in the 061 log) — counting it would
         // inflate the number and fire on a single crash.
         assertFalse(
             GpuCrashPolicy.isGpuCrashLine(

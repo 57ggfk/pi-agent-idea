@@ -1,7 +1,7 @@
 package dev.pi.agent.browser
 
 /**
- * 052: the JCEF log level — the only lever that makes Chromium's GPU crash
+ * 064: the JCEF log level — the only lever that makes Chromium's GPU crash
  * lines readable at all.
  *
  * The platform builds the CefSettings in [com.intellij.ui.jcef.SettingsHelper]

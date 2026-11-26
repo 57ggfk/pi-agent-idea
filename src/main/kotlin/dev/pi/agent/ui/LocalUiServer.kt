@@ -56,11 +56,11 @@ class LocalUiServer private constructor() {
     private val projectTokens = ConcurrentHashMap<String, Project>()
 
     /**
-     * 049: per-project capability tokens for the agent-browser endpoint —
+     * 061: per-project capability tokens for the agent-browser endpoint —
      * handed to the spawned pi process through the environment and checked
      * on every request. Separate from [projectTokens]: the bridge token
      * authorizes the SPA, this one authorizes the pi process, and the
-     * browser tab must never load either (048 hard rule 1).
+     * browser tab must never load either (060 hard rule 1).
      */
     private val agentBrowserTokens = ConcurrentHashMap<String, Project>()
 
@@ -89,7 +89,7 @@ class LocalUiServer private constructor() {
     }
 
     /**
-     * 049 D3: the agent-browser capability token for [project], minted on
+     * 061 D3: the agent-browser capability token for [project], minted on
      * first use. `PiBrowserToolSupport` embeds it in the pi process env.
      */
     fun agentBrowserTokenFor(project: Project): String {
@@ -112,7 +112,7 @@ class LocalUiServer private constructor() {
     /**
      * The project's bridge token if one exists (the chat panel has been
      * opened). `AgentBrowserTool` refuses browser-tab URLs carrying it —
-     * the 048 hard rule 1 continuation.
+     * the 060 hard rule 1 continuation.
      */
     fun bridgeTokenOf(project: Project): String? =
         projectTokens.entries.firstOrNull { it.value === project }?.key
@@ -158,7 +158,7 @@ class LocalUiServer private constructor() {
     }
 
     /**
-     * `/preview/<token>` — local-HTML preview (spec 048 T016 / plan D10).
+     * `/preview/<token>` — local-HTML preview (spec 060 T016 / plan D10).
      * The [dev.pi.agent.browser.PiBrowserPreviews] registry owns the security
      * model: unguessable token, 5-minute TTL, served path locked to the
      * preview temp root. No bridge auth applies and NOTHING here is logged —
@@ -266,14 +266,14 @@ class LocalUiServer private constructor() {
     }
 
     /**
-     * 049 `POST /agent-browser` — the pi_browser tool's channel into the IDE
-     * (spec 049 D2). Auth: a foreign Origin is a web-page CSRF attempt and is
+     * 061 `POST /agent-browser` — the pi_browser tool's channel into the IDE
+     * (spec 061 D2). Auth: a foreign Origin is a web-page CSRF attempt and is
      * rejected outright (same `BridgeAuth` rule as /bridge); the caller —
      * the pi process — carries no Origin but MUST carry the per-project
      * capability token in `X-Pi-Browser-Token` (a cross-origin browser
      * request cannot set custom headers, so drive-by POSTs fail on token
      * alone). NOTHING here is logged: browsed URLs and page text do not
-     * belong in idea.log (048 hard rule 8), and the token is a capability.
+     * belong in idea.log (060 hard rule 8), and the token is a capability.
      */
     private fun serveAgentBrowser(exchange: HttpExchange) {
         val origin = exchange.requestHeaders.getFirst("Origin")

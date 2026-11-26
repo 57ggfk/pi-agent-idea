@@ -123,7 +123,7 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
      * The chat SPA's own origin (`http://127.0.0.1:<port>`), for origin-exact
      * link routing: the SPA stays in the chat browser, but OTHER loopback
      * origins — the AI's dev servers, preview routes — are real links and
-     * route by the setting (049 真机：host-only loopback 检查曾让它们的
+     * route by the setting (061 真机：host-only loopback 检查曾让它们的
      * target=_blank popup 裸开成白窗)。
      */
     private fun ownOrigin(): String? = try {
@@ -133,9 +133,9 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
     }
 
     /**
-     * 048 (spec US4): where chat links go, per the three-state setting.
+     * 060 (spec US4): where chat links go, per the three-state setting.
      * SYSTEM (default) keeps the 037 semantics byte-for-byte; EMBEDDED hands
-     * the URL to the in-app browser tab; ASK shows the 049 selector (spec
+     * the URL to the in-app browser tab; ASK shows the 061 selector (spec
      * US1) — a three-row popup the user picks a destination from. The pure
      * decision lives in [LinkRouting.routeExternalLink] (unit-tested, origin-
      * aware overload per F-107); this wrapper only executes the IDE-side actions.
@@ -165,7 +165,7 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
     /**
      * F-211 (corrected F-107): right-click on a chat link APPENDS the three
      * destination items after a separator instead of clearing the model —
-     * the 049 build wiped the native menu (open in new tab / copy link
+     * the 061 build wiped the native menu (open in new tab / copy link
      * address / save image disappeared). Foreign command ids return false so
      * CEF keeps handling its own items.
      */
@@ -180,7 +180,7 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
             if (url.isBlank()) return
             val m = model ?: return
             m.addSeparator()
-            // 058：与浏览器面板链接菜单同款四项同款顺序——两个 Pi 目的地相邻，
+            // 070：与浏览器面板链接菜单同款四项同款顺序——两个 Pi 目的地相邻，
             // copy 收尾；ASK 选择器（LinkRouting.linkOptions）三行不动。
             m.addItem(PiBrowserHandlers.MENU_ID_OPEN_SYSTEM, PiAgentBundle.message("browser.link.option.SYSTEM_BROWSER"))
             m.addItem(PiBrowserHandlers.MENU_ID_OPEN_EMBEDDED, PiAgentBundle.message("browser.link.option.EMBEDDED"))
@@ -203,7 +203,7 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
                 PiBrowserHandlers.MENU_ID_COPY_LINK -> ApplicationManager.getApplication().invokeLater {
                     CopyPasteManager.getInstance().setContents(StringSelection(url))
                 }
-                // 058: 同浏览器面板第 4 项——编辑器形态新页签，EDT hop
+                // 070: 同浏览器面板第 4 项——编辑器形态新页签，EDT hop
                 //（CEF 回调线程不得触碰 FileEditorManager）。
                 PiBrowserHandlers.MENU_ID_OPEN_PI_EDITOR -> ApplicationManager.getApplication().invokeLater {
                     dev.pi.agent.browser.PiBrowserEditorProvider.openUrlInEditor(project, url, null)
@@ -215,7 +215,7 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
     }
 
     /**
-     * 049 US1: ask-mode selector. Three rows in the spec Q3 order (system
+     * 061 US1: ask-mode selector. Three rows in the spec Q3 order (system
      * browser / Pi browser / copy), Esc or an outside click opens nothing.
      * The raw URL rides along as the popup's ad text so the user always sees
      * exactly what is about to open.
@@ -479,7 +479,7 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
     init {
         layout = BorderLayout()
         border = BorderFactory.createEmptyBorder()
-        // 051: a hidden tool window can lose its page (the renderer may be
+        // 063: a hidden tool window can lose its page (the renderer may be
         // reaped while the window sits in the background), and the health
         // watch deliberately stays quiet while the panel is hidden — a
         // background tab may legitimately be throttled. So the check has to
@@ -497,7 +497,7 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
     /**
      * (Re)creates the browser and navigates to this project's UI URL.
      *
-     * 051: the whole body is guarded. A failure used to leave the panel with
+     * 063: the whole body is guarded. A failure used to leave the panel with
      * nothing in it — the white rectangle the user reported — and when it
      * happened on the EDT it took the IDE's error handler down with it.
      * Every failure now ends on an error card that names the cause and
@@ -579,7 +579,7 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
         }
 
         try {
-            // 052: this may be the FIRST browser of the session, and creating
+            // 064: this may be the FIRST browser of the session, and creating
             // it freezes the JCEF log level. Ask for the level that makes GPU
             // crashes readable before that happens.
             JcefLogLevelGuard.ensure()
@@ -619,7 +619,7 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
     /**
      * Puts an error card where the browser used to be.
      *
-     * 051: this is the panel's last line of defence against the white
+     * 063: this is the panel's last line of defence against the white
      * rectangle. Every failure path ends here, and the card is built
      * defensively too, so a failure while REPORTING a failure still leaves
      * the user with something readable instead of an empty panel.
@@ -659,7 +659,7 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
     }
 
     /**
-     * 051: rebuilds spent since the page last answered.
+     * 063: rebuilds spent since the page last answered.
      *
      * This replaced a SLIDING WINDOW of rebuild timestamps, and that window
      * WAS the bug: it was 60 seconds wide while the silence threshold that
@@ -696,7 +696,7 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
      * or freeze its page without anything being wrong, and rebuilding then
      * would throw away a perfectly good page (and any scroll position).
      *
-     * 051: the decision itself is [PanelHealth.decide] — a pure function,
+     * 063: the decision itself is [PanelHealth.decide] — a pure function,
      * unit-tested without a project, a browser or a clock. It fixes two
      * things:
      *
@@ -743,7 +743,7 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
     /**
      * Rebuilds the browser after the page stopped working. Must run on the EDT.
      *
-     * 051: the budget is [PanelHealth.MAX_CONSECUTIVE_FAILURES] attempts in a
+     * 063: the budget is [PanelHealth.MAX_CONSECUTIVE_FAILURES] attempts in a
      * row. An IDE whose Web Browser component dies on every load used to
      * rebuild for ever; now the panel parks on an error card with a manual
      * retry, so the user gets a reason instead of a flashing white panel.
@@ -758,7 +758,7 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
     }
 
     /**
-     * 051: the rebuild budget is spent. Park on an actionable card instead of
+     * 063: the rebuild budget is spent. Park on an actionable card instead of
      * a white rectangle: the user gets the reason, a Retry button and the
      * address to open elsewhere — the plugin stays usable, and pressing
      * Retry starts the budget over.
@@ -793,8 +793,8 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
      * under the new one. The frontend now calls `ide.repaint` after view
      * changes; this invalidates the whole browser frame so CEF resends it.
      *
-     * The reflection body lives in `browser/JcefFrameRepaint.kt` since 048:
-     * the browser kernel needs the same workaround (spec 048 T005), and two
+     * The reflection body lives in `browser/JcefFrameRepaint.kt` since 060:
+     * the browser kernel needs the same workaround (spec 060 T005), and two
      * copies of a reflection hack are a regression waiting to happen.
      */
     fun repaintBrowser() {
@@ -837,7 +837,7 @@ class PiAgentPanel(private val project: Project, private val instanceId: Int = 1
          */
         const val UNCLAIMED_DROP_DELAY_MS = 600
 
-        // 051: the silence threshold and the rebuild budget live in
+        // 063: the silence threshold and the rebuild budget live in
         // [PanelHealth] — a pure helper, unit-tested without a project, a
         // browser or a clock. They used to be constants here, next to a
         // sliding window that was SHORTER than the threshold itself, which

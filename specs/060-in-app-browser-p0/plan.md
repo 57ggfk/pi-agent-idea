@@ -1,4 +1,4 @@
-# Implementation Plan: 048 内置浏览器 P0（预览基座）
+# Implementation Plan: 060 内置浏览器 P0（预览基座）
 
 **Branch**: `release/0.5.10` | **Date**: 2026-11-18 | **Spec**: [spec.md](./spec.md)
 **Tasks**: [tasks.md](./tasks.md)
@@ -46,7 +46,7 @@
 
 ## 现状与代码定位（已核对）
 
-| 位置 | 现状 | 048 会怎样 |
+| 位置 | 现状 | 060 会怎样 |
 |---|---|---|
 | `PiAgentToolWindowFactory.java:53-72` | `createInstanceContent(project, toolWindow, instanceId)` 建 pi 实例 Content + `CloseGuard` 监听 | 新增 `createBrowserContent`（同模式第二类 Content）；`contentRemoved` 里区分实例/浏览器（浏览器直接放行不弹确认） |
 | `PiAgentPanel.kt:79-92` | `linkHandler.onBeforeBrowse`：非 loopback → `BrowserUtil.browse` + 取消导航 | 按设置路由：system（现状）/ embedded → `PiBrowserManager.open(url)` / ask → 确认框；决策逻辑抽纯函数 |

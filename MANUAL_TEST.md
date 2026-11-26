@@ -528,7 +528,7 @@
 - [ ] provider 还在、只是没登录（如 openrouter 无凭据）→ 保留原偏好，插件不擅自替用户改掉模型选择
 - [ ] pi 仍以 Unknown provider 退出 → 自动去掉模型覆盖重启一次，不反复循环
 - [ ] 退出横幅标题直接显示 pi 的报错正文（如 `Error: Unknown provider "ds"`），完整 stderr 仍在「查看详情」的折叠区里
-## 048-B 内置浏览器 P0（spec 048 新增）
+## 060 内置浏览器 P0（spec 060 新增）
 
 > 自动化可达项已在 CI/探针脚本覆盖（内核单测、路由决策、一次性预览 token）；以下是需要真机目验/手势的项。
 > 环境注意：本机为远程串流会话（虚拟显示 ~30fps），帧率绝对值不作判据，只看功能与可读性。
@@ -569,11 +569,11 @@
 - [ ] 导出会话 HTML → 通知点「预览」→ 页签打开且内容与导出文件一致；预览 URL 5 分钟后刷新 → 过期死亡（错误卡），重新发起即可
 - [ ] 无 JCEF 环境（`-Dide.browser.jcef.headless.enabled=false` 启动）→ 浏览器入口降级为错误卡，不崩溃
 
-## 048 走查修复批真机复验（2026-11-20，重建包 r2）
+## 060 走查修复批真机复验（2026-11-20，重建包 r2）
 
 > 复验对象：给定复验 zip 实为**修复前旧构建**（md5 `8086343b…` 与已装坏包逐字节相同；PiBrowserHistory / DevServerProbe / PiDownloader / PiBrowserCookieActions / JcefBrowserZoom / BrowserConsoleBuffer 六个修复类全缺）。
 > 处置：从 worktree HEAD `485b8e3` 跑 `./gradlew buildPlugin` 重建（新 zip md5 `c00ef522…`，含全部修复类）→ 重装序列 WM_CLOSE→Confirm Exit→Exit→idea64 退出码 0→备份 bak-prerefix-r2→换包→重启→过启动（项目已信任，无信任框）→CDP 9222 就绪。
-> **以下各项均只对重建包复验**；截图在 `build/walkthrough/`（crop-r2-*.png / shot-r2-*.png，不入库）；完整明细与未过项分析见 `specs/0.5.10-run-report.md`「048 走查修复批真机复验」段。
+> **以下各项均只对重建包复验**；截图在 `build/walkthrough/`（crop-r2-*.png / shot-r2-*.png，不入库）；完整明细与未过项分析见 `specs/0.5.11-run-report.md`「060 走查修复批真机复验」段。
 > 结论：**25 项 = 15 过 / 10 未过**（9 项复现失败 + 1 项 BLOCKED 无法验证）；其中两个是本轮修复引入的新回归（F-201 地址栏 Enter 劫持、F-208 页签隔离），发版前需再修一轮。
 
 - [x] **F-101 地址栏直输（IME 关闭）**：任务栏输入指示器为「中」（微信输入法 CN 模式）下真点击地址栏 → Ctrl+A → 慢速直打完整 URL → 字段精确显示 `http://127.0.0.1:8931/star-clock.html`，无丢字符/变形；随后 Enter 曾被 F-201 新回归劫持（见下），Esc 关下拉后 Enter 正常导航到星空时钟（CDP title=星空时钟）。截图 crop-r2-f101-typed.png、crop-r2-imebar.png
@@ -597,12 +597,12 @@
 - [x] **F-209 DevTools 入口**：工具条第 4 个按钮为 DevTools（宽态 crop-r2-browser0.png）；页内右键含「Open DevTools」（crop-r2-f104menu.png）；点击后 DevTools 以独立窗口打开（CDP 新 target devtools://devtools/bundled/devtools_app.html，任务栏独立 DevTools 窗口，shot-r2-f209.png），WM_CLOSE 干净关闭
 - [x] **F-210 错误码**：8933 死端口错误卡新增「Reason: ERR_CONNECTION_REFUSED (ERR_CONNECTION_REFUSED)」行（crop-r2-f210.png）；黑洞停止场景显示「Reason: ERR_EMPTY_RESPONSE (ERR_EMPTY_RESPONSE)」（crop-r2-f203-stopped.png）——错误码随事件类型正确变化
 - [x] **F-211 聊天面板右键加法**：非链接区域 CEF 默认四项保留；链接区域为 CEF 默认项+Open DevTools+三自定义项（crop-r2-f104menu.png），Copy link address 剪贴板精确；「复制链接文本」按计划降级为复制地址、「检查」由平台 DevTools 菜单项覆盖
-- [x] **F-212 地址栏直搜**：地址栏粘贴「react hooks 文档」（Esc 关下拉后 Enter）→ CDP target {title:'react hooks 文档 - Search', url:'https://www.bing.com/search?q=react+hooks+%E6%96%87%E6%A1%A3&rdr=1…'}——Bing 直搜生效，不再是 punycode 错误卡（spec 048 Q1 拍板行与 F-101 IME 取舍标注已核对）
+- [x] **F-212 地址栏直搜**：地址栏粘贴「react hooks 文档」（Esc 关下拉后 Enter）→ CDP target {title:'react hooks 文档 - Search', url:'https://www.bing.com/search?q=react+hooks+%E6%96%87%E6%A1%A3&rdr=1…'}——Bing 直搜生效，不再是 punycode 错误卡（spec 060 Q1 拍板行与 F-101 IME 取舍标注已核对）
 - [ ] **F-213 下载体验——未验（BLOCKED，如实报）**：通知 reveal 动作、下载进度 echo、bridge ide.downloadFile 均以「下载成功落盘」为前提，而 F-110 未过（onBeforeDownload 不触发、无落盘无通知），无从验证；代码侧已核对存在（bridge 新方法等），bundle reveal 动作是否在包内未单独核对
 - [ ] **F-214 dev server 自动探测——未过**：聊天让 AI 以自动探测模式（不传 url）调 pi_browser open → 返回 error（3.0s）「Pi browser: FAILED — no loopback dev server found to auto-detect (nothing listening)…」——但 8931 全程在监听（本轮全部测试都在用它）；纯函数单测绿但真机 netstat 解析没找到任何候选。降级文案本身模型可读（这部分符合修复声明）
-- [ ] **F-215 弹窗接续/cookie——未过（部分）**：loopback 弹窗用户可见行为仍为原位接续（anchor blank 点击→?nav=1，crop-r2-f103.png）；但插件日志显示路由决策为「browser popup intercepted: … -> CefDefault」（idea.log 02:36:15/02:37:51 两行）——显式 in-place 路由未按声明接管，实际仍走 CEF 默认；cookie 清理动作无任何 UI 入口，真机无法触发（源码存在）；登录态/存储模式依旧缺失（048 已声明推迟）——核心诉求未解决
+- [ ] **F-215 弹窗接续/cookie——未过（部分）**：loopback 弹窗用户可见行为仍为原位接续（anchor blank 点击→?nav=1，crop-r2-f103.png）；但插件日志显示路由决策为「browser popup intercepted: … -> CefDefault」（idea.log 02:36:15/02:37:51 两行）——显式 in-place 路由未按声明接管，实际仍走 CEF 默认；cookie 清理动作无任何 UI 入口，真机无法触发（源码存在）；登录态/存储模式依旧缺失（060 已声明推迟）——核心诉求未解决
 
-### 049 复验轮 2（用户授权修复批，2026-11-20 真机三重建装复验）
+### 061 复验轮 2（用户授权修复批，2026-11-20 真机三重建装复验）
 
 - [x] F-110 下载：地址栏导航 download-sample.bin → 拦截日志 + Downloads 落盘 2048B + 页面保持原页（导航正确取消）；F-213 通知/reveal 通道随之解锁
 - [x] F-201：历史弹窗（Recent URLs）开启时 Esc→Ctrl+A→输入新 URL→Enter → 正确导航（自绘弹窗不抢焦点修复生效，无 Bing 空搜索）
@@ -614,14 +614,14 @@
 - [x] F-202 部分：windowed 页签键盘拦截为平台限制（onPreKeyEvent 不触发，无 JBCefKeyboardListener 可用）——Alt+←/→ 仅 OSR 页签可用，文档化；Ctrl+L/Esc/Ctrl+R/F5 正常
 - [x] F-209：DevTools 按钮意外验证可用（坐标试错点击打开 DevTools 窗口）
 
-### 048 预览编辑器缺陷修复真机复验（2026-11-20，commit d556aad / b8a8e84）
+### 060 预览编辑器缺陷修复真机复验（2026-11-20，commit d556aad / b8a8e84）
 
 样本：`build/preview-check/preview-sample.html`（仓库内建，插件快照走 `%TEMP%\pi-agent-preview*`）。动作路径：编辑器页签右键 → Pi Agent → Open in Editor (Pi preview)。
 
 - [x] **getFile() 缺陷**：PiBrowserFileEditor 未覆写 FileEditor.getFile()，IDEA 262 每次 EditorChange 记 SEVERE（"must override it"）并向平台返回 null。修复后真机：动作触发后新建「pi-preview: preview-sample.html」页签并渲染出页面；idea.log 11:06–11:10 全段 **0 条 PiBrowserFileEditor 日志、0 条 SEVERE**（修复前同一路径 09:41 成片刷屏）
 - [x] **预览刷新缺陷**：servePreview 在响应后删掉快照文件，与注册表「token 5 分钟内可重复取用」的约定冲突 → 同一 token 二次取用必 404（并发时 500）。修复后真机：预览页签点刷新钮 → 页面时间戳由 11:09:24 变 11:10:03（重新渲染，非错误卡）；idea.log **0 条 preview serve failed / UI request failed**；快照文件 886 bytes 在服务与刷新之后仍留在 `%TEMP%\pi-agent-preview9774978225299840308\preview-sample-mwoehprh.html`
 
-### 049 工具条复检真机验证（2026-11-20，分支 release/0.5.10-browser-build）
+### 061 工具条复检真机验证（2026-11-20，分支 release/0.5.10-browser-build）
 
 输入：用户看图指出三个问题——① 每个按钮太宽；② DevTools 与「在系统浏览器打开」两个钮要收进下拉，下拉钮放在 Go 右侧；③ 打开 DevTools 弹窗空白（点右上角才能关掉）。
 
@@ -631,7 +631,7 @@
 - [x] **下拉收编**：Go 右侧新增「⋮」下拉钮，点开为标题「Browser actions」的菜单，两项分别为 **Open DevTools**（放大镜图标）与 **Open in system browser**（箭头图标，未加载页面时置灰）
 - [x] **预览渲染无回归**：预览页签照旧渲染出 PI-BROWSER-PROBE-H1 / path= / open target=_blank / anchor blank，地址栏回显 http://127.0.0.1:50108/preview/<token>
 - [x] **DevTools 弹窗空白——已修复（机器侧 JCEF GPU 开关）**：根因是本机 CEF GPU 进程连环崩溃（exit_code=-2147483645 / STATUS_BREAKPOINT），窗口拿不到 GPU command buffer → 属机器环境问题、非插件缺陷；处置与复验见下一节：窗口实拍（624×631 全白），AX 树可见原生标题栏与地址栏 devtools://devtools/bundled/devtools_app.html?remoteBase=...；前端本身正常（bundled 资源加载完成，_createAppUI 440ms / _showAppUI 85ms / _initializeTarget 27ms，CDP 378 条命令）——**空白出在合成层**：12:32:43.870（DevTools 窗口创建那一刻）起 CEF GPU 进程连环崩溃 exit_code=-2147483645（STATUS_BREAKPOINT），到 12:35 累计 180 次 GPU 退出 + 98 次 Failed to send GpuControl.CreateCommandBuffer，窗口拿不到 command buffer → 画不出内容。修法是 IDE 级开关 -Dide.browser.jcef.gpu.disable=true（或 registry 键 ide.browser.jcef.gpu.disable）后重启 IDE（JCEF 知识库「预览白屏/黑屏」条目 IDEA-299007）；另一条路线是开 CDP 端口 + 系统浏览器打开真 DevTools（本机 CDP 未开：9222 未监听、无 DevToolsActivePort 文件）
-### 049 DevTools 空白修复真机复验（2026-11-20，机器侧 JCEF GPU 开关）
+### 061 DevTools 空白修复真机复验（2026-11-20，机器侧 JCEF GPU 开关）
 
 处置：定位生效的 vmoptions 为环境变量 `IDEA_VM_OPTIONS` 指向的 `C:\Users\Administrator\AppData\Local\JetBrains\jetbra\vmoptions\idea.vmoptions`（`%APPDATA%\JetBrains\IntelliJIdea2026.2\idea64.exe.vmoptions` 不生效），先备份 `idea.vmoptions.bak-20261120-123916`，再以 `[System.IO.File]::WriteAllText`（LF / UTF-8 无 BOM）追加独立一行 `-Dide.browser.jcef.gpu.disable=true`；重启 IDEA（新 PID 11400）。
 
@@ -641,7 +641,7 @@
 - [x] **右上角关闭钮可用**：AX 树含原生 TitleBar 的 Minimize / Maximize / Close；点击 Close 后窗口从窗口列表消失（cef_server 窗口数 0）
 - [x] **重开路径复验**：关闭后再次「⋮」→ Open DevTools（回车触发），新窗口正常渲染，任务栏出现 DevTools 条目
 - [x] **预览页无回归**：关 GPU 后预览页签照旧渲染 PI-BROWSER-PROBE-H1 / path= / open target=_blank / anchor blank
-### 050 浏览器失活健壮性真机验证（2026-11-20）
+### 062 浏览器失活健壮性真机验证（2026-11-20）
 
 输入：用户贴出 IDE「IDE Internal Errors」弹窗——`NullPointerException: Cannot invoke "java.lang.Boolean.booleanValue()"` at `RemoteBrowser.canGoBack` → `PiBrowserKernel.canGoBack` → `BrowserPanel.onStateChanged`。
 
@@ -653,17 +653,17 @@
 - [x] **导航中立刻关页签**：点刷新后立即关掉预览页签 → 无弹窗、无异常
 - [x] **强杀渲染进程**（PID 6504）：插件走自带崩溃卡「The embedded browser crashed — 渲染进程已死并自动重建」+ Retry / Open in Browser / Copy Address；日志 rebuilding renderer (1) → windowed browser created；**无 IDE 错误弹窗**
 - [x] **强杀整个 cef_server**（PID 38928 + 5 个子进程）：面板退回浏览器组件、页面空白，但 IDE 不崩、**0 内部错误**、0 未捕获异常
-- [x] **崩溃卡 Retry 按钮未响应**（050 遗留 → 051 查明根因并修复）：当时「合成点击只把焦点移到按钮上」是因为按钮**根本没渲染**——`BrowserPanel.showErrorCard` 传的是 `lastUrl.ifBlank { null }`，而 `PiUiErrorPanel` 旧逻辑要求 `url != null` 才渲染按钮，地址为空时卡面文案写着「Press Retry」却无按钮可按。051 改为「有 onRetry 就有按钮」，真机复验见下一段
-### 051 面板异常不崩溃 / 不空白真机复验（2026-11-20，分支 release/0.5.10-browser-build）
+- [x] **崩溃卡 Retry 按钮未响应**（062 遗留 → 063 查明根因并修复）：当时「合成点击只把焦点移到按钮上」是因为按钮**根本没渲染**——`BrowserPanel.showErrorCard` 传的是 `lastUrl.ifBlank { null }`，而 `PiUiErrorPanel` 旧逻辑要求 `url != null` 才渲染按钮，地址为空时卡面文案写着「Press Retry」却无按钮可按。063 改为「有 onRetry 就有按钮」，真机复验见下一段
+### 063 面板异常不崩溃 / 不空白真机复验（2026-11-20，分支 release/0.5.10-browser-build）
 
-输入：用户报「异常之后插件空白了，能否优化到，出现异常插件不要崩溃还能用」（前一批 050 报「健壮性需要提升」）。
+输入：用户报「异常之后插件空白了，能否优化到，出现异常插件不要崩溃还能用」（前一批 062 报「健壮性需要提升」）。
 
 **自动化已过**（先做完再上真机）：
 
 - [x] **单测（RED→GREEN 亲眼见证）**：新增 `PanelHealthTest` 8 条（只认本次挂载后的轮询 / 连续失败预算 / 四种决策）、`AutoRecreatePolicyTest` 4 条（重建限速）、`BrowserSafetyTest` +2 条（`Error` 子类必须降级、`VirtualMachineError` 必须原样抛出）；合计 469 → **483** 用例 / 0 失败 / 0 错误 / 5 跳过
-- [x] **碎片**：`changelog.d/051-*.fixed.md` 三条；`collectChangelog -PdryRun=true` 通过，三条中英文均进入收集结果
+- [x] **碎片**：`changelog.d/063-*.fixed.md` 三条；`collectChangelog -PdryRun=true` 通过，三条中英文均进入收集结果
 - [x] **构建**：`buildPlugin` PASS，产物 pi-agent-idea-0.5.9.zip（16:04:46）
-- [x] **换装舞台**：已按新包刷新，staged MD5 = build/libs MD5 = `2ED2710D9D30573965986C12D7247A8C`；已装 jar 仍是 050 旧包 `DBCFBAF2…`（IDE 运行中，jar 被内存映射锁）
+- [x] **换装舞台**：已按新包刷新，staged MD5 = build/libs MD5 = `2ED2710D9D30573965986C12D7247A8C`；已装 jar 仍是 062 旧包 `DBCFBAF2…`（IDE 运行中，jar 被内存映射锁）
 - [x] **换装完成**：IDE 退出后重装，installed MD5 = `2ED2710D9D30573965986C12D7247A8C` = build/libs MD5（回滚备份 `pi-agent-idea-0.5.9.jar.bak-20261120-202810`）；新实例（21:02:24 起）跑完下面全部真机项
 
 **真机复验**（2026-11-20 20:33–21:07，IDEA 2026.2.3，工程 `release-0.5.10-20261116/test/e2e-project`）：
@@ -677,25 +677,25 @@
 - [x] **关掉最后一个 Pi 标签页 → 内容立刻回来**（046 行为未回归）：`Pi Agent tool window closed to empty; recreating a clean content` + 立刻 `Pi Agent UI: loading …`
 - [ ] **5 秒内连关两次被限速拦下**：**未能在真机上复现**——合成点击命中标签页关闭钮不稳定（21:04:13 成功关过一次，之后连点 10+ 次均未触发关闭），拿不到 `not recreating again yet` 这条 WARN。该分支由 `AutoRecreatePolicyTest` 4 条单测覆盖（disposing 一律拒绝 / 首次允许 / 间隔内跳过 / 间隔后再允许）
 - [ ] **关机期风暴**：本次关机（21:00:00 `IDE SHUTDOWN`）日志里 `closed to empty` **0 条**（旧实例 12 秒内 11 条）；但本次关机时工程已先被 dispose，旧代码里本来就有的 `project.isDisposed()` 早退也会得到同样结果，**这一条不能单独证明限速生效**——与上一条同因，留作下轮
-- [ ] **崩溃卡在无地址时也渲染 Retry**（050 遗留根因修复）：代码条件已改（`onRetry != null` 即渲染，不再要求 `url != null`），但本轮没有触发到「无地址」的崩溃卡，留作下轮
+- [ ] **崩溃卡在无地址时也渲染 Retry**（062 遗留根因修复）：代码条件已改（`onRetry != null` 即渲染，不再要求 `url != null`），但本轮没有触发到「无地址」的崩溃卡，留作下轮
 
-### 052 GPU 崩溃守卫真机复验（2026-11-20，分支 release/0.5.10-browser-build）
+### 064 GPU 崩溃守卫真机复验（2026-11-20，分支 release/0.5.10-browser-build）
 
-输入：用户拍板 052「A+D」= GPU 失败时拦截（通知 + 一键处置）+ 附说明兜底。049 的 DevTools 白屏已被证实是 GPU 进程反复崩溃。
+输入：用户拍板 064「A+D」= GPU 失败时拦截（通知 + 一键处置）+ 附说明兜底。061 的 DevTools 白屏已被证实是 GPU 进程反复崩溃。
 
 **平台查证（先做，选型靠它定）**：
 
 - [x] **平台自带健康检查存在但太晚**：`JBCefHealthMonitor` / `JBCefHealthCheckTopic` **只在 2026.2 有**（233–243 发行包里没有）。平台调 `onGpuProcessFailed()` 的时机是**自己的 GPU 启动上限被突破之后**（默认 10 次），那时它已经 `CefApp.dispose()`，属于事后通知
 - [x] **抢不了平台的 app handler**：`CefApp.addAppHandler` 只有在「还没有任何 CefApp 实例」时才能注册；用户槽 `userAppHandler_` 会**顶掉**平台自己的 handler（CefApp 构造里 `appHandler_ = userAppHandler_`），抢它等于关掉平台自己的 GPU 计数
 - [x] **Windows 读不到进程命令行**：`ProcessHandle.Info.commandLine()` 在本机恒为 null（连 JVM 自己的子进程也是），GPU / renderer / utility 无法区分 → v1 的「数 GPU 进程」方案作废并删除
-- [x] **唯一可用的信号是 Chromium 日志**：每次 GPU 崩溃恰好 1 行 `GPU process exited unexpectedly`（049 会话 385 行；本机杀 3 次 = 3 行）
+- [x] **唯一可用的信号是 Chromium 日志**：每次 GPU 崩溃恰好 1 行 `GPU process exited unexpectedly`（061 会话 385 行；本机杀 3 次 = 3 行）
 - [x] **默认配置下日志是哑弹**：平台默认 `LOGSEVERITY_DISABLE`，`jcef_chromium_<pid>.log` 0 字节；级别来自**系统属性** `ide.browser.jcef.log.level`（243 源码 + 262 字节码同构），在**第一个浏览器创建时**冻结 → 插件必须自己设
 - [x] **平台不预热（Windows/Linux）**：`JBCefStartup` 预热服务带 `os="mac"`，所以 Win/Linux 上 CEF 只在首个浏览器创建时初始化 → 插件抢在前面设级别是可行的
 
 **自动化已过**：
 
 - [x] **单测（RED→GREEN 亲眼见证）**：新增 `JcefLogLevelPolicyTest` 6 条（未设级别→SET / 用户设过→KEEP / JCEF 已起→TOO_LATE / 用户级别优先 / 只有含 ERROR 的级别才看得到崩溃行）+ `GpuCrashLogTailerTest` 4 条（首次见到不回放历史 / 只报新增 / 跨轮次半行拼回 / 忽略别的 IDE 实例的日志）；合计 59 类 492 → **61 类 502 用例** / 0 失败 / 0 错误 / 5 跳过
-- [x] **碎片**：`changelog.d/052-gpu-crash-guard.added.md`、`052-gpu-troubleshooting-guide.added.md`、`052-jcef-error-log.added.md`；`collectChangelog -PdryRun=true` 通过，三条中英文均进入收集结果
+- [x] **碎片**：`changelog.d/064-gpu-crash-guard.added.md`、`064-gpu-troubleshooting-guide.added.md`、`064-jcef-error-log.added.md`；`collectChangelog -PdryRun=true` 通过，三条中英文均进入收集结果
 - [x] **构建**：`buildPlugin` PASS
 - [x] **换装**：IDE 退出后重装，installed MD5 = `B6874B4E6D5265BD800F58283CBAAE86` = build/libs MD5（备份 `pi-agent-idea-0.5.9.jar.bak-20261120-222724`）
 
@@ -711,75 +711,75 @@
 - [x] **面板无回归**：`pi agent UI server started` → `Pi Agent UI: loading` → `bridge poll connected`，面板照旧渲染
 - [ ] **macOS 上级别可能被平台预热抢先**（`JBCefStartup` 带 `os="mac"`）：该次会话会记一条 WARN 并提示用 `-Dide.browser.jcef.log.level=error`；本轮真机只有 Windows，未实测
 
-### 053 pi_browser 观测面强化真机验收（2026-11-23，未执行——verifyPlugin 门禁未过，全部如实留痕）
+### 065 pi_browser 观测面强化真机验收（2026-11-23，未执行——verifyPlugin 门禁未过，全部如实留痕）
 
-批次：① scroll 子动作 + read 的 selector 摘录（outerHTML/innerText）；② console 按需回读（单调序号/dropped/since/limit + JSONL 落盘供 grep）。实现已提交（926f9bd…1a6a90a 共 8 个提交：7 代码 + 1 文档），spec `specs/053-browser-observability/spec.md`（真机清单 §七）。门禁：测试门禁过、collectChangelog+buildPlugin 过、**verifyPlugin exit=1 未过** → 真机验收整体挂起：**10 项 0 过，无日志行/无截图（未运行）**，清单随 0.5.10 发版验证轮回归。
+批次：① scroll 子动作 + read 的 selector 摘录（outerHTML/innerText）；② console 按需回读（单调序号/dropped/since/limit + JSONL 落盘供 grep）。实现已提交（926f9bd…1a6a90a 共 8 个提交：7 代码 + 1 文档），spec `specs/065-browser-observability/spec.md`（真机清单 §七）。门禁：测试门禁过、collectChangelog+buildPlugin 过、**verifyPlugin exit=1 未过** → 真机验收整体挂起：**10 项 0 过，无日志行/无截图（未运行）**，清单随 0.5.11 发版验证轮回归。
 
 **门禁留痕**（2026-11-23 文档轮汇总）：
 
 - [x] **测试门禁过**：全量 `gradlew test` BUILD SUCCESSFUL，XML 实数 tests=537 / failures=0 / errors=0 / skipped=5（既有 skip）、64 个测试类；实现批 2026-11-21 01:27:08 实跑（XML 文件时间戳），文档轮聚合复核一致
 - [x] **collectChangelog / buildPlugin 过**：exit=0（实现批回报）；`collectChangelog -PdryRun=true` 文档轮复核 BUILD SUCCESSFUL in 6s
-- [ ] **verifyPlugin exit=1——未过（真机验收挂起的直接原因）**：文档轮 2026-11-23 重跑两次均死于依赖解析 `Could not resolve idea:ideaIC:2026.2`（`cache-redirector.jetbrains.com` / `artifacts-caching-proxy.aws.intellij.net` 的 POM 请求与 `download.jetbrains.com/idea/ideaIC-2026.2-win.zip` 均 Remote host terminated the handshake）。6 个校验 IDE 里唯 2026.2 本机无缓存（0.5.9 后按 F-110 教训新增，build.gradle.kts:465），编译基线 2024.3.1 已缓存（build.gradle.kts:40）——属环境网络问题，**053 代码兼容性=未验证（非验证失败）**。日志：`build/verifyplugin-053-docs-rerun.log`（27s）/ `build/verifyplugin-053-docs-rerun2.log`（38s）；重跑命令 `./gradlew verifyPlugin --console=plain`
+- [ ] **verifyPlugin exit=1——未过（真机验收挂起的直接原因）**：文档轮 2026-11-23 重跑两次均死于依赖解析 `Could not resolve idea:ideaIC:2026.2`（`cache-redirector.jetbrains.com` / `artifacts-caching-proxy.aws.intellij.net` 的 POM 请求与 `download.jetbrains.com/idea/ideaIC-2026.2-win.zip` 均 Remote host terminated the handshake）。6 个校验 IDE 里唯 2026.2 本机无缓存（0.5.9 后按 F-110 教训新增，build.gradle.kts:465），编译基线 2024.3.1 已缓存（build.gradle.kts:40）——属环境网络问题，**065 代码兼容性=未验证（非验证失败）**。日志：`build/verifyplugin-065-docs-rerun.log`（27s）/ `build/verifyplugin-065-docs-rerun2.log`（38s）；重跑命令 `./gradlew verifyPlugin --console=plain`
 
 **真机验收逐项**（全未勾；括号内为实现批已过的单测层证据，非真机）：
 
 - [ ] **codec scroll/console 解析与钳制**（AgentBrowserRequestCodecTest 8/0：amount 钳 1..10000、limit 1..200、since≥0、非法 direction/未知参数降级 model 可读 Invalid）——未真机验收
-- [ ] **read selector 摘录两路**（PageSnapshotSanitizerTest 12/0：querySelector outerHTML/innerText、未命中 error 字段、选择器转义、无 selector 脚本与 049 逐字节一致）——未真机验收
+- [ ] **read selector 摘录两路**（PageSnapshotSanitizerTest 12/0：querySelector outerHTML/innerText、未命中 error 字段、选择器转义、无 selector 脚本与 061 逐字节一致）——未真机验收
 - [ ] **scroll 脚本只读视口**（PageScrollTest 8/0：仅 window.scrollBy、不写 DOM、不含 token、异常 error 降级、构造端钳制）——未真机验收
 - [ ] **kernel scrollPage 复用唯一 JBCefJSQuery 通道**（纯逻辑 PageScrollTest 覆盖；JCEF handler 通道按纪律属真机清单）——未真机验收
-- [ ] **tool scroll 分支**（AgentBrowserToolPollTest 4/0：TIMEOUT 与空页签文案；AgentBrowserToolResponseTest 6/0：scrollY 插 text 后、字段序与 049 全等）——未真机验收
+- [ ] **tool scroll 分支**（AgentBrowserToolPollTest 4/0：TIMEOUT 与空页签文案；AgentBrowserToolResponseTest 6/0：scrollY 插 text 后、字段序与 061 全等）——未真机验收
 - [ ] **console 缓冲单调序号/dropped/since/容量 300**（BrowserConsoleBufferTest 12/0；LogSafe 截断与 error/warning 过滤不变）——未真机验收
-- [ ] **console JSONL 落盘**（ConsoleLogFileTest 5/0 临时目录：append/cap/rotate；048 硬规则 8 的 idea.log 复核待真机）——未真机验收
+- [ ] **console JSONL 落盘**（ConsoleLogFileTest 5/0 临时目录：append/cap/rotate；060 硬规则 8 的 idea.log 复核待真机）——未真机验收
 - [ ] **tool console 响应 {ok,total,dropped,count,lines,file}**（AgentBrowserToolResponseTest：count=matched、lines `[index] text`、空 buffer ok:true+reason、无页签 ok:false）——未真机验收
 - [ ] **pi-browser.js schema**（node --check 过、formatSnapshot 逐字未动、formatConsole 1500 字符封顶——实现批回报）——真机 pi 会话未验
-- [ ] **pi 会话端到端六项**（spec 053 §七：长页 scroll scrollY 变化、selector 命中/未命中、>5 条 console 错误回读 total/lines/file、read 无参数 049 回归、since 分页、idea.log 复核）——未执行
+- [ ] **pi 会话端到端六项**（spec 065 §七：长页 scroll scrollY 变化、selector 命中/未命中、>5 条 console 错误回读 total/lines/file、read 无参数 061 回归、since 分页、idea.log 复核）——未执行
 
-### 053 观测面批真机验收（2026-11-21 凌晨，PI 会话三轮闭环，真实键鼠）
+### 065 观测面批真机验收（2026-11-21 凌晨，PI 会话三轮闭环，真实键鼠）
 
 - [x] scroll 子动作：AI 自建 tall-test.html（3000px+实时 scrollY 横栏）→ pi_browser open（scrollY=0）→ scroll down 600 → 返回文本 scrollY=600 TALL-TEST-BOTTOM → read DOM 精确读取 `<span id="scrollYValue">600</span>`——滚距精确无偏差
-- [x] read selector 摘录：selector:h1 → 只摘录 h1 元素文本（POSTLOAD-ERR-H1），未命中返回 error 字段；无 selector 时行为与 049 逐字节一致（回归通过）
+- [x] read selector 摘录：selector:h1 → 只摘录 h1 元素文本（POSTLOAD-ERR-H1），未命中返回 error 字段；无 selector 时行为与 061 逐字节一致（回归通过）
 - [x] console 回读：postload-err.html 延迟 3s fire 6 条 console.error（文字各异含 ERR-MARK）→ open 后等 5s → console 操作返回 total=6 dropped=0 + 全部 6 条文字；limit=3 分页生效（6 matched 3 shown）
-- [x] console JSONL 落盘：AI 以 bash 核对落盘文件路径/行数/字段结构正常；绝不进 idea.log（048 硬规则 8）
+- [x] console JSONL 落盘：AI 以 bash 核对落盘文件路径/行数/字段结构正常；绝不进 idea.log（060 硬规则 8）
 - [x] pi_browser 工具全链路：三轮会话中 open/read/scroll/console 四种动作真实调用共 10+ 次，全部 0.0-0.3s 返回，工具卡片在聊天中正常渲染
 - [x] verifier 门禁修复：2026.2 目标在本仓库 resolve 不可达（detached configuration 缺 intellij-repository）→ 移除并文档化（262 行 ABI 检测由每轮真机验收覆盖）→ verifyPlugin BUILD SUCCESSFUL
 
-### 054 打开形态批真机验收（2026-11-21，重装轮 059，真实键鼠）
+### 066 打开形态批真机验收（2026-11-21，重装轮 071，真实键鼠）
 
-> 对象：054 三形态入口批（实现提交 d53a881，15 文件 +607/−36）——变更1 浏览器页签内链接右键追加第 4 项「在 Pi 编辑器打开」（原生项后追加、不接管不清空，chat 面板链接路由不动）；变更2 工具条「⋮」浏览器操作弹窗新增「在 Pi 浏览器页签打开」与「在 Pi 编辑器打开」，当前形态对应项置灰；变更3 本地 HTML 经「Open in Pi Browser/Editor」改为 file:/// 直开（048 硬约束 2 经用户授权放宽：仅限用户主动右键打开的本地文件）。
+> 对象：066 三形态入口批（实现提交 d53a881，15 文件 +607/−36）——变更1 浏览器页签内链接右键追加第 4 项「在 Pi 编辑器打开」（原生项后追加、不接管不清空，chat 面板链接路由不动）；变更2 工具条「⋮」浏览器操作弹窗新增「在 Pi 浏览器页签打开」与「在 Pi 编辑器打开」，当前形态对应项置灰；变更3 本地 HTML 经「Open in Pi Browser/Editor」改为 file:/// 直开（060 硬约束 2 经用户授权放宽：仅限用户主动右键打开的本地文件）。
 > 门禁：测试门禁过（全量 gradlew test BUILD SUCCESSFUL，556 tests / 0 failures / 0 errors / 5 既有 skip；browser 包 159 过 = 基线 140 + 新增 19）；collectChangelog+buildPlugin exit=0、verifyPlugin exit=0。
 > 重装流程：idea64 两次归零（WM_CLOSE→确认退出→Exit）→备份 `pi-agent-idea.bak-0.5.9-059-pre048b-20261121-080619`→zip 覆盖安装（lib/pi-agent-idea-0.5.9.jar=3573744B，11-21 07:58，与 zip 一致；jar 内 plugin.xml 含两动作、bundle 含新键、新类为 11-21 07:42 编译）→重启。首次重启后 9222 不监听（机器级 jetbra vmoptions 无 CDP 端口）→再次干净退出，按 SKILL 规则复制 jetbra vmoptions 追加 `-Dide.browser.jcef.debug.port=9222` 重启（javaagent 保留、授权未丢、无许可框；存档 build/ide-probe/059/idea-e2e.vmoptions）→CDP /json/list 就绪；e2e-project 已信任无信任框。运行实例为真实配置 IntelliJIdea2026.2（非沙盒 IC-2024.3.1，其 log 停在 11-20 22:26）。截图 build/walkthrough/059-*.png（不入库）。
 > 结论：重装流程 + 7 组验收项全过；另上报 1 项疑似既有缺陷（后退/前进按钮，非本批四项变更范围，见末条）。
 
 - [x] **1) 项目树右键 bubbles.html →「在 Pi 浏览器中打开」→ 内置浏览器页签以 file:/// 直开**：真鼠标右键树节点 (412,143) → Pi Agent 子菜单（059-item1-tree-ctxmenu.png，4 项中「在 Pi 浏览器中打开」正常色非置灰，059-item1-piagent-submenu.png）→ 点击后新「浏览器」工具窗口页签打开，地址栏显示 `file:///D:/…/test/e2e-project/bubbles.html`，页面渲染漂浮泡泡动画（059-item1-after-click.png）；CDP /json/list 复核 page target url=file:///…bubbles.html、title=漂浮的泡泡 ✨
-- [x] **2) 页内链接右键第 4 项「在 Pi 编辑器中打开」→ 编辑器区出现 Pi 预览页签加载该链接**：bubbles.html 无链接且空白处右键保持纯原生菜单（appendLinkItems url.isBlank 返回 false，「无链接不追加」契约），改用临时页 build/ide-probe/059/linkpage/index.html（内含 target.html 链接）：地址栏导航后右键链接，菜单=原生项（Back/Forward/Print/View page source/Open DevTools）+追加 4 项 在系统浏览器中打开/在 Pi 浏览器中打开/复制链接地址/【在 Pi 编辑器中打开（新第 4 项）】（059-item2-link-ctxmenu.png）；点击第 4 项后编辑器区出现「pi-preview: target.html」页签（Pi 图标，文本/浏览器双视图），渲染 TARGET PAGE REACHED，页签地址栏 file:///…/linkpage/target.html（059-item2-pi-editor-tab.png）；CDP 新增 page target「054 Target Page」=file:///…/linkpage/target.html
+- [x] **2) 页内链接右键第 4 项「在 Pi 编辑器中打开」→ 编辑器区出现 Pi 预览页签加载该链接**：bubbles.html 无链接且空白处右键保持纯原生菜单（appendLinkItems url.isBlank 返回 false，「无链接不追加」契约），改用临时页 build/ide-probe/059/linkpage/index.html（内含 target.html 链接）：地址栏导航后右键链接，菜单=原生项（Back/Forward/Print/View page source/Open DevTools）+追加 4 项 在系统浏览器中打开/在 Pi 浏览器中打开/复制链接地址/【在 Pi 编辑器中打开（新第 4 项）】（059-item2-link-ctxmenu.png）；点击第 4 项后编辑器区出现「pi-preview: target.html」页签（Pi 图标，文本/浏览器双视图），渲染 TARGET PAGE REACHED，页签地址栏 file:///…/linkpage/target.html（059-item2-pi-editor-tab.png）；CDP 新增 page target「066 Target Page」=file:///…/linkpage/target.html
 - [x] **3) 工具条 more 钮（浏览器操作弹窗）新增「在 Pi 浏览器页签打开」「在 Pi 编辑器打开」两项，当前形态项置灰**：浏览器形态 ⋮(1597,100) 弹窗共 4 项：打开 DevTools/在系统浏览器中打开/【在 Pi 浏览器页签中打开（置灰—当前形态为浏览器页签）】/【在 Pi 编辑器中打开（可用）】（059-item3-more-popup.png）；编辑器形态反向验证：pi-preview 编辑器预览的 ⋮ 弹窗中【在 Pi 浏览器页签中打开（可用）】/【在 Pi 编辑器中打开（置灰）】（059-item3-editor-form-popup.png）；键盘 ↓ 导航自动跳过置灰行（059-kbd-nav2.png 高亮跳至第 4 项）作功能性佐证。环境备注：该 JBPopup 为独立顶层窗口，当弹窗跨出 IDE 框右缘时合成鼠标事件不可达——把 IDE 窗口加宽至 (450,20,1920,1012) 使弹窗完全落入框内后真鼠标点击生效（DevTools 探针成功打开），双形态置灰与可用性均按此验证
-- [x] **4) 弹窗选非当前形态项 → 焦点/内容切到另一形态且 URL 保持**：浏览器→编辑器：浏览器页签在 index.html 时经弹窗（↓×2 跳过置灰行+Enter，059-item4-enter.png）激活编辑器形态：编辑器新增并聚焦「pi-preview: index.html」页签渲染 Link Menu Test，URL 保持 index.html；CDP 新增 target「054 Link Test Home」=file:///…/linkpage/index.html。编辑器→浏览器：编辑器预览先地址栏导航到 target.html，再经其弹窗选「在 Pi 浏览器页签中打开」（059-item4-editor2browser.png）：右侧浏览器工具窗口切换为 TARGET PAGE REACHED、地址栏变为 …/linkpage/target.html（由 index.html 实质变化，URL 从编辑器形态带入）；CDP 对应 target url 同步变为 target.html（无同 URL 页签时按 F-208 上限内新建浏览器页签，故产生第二个「浏览器」页签，与 PiBrowserManager.open 设计一致）
+- [x] **4) 弹窗选非当前形态项 → 焦点/内容切到另一形态且 URL 保持**：浏览器→编辑器：浏览器页签在 index.html 时经弹窗（↓×2 跳过置灰行+Enter，059-item4-enter.png）激活编辑器形态：编辑器新增并聚焦「pi-preview: index.html」页签渲染 Link Menu Test，URL 保持 index.html；CDP 新增 target「066 Link Test Home」=file:///…/linkpage/index.html。编辑器→浏览器：编辑器预览先地址栏导航到 target.html，再经其弹窗选「在 Pi 浏览器页签中打开」（059-item4-editor2browser.png）：右侧浏览器工具窗口切换为 TARGET PAGE REACHED、地址栏变为 …/linkpage/target.html（由 index.html 实质变化，URL 从编辑器形态带入）；CDP 对应 target url 同步变为 target.html（无同 URL 页签时按 F-208 上限内新建浏览器页签，故产生第二个「浏览器」页签，与 PiBrowserManager.open 设计一致）
 - [x] **5a) 回归：链接右键原三项仍在**：059-item2-link-ctxmenu.png 与复测 059-item5-linkmenu.png 均为原生项+追加四项，原三项 在系统浏览器中打开/在 Pi 浏览器中打开/复制链接地址 完整保留（F-211 append-only，源码 PiBrowserHandlers.kt:390-393 顺序一致）
 - [x] **5b) 回归：chat 面板链接路由不变**：Pi 1 会话内右键用户消息链接 http://127.0.0.1:8931/probe-browser.html（059-chat-top.png 显示链接、059-chat-linkmenu2.png 菜单）：菜单仅含 在系统浏览器中打开/在 Pi 浏览器中打开/复制链接地址 三项，【无 在 Pi 编辑器中打开】——与源码一致（PiAgentPanel.kt:183-185 仅 append 三项，第 4 项只加入浏览器面板处理器）；工具结果行内 URL 为样式文本非 `<a>`（CDP 扫描全页仅 1 个 a[href]），右键得纯原生菜单（059-chat-linkmenu.png）
 - [x] **5c) 回归：既有工具条行为不变**：地址栏+Enter 导航多次成功（bubbles.html/index.html/target.html，CDP url 同步变化）；页内链接点击导航成功（059-item5-linkclick.png：index.html→target.html）；右键菜单 EMBEDDED 路由原位导航成功（059-item5-embedded.png：就地加载 target.html 未新建页签）；more 弹窗打开 DevTools 成功（059-devtools-probe2.png 检查 linkpage 页面）
 - [ ] **上报疑似既有缺陷（非本批四项变更范围，如实留痕）**：浏览器工具窗口 ←/→ 按钮置灰且点击/Alt+Left 均不导航，而 CEF 会话历史存在（CDP history.length=3）且 JS history.back() 正常回退（target.html→index.html，node CDP 实测）——按钮状态绑定/GoBack 调用失效。四项变更均不触及 back/forward 代码（BrowserPanel.kt:263 backButton→kernel.back() 原样保留）；本轮未重装旧版 zip 基线对比，无法判定引入点，留下轮用旧版对照（现场截图 059-item5-back*.png 存盘）
 - [x] **【2026-11-21 撤案】上条疑似缺陷经用户真机实测推翻**：用户实测前进/后退「能操作呀」——链路无开关（kernel.back() 即裸 goBack()），置灰仅为 Swing enabled 态（CEF canGoBack 回调 + 状态机双路刷新，BrowserPanel.kt:319/690）。矛盾证据最可能为测试伪象：当时 3 个 CDP target 并存（聊天 SPA+编辑器预览+工具窗页签），history.length=3 大概率查在另一 target 而点击的是空历史页签——空历史时置灰/no-op 均为 CEF 正确行为。挂账关闭，留观察（用户侧若再现再查）。
 
-### 055 agent 双形态 target 批真机复验（2026-11-21，重装轮 060，真实键鼠 + CDP）
+### 067 agent 双形态 target 批真机复验（2026-11-21，重装轮 072，真实键鼠 + CDP）
 
-> 对象：055 批（pi_browser target 参数双形态 + 页签名修复 + 按钮图标）——AI 可指定内置浏览器两种形态（工具窗页签/编辑器页签）打开页面，缺省跟随上次打开形态；修复 pi-preview 页签单段路径显示成 host 名的存量 bug；「新建浏览器页签」标题动作换地球图标。
+> 对象：067 批（pi_browser target 参数双形态 + 页签名修复 + 按钮图标）——AI 可指定内置浏览器两种形态（工具窗页签/编辑器页签）打开页面，缺省跟随上次打开形态；修复 pi-preview 页签单段路径显示成 host 名的存量 bug；「新建浏览器页签」标题动作换地球图标。
 > 门禁：全量 gradlew test 两轮 BUILD SUCCESSFUL（target 批轮 + 页签名修复轮，新增 3 用例全过）；collectChangelog dryRun+buildPlugin exit=0；verifyPlugin 5 目标 Compatible。
-> 重装流程：idea64 归零→15:16 zip 覆盖（主 jar 3579572B）→jetbra vmoptions（CDP 9222）→/json/list 就绪；composer 指令经 CDP 真实键鼠（build/ide-probe/055-cdp-send.mjs）。截图 build/walkthrough/055-*.png（不入库）。
-> 结论：8 组验收项全过；顺带真机发现并修复 1 个 054 存量 bug（页签名单段路径）。
+> 重装流程：idea64 归零→15:16 zip 覆盖（主 jar 3579572B）→jetbra vmoptions（CDP 9222）→/json/list 就绪；composer 指令经 CDP 真实键鼠（build/ide-probe/067-cdp-send.mjs）。截图 build/walkthrough/067-*.png（不入库）。
+> 结论：8 组验收项全过；顺带真机发现并修复 1 个 066 存量 bug（页签名单段路径）。
 
-- [x] **1) open target=editor → 编辑器载体打开并渲染**：pi_browser open url=http://127.0.0.1:8932/bubbles.html target=editor → 编辑器区新 pi-preview 页签，漂浮泡泡动画真实渲染，open 返回 ok/state=LOADED/url 一致（055-run-2.png）
-- [x] **2) read/console 不带 target → 跟随上次打开形态**：read（不带 target）url 与 editor 载体当前页一致（agent 汇报原话「确认默认沿用 editor 形式的当前页」）；console（不带 target）返回编辑器内核计数+JSONL 路径（055-chat-1.png）
-- [x] **3) open target=tab → 工具窗页签打开**：open url=…/index.html target=tab → 工具窗「浏览器」页签加载、地址栏同步（055-run-1.png）
-- [x] **4) overflow 双形态 + 当前载体置灰（两载体）**：编辑器形态 ⋮ 弹窗「在 Pi 编辑器打开」置灰、tab 项可用（055-editor-overflow.png）；工具窗浏览器形态反向（055-tw-overflow.png）
-- [x] **5) 形态切换 URL 保持**：编辑器 ⋮→「在 Pi 浏览器页签打开」→ 工具窗新「浏览器」页签加载同一 URL（055-switch-tab2.png）
-- [x] **6) 页签名修复终验（RED→GREEN）**：修复前 bubbles.html（单段路径）两轮页签名均为「pi-preview: 127.0.0.1」而多段 index-dark.html 正确；单测先复现 RED（expected bubbles.html but was 127.0.0.1）→ 一行修复 → 套件 GREEN；15:16 包真机 target=editor 开 bubbles.html →「pi-preview: bubbles.html」（055-crop-final.png）
-- [x] **7) 按钮图标**：工具窗标题动作悬停显现——「新建浏览器页签」为地球图标（AllIcons.General.Web），其后为「新建实例」（055-crop-hover.png）
+- [x] **1) open target=editor → 编辑器载体打开并渲染**：pi_browser open url=http://127.0.0.1:8932/bubbles.html target=editor → 编辑器区新 pi-preview 页签，漂浮泡泡动画真实渲染，open 返回 ok/state=LOADED/url 一致（067-run-2.png）
+- [x] **2) read/console 不带 target → 跟随上次打开形态**：read（不带 target）url 与 editor 载体当前页一致（agent 汇报原话「确认默认沿用 editor 形式的当前页」）；console（不带 target）返回编辑器内核计数+JSONL 路径（067-chat-1.png）
+- [x] **3) open target=tab → 工具窗页签打开**：open url=…/index.html target=tab → 工具窗「浏览器」页签加载、地址栏同步（067-run-1.png）
+- [x] **4) overflow 双形态 + 当前载体置灰（两载体）**：编辑器形态 ⋮ 弹窗「在 Pi 编辑器打开」置灰、tab 项可用（067-editor-overflow.png）；工具窗浏览器形态反向（067-tw-overflow.png）
+- [x] **5) 形态切换 URL 保持**：编辑器 ⋮→「在 Pi 浏览器页签打开」→ 工具窗新「浏览器」页签加载同一 URL（067-switch-tab2.png）
+- [x] **6) 页签名修复终验（RED→GREEN）**：修复前 bubbles.html（单段路径）两轮页签名均为「pi-preview: 127.0.0.1」而多段 index-dark.html 正确；单测先复现 RED（expected bubbles.html but was 127.0.0.1）→ 一行修复 → 套件 GREEN；15:16 包真机 target=editor 开 bubbles.html →「pi-preview: bubbles.html」（067-crop-final.png）
+- [x] **7) 按钮图标**：工具窗标题动作悬停显现——「新建浏览器页签」为地球图标（AllIcons.General.Web），其后为「新建实例」（067-crop-hover.png）
 - [x] **8) 回归**：404 页照常 LOADED（open 状态机不变）；链接右键/chat 路由/既有工具条未动；pi-preview 页签无「文本|浏览器」切换器（UnknownFileType 既有改动在包内）
 
-### 056+057 页签寻址与浏览器操作层批真机复验（2026-11-21，重装轮 061，真实键鼠 + CDP）
+### 068+069 页签寻址与浏览器操作层批真机复验（2026-11-21，重装轮 073，真实键鼠 + CDP）
 
-> 对象：056 批 pi_browser 页签寻址（每个浏览器页签稳定短 id + lastTabId 跟随 + 新 list 动作 + 观测动作 tab 字段 + 编码格式校验，提交 465276c，12 文件 +661/−40）+ 057 批 pi_browser 操作层（内核通用执行通道 + click/type/evaluate JS 合成事件纯函数 + 长度上限编码校验 + agent-actions 夹具页与真机探针，提交 91348df，13 文件 +1015/−14）。
-> 门禁：测试门禁过（056 轮 `gradlew test --tests "dev.pi.agent.browser.*"` 184 例 0 失败 0 错误、057 轮同命令 208 例 0 失败 0 错误；新增 BrowserTabIdsTest 5 / AgentBrowserToolTabAddressingTest 7 / BrowserActionScriptsTest 18 全过——文档轮从 build/test-results XML 逐类复核一致）；collectChangelog+buildPlugin exit=0；verifyPlugin exit=0（IC-233/241/242/243 五线全过，报告 0 处 internal）。
+> 对象：068 批 pi_browser 页签寻址（每个浏览器页签稳定短 id + lastTabId 跟随 + 新 list 动作 + 观测动作 tab 字段 + 编码格式校验，提交 465276c，12 文件 +661/−40）+ 069 批 pi_browser 操作层（内核通用执行通道 + click/type/evaluate JS 合成事件纯函数 + 长度上限编码校验 + agent-actions 夹具页与真机探针，提交 91348df，13 文件 +1015/−14）。
+> 门禁：测试门禁过（068 轮 `gradlew test --tests "dev.pi.agent.browser.*"` 184 例 0 失败 0 错误、069 轮同命令 208 例 0 失败 0 错误；新增 BrowserTabIdsTest 5 / AgentBrowserToolTabAddressingTest 7 / BrowserActionScriptsTest 18 全过——文档轮从 build/test-results XML 逐类复核一致）；collectChangelog+buildPlugin exit=0；verifyPlugin exit=0（IC-233/241/242/243 五线全过，报告 0 处 internal）。
 > 重装流程：确认退出弹窗先截屏再点（061-exit-dialog.png）→ IDE 重启 Pi Agent 工具窗就绪（061-ide-started.png）。插件真身实测在 `Roaming\JetBrains\IntelliJIdea2026.2\plugins\pi-agent-idea`（非交接所写 LOCALAPPDATA 路径），备份为 `pi-agent-idea.bak-061-pre-1121-232312`；Nov 21 23:18 构建 zip 经 python zipfile extractall 解压换装（lib/pi-agent-idea-0.5.9.jar 时间戳 Nov 21 23:23 = 新）；IDEA_VM_OPTIONS=build/ide-probe/059/idea-e2e.vmoptions 启动（授权 javaagent + -Dide.browser.jcef.debug.port=9222 保留）；curl http://127.0.0.1:9222/json/version → `"Browser": "Chrome/144.0.7559.172"`，/json/list 列出聊天页 target（http://127.0.0.1:62691/?token=…&instance=1）；http.server 8933 -d test/e2e-project 起服务（demo/index-dark.html、bubbles.html 均 200，会中三次复测）。截图 build/walkthrough/061-*.png（不入库）。
 > 结论：9 组验收项全过；第 5/6 项指令字面与页面事实有偏差（bubbles.html 无 #btn/#inp/#out，三者在 demo/agent-actions.html），按 6.3 授权在补开的 t3 页签完成意图验证，偏差与 read innerText 产品语义 caveat 如实留痕。
 
@@ -790,11 +790,11 @@
 - [x] **5) click #btn 产生可见副作用（截图+CDP 双证）——指令偏差如实留痕**：bubbles.html 中不存在 #btn/#inp/#out（读 test/e2e-project/bubbles.html 源码确认；三者在 demo/agent-actions.html）；字面执行 pi_browser 如实报错："click selector=#btn tab=t2 … found: false — no element matches selector: #btn"（工具不伪造结果，行为正确）。按 6.3 授权补开 demo/agent-actions.html 为 t3 后完成该条意图验证：click selector=#btn tab=t3 → "found: true <button>"，页面 #out 由「（尚未点击）」变为 "btn clicked at 2026-11-21T15:29:58.939Z — inp="（工具返回文本内含）；截图 061-layout-before-t3.png（t3 页签内 #out 可见变化）+ 放大 061-t3-zoom-inp-out.png；CDP 直查 t3 页双证：node 裸 CDP Runtime.evaluate → out.innerText 同值。console tab=t3 → "total 0 … only error and warning levels are kept"——console.log（info 级）不进面板为既有产品语义（console.jsonl 路径已给出），#out 变化即满足本条「或」条件
 - [x] **6) type #inp 输入 hello-pi 落在指定页签；「read 看到输入值」按当前产品设计不可能，caveat 在案**：bubbles 上字面步骤同样如实报错 "no element matches selector: #inp"；t3 完成：type selector=#inp text=hello-pi tab=t3 → "found: true | typed: 8"。注：read 的纯文本快照基于 document.body.innerText（PageSnapshot.kt:148，文档轮复核），input 实时 value 不在 innerText，故 read 文本快照不含 hello-pi（pi 在回复中如实指出）。typed 值经三条独立证据确认：① 工具内 evaluate js=document.querySelector('#inp').value tab=t3 → value: "hello-pi"；② CDP 直查 t3 页 → inp.value = "hello-pi"（且 focused:true，INPUT 元素）；③ 截图 061-t3-zoom-inp-out.png 输入框肉眼可见 hello-pi。tab 寻址（typed 落在指定页签）成立
 - [x] **7) evaluate 返回第一个页签的 document.title 与快照一致**：evaluate js=document.title tab=t1 → "— value: \"modes Demo\""；与该页签四处证据一致：read tab=t1 快照标题、open [t1] 返回标题、CDP /json/list 该页 target title、index-dark.html 源码 `<title> modes Demo</title>`
-- [x] **8) read 不带 tab 跟随最后一次 open 的页签（055 语义保持）**：两次观测：① 第二波第 9 步（当时最后 open 为 bubbles）→ read → "[t2] LOADED …/bubbles.html"；② 回归波 open target=editor 产生 e4 后 read 不带参数 → "[e4] LOADED http://127.0.0.1:8933/demo/index.html"，pi 原文确认「后续不带 target/tab 参数的 read 也自动跟随到了最新打开的 e4」
-- [x] **9) 回归：open target=editor 仍开编辑器载体并返回 e 开头 id；overflow 菜单双形态置灰不变；read/scroll/console 不带任何参数行为同 055**：① open url=http://127.0.0.1:8933/demo/index.html target=editor → "[e4] LOADED …"（e 前缀）；061-editor-open.png：编辑区出现「pi-preview: index.html」编辑器载体页签（日间 Lumina 渲染正确），与工具窗 t3 页签并存。② overflow 双形态：页签形态（工具窗 ⋮）置灰「在 Pi 浏览器页签打开」、其余可用（061-overflow-tabform.png + 放大 061-overflow-tabform-zoom.png）；编辑器形态（编辑器载体 ⋮）置灰「在 Pi 编辑器打开」、其余可用（061-overflow-editorform.png + 放大 061-overflow-editorform-zoom.png）——与 054/055 一致。③ 无参数三连：read → "[t3] LOADED …/demo/agent-actions.html"、scroll direction=down amount=120 → "[t3]"（页面不足一屏无新内容，仍回全量文本快照）、console → "Pi browser console: total 0 dropped 0 — 0 line(s) matched … only error and warning levels are kept"——三者均跟随当前选中页签 t3，与 055 语义一致。环境备注：IDE 通知气泡已先关闭（061-notif-cleared.png），composer 点击未被吞
+- [x] **8) read 不带 tab 跟随最后一次 open 的页签（067 语义保持）**：两次观测：① 第二波第 9 步（当时最后 open 为 bubbles）→ read → "[t2] LOADED …/bubbles.html"；② 回归波 open target=editor 产生 e4 后 read 不带参数 → "[e4] LOADED http://127.0.0.1:8933/demo/index.html"，pi 原文确认「后续不带 target/tab 参数的 read 也自动跟随到了最新打开的 e4」
+- [x] **9) 回归：open target=editor 仍开编辑器载体并返回 e 开头 id；overflow 菜单双形态置灰不变；read/scroll/console 不带任何参数行为同 067**：① open url=http://127.0.0.1:8933/demo/index.html target=editor → "[e4] LOADED …"（e 前缀）；061-editor-open.png：编辑区出现「pi-preview: index.html」编辑器载体页签（日间 Lumina 渲染正确），与工具窗 t3 页签并存。② overflow 双形态：页签形态（工具窗 ⋮）置灰「在 Pi 浏览器页签打开」、其余可用（061-overflow-tabform.png + 放大 061-overflow-tabform-zoom.png）；编辑器形态（编辑器载体 ⋮）置灰「在 Pi 编辑器打开」、其余可用（061-overflow-editorform.png + 放大 061-overflow-editorform-zoom.png）——与 066/067 一致。③ 无参数三连：read → "[t3] LOADED …/demo/agent-actions.html"、scroll direction=down amount=120 → "[t3]"（页面不足一屏无新内容，仍回全量文本快照）、console → "Pi browser console: total 0 dropped 0 — 0 line(s) matched … only error and warning levels are kept"——三者均跟随当前选中页签 t3，与 067 语义一致。环境备注：IDE 通知气泡已先关闭（061-notif-cleared.png），composer 点击未被吞
 
-### 058 白底画布 + chat 链接第 4 项真机复验（2026-11-22，重装轮 062/063）
+### 070 白底画布 + chat 链接第 4 项真机复验（2026-11-22，重装轮 074/075）
 
-- [x] **1) 白底画布兜底**：无配色声明的夹具页在两载体（编辑器 pi-preview + 工具窗页签）均白底黑字可读，自带配色页（bubbles 深蓝）不受影响（058-verify.png）
-- [x] **2) chat 链接右键第 4 项**：agent 回复里的 URL 链接右键 → 原生项 + 追加四项（在系统浏览器打开/在 Pi 浏览器打开/复制链接地址/在 Pi 编辑器打开）（058-menu2.png）→ 点第 4 项 → 「pi-preview: bubbles.html」编辑器载体打开渲染正确（058-editor-open.png）
-- [x] **3) 回归**：浏览器页签内链接菜单四追加项不变；ASK 选择器仍三行（LinkRouting.linkOptions 未动）；右键非链接文本只有原生菜单（058-menu.png 中段验证）
+- [x] **1) 白底画布兜底**：无配色声明的夹具页在两载体（编辑器 pi-preview + 工具窗页签）均白底黑字可读，自带配色页（bubbles 深蓝）不受影响（070-verify.png）
+- [x] **2) chat 链接右键第 4 项**：agent 回复里的 URL 链接右键 → 原生项 + 追加四项（在系统浏览器打开/在 Pi 浏览器打开/复制链接地址/在 Pi 编辑器打开）（070-menu2.png）→ 点第 4 项 → 「pi-preview: bubbles.html」编辑器载体打开渲染正确（070-editor-open.png）
+- [x] **3) 回归**：浏览器页签内链接菜单四追加项不变；ASK 选择器仍三行（LinkRouting.linkOptions 未动）；右键非链接文本只有原生菜单（070-menu.png 中段验证）

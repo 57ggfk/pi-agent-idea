@@ -6,7 +6,7 @@ import kotlin.test.assertTrue
 import kotlin.test.Test
 
 /**
- * Spec 053 B2: the scroll script is viewport-only (window.scrollBy, no DOM
+ * Spec 065 B2: the scroll script is viewport-only (window.scrollBy, no DOM
  * writes) and its result parses back through the same query channel as the
  * read snapshot. The D4 revision — "read-only DOM + viewport scrolling" —
  * means scrollBy is the ONE mutation this channel performs.
@@ -40,7 +40,7 @@ class PageScrollTest {
         assertFalse("querySelector" in script)
         assertFalse(Regex("\\.(innerHTML|outerHTML|innerText|textContent|value)\\s*=").containsMatchIn(script))
         assertFalse(Regex("\\.(submit|click|focus|write)\\s*\\(").containsMatchIn(script))
-        // No tokens, no bridge references — 049 D4 continuation.
+        // No tokens, no bridge references — 061 D4 continuation.
         assertFalse("token" in script.lowercase())
         assertFalse("bridge" in script.lowercase())
     }

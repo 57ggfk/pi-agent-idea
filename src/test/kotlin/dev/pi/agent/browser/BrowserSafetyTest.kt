@@ -7,7 +7,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * 049 robustness contract: a platform browser call that throws must degrade
+ * 061 robustness contract: a platform browser call that throws must degrade
  * to the caller's default value, never escape as an "IDE Internal Errors"
  * balloon.
  *
@@ -71,7 +71,7 @@ class BrowserSafetyTest {
 
     @Test
     fun `a platform Error subclass degrades to the default too`() {
-        // 051: the funnel caught Exception only, so a dead native peer
+        // 063: the funnel caught Exception only, so a dead native peer
         // answering with a LinkageError still killed the EDT task and
         // produced the "IDE Internal Errors" balloon the user reported.
         var reported: String? = null

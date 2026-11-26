@@ -10,7 +10,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * The browser toolbar's user-visible contract (048 走查后的工具条复检):
+ * The browser toolbar's user-visible contract (060 走查后的工具条复检):
  *
  *  - icon-only nav buttons must stay compact (真机复检：每个按钮太宽，把地址栏
  *    挤没了);

@@ -6,13 +6,13 @@ import java.util.concurrent.CancellationException
 /**
  * The single funnel for every platform call the plugin makes.
  *
- * 049/050: a platform browser call that throws must degrade to the caller's
+ * 061/062: a platform browser call that throws must degrade to the caller's
  * default value, never escape as an "IDE Internal Errors" balloon. The
  * trigger was the platform's own remote browser: `RemoteBrowser.canGoBack()`
  * unboxes a null `Boolean` and throws `NullPointerException` once its
  * native state is missing.
  *
- * 051: catching `Exception` was still not enough. A dead native peer also
+ * 063: catching `Exception` was still not enough. A dead native peer also
  * answers with `Error` subclasses — `NoClassDefFoundError` when the JCEF
  * classes cannot be linked any more, `LinkageError` when the runtime and the
  * shipped browser disagree — and those sailed straight past the funnel into

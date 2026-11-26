@@ -6,7 +6,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * Spec 048 T004: the browser renders untrusted sites; their query strings
+ * Spec 060 T004: the browser renders untrusted sites; their query strings
  * (session tokens of other services) and console output never reach idea.log
  * verbatim. Hard constraint 8 of the spec.
  */

@@ -1,7 +1,7 @@
 package dev.pi.agent.browser
 
 /**
- * 057 浏览器操作层: pure builders for the synthetic-event scripts the agent
+ * 069 浏览器操作层: pure builders for the synthetic-event scripts the agent
  * tool injects (browser-use style). CLICK replays the full mouse sequence
  * over the element's center (pointerdown/mousedown/mouseup/click, bubbles —
  * closer to a real user than a bare `el.click()`), TYPE writes text the way

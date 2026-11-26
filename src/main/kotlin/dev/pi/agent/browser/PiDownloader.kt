@@ -18,7 +18,7 @@ import java.nio.file.StandardCopyOption
  * Why this exists: under IDEA 2025.2+ the platform runs CEF out-of-process
  * (cef_server), and that RPC channel has no DownloadHandler callbacks at all
  * (F-213: the thrift AsyncClient method list contains no DownloadHandler_*),
- * so the 048 download handler never fires there. Anything the frontend can
+ * so the 060 download handler never fires there. Anything the frontend can
  * name as a local path (chat artifact files, preview files) downloads through
  * here — plain JDK filesystem copy into the user's Downloads dir — which
  * works identically on every IDE build.

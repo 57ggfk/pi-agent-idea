@@ -1,8 +1,8 @@
-# 055–058 浏览器 agent 融合与操作层——行为面现状（汇总 spec）
+# 067–070 浏览器 agent 融合与操作层——行为面现状（汇总 spec）
 
-> 本文不是一份"新规格"，是 055/056/057/058 四批交付后 **pi_browser 与浏览器面板的当前行为面** 的单点参照。
-> 049 的 spec 目录已随 1024e89 回滚删除（功能层由 053/055/056/057 重建），本文件即其继任者。
-> 决策过程、RED→GREEN 证据、真机留痕在 `specs/0.5.10-run-report.md` 对应批次段；本文件只记"现在是什么样"。
+> 本文不是一份"新规格"，是 067/068/069/070 四批交付后 **pi_browser 与浏览器面板的当前行为面** 的单点参照。
+> 061 的 spec 目录已随 1024e89 回滚删除（功能层由 065/067/068/069 重建），本文件即其继任者。
+> 决策过程、RED→GREEN 证据、真机留痕在 `specs/0.5.11-run-report.md` 对应批次段；本文件只记"现在是什么样"。
 
 ## 一、pi_browser 动作全集（九个）
 
@@ -20,20 +20,20 @@
 
 编码层校验所有参数与越界值，错误一律回模型可读 reason（不伪造结果：错 selector 回 `found:false`）。
 
-## 二、载体与寻址（055+056）
+## 二、载体与寻址（067+068）
 
 - **两种载体**：`tab` = Pi Agent 工具窗页签；`editor` = 编辑器形态预览（LightVirtualFile）。
 - **页签 id**：每个浏览器页签发稳定短 id——工具窗 `t1..tN`、编辑器 `e1..eN`（每 manager 实例单调递增不复用）。`open`/`list` 返回 id，各动作回答尾带 `tab` 字段。
-- **解析顺序**：显式 `tab` 参数（精确到页签，不存在回 `no browser tab t9`）→ `lastTabId`（agent 上次 open 落点）→ 055 载体回退（target/选中页签）。**tab 与 target 同给时 tab 赢**。
+- **解析顺序**：显式 `tab` 参数（精确到页签，不存在回 `no browser tab t9`）→ `lastTabId`（agent 上次 open 落点）→ 067 载体回退（target/选中页签）。**tab 与 target 同给时 tab 赢**。
 - 编辑器载体同 URL 预览页签复用（F-208 反堆积对齐）；工具窗页签上限 4（MAX_TABS）。
 
-## 三、链接路由目的地（054+058）
+## 三、链接路由目的地（066+070）
 
 - **浏览器页签内链接右键**与 **chat 面板链接右键**：同款四项同款顺序——在系统浏览器打开 → 在 Pi 浏览器打开 → 在 Pi 编辑器打开 → 复制链接地址（两个 Pi 相邻，copy 收尾；视觉顺序由 PiBrowserLinkMenuTest 按调用序锁死）。
 - **ASK 选择器**（agent 询问用户链接去向的弹窗）保持三行：LinkRouting.linkOptions() 未扩。
 - 编辑器载体页内链接：嵌入式导航在本页签原位（不劫持到工具窗）。
 
-## 四、渲染兜底与主题（058）
+## 四、渲染兜底与主题（070）
 
 - **画布强制白底**：`setPageBackgroundColor("#FFFFFF")`——JCEF 默认画布跟随 IDE 主题色，暗色主题下无背景声明的页面=暗底+黑字不可读；白底兜底后退化为可读的白底黑字。页面自带配色不受影响。
 - **页面配色三档下拉（跟随 IDE/浅色/深色）已评估、暂缓**：深色档须成套注入（画布+文字+图片补偿+已暗页探测），决策=先跑白底按实际使用频率再定。
@@ -53,6 +53,6 @@
 | 动作路由 | `browser/AgentBrowserTool.kt`、`browser/AgentBrowserRequest.kt` |
 | 载体与寻址 | `browser/PiBrowserManager.kt`、`browser/BrowserCarriers.kt` |
 | 操作层 JS 构造 | `browser/BrowserActionScripts.kt`（转义单测锁死） |
-| 内核执行通道 | `browser/PiBrowserKernel.kt`（JBCefJSQuery pendingAction，057 起通用化） |
+| 内核执行通道 | `browser/PiBrowserKernel.kt`（JBCefJSQuery pendingAction，069 起通用化） |
 | pi 侧 schema | `resources/pi-browser/pi-browser.js` |
-| 批次留痕 | run-report「054/055/056/057/058」段 + MANUAL_TEST 对应段 + changelog.d 054-058 碎片 |
+| 批次留痕 | run-report「066/067/068/069/070」段 + MANUAL_TEST 对应段 + changelog.d 066-070 碎片 |

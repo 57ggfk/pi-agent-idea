@@ -6,9 +6,9 @@ import kotlin.test.assertTrue
 import kotlin.test.Test
 
 /**
- * 056 页签寻址: the panel resolution order behind every pi_browser action —
+ * 068 页签寻址: the panel resolution order behind every pi_browser action —
  * explicit `tab` id (miss = model-readable failure) → the tab the last open
- * landed on ([PiBrowserManager.lastTabId]) → the 055 carrier fallback
+ * landed on ([PiBrowserManager.lastTabId]) → the 067 carrier fallback
  * (lastAgentCarrier / selected tab). Pure over lambdas so no Project/JCEF is
  * needed; the tool wires the lambdas to the manager. `P` is the panel type —
  * the test uses strings, production passes [BrowserPanel].
@@ -63,7 +63,7 @@ class AgentBrowserToolTabAddressingTest {
 
     @Test
     fun `no explicit tab follows the last opened tab before the carrier fallback`() {
-        // 056's whole point: open landed on t2, the user then selected t1 —
+        // 068's whole point: open landed on t2, the user then selected t1 —
         // follow-ups must still reach t2 (identity, not selection).
         val lookup = resolve(explicitTab = null, lastTabId = "t2")
         assertEquals("panel-t2", lookup.panel)
@@ -71,7 +71,7 @@ class AgentBrowserToolTabAddressingTest {
     }
 
     @Test
-    fun `stale lastTabId degrades to the 055 carrier fallback`() {
+    fun `stale lastTabId degrades to the 067 carrier fallback`() {
         // t3 was closed after the open (not in the live map): the follow-up
         // falls through to the carrier resolution (selected tool-window tab)
         // instead of failing.
@@ -88,7 +88,7 @@ class AgentBrowserToolTabAddressingTest {
     }
 
     @Test
-    fun `no live panel anywhere misses with the 053 reason`() {
+    fun `no live panel anywhere misses with the 065 reason`() {
         val lookup = AgentBrowserTool.resolveAgentPanel<String>(
             explicitTab = null,
             lastTabId = null,

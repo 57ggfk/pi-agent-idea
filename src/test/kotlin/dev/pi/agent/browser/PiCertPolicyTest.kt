@@ -4,7 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertFalse
 
 /**
- * Spec 048 T006: the kernel ships strict-only; relaxation belongs to 043 via
+ * Spec 060 T006: the kernel ships strict-only; relaxation belongs to 043 via
  * this hook. If anything in this file starts returning true, 043 leaked into
  * P0 without its spec being honored.
  */

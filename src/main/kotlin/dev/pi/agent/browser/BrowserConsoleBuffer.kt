@@ -6,7 +6,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * One captured console line with its buffer-wide monotonic index (053 B3):
+ * One captured console line with its buffer-wide monotonic index (065 B3):
  * the index the agent's `since` speaks, and the same index the JSONL sink
  * records.
  */
@@ -21,16 +21,16 @@ data class ConsoleEntry(val index: Int, val text: String)
 data class ConsoleWindow(val total: Int, val dropped: Int, val matched: Int, val entries: List<ConsoleEntry>)
 
 /**
- * Bounded buffer of the browser tab's page console output (F-206, 049 P2
+ * Bounded buffer of the browser tab's page console output (F-206, 061 P2
  * "console/network 进上下文" made minimal). Events arrive over the DevTools
  * channel that the kernel attaches in reflection (the CefDevToolsClient class
  * does not exist on the 233 floor, so nothing here names it directly).
  *
  * Only error/warning-level lines are kept — the model needs "what went wrong",
  * not a debug firehose. Every line passes [LogSafe.truncate]; nothing from
- * here ever reaches idea.log (048 hard rule 8).
+ * here ever reaches idea.log (060 hard rule 8).
  *
- * 053 B3: accepted lines carry monotonic indexes ([total] never resets —
+ * 065 B3: accepted lines carry monotonic indexes ([total] never resets —
  * `clear()` on navigation empties the ring, the counters keep counting), a
  * [dropped] counter tracks ring evictions, and [since] reads any window the
  * agent asks for. An optional [sink] receives every accepted line for the
@@ -71,7 +71,7 @@ class BrowserConsoleBuffer(
     }
 
     /**
-     * 053 B3: lines with index > [index], up to [limit], oldest first — the
+     * 065 B3: lines with index > [index], up to [limit], oldest first — the
      * agent's paged readback (the tool clamps `index`/`limit` first).
      */
     fun since(index: Int, limit: Int): List<ConsoleEntry> = synchronized(lock) {
@@ -79,7 +79,7 @@ class BrowserConsoleBuffer(
         lines.filter { it.index > index }.take(limit)
     }
 
-    /** 053 B3: the counters and one window in a single lockstep read. */
+    /** 065 B3: the counters and one window in a single lockstep read. */
     fun window(index: Int, limit: Int): ConsoleWindow = synchronized(lock) {
         val matched = lines.filter { it.index > index }
         ConsoleWindow(totalCounter, droppedCounter, matched.size, if (limit <= 0) emptyList() else matched.take(limit))

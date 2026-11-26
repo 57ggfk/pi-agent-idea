@@ -5,7 +5,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 /**
- * Spec 048 T002/T003 locks. The download-name half exists because probe P-4
+ * Spec 060 T002/T003 locks. The download-name half exists because probe P-4
  * proved the download path is handed straight to the native filesystem —
  * the server's suggestion is untrusted input.
  */

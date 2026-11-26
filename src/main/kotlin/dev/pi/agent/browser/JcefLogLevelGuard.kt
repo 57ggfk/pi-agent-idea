@@ -3,7 +3,7 @@ package dev.pi.agent.browser
 import com.intellij.openapi.diagnostic.Logger
 
 /**
- * 052: the glue between [JcefLogLevelPolicy] and the running IDE.
+ * 064: the glue between [JcefLogLevelPolicy] and the running IDE.
  *
  * The platform freezes the JCEF log level when it builds the CefSettings,
  * which happens when the first browser is created. So the level has to be

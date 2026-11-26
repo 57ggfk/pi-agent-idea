@@ -6,14 +6,14 @@
  * pattern as pi-approve.js).
  *
  * Registers the `pi_browser` tool: the agent's channel into the IDE's
- * in-app browser tab (spec 049, extended by 053). The IDE side listens on
+ * in-app browser tab (spec 061, extended by 065). The IDE side listens on
  * PI_BROWSER_ENDPOINT with the capability token PI_BROWSER_TOKEN; without
  * those (pi started from a terminal, or an older plugin) the tool registers
  * but every call returns a clear failure text instead of hanging.
  *
  * Tool result shape mirrors the endpoint: {ok, state, url, title, ready,
  * text} on success, {ok:false, reason} on failure — failures are surfaced
- * with isError so the model sees an error result and can react. 053 adds
+ * with isError so the model sees an error result and can react. 065 adds
  * the `scroll` action (viewport moves, same snapshot back with scrollY) and
  * the `console` action (on-demand readback: monotonic indexes + dropped
  * count + bounded line preview, plus a JSONL file the agent can grep for
@@ -47,7 +47,7 @@ function formatSnapshot(data) {
   const title = (data.title || "(no title)").trim();
   const excerpt = String(data.text || "").replace(/\s+/g, " ").trim().slice(0, 600);
   const ready = data.ready ? ` ready=${data.ready}` : "";
-  // 056: which tab the action landed on (t1 = tool-window tab, e2 = editor preview).
+  // 068: which tab the action landed on (t1 = tool-window tab, e2 = editor preview).
   const tab = data.tab ? ` [${data.tab}]` : "";
   // F-206: the IDE attaches the page's recent console errors when it captured
   // them — the single most useful "why did my page misbehave" signal.
@@ -59,7 +59,7 @@ function formatSnapshot(data) {
 }
 
 /**
- * 056 list readback — one line per live browser tab across both forms
+ * 068 list readback — one line per live browser tab across both forms
  * (tool-window `t<n>` / editor preview `e<n>`); the tab ids are the
  * addresses every other action accepts.
  */
@@ -73,7 +73,7 @@ function formatList(data) {
 }
 
 /**
- * 057 action verdicts — what click/type/evaluate DID to the page, appended
+ * 069 action verdicts — what click/type/evaluate DID to the page, appended
  * to the snapshot line (the snapshot itself confirms the page state after
  * the synthetic events).
  */
@@ -88,7 +88,7 @@ function formatActionExtras(data) {
 }
 
 /**
- * 053: console readback — "total X dropped Y" plus a bounded line preview.
+ * 065: console readback — "total X dropped Y" plus a bounded line preview.
  * Lines carry their monotonic indexes (`[12] console.error: …`); the result
  * names the JSONL file the agent can grep for lines beyond the preview.
  */

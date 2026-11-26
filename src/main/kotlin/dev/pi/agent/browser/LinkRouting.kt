@@ -1,7 +1,7 @@
 package dev.pi.agent.browser
 
 /**
- * External-link routing decision (spec 048 T013, spec US4). Pure logic so
+ * External-link routing decision (spec 060 T013, spec US4). Pure logic so
  * the three-state setting is testable without an IDE.
  */
 enum class LinkTarget {
@@ -26,7 +26,7 @@ sealed class LinkRoute {
 }
 
 /**
- * One destination in the ask-mode link selector (spec 049 US1). Purely a
+ * One destination in the ask-mode link selector (spec 061 US1). Purely a
  * decision marker — the popup menu (icons, display) lives in the panel layer.
  */
 enum class LinkOption {
@@ -46,7 +46,7 @@ enum class LinkOption {
 object LinkRouting {
 
     /**
-     * Ask-mode selector rows, display order locked by spec 049 Q3: system
+     * Ask-mode selector rows, display order locked by spec 061 Q3: system
      * browser first (the dominant intent for an external link — docs, issues,
      * npm pages), embedded second, copy third. Three is the ceiling: a menu
      * the user scans, not reads; each extra row dilutes the first two.
@@ -69,7 +69,7 @@ object LinkRouting {
 
     /**
      * True when [url] points at the chat SPA's own origin [ownOrigin]. Only a
-     * full scheme+authority match counts: 049 真机实证 the host-only loopback
+     * full scheme+authority match counts: 061 真机实证 the host-only loopback
      * check made every dev-server link (`http://127.0.0.1:8931/…`) read as the
      * SPA, so its target=_blank popup fell through to a raw white CEF window.
      */
@@ -85,7 +85,7 @@ object LinkRouting {
      * Host-based on purpose for the LEGACY callers that have no own-origin
      * context; the routing entry point should prefer [routeExternalLink]'s
      * origin-aware overload, because a host-only check also swallows the AI's
-     * dev-server links (`http://127.0.0.1:8931/`) — 049 真机缺陷。
+     * dev-server links (`http://127.0.0.1:8931/`) — 061 真机缺陷。
      */
     fun isLoopback(url: String): Boolean {
         if (!url.startsWith("http://")) return false
@@ -105,7 +105,7 @@ object LinkRouting {
     }
 
     /**
-     * Origin-aware routing (049): the chat SPA's own origin stays in the chat
+     * Origin-aware routing (061): the chat SPA's own origin stays in the chat
      * browser (037 hard rule, now port-exact); every other URL — including
      * loopback dev servers on OTHER ports — follows the setting.
      *

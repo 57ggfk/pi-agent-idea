@@ -1,7 +1,7 @@
 package dev.pi.agent.browser
 
 /**
- * Pure URL/ filename helpers for the browser tab (spec 048 T002/T003).
+ * Pure URL/ filename helpers for the browser tab (spec 060 T002/T003).
  * No JCEF, no IDE classes — fully unit-testable.
  */
 object UrlNormalizer {
@@ -11,7 +11,7 @@ object UrlNormalizer {
         /** A loadable URL (typed with a scheme, or a host-shaped value). */
         data class Url(val url: String) : AddressInput()
 
-        /** Not URL-shaped — a search query (F-212 flips spec 048 Q1). */
+        /** Not URL-shaped — a search query (F-212 flips spec 060 Q1). */
         data class Search(val query: String) : AddressInput()
     }
 

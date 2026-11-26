@@ -50,7 +50,7 @@ class PiAgentSettingsConfigurable : Configurable {
         autoOpenBox = JBCheckBox(dev.pi.agent.PiAgentBundle.message("settings.autoOpen"), settings.autoOpen())
         envContextBox = JBCheckBox(dev.pi.agent.PiAgentBundle.message("settings.envContext"), settings.envContextEnabled())
 
-        // 048 (spec US4): where chat markdown links go. Enum ordinal order is
+        // 060 (spec US4): where chat markdown links go. Enum ordinal order is
         // the display order; SYSTEM is index 0 = the default.
         val linkTargets = dev.pi.agent.browser.LinkTarget.entries.toTypedArray()
         linkTargetCombo = javax.swing.JComboBox(linkTargets).apply {

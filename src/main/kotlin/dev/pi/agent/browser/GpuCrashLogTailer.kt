@@ -4,7 +4,7 @@ import java.io.File
 import java.io.RandomAccessFile
 
 /**
- * 052: tails the JCEF log files and hands back the GPU crash lines that
+ * 064: tails the JCEF log files and hands back the GPU crash lines that
  * appeared since the last poll.
  *
  * Only NEW content is read: the first sight of a file records where it is and

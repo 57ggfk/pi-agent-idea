@@ -3,7 +3,7 @@ package dev.pi.agent.browser
 import java.io.File
 
 /**
- * 052: finds the JCEF/Chromium log files of THIS IDE run.
+ * 064: finds the JCEF/Chromium log files of THIS IDE run.
  *
  * The platform names them `jcef_<pid>.log` (the JCEF bridge log) and
  * `jcef_chromium_<pid>.log` (Chromium's native log, where the GPU crash

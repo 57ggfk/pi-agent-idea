@@ -8,7 +8,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
- * Spec 048 T015: the one-shot preview registry is the security boundary for
+ * Spec 060 T015: the one-shot preview registry is the security boundary for
  * local HTML (hard constraint 2). Every rule here is a probe- or
  * threat-model-derived promise: unguessable token, single use, TTL, and
  * above all — the route never becomes a reader for arbitrary local files.
@@ -28,7 +28,7 @@ class PiBrowserPreviewsTest {
         val file = Files.createTempFile(PiBrowserPreviews.previewRoot(), "t2-", ".html")
         val token = PiBrowserPreviews.register(file)
         // Reload semantics: the panel re-fetches the same preview URL, so the
-        // token stays alive within the TTL (048 amendment — first draft was
+        // token stays alive within the TTL (060 amendment — first draft was
         // single-use, which turned every refresh into a 404 card).
         assertEquals(file, PiBrowserPreviews.take(token, nowMs = System.currentTimeMillis()))
         val justBeforeExpiry = System.currentTimeMillis() + PiBrowserPreviews.TTL_MS - 1

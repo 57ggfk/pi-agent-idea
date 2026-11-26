@@ -1,7 +1,7 @@
 package dev.pi.agent.browser
 
 /**
- * 056 页签寻址: the agent-facing identity of a browser panel. The manager
+ * 068 页签寻址: the agent-facing identity of a browser panel. The manager
  * stamps every live panel with a stable short id — tool-window tabs are
  * `t<n>`, editor previews are `e<n>` — so the model can address ONE tab
  * instead of "the selected one" (manual tab switching used to redirect the

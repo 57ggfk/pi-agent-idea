@@ -12,9 +12,9 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 /**
- * "Open in Pi Browser" for project HTML files (spec 048 T017, spec US3).
+ * "Open in Pi Browser" for project HTML files (spec 060 T017, spec US3).
  *
- * Local files load through a `file:///` URL DIRECTLY (054 变更 3): spec 048
+ * Local files load through a `file:///` URL DIRECTLY (066 变更 3): spec 060
  * hard constraint 2 ("never `file://` — hand local-path semantics to an
  * untrusted renderer") was RELAXED by explicit user authorization
  * (2026-11-21). The relaxation is bounded to exactly this action:
@@ -42,7 +42,7 @@ class OpenInPiBrowserAction : AnAction() {
 
     // Match SendFileToPi/ExplainFileWithPi exactly: they read the same data
     // keys in update() on BGT and stay enabled in the project tree. The
-    // rollback (1024e89) reverted this to the 048-broken form and the entry
+    // rollback (1024e89) reverted this to the 060-broken form and the entry
     // went grey again on the real machine (2026-11-21 用户截图).
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
 
@@ -69,9 +69,9 @@ class OpenInPiBrowserAction : AnAction() {
 
         /**
          * The URL the browser tab should load for [file]. Local project
-         * files: a `file:///` URL built by [FileUrls] (054 变更 3, see the
+         * files: a `file:///` URL built by [FileUrls] (066 变更 3, see the
          * class comment for the authorization boundary). Non-local VFS
-         * entries: the 048 snapshot route (copy into the preview root + a
+         * entries: the 060 snapshot route (copy into the preview root + a
          * one-shot token) — `file.path` there is a jar URL, not a filesystem
          * path, and the preview root is exactly the whitelisted place for it.
          */

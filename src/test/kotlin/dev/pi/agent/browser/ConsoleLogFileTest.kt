@@ -7,10 +7,10 @@ import kotlin.test.assertTrue
 import kotlin.test.Test
 
 /**
- * Spec 053 B3: the JSONL capture of console lines. The file is the agent's
+ * Spec 065 B3: the JSONL capture of console lines. The file is the agent's
  * grep channel for lines beyond the in-memory window; it lives only in the
  * IDE system dir, stores only LogSafe.truncate'd lines, and rotates so a
- * chatty page can never grow the disk usage unbounded (048 hard rule 8 —
+ * chatty page can never grow the disk usage unbounded (060 hard rule 8 —
  * nothing here touches idea.log; the class does not log at all).
  */
 class ConsoleLogFileTest {

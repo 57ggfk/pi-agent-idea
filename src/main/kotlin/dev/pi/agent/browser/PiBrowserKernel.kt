@@ -23,11 +23,11 @@ import org.cef.browser.CefBrowser
 import javax.swing.JComponent
 
 /**
- * The browser tab's engine (spec 048 T008): a lazy windowed [JBCefBrowser]
+ * The browser tab's engine (spec 060 T008): a lazy windowed [JBCefBrowser]
  * plus the probe-verified handler set ([PiBrowserHandlers]), a small state
  * machine ([PiBrowserState]) and crash rebuild with a storm fuse.
  *
- * Carriers (tool window content, editor panel — spec 048 D7/D12) own a kernel
+ * Carriers (tool window content, editor panel — spec 060 D7/D12) own a kernel
  * each and only render `component()`; the kernel never touches Swing layout
  * beyond that single component, so it stays carrier-agnostic.
  *
@@ -35,7 +35,7 @@ import javax.swing.JComponent
  *  - exactly ONE windowed browser per kernel — native HWNDs drift and cover
  *    Swing siblings (P-7), so no second instance ever gets created here;
  *  - the only JS bridge is the agent's read-only channel: page snapshot +
- *    viewport scroll + console tap (049 D4, revised by 053 to「只读 DOM +
+ *    viewport scroll + console tap (061 D4, revised by 065 to「只读 DOM +
  *    视口滚动」) — no tokens, nothing from BridgeService;
  *  - crash detection via `onRenderProcessTerminated` — `JBCefHealthMonitor`
  *    does not exist on the 233–263 line (P-6);
@@ -47,7 +47,7 @@ class PiBrowserKernel(
     /**
      * P-7 (round-2 enforcement): OSR kernels don't own a native HWND, so the
      * multi-tab manager may run tabs 2+ offscreen without stacking hidden
-     * native windows over the visible page. Default windowed (048 D2).
+     * native windows over the visible page. Default windowed (060 D2).
      */
     private val offscreen: Boolean = false,
 ) : Disposable {
@@ -56,7 +56,7 @@ class PiBrowserKernel(
 
     /**
      * The carrier's project, reachable from CEF-thread callbacks that must
-     * open IDE UI themselves (054 变更 1: the link menu's "Open in Pi editor"
+     * open IDE UI themselves (066 变更 1: the link menu's "Open in Pi editor"
      * hops to the EDT and opens an editor tab).
      */
     internal val hostProject: Project get() = project
@@ -71,7 +71,7 @@ class PiBrowserKernel(
     private var handlers: PiBrowserHandlers? = null
 
     /**
-     * 049 robustness: set when the kernel itself is disposed. After that
+     * 061 robustness: set when the kernel itself is disposed. After that
      * every platform call is a no-op — the browser is gone and the platform's
      * remote wrapper may throw on any navigation-state query.
      */
@@ -79,7 +79,7 @@ class PiBrowserKernel(
     private var disposed = false
 
     /**
-     * 049 D4: the page→IDE readback channel, created once per browser (a
+     * 061 D4: the page→IDE readback channel, created once per browser (a
      * JBCefJSQuery is client-level infrastructure; creating one per read
      * would churn routers and log pool warnings).
      */
@@ -89,14 +89,14 @@ class PiBrowserKernel(
      *  tapEvent variable back to [onReadResult]; built once with the query. */
     private var tapScript: String? = null
 
-    /** 049 readPage: the one in-flight snapshot request, or null. */
+    /** 061 readPage: the one in-flight snapshot request, or null. */
     private var pendingRead: CompletableFuture<PageSnapshot>? = null
 
-    /** 053 B2: the one in-flight scroll request, or null (same single-flight shape). */
+    /** 065 B2: the one in-flight scroll request, or null (same single-flight shape). */
     private var pendingScroll: CompletableFuture<ScrollResult>? = null
 
     /**
-     * 057: the one in-flight page ACTION (click/type/evaluate share the
+     * 069: the one in-flight page ACTION (click/type/evaluate share the
      * slot), or null. The responses arrive over the SAME single JSQuery
      * channel tagged `kind:"action"` — one slot keeps the routing unambiguous
      * (a click and an evaluate racing would interleave on the wire).
@@ -104,9 +104,9 @@ class PiBrowserKernel(
     private var pendingAction: CompletableFuture<ActionResult>? = null
 
     /**
-     * 053 B3: the JSONL console capture under the IDE system dir. Lazy so
+     * 065 B3: the JSONL console capture under the IDE system dir. Lazy so
      * unit tests and PathManager-less environments never touch it; null when
-     * there is no system dir (best-effort by design, 048 hard rule 8).
+     * there is no system dir (best-effort by design, 060 hard rule 8).
      */
     private val consoleFile by lazy { ConsoleLogFile.default() }
 
@@ -202,7 +202,7 @@ class PiBrowserKernel(
     }
 
     private fun createOnEdt(): JBCefBrowser {
-        // 052: creating a browser freezes the JCEF log level — ask for the
+        // 064: creating a browser freezes the JCEF log level — ask for the
         // level that makes GPU crashes readable first.
         JcefLogLevelGuard.ensure()
         // F-209: the platform's own "Open DevTools" context-menu entry (public
@@ -211,8 +211,8 @@ class PiBrowserKernel(
             .setEnableOpenDevToolsMenuItem(true)
         if (offscreen) builder.setOffScreenRendering(true)
         val created = builder.build()
-        // 058: JCEF 默认画布跟随 IDE 主题色——暗色主题下未自声明背景的页面=暗底配 UA
-        // 黑字，黑字不可读（057 夹具页真机实证）。平台预览器同款兜底（[J1]
+        // 070: JCEF 默认画布跟随 IDE 主题色——暗色主题下未自声明背景的页面=暗底配 UA
+        // 黑字，黑字不可读（069 夹具页真机实证）。平台预览器同款兜底（[J1]
         // WebPreviewFileEditor 强制 Color.WHITE）：setPageBackgroundColor 只填充画布，
         // 页面自带的背景/文字配色不受影响。
         created.setPageBackgroundColor("#FFFFFF")
@@ -236,7 +236,7 @@ class PiBrowserKernel(
     }
 
     /**
-     * 049 robustness: the single funnel for platform browser calls. A dead
+     * 061 robustness: the single funnel for platform browser calls. A dead
      * browser (disposed kernel, torn-down renderer, or the startup window
      * where the remote browser has not published its navigation state yet)
      * yields [default] instead of throwing — the platform's RemoteBrowser
@@ -295,7 +295,7 @@ class PiBrowserKernel(
      * [stopRequested] converts ANY main-frame LoadError until the next
      * Navigate into a LoadEnd, so the partial page survives and the carrier
      * never swaps it for the FAILED card (F-102 root cause 2 without the
-     * 049-era goBack juggling).
+     * 061-era goBack juggling).
      */
     fun stop() {
         if (browser == null) return
@@ -400,7 +400,7 @@ class PiBrowserKernel(
 
     /**
      * F-215 M1: popups route through the same three-state decision as chat
-     * links. Loopback stays in place (048 US5 byte-for-byte), SYSTEM hands off
+     * links. Loopback stays in place (060 US5 byte-for-byte), SYSTEM hands off
      * to the system browser, EMBEDDED continues in this tab, ASK delegates to
      * the carrier's selector popup ([onAskPopup]).
      */
@@ -456,11 +456,11 @@ class PiBrowserKernel(
         }
     }
 
-    // ---- agent readback (049 D4; spec §五 rule 1 revision: read-only, no tokens) ----
+    // ---- agent readback (061 D4; spec §五 rule 1 revision: read-only, no tokens) ----
 
     /**
      * Read-only snapshot of the current page for the agent tool
-     * (spec 049 US4). The only JS injection the browser tab ever performs;
+     * (spec 061 US4). The only JS injection the browser tab ever performs;
      * bounded by the script itself (3000 chars) plus [timeoutMs] so a hung or
      * CSP-locked page degrades to a failure snapshot instead of hanging the
      * agent tool call. Returns immediately with a failure snapshot when there
@@ -512,7 +512,7 @@ class PiBrowserKernel(
     fun recentConsoleLines(limit: Int = 5): List<String> = consoleBuffer.recent(limit)
 
     /**
-     * 053 B2: viewport scroll over the SAME read-only JSQuery channel as
+     * 065 B2: viewport scroll over the SAME read-only JSQuery channel as
      * [readPage] — the D4 revision ("read-only DOM + viewport scrolling")
      * lets scrollBy be the one mutation this channel performs. Single-flight
      * like the read; hung/CSP-locked pages degrade to a failure result.
@@ -545,29 +545,29 @@ class PiBrowserKernel(
     }
 
     /**
-     * 053 B3: the agent's console readback — counters plus a since-window in
+     * 065 B3: the agent's console readback — counters plus a since-window in
      * one lockstep read of the buffer.
      */
     fun consoleWindow(since: Int, limit: Int): ConsoleWindow = consoleBuffer.window(since, limit)
 
-    // ---- 057 浏览器操作层: the generic JS execution channel ----
+    // ---- 069 浏览器操作层: the generic JS execution channel ----
 
     /**
-     * 057 CLICK: synthetic mouse event sequence over the matched element
+     * 069 CLICK: synthetic mouse event sequence over the matched element
      * (browser-use style). Same guards/timeout/single-flight as [scrollPage].
      */
     fun clickElement(selector: String, timeoutMs: Long = DEFAULT_READ_TIMEOUT_MS): CompletableFuture<ActionResult> =
         runAction(timeoutMs) { inject -> BrowserActionScripts.buildClickScript(inject, selector) }
 
     /**
-     * 057 TYPE: focus + native value setter + input event (or execCommand
+     * 069 TYPE: focus + native value setter + input event (or execCommand
      * for contenteditable). Same guards/timeout/single-flight as [scrollPage].
      */
     fun typeText(selector: String, text: String, timeoutMs: Long = DEFAULT_READ_TIMEOUT_MS): CompletableFuture<ActionResult> =
         runAction(timeoutMs) { inject -> BrowserActionScripts.buildTypeScript(inject, selector, text) }
 
     /**
-     * 057 EVALUATE: run the user's JS and return its completion value. Same
+     * 069 EVALUATE: run the user's JS and return its completion value. Same
      * guards/timeout/single-flight as [scrollPage].
      */
     fun evaluateJs(js: String, timeoutMs: Long = DEFAULT_READ_TIMEOUT_MS): CompletableFuture<ActionResult> =
@@ -612,7 +612,7 @@ class PiBrowserKernel(
         }
     }
 
-    /** 053 B3: JSONL capture path for the tool response; null outside an IDE. */
+    /** 065 B3: JSONL capture path for the tool response; null outside an IDE. */
     fun consoleFilePath(): String? = consoleFile?.path
 
     /**
@@ -620,8 +620,8 @@ class PiBrowserKernel(
      * shapes over ONE query: page snapshots (the F-206 original path), console
      * taps and JS dialog shims (round-2 replacements for the reflection
      * devToolsClient mount and the CefJSDialogHandler that never fire on the
-     * remote/CEF-144 channel), viewport scroll results (053 B2), and — since
-     * 057 — page action results (click/type/evaluate; all dispatched on the
+     * remote/CEF-144 channel), viewport scroll results (065 B2), and — since
+     * 069 — page action results (click/type/evaluate; all dispatched on the
      * JSON.stringify kind tag).
      */
     private fun onReadResult(request: String?): JBCefJSQuery.Response {
@@ -761,7 +761,7 @@ class PiBrowserKernel(
     /**
      * Carrier "Retry" action on a crash card: clears the fuse and reloads.
      *
-     * 051: the card's Retry button now shows even when the browser never
+     * 063: the card's Retry button now shows even when the browser never
      * reported an address, so the URL can be blank. Navigating to an empty
      * URL would only produce another load error, so the renderer is rebuilt
      * and left idle instead — the user gets a working browser back, ready
@@ -837,7 +837,7 @@ class PiBrowserKernel(
         const val REBUILD_WINDOW_MS = 60_000L
         const val MAX_REBUILDS_PER_WINDOW = 2
 
-        /** Hard ceiling for one page read (spec 049 hard rule 9). */
+        /** Hard ceiling for one page read (spec 061 hard rule 9). */
         const val DEFAULT_READ_TIMEOUT_MS = 10_000L
     }
 }

@@ -5,7 +5,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 /**
- * Transition-table lock (spec 048 T001). The table is small on purpose; every
+ * Transition-table lock (spec 060 T001). The table is small on purpose; every
  * row here is a promise the carriers rely on (error card on FAILED, rebuild
  * on CRASHED, no regression from stale LoadEnd).
  */

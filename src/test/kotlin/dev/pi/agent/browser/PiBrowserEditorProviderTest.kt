@@ -10,7 +10,7 @@ import kotlin.test.assertTrue
  * `FileEditor.getFile()`: an editor that does not override it makes the
  * platform log a SEVERE on every EditorChange event and hand `null` to the
  * message bus ("dev.pi.agent.browser.PiBrowserFileEditor getFile() returned
- * null"). The 048 editor tab (T019 — "在编辑器中打开") hit exactly that on
+ * null"). The 060 editor tab (T019 — "在编辑器中打开") hit exactly that on
  * the real IDE.
  *
  * The editor cannot be instantiated in a unit test — its constructor builds a

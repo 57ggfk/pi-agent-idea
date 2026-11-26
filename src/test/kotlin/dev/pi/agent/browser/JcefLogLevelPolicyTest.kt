@@ -6,7 +6,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * 052: the JCEF log level is the only lever that makes Chromium's GPU crash
+ * 064: the JCEF log level is the only lever that makes Chromium's GPU crash
  * lines readable at all. With the default level ("disable") the Chromium log
  * stays empty — verified on 2026.2: three killed GPU processes produced a
  * 0-byte log file.

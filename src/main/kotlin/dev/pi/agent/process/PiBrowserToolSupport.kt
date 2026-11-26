@@ -6,7 +6,7 @@ import java.io.File
 
 /**
  * Installs the bundled pi-browser extension and computes its environment
- * (spec 049 D3). Same per-start extraction pattern as [PiApprovalSupport]:
+ * (spec 061 D3). Same per-start extraction pattern as [PiApprovalSupport]:
  * the extension lives in the plugin's resources, is written to the IDE
  * config dir on every pi start so upgrades propagate, and is handed to pi
  * via `--extension <path>` — never installed into `~/.pi/agent/extensions`.

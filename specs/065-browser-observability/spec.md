@@ -1,12 +1,12 @@
-# Feature Specification: 053 pi_browser 观测面强化（scroll / selector 摘录 / console 回读落盘）
+# Feature Specification: 065 pi_browser 观测面强化（scroll / selector 摘录 / console 回读落盘）
 
 **Feature Branch**: `release/0.5.10-browser-build`
 
 **Created**: 2026-11-21
 
-**Status**: Implemented（本批 TDD 交付；真机清单见 §七，随 0.5.10 发版验证轮执行）
+**Status**: Implemented（本批 TDD 交付；真机清单见 §七，随 0.5.11 发版验证轮执行）
 
-**Input**: 竞品矩阵 `docs/BROWSER_COMPETITORS.md` §三（Cursor 7 子动作、console 落盘可 grep）与本地候选清单 ★1/★2——本批一次协议演进交付两功能：① scroll 子动作 + read 结构化扩展（selector 元素摘录 outerHTML/innerText）；② console 日志按需回读（单调序号 + dropped 计数，返回行数 + 有界预览省 token，附 JSONL 落盘供 grep）。051/052 遗留不并入本批。
+**Input**: 竞品矩阵 `docs/BROWSER_COMPETITORS.md` §三（Cursor 7 子动作、console 落盘可 grep）与本地候选清单 ★1/★2——本批一次协议演进交付两功能：① scroll 子动作 + read 结构化扩展（selector 元素摘录 outerHTML/innerText）；② console 日志按需回读（单调序号 + dropped 计数，返回行数 + 有界预览省 token，附 JSONL 落盘供 grep）。063/064 遗留不并入本批。
 
 ## 一、定位
 
@@ -22,10 +22,10 @@
 ## 三、验收口径（单测已锁定）
 
 - codec：scroll/console/selector 各参数 Valid、钳制与 Invalid 文案（`AgentBrowserRequestCodecTest`）。
-- 脚本：`buildReadScript` 无 selector 时与 049 版逐字节一致；selector 分支 querySelector + 转义内嵌 + 未命中 error；`buildScrollScript` 仅 `window.scrollBy`（不写 DOM、不含 token/bridge）、up 为负位移、构造端钳制（`PageSnapshotSanitizerTest`/`PageScrollTest`）。
+- 脚本：`buildReadScript` 无 selector 时与 061 版逐字节一致；selector 分支 querySelector + 转义内嵌 + 未命中 error；`buildScrollScript` 仅 `window.scrollBy`（不写 DOM、不含 token/bridge）、up 为负位移、构造端钳制（`PageSnapshotSanitizerTest`/`PageScrollTest`）。
 - 缓冲：单调序号 total、环形驱逐 dropped、since 窗口、容量 300、sink 锁外回调、severity 过滤与 LogSafe 截断不变（`BrowserConsoleBufferTest`）。
 - 落盘：JSONL 每行 `{ts,seq,index,text}`、空白行不写、超 maxFileBytes 轮转、keepRotated 封顶且最新行总在主文件（`ConsoleLogFileTest`）。
-- 响应：快照 049 字段序不变（scrollY 插 text 后、selector 回显 url 后）；console 响应 ok/total/dropped/count/lines/file 与空 buffer ok:true+reason（`AgentBrowserToolResponseTest`、`AgentBrowserToolPollTest` 失败文案）。
+- 响应：快照 061 字段序不变（scrollY 插 text 后、selector 回显 url 后）；console 响应 ok/total/dropped/count/lines/file 与空 buffer ok:true+reason（`AgentBrowserToolResponseTest`、`AgentBrowserToolPollTest` 失败文案）。
 - 全量：`gradlew test` 537 tests / 0 failures / 0 errors（2026-11-21 本机实跑）。
 
 ## 四、Non-goals（本批不做）
@@ -38,8 +38,8 @@
 
 ## 五、硬约束与隐私边界
 
-1. **单 JS bridge 不破（049 D4 措辞演进）**：D4 由「唯一 JS bridge 只读快照」演进为「只读 DOM + 视口滚动」——同一 `JBCefJSQuery` 通道承载 read 快照 / console+dialog tap / scroll 结果（`kind` 分发），`window.scrollBy` 是该通道唯一允许的变更动作；不引入第二个 bridge，无 token、无 BridgeService 关联（`PiBrowserKernel` 类注释同步改写）。
-2. **F-201 口径：console 行含 URL 的隐私边界**（对应 048 spec §四 F-201「需先做 URL 隐私决策」的处理方式）：console 行（尤其资源加载失败）常携带页面 URL 与 query。落盘决策：只写 IDE system 目录（`PathManager.getSystemPath()/pi-agent/browser-console/`，机器本地、不随仓库/会话导出）、只存 `LogSafe.truncate` 后的行（≤200 字符、单行化、severity 过滤在前）、超限轮转封顶磁盘、**绝不写 idea.log**（048 硬规则 8，`ConsoleLogFile` 全类不调用日志 API）；文件属用户私有材料，用户可整目录删除。与 idea.log 的 URL 脱敏（`LogSafe.url`）不同，文件面向模型消费（F-103 口径：模型而非日志文件读取），保留原文以保 grep 价值。
+1. **单 JS bridge 不破（061 D4 措辞演进）**：D4 由「唯一 JS bridge 只读快照」演进为「只读 DOM + 视口滚动」——同一 `JBCefJSQuery` 通道承载 read 快照 / console+dialog tap / scroll 结果（`kind` 分发），`window.scrollBy` 是该通道唯一允许的变更动作；不引入第二个 bridge，无 token、无 BridgeService 关联（`PiBrowserKernel` 类注释同步改写）。
+2. **F-201 口径：console 行含 URL 的隐私边界**（对应 060 spec §四 F-201「需先做 URL 隐私决策」的处理方式）：console 行（尤其资源加载失败）常携带页面 URL 与 query。落盘决策：只写 IDE system 目录（`PathManager.getSystemPath()/pi-agent/browser-console/`，机器本地、不随仓库/会话导出）、只存 `LogSafe.truncate` 后的行（≤200 字符、单行化、severity 过滤在前）、超限轮转封顶磁盘、**绝不写 idea.log**（060 硬规则 8，`ConsoleLogFile` 全类不调用日志 API）；文件属用户私有材料，用户可整目录删除。与 idea.log 的 URL 脱敏（`LogSafe.url`）不同，文件面向模型消费（F-103 口径：模型而非日志文件读取），保留原文以保 grep 价值。
 3. **只在 LOADED 后注入**：scroll/read 与 tap 同在 LoadEnd 后的通道之上执行；无页/崩溃/启动中/单飞冲突一律即时失败快照（model 可读 reason），不悬挂。
 4. **尽力而为落盘**：磁盘满/锁定静默忽略，内存缓冲始终权威——落盘故障绝不影响页签或工具响应。
 5. **前向兼容**：pi-browser.js 与插件同版本分发（schema 与 codec 同批演进）；旧 pi 进程拿到旧 schema 也只少用新参数，不报错。
@@ -58,11 +58,11 @@
 | pi 侧 schema/formatConsole | `src/main/resources/pi-browser/pi-browser.js` |
 | 测试位 | `src/test/kotlin/dev/pi/agent/browser/{AgentBrowserRequestCodecTest, PageSnapshotSanitizerTest, PageScrollTest, BrowserConsoleBufferTest, ConsoleLogFileTest, AgentBrowserToolResponseTest, AgentBrowserToolPollTest}.kt` |
 
-## 七、真机清单（Windows IDE + pi 会话；本批未执行，随 0.5.10 发版验证轮回归）
+## 七、真机清单（Windows IDE + pi 会话；本批未执行，随 0.5.11 发版验证轮回归）
 
 - [ ] 长页 `scroll` down/up：scrollY 变化、返回快照 text 反映滚动后内容、up 到顶后 scrollY=0 不为负。
 - [ ] `read` selector 命中（html/text 两格式）与未命中（reason 含选择器原文）两路。
 - [ ] 制造 >5 条 console 错误：`console` 回读 total/dropped/lines 与 ride-along 尾部一致性；file 路径可 grep（含被 300 容量驱逐的旧行）。
-- [ ] `read` 无参数行为与 049 一致（响应字段序逐字节回归）。
+- [ ] `read` 无参数行为与 061 一致（响应字段序逐字节回归）。
 - [ ] limit/since 分页：since=last index 翻页至 count=0，reason 文案可读。
-- [ ] 048 硬规则 8 复核：idea.log 无 console 行/无落盘路径明文。
+- [ ] 060 硬规则 8 复核：idea.log 无 console 行/无落盘路径明文。

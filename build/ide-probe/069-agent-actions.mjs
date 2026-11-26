@@ -1,8 +1,12 @@
-// 055 真机复验:CDP 真实键鼠给 Pi 聊天 composer 发指令(既有验证过的流程)
+// 069 真机探针:给 Pi 聊天 composer 发一条让 agent 走完整 068+069 链路的指令
+// (复用 067 验证过的 CDP 真实键鼠流程)。真机前置:
+//   PI_IDE_E2E=real PI_IDE_E2E_PROJECT=<repo>/test/e2e-project ./gradlew runIde
+// 先手动(或让 agent open)打开 test/e2e-project/demo/agent-actions.html,
+// 再跑: node build/ide-probe/069-agent-actions.mjs
 import http from 'node:http';
 
-const PROMPT = process.argv[2];
-if (!PROMPT) { console.log('need prompt arg'); process.exit(1); }
+const PROMPT = process.argv[2] ||
+  '用 pi_browser 验证 demo/agent-actions.html：先 list 看看当前页签，然后 type 到 #inp 输入「你好 pi」，click #btn，用 read 确认 #out 出现了 btn clicked，再用 evaluate 取 document.title，把每步返回的 tab 字段和结果告诉我。';
 
 const getJSON = (path) => new Promise((res, rej) => {
   http.get('http://127.0.0.1:9222' + path, r => { let d=''; r.on('data',c=>d+=c); r.on('end',()=>res(JSON.parse(d))); }).on('error',rej);
@@ -49,5 +53,11 @@ await send('Input.dispatchKeyEvent', {type:'rawKeyDown', windowsVirtualKeyCode:1
 await send('Input.dispatchKeyEvent', {type:'keyDown', windowsVirtualKeyCode:13, code:'Enter', key:'Enter'});
 await send('Input.dispatchKeyEvent', {type:'char', text:'\r', windowsVirtualKeyCode:13, code:'Enter', key:'Enter'});
 await send('Input.dispatchKeyEvent', {type:'keyUp', windowsVirtualKeyCode:13, code:'Enter', key:'Enter'});
-console.log('enter sent');
+console.log('enter sent — 人工核对要点:');
+console.log('  1 list 回答枚举 t*/e* 页签且 selected 正确');
+console.log('  2 type/click/evaluate 回答都带 tab 字段且与操作页签一致');
+console.log('  3 click 后 #out 变成 btn clicked…(read 佐证)');
+console.log('  4 type 后 #inp 的值为「你好 pi」(React setter 生效)');
+console.log('  5 evaluate 的 value 返回页面标题字符串');
+console.log('  6 故意 click #missing 应回 found:false + reason,不崩');
 ws.close();

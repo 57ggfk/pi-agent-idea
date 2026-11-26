@@ -72,7 +72,7 @@ class BrowserConsoleBufferTest {
         assertTrue(line!!.length <= LogSafe.truncate("y".repeat(500)).length + 20)
     }
 
-    // ---- 053 B3: monotonic indexes, eviction counter, since-window readback ----
+    // ---- 065 B3: monotonic indexes, eviction counter, since-window readback ----
 
     @Test
     fun `entries carry monotonic indexes and since reads a window`() {

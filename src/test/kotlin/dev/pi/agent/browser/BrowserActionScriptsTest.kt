@@ -6,11 +6,11 @@ import kotlin.test.assertTrue
 import kotlin.test.Test
 
 /**
- * 057 浏览器操作层: the pure script builders for click/type/evaluate and
+ * 069 浏览器操作层: the pure script builders for click/type/evaluate and
  * the ActionResult routing behind them. The escaping locks are the heart of
  * this file — quotes, backslashes, newlines, CJK and `</script>`-shaped
  * payloads must stay inert STRING content of the embedded literals, never
- * executable code (same bar as the 049 selector escaping).
+ * executable code (same bar as the 061 selector escaping).
  */
 class BrowserActionScriptsTest {
 

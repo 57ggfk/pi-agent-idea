@@ -6,7 +6,7 @@ import java.security.SecureRandom
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * One-shot local-HTML preview registry (spec 048 T015 / plan D10).
+ * One-shot local-HTML preview registry (spec 060 T015 / plan D10).
  *
  * Local HTML never loads through `file://` (hard constraint 2): callers copy
  * the file into this object's temp root and get a 128-bit random token; the
@@ -58,7 +58,7 @@ object PiBrowserPreviews {
 
     /**
      * Returns the file for [token] while the registration is alive. Amended
-     * during implementation (048 T015/T016 note): the first draft was
+     * during implementation (060 T015/T016 note): the first draft was
      * single-use, but the browser panel's RELOAD re-fetches the same URL —
      * a single-use token turned every refresh into a 404 error card. The
      * token now stays valid for [TTL_MS] (re-fetchable) and dies with the

@@ -223,7 +223,7 @@ tasks {
         // injected via PI_AGENT_EXECUTABLE; with "real" the user's own pi runs.
         System.getenv("PI_IDE_E2E")?.let { mode ->
             // CDP port parameterizable so the sandbox can coexist with a
-            // real IDE that already owns 9222 (048 automated smoke uses 9224).
+            // real IDE that already owns 9222 (060 automated smoke uses 9224).
             val cdpPort = System.getenv("PI_IDE_E2E_CDP_PORT") ?: "9222"
             jvmArgs(
                 "-Dide.browser.jcef.debug.port=$cdpPort",

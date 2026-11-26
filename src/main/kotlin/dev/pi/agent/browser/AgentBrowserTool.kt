@@ -9,23 +9,23 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 /**
- * Executes the pi_browser tool's requests against the browser (spec 049
- * D2/D8, 054 agent dual-form). Runs on the LocalUiServer HTTP executor
+ * Executes the pi_browser tool's requests against the browser (spec 061
+ * D2/D8, 066 agent dual-form). Runs on the LocalUiServer HTTP executor
  * thread; every Swing/EDT touch hops through invokeAndWait, and the
  * load-completion wait is a plain @Volatile-state poll — never an EDT block
  * (plan §风险).
  *
- * 054 agent dual-form (user-directed "AI 两种形态都支持"): an explicit
+ * 066 agent dual-form (user-directed "AI 两种形态都支持"): an explicit
  * `target` picks the tool-window tab or the editor-form preview; a
  * target-less call follows [PiBrowserManager.lastAgentCarrier] — the form
  * the agent last opened into — so open + follow-up read/scroll/console hit
- * the same kernel. The tool-window tab count rules (048 P-7) are unchanged:
+ * the same kernel. The tool-window tab count rules (060 P-7) are unchanged:
  * this creates no extra windowed browser there, and the editor carrier's
  * kernel belongs to its own preview tab.
  */
 object AgentBrowserTool {
 
-    /** Hard ceiling for one open/reload load wait (spec 049 Q5). */
+    /** Hard ceiling for one open/reload load wait (spec 061 Q5). */
     private const val LOAD_WAIT_MS = 15_000L
     private const val POLL_INTERVAL_MS = 100L
 
@@ -38,16 +38,16 @@ object AgentBrowserTool {
      */
     private const val PANEL_WAIT_MS = 5_000L
 
-    // ---- 053 constants (internal: the copy is unit-locked) ----
+    // ---- 065 constants (internal: the copy is unit-locked) ----
 
     /** Shared empty-tab failure for read/reload/scroll/console. */
     internal const val NO_TAB_REASON = "browser tab is not open; use open first"
 
-    /** 053 B2: scroll defaults — one "page-ish" step down. */
+    /** 065 B2: scroll defaults — one "page-ish" step down. */
     internal const val DEFAULT_SCROLL_DIRECTION = "down"
     internal const val DEFAULT_SCROLL_AMOUNT_PX = 800
 
-    /** 053 B3: console preview size (the full history lives in the JSONL file). */
+    /** 065 B3: console preview size (the full history lives in the JSONL file). */
     internal const val DEFAULT_CONSOLE_PREVIEW_LINES = 20
     internal const val MAX_CONSOLE_PREVIEW_LINES = AgentBrowserRequestCodec.MAX_CONSOLE_LIMIT
     internal const val CONSOLE_EMPTY_REASON =
@@ -71,7 +71,7 @@ object AgentBrowserTool {
     }
 
     /**
-     * 054 agent dual-form: explicit `target` ("tab"/"editor", codec-validated)
+     * 066 agent dual-form: explicit `target` ("tab"/"editor", codec-validated)
      * picks the carrier; absent → the carrier the agent LAST opened into
      * (tool-window default) — the "AI decides by situation" contract, where
      * the situation is what the agent itself did earlier in this project.
@@ -80,7 +80,7 @@ object AgentBrowserTool {
         BrowserCarriers.carrierFor(target)
             ?: PiBrowserManager.getInstance(project).lastAgentCarrier
 
-    // ---- 056 页签寻址: panel resolution by identity ----
+    // ---- 068 页签寻址: panel resolution by identity ----
 
     /**
      * The outcome of panel resolution for one agent request: either a live
@@ -91,7 +91,7 @@ object AgentBrowserTool {
     internal data class PanelLookup<P>(val panel: P?, val tabId: String?, val missReason: String?)
 
     /**
-     * 056 resolution order, pure over lambdas (unit-locked in
+     * 068 resolution order, pure over lambdas (unit-locked in
      * AgentBrowserToolTabAddressingTest; the production wrapper below wires
      * them to the manager):
      *
@@ -101,7 +101,7 @@ object AgentBrowserTool {
      *  2. [lastTabId] — the tab the last open landed on (identity beats
      *     form, survives manual tab switching); a stale id (tab closed)
      *     degrades to the carrier fallback;
-     *  3. the 055 carrier fallback (lastAgentCarrier / selected tab).
+     *  3. the 067 carrier fallback (lastAgentCarrier / selected tab).
      *
      * `tab` wins over `target` when both are present: the codec accepts both,
      * and the tool layer gives the narrower address (an exact panel id)
@@ -147,10 +147,10 @@ object AgentBrowserTool {
      * shell round-trip per verification. The plugin's own UI-server port is
      * excluded (that is the chat SPA, never a dev server).
      *
-     * 056: an explicit `tab` pins the landing panel — the request navigates
+     * 068: an explicit `tab` pins the landing panel — the request navigates
      * THAT panel instead of the carrier-based open (tab wins over target;
      * the landing is recorded in [PiBrowserManager.lastTabId]). Without a
-     * tab, the 055 carrier open is byte-for-byte unchanged (F-208 reuse /
+     * tab, the 067 carrier open is byte-for-byte unchanged (F-208 reuse /
      * new-tab rules), and the landed panel's id rides in the answer.
      */
     private fun open(project: Project, request: AgentBrowserRequest): JsonObject {
@@ -184,7 +184,7 @@ object AgentBrowserTool {
                 ?: return failure("not a usable url: ${LogSafe.url(url)}")
         }
         val manager = PiBrowserManager.getInstance(project)
-        // 056: an explicit tab id navigates THAT exact panel (codec checked
+        // 068: an explicit tab id navigates THAT exact panel (codec checked
         // the format; a dead id is a runtime miss answered model-readably).
         request.tab?.let { tabId ->
             val pinned = manager.panelById(tabId)
@@ -218,8 +218,8 @@ object AgentBrowserTool {
     }
 
     /**
-     * 056: reload resolves the panel by identity (explicit tab → last-open
-     * tab → 055 carrier fallback) instead of only by carrier form.
+     * 068: reload resolves the panel by identity (explicit tab → last-open
+     * tab → 067 carrier fallback) instead of only by carrier form.
      */
     private fun reload(project: Project, request: AgentBrowserRequest): JsonObject {
         val lookup = resolveAgentPanel(project, request)
@@ -236,7 +236,7 @@ object AgentBrowserTool {
         val lookup = resolveAgentPanel(project, request)
         val panel = lookup.panel ?: return failure(lookup.missReason ?: NO_TAB_REASON)
         val kernel = panel.agentKernel()
-        // 053 B2: a selector excerpts that element instead of the whole page.
+        // 065 B2: a selector excerpts that element instead of the whole page.
         return finishWithSnapshot(
             kernel,
             kernel.state.name,
@@ -247,7 +247,7 @@ object AgentBrowserTool {
     }
 
     /**
-     * 053 B2: move the viewport (the D4 revision — read-only DOM + viewport
+     * 065 B2: move the viewport (the D4 revision — read-only DOM + viewport
      * scrolling), then answer with the SAME snapshot format, the post-scroll
      * `scrollY` attached. The kernel owns the single-flight and the timeout;
      * a failed scroll answers with a plain failure, never a stale snapshot.
@@ -270,7 +270,7 @@ object AgentBrowserTool {
     }
 
     /**
-     * 053 B3: on-demand console readback — `{ok,total,dropped,count,lines,
+     * 065 B3: on-demand console readback — `{ok,total,dropped,count,lines,
      * file}`. `count` is how many lines match `since` (the full scale);
      * `lines` is the bounded preview (default 20, max 200, each line already
      * LogSafe.truncate'd at capture). Older lines live in the JSONL file the
@@ -289,7 +289,7 @@ object AgentBrowserTool {
     }
 
     /**
-     * 056 LIST: enumerate the live browser panels across BOTH carriers —
+     * 068 LIST: enumerate the live browser panels across BOTH carriers —
      * `{ok, tabs:[{tab,url,title,carrier,selected}]}`. URL/title come from
      * the kernel's last-known values, so a mid-load tab still answers; the
      * ids it returns are the addresses every other action accepts.
@@ -297,10 +297,10 @@ object AgentBrowserTool {
     private fun list(project: Project): JsonObject =
         listResponse(PiBrowserManager.getInstance(project).listTabs())
 
-    // ---- 057 浏览器操作层: click / type / evaluate ----
+    // ---- 069 浏览器操作层: click / type / evaluate ----
 
     /**
-     * 057 CLICK: synthetic mouse event sequence on the matched element. The
+     * 069 CLICK: synthetic mouse event sequence on the matched element. The
      * execution mirrors scroll's contract: a completed round-trip (hit OR
      * miss) answers with the page snapshot + the click verdict; a dead
      * round-trip (no page/timeout/throw) is a plain model-readable failure.
@@ -335,7 +335,7 @@ object AgentBrowserTool {
         return finishWithSnapshot(kernel, kernel.state.name, tab = lookup.tabId, actionFields = verdict)
     }
 
-    /** 057 TYPE: write [request.text] into the matched element (React-compatible). */
+    /** 069 TYPE: write [request.text] into the matched element (React-compatible). */
     private fun type(project: Project, request: AgentBrowserRequest): JsonObject {
         val lookup = resolveAgentPanel(project, request)
         val panel = lookup.panel ?: return failure(lookup.missReason ?: NO_TAB_REASON)
@@ -364,7 +364,7 @@ object AgentBrowserTool {
         return finishWithSnapshot(kernel, kernel.state.name, tab = lookup.tabId, actionFields = verdict)
     }
 
-    /** 057 EVALUATE: run the user's JS in the page; the completion value comes back as a string. */
+    /** 069 EVALUATE: run the user's JS in the page; the completion value comes back as a string. */
     private fun evaluate(project: Project, request: AgentBrowserRequest): JsonObject {
         val lookup = resolveAgentPanel(project, request)
         val panel = lookup.panel ?: return failure(lookup.missReason ?: NO_TAB_REASON)
@@ -387,7 +387,7 @@ object AgentBrowserTool {
     }
 
     /**
-     * 057: failure answer for an action whose round-trip died (no page,
+     * 069: failure answer for an action whose round-trip died (no page,
      * timeout, in-flight, page-side throw). The page-side error rides as the
      * `error` field when the page named one; no snapshot — the channel the
      * snapshot would ride is the one that failed (scroll precedent).
@@ -442,11 +442,11 @@ object AgentBrowserTool {
 
     /**
      * The pure response assembly behind every snapshot answer (unit-tested):
-     * the 049 field order is untouched when the 053 extras are absent —
+     * the 061 field order is untouched when the 065 extras are absent —
      * scrollY inserts after text, selector echoes after url when present.
-     * 056 adds `tab` (the addressed panel's id) at the very TAIL — the field
-     * order before it stays byte-locked by the 049/053/055 assertions.
-     * 057 adds [actionFields] (the click/type/evaluate verdict, flattened —
+     * 068 adds `tab` (the addressed panel's id) at the very TAIL — the field
+     * order before it stays byte-locked by the 061/065/067 assertions.
+     * 069 adds [actionFields] (the click/type/evaluate verdict, flattened —
      * found/tag/elementText/typed/value/reason) between console and tab.
      */
     internal fun snapshotResponse(
@@ -498,7 +498,7 @@ object AgentBrowserTool {
      * The pure console response assembly (unit-tested): ok stays true for an
      * empty buffer (zero captured errors IS the answer for a verification
      * call), with a reason field explaining what is and is not captured.
-     * 056: the addressed panel's id rides at the tail.
+     * 068: the addressed panel's id rides at the tail.
      */
     internal fun consoleResponse(window: ConsoleWindow, since: Int, file: String?, tab: String? = null): JsonObject {
         val lines = window.entries.map { "[${it.index}] ${it.text}" }
@@ -521,7 +521,7 @@ object AgentBrowserTool {
     }
 
     /**
-     * 056: the pure LIST assembly (unit-tested) — `{ok, tabs:[...]}` with the
+     * 068: the pure LIST assembly (unit-tested) — `{ok, tabs:[...]}` with the
      * per-tab wire order tab/url/title/carrier/selected.
      */
     internal fun listResponse(tabs: List<BrowserTabSummary>): JsonObject = buildJsonObject {

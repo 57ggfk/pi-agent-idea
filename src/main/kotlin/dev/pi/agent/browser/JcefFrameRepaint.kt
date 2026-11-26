@@ -4,7 +4,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.ui.jcef.JBCefBrowser
 
 /**
- * Forces a full CEF frame repaint after a large DOM swap (spec 048 T005).
+ * Forces a full CEF frame repaint after a large DOM swap (spec 060 T005).
  *
  * Extracted verbatim from `PiAgentPanel.repaintBrowser` (0.5.4): after a big
  * view change the on-screen frame could stay stale for seconds to minutes —

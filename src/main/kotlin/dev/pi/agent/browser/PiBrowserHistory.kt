@@ -7,7 +7,7 @@ import com.intellij.openapi.project.Project
  * The browser tab's recently-visited URLs (F-201). In-memory per project —
  * survives tab close/reopen within the session (the main pain point: "closed
  * the tab, had to remember the dev-server port"), deliberately NOT
- * persistent across IDE restarts (048 hard rule 8 posture: no browsing
+ * persistent across IDE restarts (060 hard rule 8 posture: no browsing
  * history on disk until there is a privacy decision for it).
  *
  * LRU with dedup: revisiting an entry moves it to the front. Nothing here is

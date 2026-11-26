@@ -48,7 +48,7 @@ import javax.swing.KeyStroke
 import javax.swing.SwingUtilities
 
 /**
- * The browser tab's Swing face (spec 048 T011): navigation toolbar (back /
+ * The browser tab's Swing face (spec 060 T011): navigation toolbar (back /
  * forward / reload / open-external / DevTools / address bar + Go), loading
  * progress strip, URL+title echo row, the optional find bar, and the kernel's
  * browser component in the center, swapped for an error card on failure
@@ -57,7 +57,7 @@ import javax.swing.SwingUtilities
  * panel adds no second one (probe P-7).
  */
 /**
- * @param carrier which form this panel lives in (054 变更 2) — the
+ * @param carrier which form this panel lives in (066 变更 2) — the
  *   tool-window tab passes [BrowserCarrier.TOOLWINDOW] (default), the editor
  *   tab passes [BrowserCarrier.EDITOR]; it greys the matching Open In row in
  *   the overflow menu ([BrowserCarriers.menuItems]).
@@ -93,7 +93,7 @@ class BrowserPanel(
     private val progressBar = JProgressBar()
 
     /** F-204: page find bar — a plain NORTH row, never a floating overlay
-     * (048 hard rule 5: overlays over the windowed CEF HWND drift). */
+     * (060 hard rule 5: overlays over the windowed CEF HWND drift). */
     private val findField = JTextField()
     private val findHintLabel = JLabel(" ")
     private val findRow = JPanel(BorderLayout())
@@ -128,7 +128,7 @@ class BrowserPanel(
     private var findOpen = false
 
     /**
-     * 049 robustness: set when the panel is disposed. The kernel's callbacks
+     * 061 robustness: set when the panel is disposed. The kernel's callbacks
      * are queued on the EDT, so a queued callback can still run after the
      * panel died — every one of them checks this flag first.
      */
@@ -147,7 +147,7 @@ class BrowserPanel(
         // F-109 round 2: BoxLayout 拉宽/挤压两轮修都没根治——按钮组 WEST、
         // 地址栏 CENTER、Go EAST 的 BorderLayout 让 Go 恒在行尾、地址栏恒吸收
         // 剩余宽度（真机复验：Go ~830px 才回归的根因是 max=pref 让按钮不可压缩）。
-        // 049 工具条复检：平台默认度量会把纯图标钮拉到 ~60px 宽（四个钮就把地址栏
+        // 061 工具条复检：平台默认度量会把纯图标钮拉到 ~60px 宽（四个钮就把地址栏
         // 挤没了），DevTools/系统浏览器两个钮也撤进 Go 右侧的下拉——导航行只留
         // 前进/后退/刷新，右侧是 Go + 下拉。
         val navRow = BrowserToolbar.buildNavRow(
@@ -457,7 +457,7 @@ class BrowserPanel(
 
     /**
      * The overflow menu: DevTools + the system browser hand-off, plus the
-     * 054 变更 2 "Open In" rows (browser tab / editor tab; the current
+     * 066 变更 2 "Open In" rows (browser tab / editor tab; the current
      * carrier's own row is disabled). The first two used to be plain buttons
      * in the icon row; they live in this menu now so the nav row keeps
      * navigation only.
@@ -490,7 +490,7 @@ class BrowserPanel(
         }
     }
 
-    /** F-106 (049 C1): hand the current page to the system default browser. */
+    /** F-106 (061 C1): hand the current page to the system default browser. */
     private fun openExternalAction(): AnAction = object : DumbAwareAction(
         PiAgentBundle.message("browser.open.external.menu"),
         PiAgentBundle.message("browser.open.external.tooltip"),
@@ -508,7 +508,7 @@ class BrowserPanel(
     }
 
     /**
-     * 054 变更 2: one "Open In" row — switch the current page to the OTHER
+     * 066 变更 2: one "Open In" row — switch the current page to the OTHER
      * carrier form. [item.enabled] comes from the pure [BrowserCarriers]
      * rule: the row for THIS panel's own form is disabled (already there).
      */
@@ -634,7 +634,7 @@ class BrowserPanel(
         attachBrowserComponent()
     }
 
-    // ---- 049 agent entries (AgentBrowserTool; caller owns threading — EDT) ----
+    // ---- 061 agent entries (AgentBrowserTool; caller owns threading — EDT) ----
 
     /**
      * Agent navigate: same shape as [load] minus address-bar normalization —
@@ -684,7 +684,7 @@ class BrowserPanel(
 
     private fun onStateChanged(state: PiBrowserState) {
         if (disposed) return
-        // 049 robustness: a platform surprise must degrade to a stale toolbar,
+        // 061 robustness: a platform surprise must degrade to a stale toolbar,
         // never to an "IDE Internal Errors" balloon on the EDT.
         BrowserSafety.guard("panel state update", Unit, { msg -> log.warn(msg) }) {
         backButton.isEnabled = kernel.canGoBack()

@@ -8,7 +8,7 @@ import org.junit.jupiter.params.provider.EnumSource
 import kotlin.test.Test
 
 /**
- * Spec 048 T013: the three-state external-link setting. The default state
+ * Spec 060 T013: the three-state external-link setting. The default state
  * (SYSTEM) must keep 037 semantics byte-for-byte — that is the regression
  * promise this file exists to lock.
  */
@@ -52,7 +52,7 @@ class LinkRoutingTest {
         assertFalse(LinkRouting.isLoopback("https://localhost:8080"))
     }
 
-    // ---- 049 A1: ask-mode selector options ----
+    // ---- 061 A1: ask-mode selector options ----
 
     @Test
     fun `selector offers exactly three options in spec Q3 order`() {
@@ -78,7 +78,7 @@ class LinkRoutingTest {
         assertEquals(LinkRoute.AskUser, LinkRouting.routeExternalLink("https://example.com/page", LinkTarget.ASK))
     }
 
-    // ---- 049 origin-aware routing (dev-server links must not be swallowed) ----
+    // ---- 061 origin-aware routing (dev-server links must not be swallowed) ----
 
     private val own = "http://127.0.0.1:53451"
 
@@ -98,7 +98,7 @@ class LinkRoutingTest {
 
     @Test
     fun `dev server loopback on another port follows the setting`() {
-        // 049 真机缺陷回归: host-only loopback 检查把 AI 分享的本地服务链接
+        // 061 真机缺陷回归: host-only loopback 检查把 AI 分享的本地服务链接
         // (http://127.0.0.1:8931/…) 误判为 SPA，其 target=_blank popup 裸开成白窗。
         val url = "http://127.0.0.1:8931/probe-browser.html"
         assertEquals(LinkRoute.SystemBrowser, LinkRouting.routeExternalLink(url, LinkTarget.SYSTEM, own))

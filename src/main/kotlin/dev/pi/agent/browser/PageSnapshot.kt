@@ -5,7 +5,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * The agent tool's view of the loaded page (spec 049 US4): a read-only text
+ * The agent tool's view of the loaded page (spec 061 US4): a read-only text
  * snapshot, deliberately bounded — the model needs enough to judge "did my
  * app render", not the whole DOM dump.
  */
@@ -125,9 +125,9 @@ object PageSnapshotSanitizer {
      * this IIFE declares — the whole thing is read-only by construction
      * (title/readyState/innerText excerpt out, nothing in, nothing written).
      *
-     * 053 B2: with a [selector] the script excerpts THAT element instead of
+     * 065 B2: with a [selector] the script excerpts THAT element instead of
      * the whole page — [format] picks `outerHTML` (structure) or `innerText`
-     * (visible text, the pre-053 default). A miss degrades to the error
+     * (visible text, the pre-065 default). A miss degrades to the error
      * field, which [fromJs] turns into a failure snapshot naming the
      * selector; the excerpt rides the same cleanText cap on the way back.
      */
@@ -188,7 +188,7 @@ object PageSnapshotSanitizer {
      * backslashes, control characters) is valid inside a JS string, so a
      * hostile selector stays inert string content — never code.
      *
-     * 057: shared with the action scripts (click selector / type text /
+     * 069: shared with the action scripts (click selector / type text /
      * evaluate code embed the same way) — one escaping implementation, so
      * the destroyer set (quotes, backslashes, newlines, CJK, `</script>`)
      * is locked once in PageSnapshotSanitizerTest + BrowserActionScriptsTest.

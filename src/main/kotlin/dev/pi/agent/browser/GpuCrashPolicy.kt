@@ -1,7 +1,7 @@
 package dev.pi.agent.browser
 
 /**
- * 052: when does a JCEF GPU crash loop deserve a user-facing warning?
+ * 064: when does a JCEF GPU crash loop deserve a user-facing warning?
  *
  * Why the plugin reads Chromium's own log instead of listening for an event:
  * both platform hooks are checked and neither can warn early.
@@ -20,7 +20,7 @@ package dev.pi.agent.browser
  * every GPU crash lands there as
  * `ERROR:content\browser\gpu\gpu_process_host.cc] GPU process exited
  * unexpectedly: exit_code=…` — verified on 2026.2.3: three kills of the GPU
- * process produced exactly three such lines, and the 049 crash session left
+ * process produced exactly three such lines, and the 061 crash session left
  * 385 of them. Counting those lines inside a window is a direct read of "the
  * GPU keeps crashing".
  *

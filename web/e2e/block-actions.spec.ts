@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 /**
- * 内容块操作条（041/047/048）：
+ * 内容块操作条（041/047/060）：
  * 1. 操作按钮常驻在代码块的**标题栏**里（左侧语言类型、右侧按钮）——
  *    不再是「悬浮才出现在块外上方」；
  * 2. 标题栏一直可见可点（不必先悬浮）；
@@ -50,7 +50,7 @@ test("the action buttons live in the block's header bar and are always visible",
       headerBox: box(header),
       preBox: box(pre),
       buttons: Array.from(actions.querySelectorAll("button")).map((b) => b.textContent),
-      // 049: 「复制为图片」在操作栏的最左——它比其它按钮晚到（图形画出来
+      // 061: 「复制为图片」在操作栏的最左——它比其它按钮晚到（图形画出来
       // 才有），append 会掉到最右边，所以是插到最前的。
       imgFirst: !!imgBtn && actions.firstElementChild === imgBtn,
       imgLeftOfCopy:

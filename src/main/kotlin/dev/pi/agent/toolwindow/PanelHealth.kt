@@ -3,7 +3,7 @@ package dev.pi.agent.toolwindow
 /**
  * What the Pi Agent tool window should do about the page it is showing.
  *
- * 051: this decision used to live inside the panel's health timer, where the
+ * 063: this decision used to live inside the panel's health timer, where the
  * crash-loop budget was a SLIDING WINDOW of rebuild timestamps (60s) that was
  * SHORTER than the silence threshold that triggers a rebuild (90s). Every
  * rebuild therefore landed as the only entry in its own window, the "give up"

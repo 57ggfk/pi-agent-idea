@@ -53,10 +53,10 @@ public class PiAgentToolWindowFactory implements ToolWindowFactory {
     private static final int MAX_INSTANCES = 4;
 
     /**
-     * 051: minimum gap between two AUTOMATIC recreations of an emptied tool
+     * 063: minimum gap between two AUTOMATIC recreations of an emptied tool
      * window.
      *
-     * The 049 build recreated the content as fast as the platform reported
+     * The 061 build recreated the content as fast as the platform reported
      * removals: eleven fresh JBCefBrowser instances in twelve seconds on a
      * real machine (idea.log 2026-11-20 13:35:29→13:35:41), and five in
      * seventeen seconds on 2026-11-18 12:05 — every recreation was removed
@@ -75,7 +75,7 @@ public class PiAgentToolWindowFactory implements ToolWindowFactory {
         // 019 D7/D8: the "+" action lives in the tool window header. Pass the
         // project explicitly — title actions do not reliably carry one in their
         // AnActionEvent data context, which used to leave "+" disabled.
-        // 054: the "New browser tab" button sits NEXT to the instance "+" —
+        // 066: the "New browser tab" button sits NEXT to the instance "+" —
         // same header, same ordering semantics (never pushes the "+" out).
         toolWindow.setTitleActions(List.of(new NewBrowserAction(project), new NewInstanceAction(project)));
     }
@@ -113,9 +113,9 @@ public class PiAgentToolWindowFactory implements ToolWindowFactory {
      * "+" permanently disabled after closing any tab (C3, 2026-11-15).
      */
     /**
-     * 054: "New browser tab" header action - opens a fresh browser Content
+     * 066: "New browser tab" header action - opens a fresh browser Content
      * WITHOUT navigating (the placeholder shows until an address is typed).
-     * Greys out at the browser-tab ceiling (PiBrowserManager.MAX_TABS, 048
+     * Greys out at the browser-tab ceiling (PiBrowserManager.MAX_TABS, 060
      * P-7 rule: tabs 2+ are OSR). Deliberately does NOT count against the Pi
      * instance limit (spec US8: browser tabs own no pi process).
      */
@@ -159,7 +159,7 @@ public class PiAgentToolWindowFactory implements ToolWindowFactory {
         @Override
         public void update(@NotNull AnActionEvent e) {
             ToolWindow toolWindow = toolWindowOf(project);
-            // 048 (spec US8): only Pi instance tabs count against the limit —
+            // 060 (spec US8): only Pi instance tabs count against the limit —
             // a browser Content tab shares the tool window but owns no pi
             // process, so it must not eat an instance slot.
             int instanceTabs = 0;
@@ -192,7 +192,7 @@ public class PiAgentToolWindowFactory implements ToolWindowFactory {
         }
 
         /**
-         * 051: when the last automatic recreation happened, for the rate
+         * 063: when the last automatic recreation happened, for the rate
          * limit in {@link #autoRecreateAllowed}.
          */
         private long lastRecreateMs = 0L;
@@ -259,7 +259,7 @@ public class PiAgentToolWindowFactory implements ToolWindowFactory {
                 ToolWindow toolWindow = toolWindowOf(project);
                 if (toolWindow == null) return;
                 ContentManager manager = toolWindow.getContentManager();
-                // 051: "the IDE is going away" is several different states,
+                // 063: "the IDE is going away" is several different states,
                 // and none of them wants a brand new JBCefBrowser.
                 boolean disposing = project.isDisposed()
                         || ApplicationManager.getApplication().isDisposed()
@@ -311,7 +311,7 @@ public class PiAgentToolWindowFactory implements ToolWindowFactory {
     }
 
     /**
-     * 051: the rate limit for automatic recreations of an emptied tool
+     * 063: the rate limit for automatic recreations of an emptied tool
      * window. Pure, so it can be unit-tested without a project.
      *
      * Two gates, and both are needed:
@@ -320,7 +320,7 @@ public class PiAgentToolWindowFactory implements ToolWindowFactory {
      *   <li>while the IDE or the project is closing there is nothing worth
      *       recreating — the window is being torn down;</li>
      *   <li>a second automatic recreation inside {@code minGapMs} is held
-     *       back, because the 049 build recreated the content as fast as the
+     *       back, because the 061 build recreated the content as fast as the
      *       platform reported removals (eleven JBCefBrowser instances in
      *       twelve seconds on a real machine): every recreation was removed
      *       again, and each removal asked for another one.</li>

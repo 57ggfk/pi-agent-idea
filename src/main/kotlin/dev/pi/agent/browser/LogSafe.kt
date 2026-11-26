@@ -1,7 +1,7 @@
 package dev.pi.agent.browser
 
 /**
- * Log-scrubbing helpers for the browser kernel (spec 048 T004, hard
+ * Log-scrubbing helpers for the browser kernel (spec 060 T004, hard
  * constraint 8). The chat panel logs page console output because that page is
  * ours; the browser tab renders untrusted sites, so their URLs (queries often
  * carry session tokens of OTHER services) and console output must never reach

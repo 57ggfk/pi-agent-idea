@@ -16,7 +16,7 @@ private fun defaultReturn(method: java.lang.reflect.Method): Any? = when (method
 }
 
 /**
- * 054 变更 1：链接右键菜单从三项扩到四项——新增第 4 项「Open in Pi editor」，
+ * 066 变更 1：链接右键菜单从三项扩到四项——新增第 4 项「Open in Pi editor」，
  * 把链接 URL 在编辑器形态（LightVirtualFile 页签）打开。
  *
  * 回归红线（本文件存在的原因）：既有三项的 id、顺序与追加语义不得变动
@@ -63,7 +63,7 @@ class PiBrowserLinkMenuTest {
             }
         } as CefContextMenuParams
 
-    // ---- 054 变更 1：第 4 项 ----
+    // ---- 066 变更 1：第 4 项 ----
 
     @Test
     fun `link menu appends exactly four items after one separator`() {
@@ -77,7 +77,7 @@ class PiBrowserLinkMenuTest {
             "menu shape: one separator, then the appended destinations",
         )
         val first = CefMenuModel.MenuId.MENU_ID_USER_FIRST
-        // 058 审美修正：两个 Pi 目的地相邻——视觉顺序=system → embedded → editor → copy，
+        // 070 审美修正：两个 Pi 目的地相邻——视觉顺序=system → embedded → editor → copy，
         // id 是固定槽位常量，调用顺序决定视觉顺序，故 id 序列不再是单调的 first..first+3。
         assertEquals(
             listOf(first, first + 1, first + 3, first + 2),

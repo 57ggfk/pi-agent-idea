@@ -5,7 +5,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * The viewport state a scroll action reports back (spec 053 B2). The kernel
+ * The viewport state a scroll action reports back (spec 065 B2). The kernel
  * routes the response over the SAME read-only JSQuery channel as the page
  * snapshot — the D4 revision ("read-only DOM + viewport scrolling") lets
  * `window.scrollBy` be the one mutation this channel performs.
@@ -68,7 +68,7 @@ data class ScrollResult(
 }
 
 /**
- * Pure builders for the scroll half of spec 053 B2. The script moves the
+ * Pure builders for the scroll half of spec 065 B2. The script moves the
  * viewport with `window.scrollBy` — nothing else — and reports the new
  * position back through the inject statement the kernel passes in.
  */

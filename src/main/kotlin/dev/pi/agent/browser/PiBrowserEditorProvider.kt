@@ -12,7 +12,7 @@ import java.net.URLDecoder
 import javax.swing.JComponent
 
 /**
- * Editor-form presentation of the in-app browser (spec 048 T019, US9 — the
+ * Editor-form presentation of the in-app browser (spec 060 T019, US9 — the
  * D-track half of 042 Q3's dual carrier). Accepts ONLY the plugin's own
  * preview files ([PiBrowserPreviewFiles.isPreview]) — it must never steal
  * the platform's HTML editor for real project files.
@@ -35,7 +35,7 @@ class PiBrowserEditorProvider : FileEditorProvider, DumbAware {
     companion object {
 
         /**
-         * Static open entry (054 变更 1): opens [url] in an editor-form
+         * Static open entry (066 变更 1): opens [url] in an editor-form
          * browser tab and returns whether it was opened. Shared by the link
          * right-click menu's "Open in Pi editor" and the overflow menu's
          * editor switch. The tab is a [LightVirtualFile] carrying the URL in
@@ -73,7 +73,7 @@ class PiBrowserEditorProvider : FileEditorProvider, DumbAware {
             // substringAfterLast's missing-delimiter default (the whole path)
             // is REQUIRED here: a single-segment path ("…/bubbles.html") has
             // no '/' inside, and an explicit "" made every such page fall
-            // back to the host name (055 真机: pi-preview 页签全叫 127.0.0.1).
+            // back to the host name (067 真机: pi-preview 页签全叫 127.0.0.1).
             val segment = path.substringAfterLast('/').trim()
             if (segment.isBlank()) return authority.ifBlank { "page" }
             return decodePercent(segment)
@@ -112,7 +112,7 @@ internal class PiBrowserFileEditor(private val project: Project, private val fil
 
     override fun getComponent(): JComponent = panel
 
-    /** 054 agent dual-form: the agent's read/scroll/console resolve through this panel. */
+    /** 066 agent dual-form: the agent's read/scroll/console resolve through this panel. */
     internal fun agentPanel(): BrowserPanel = panel
 
     override fun getPreferredFocusedComponent(): JComponent? = null

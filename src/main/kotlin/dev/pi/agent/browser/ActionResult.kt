@@ -7,7 +7,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 
 /**
- * 057 浏览器操作层: the outcome of one injected click/type/evaluate, shaped
+ * 069 浏览器操作层: the outcome of one injected click/type/evaluate, shaped
  * like [PageSnapshot]/[ScrollResult] — a total object the kernel completes
  * futures with, never a thrown exception. [ok] means "the execution
  * round-trip completed": a click MISS is still ok (found=false + reason),

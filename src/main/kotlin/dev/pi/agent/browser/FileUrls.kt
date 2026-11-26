@@ -3,8 +3,8 @@ package dev.pi.agent.browser
 import java.net.URI
 
 /**
- * Pure `file:///` URL construction for user-initiated local opens (054
- * 变更 3). Spec 048 hard constraint 2 ("never `file://`") was RELAXED by the
+ * Pure `file:///` URL construction for user-initiated local opens (066
+ * 变更 3). Spec 060 hard constraint 2 ("never `file://`") was RELAXED by the
  * user (2026-11-21) to exactly this narrow form: local files the user opens
  * through the "Open in Pi Browser / Editor" actions. The preview-token route
  * ([PiBrowserPreviews]) stays for everything else (chat export preview).

@@ -8,11 +8,11 @@ import com.intellij.openapi.fileEditor.FileEditorManager
 import dev.pi.agent.editor.selectedVirtualFile
 
 /**
- * "Open in Editor (Pi preview)" — the editor-form entry (spec 048 T019, US9).
+ * "Open in Editor (Pi preview)" — the editor-form entry (spec 060 T019, US9).
  *
- * URL routing follows [OpenInPiBrowserAction.previewTargetUrl] (054 变更 3):
+ * URL routing follows [OpenInPiBrowserAction.previewTargetUrl] (066 变更 3):
  * local project files ride a direct `file:///` URL — same user-authorized
- * relaxation of 048 hard constraint 2 as the browser-tab action (only files
+ * relaxation of 060 hard constraint 2 as the browser-tab action (only files
  * the user actively opens; see that class comment for the boundary) — while
  * non-local VFS entries keep the snapshot + token route. The URL rides on a
  * LightVirtualFile the provider claims; the suggested tab name is the real

@@ -9,7 +9,7 @@ import javax.swing.JComponent
 import javax.swing.JPanel
 
 /**
- * The browser toolbar's layout contract (048 走查后的工具条复检).
+ * The browser toolbar's layout contract (060 走查后的工具条复检).
  *
  * Two user-visible facts live here instead of inside the panel:
  *

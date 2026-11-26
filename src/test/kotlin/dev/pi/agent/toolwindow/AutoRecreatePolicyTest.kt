@@ -5,9 +5,9 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * 051 contract: the tool window may rebuild itself at most once per gap.
+ * 063 contract: the tool window may rebuild itself at most once per gap.
  *
- * The 049 build recreated the content 11 times in 12 seconds while the IDE
+ * The 061 build recreated the content 11 times in 12 seconds while the IDE
  * was shutting down, each time spawning a fresh JCEF browser. The guard is
  * what keeps that from turning into a renderer storm.
  */

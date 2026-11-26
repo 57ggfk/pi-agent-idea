@@ -10,10 +10,10 @@ import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 
 /**
- * 052: watches Chromium's JCEF log and warns once when the GPU process keeps
+ * 064: watches Chromium's JCEF log and warns once when the GPU process keeps
  * crashing.
  *
- * The blank DevTools window of 049 was a GPU crash loop: the GPU process died
+ * The blank DevTools window of 061 was a GPU crash loop: the GPU process died
  * and was relaunched over and over, so the compositor never got a command
  * buffer and the window stayed white. The IDE's own platform code only reacts
  * after 10 GPU launches (and then disposes the whole CEF app), so this watcher
@@ -47,7 +47,7 @@ internal class GpuCrashMonitor private constructor() {
     fun start() {
         if (started) return
         started = true
-        // 052: the watch only sees anything when Chromium logs at ERROR
+        // 064: the watch only sees anything when Chromium logs at ERROR
         // level, so the level is asked for before the first poll.
         JcefLogLevelGuard.ensure()
         scheduler.scheduleWithFixedDelay(

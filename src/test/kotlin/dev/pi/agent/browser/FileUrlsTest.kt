@@ -6,7 +6,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * 054 变更 3：本地 HTML file:// 直开——file URL 构造的纯函数锁。
+ * 066 变更 3：本地 HTML file:// 直开——file URL 构造的纯函数锁。
  *
  * 硬约束 2（file:// 禁入浏览器页签）按用户授权放宽为：仅限用户主动打开的
  * 本地文件（右键 Open in Pi Browser/Editor）。放宽后的安全边界依赖这里：

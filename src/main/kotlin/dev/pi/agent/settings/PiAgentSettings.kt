@@ -68,7 +68,7 @@ class PiAgentSettings private constructor() {
     }
 
     /**
-     * 048 FR (US4): where chat markdown links go. Default SYSTEM keeps the
+     * 060 FR (US4): where chat markdown links go. Default SYSTEM keeps the
      * 037 semantics byte-for-byte; EMBEDDED opens links in the in-app browser
      * tab; ASK asks once per click. Stored as the enum name so unknown values
      * from older/newer builds degrade to SYSTEM, never to an exception.

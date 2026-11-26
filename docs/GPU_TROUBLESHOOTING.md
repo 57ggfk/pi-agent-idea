@@ -1,6 +1,6 @@
 # 内嵌浏览器空白：JCEF GPU 崩溃的排查与处置
 
-> 适用版本：0.5.10 起（052 批次）。
+> 适用版本：0.5.10 起（064 批次）。
 > 症状：DevTools 弹窗、HTML 预览页或 Pi Agent 面板打开后一片空白；DevTools 窗口甚至会在几十秒后自己消失。
 
 ## 一句话结论
@@ -19,7 +19,7 @@
 3. 看进程树：IDE 的 JCEF 服务进程下面挂着 `cef_server.exe --type=gpu-process`，
    PID 每隔几秒就换一次 —— 那就是在反复重启。
 
-## 插件现在会做什么（052）
+## 插件现在会做什么（064）
 
 插件读 JCEF 的 Chromium 日志（IDE 日志目录下的 `jcef_chromium_<pid>.log`；2024.3 默认落在
 用户主目录），盯每一次 GPU 崩溃记录（`GPU process exited unexpectedly`）：
@@ -62,7 +62,7 @@
 
 ## 容易混淆但不同的现象
 
-- **面板整体空白 + IDE 弹「IDE Internal Errors」**：那是 050/051 批次的浏览器失活与崩溃保护，
+- **面板整体空白 + IDE 弹「IDE Internal Errors」**：那是 062/063 批次的浏览器失活与崩溃保护，
   与 GPU 无关，见 README「排障」。
 - **DevTools 里看不到任何内容但窗口有 UI**：先看是不是上面这条 GPU 问题；
   JCEF 的 DevTools 走 GPU 合成，而 OSR 的预览页走软渲染，所以**只有 DevTools 白**是 GPU 崩溃的典型指纹。

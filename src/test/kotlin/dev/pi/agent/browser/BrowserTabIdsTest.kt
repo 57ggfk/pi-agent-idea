@@ -6,7 +6,7 @@ import kotlin.test.assertTrue
 import kotlin.test.Test
 
 /**
- * 056 页签寻址: the agent-facing tab id vocabulary. Tool-window tabs are
+ * 068 页签寻址: the agent-facing tab id vocabulary. Tool-window tabs are
  * `t<n>`, editor previews are `e<n>`; the codec validates the format and the
  * manager hands ids out of a per-instance monotonic sequence that never
  * reuses a number (a closed tab's id stays dead — the model can never hit a

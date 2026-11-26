@@ -7,7 +7,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * 052: the log tailer must only ever report what Chromium wrote since the
+ * 064: the log tailer must only ever report what Chromium wrote since the
  * last poll — a crash from a previous IDE run (or from before the watch
  * started) is history, not the current problem.
  */

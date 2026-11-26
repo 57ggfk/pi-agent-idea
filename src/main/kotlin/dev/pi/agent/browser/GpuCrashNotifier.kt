@@ -8,7 +8,7 @@ import com.intellij.openapi.diagnostic.Logger
 import dev.pi.agent.PiAgentBundle
 
 /**
- * 052: the user-facing half of the GPU crash guard — one balloon with a
+ * 064: the user-facing half of the GPU crash guard — one balloon with a
  * one-click fix, plus the manual recipe for when the fix cannot be applied
  * automatically.
  */

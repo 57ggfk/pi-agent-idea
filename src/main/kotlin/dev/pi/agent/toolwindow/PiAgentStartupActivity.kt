@@ -15,7 +15,7 @@ import dev.pi.agent.settings.PiAgentSettings
 class PiAgentStartupActivity : ProjectActivity {
 
     override suspend fun execute(project: Project) {
-        // 052: the GPU crash watch belongs to the IDE, not to the panel — a
+        // 064: the GPU crash watch belongs to the IDE, not to the panel — a
         // broken GPU breaks every embedded browser, and the panel may never
         // be opened at all.
         GpuCrashMonitor.getInstance().start()

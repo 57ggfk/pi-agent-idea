@@ -8,7 +8,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * 054 变更 2：overflow 菜单（Browser actions 弹窗）追加两种形态的 Open In
+ * 066 变更 2：overflow 菜单（Browser actions 弹窗）追加两种形态的 Open In
  * ——「Open in Pi browser tab」（工具窗页签）与「Open in Pi editor」（编辑器
  * 页签）。置灰规则：当前载体对应的 Open In 项 disabled——已经是这个形态，
  * 「切换过去」不该作为可点击项出现。
@@ -72,7 +72,7 @@ class BrowserCarriersTest {
     }
 
     /**
-     * 054 agent 双形态：pi_browser 的 target 参数 → 载体映射（纯函数）。
+     * 066 agent 双形态：pi_browser 的 target 参数 → 载体映射（纯函数）。
      * 缺省保持 null——调用方回退到 agent 上次打开的载体；"tab"/"editor"
      * 之外编码层已拒绝，这里兜底为 null 保持全函数。
      */
@@ -85,7 +85,7 @@ class BrowserCarriersTest {
     }
 
     /**
-     * 056 list 动作：载体的线名与 target 词表一致（tab/editor），LIST 回答
+     * 068 list 动作：载体的线名与 target 词表一致（tab/editor），LIST 回答
      * 的 carrier 字段由此而来。
      */
     @Test

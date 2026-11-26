@@ -8,7 +8,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * Spec 048 T015/T016 — the preview registration's lifetime contract.
+ * Spec 060 T015/T016 — the preview registration's lifetime contract.
  *
  * The token is RE-FETCHABLE for its TTL (the browser panel's RELOAD re-requests
  * the same URL; a single-use token turned every refresh into an error card),
