@@ -418,6 +418,11 @@ intellijPlatform {
             Pi coding agent embedded in your IDE. Chat with pi, review its tool calls,
             and manage models, sessions, MCP servers, packages and skills from a JCEF-based tool window.
 
+            Rich replies in the tool window: syntax-highlighted code blocks with line numbers, copy and
+            open-in-IDE; Mermaid diagrams; LaTeX math; CSV/TSV rendered as tables; a rendered ⇄ source
+            toggle per block; one-click copy of a reply as an image. The package manager can also browse
+            and install straight from the pi.dev marketplace.
+
             Installation and remote code: This plugin does not bundle the pi CLI. On first
             setup you can install pi through npm, point to an existing pi executable, or choose
             pi's official install script. If you choose the official script, the plugin downloads
@@ -429,6 +434,10 @@ intellijPlatform {
 
             Pi 编码助手，内嵌在你的 IDE 中。在工具窗里与 pi 对话、审阅工具调用，管理模型、
             会话、MCP 服务器、扩展包和技能。
+
+            回复内容直接在工具窗里渲染：语法高亮代码块（带行号、复制、在 IDE 打开）、Mermaid 图表、
+            LaTeX 公式、CSV/TSV 渲染成表格；每个代码块都能在「渲染 ⇄ 源码」之间切换，还能一键把
+            整条回复复制成图片。扩展包管理里也能直接浏览并安装 pi.dev 官方市场的包。
 
             安装与远程代码说明：本插件不内置 pi 命令行程序。首次配置时，你可以选择用 npm 安装、
             指定已有的 pi 可执行文件，或使用 pi 官方安装脚本。若选择官方脚本，插件会下载并执行
