@@ -4,6 +4,12 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
 /**
+ * How many tool calls may be in flight before the oldest one is dropped
+ * (issue #9). A call whose end never arrives must not leak.
+ */
+private const val MAX_IN_FLIGHT_TOOL_ARGS = 64
+
+/**
  * Pure decision logic for VFS refresh after pi tool calls (spec 009 US4).
  *
  * The wiring (Alarm debounce, VirtualFileManager refresh, cache invalidation)
@@ -30,6 +36,55 @@ object VfsRefresh {
 
     /** Argument keys pi's tools use for the target path (frontend `filePathOf` rule). */
     private val PATH_KEYS = listOf("path", "file_path", "file")
+
+    /**
+     * The tool arguments of the calls in flight, keyed by their call id.
+     *
+     * pi sends a tool's arguments with the START of the call and not with its
+     * END, so the plugin has to remember them until the call finishes
+     * (issue #9). Two properties matter:
+     *
+     *  - **FIFO eviction**: when more calls are in flight than the cap allows,
+     *    the OLDEST one is dropped. A plain HashMap would drop an ARBITRARY
+     *    one, and the dropped call's end event would then find no arguments —
+     *    which escalates that one edit back to a whole-project refresh, i.e.
+     *    exactly the flash issue #9 removed.
+     *  - **bounded**: a call whose end never arrives must not leak.
+     *
+     * Pure and platform-free, so the eviction order is unit-testable.
+     */
+    class InFlightToolArgs(private val maxEntries: Int = MAX_IN_FLIGHT_TOOL_ARGS) {
+
+        /** Insertion-ordered, so the first key is the oldest call. */
+        private val byCallId = LinkedHashMap<String, JsonObject?>()
+
+        /**
+         * Remembers a call's arguments, dropping the oldest call when the cap
+         * is reached.
+         */
+        @Synchronized
+        fun remember(callId: String, args: JsonObject?) {
+            byCallId[callId] = args
+            while (byCallId.size > maxEntries) {
+                val oldest = byCallId.keys.firstOrNull() ?: break
+                byCallId.remove(oldest)
+            }
+        }
+
+        /**
+         * Takes a call's arguments back.
+         *
+         * Null when the call is unknown — either it was never seen, or it was
+         * evicted, or it carried no arguments at all. The caller cannot tell
+         * those apart, and does not have to: all three mean "no path here".
+         */
+        @Synchronized
+        fun take(callId: String): JsonObject? = byCallId.remove(callId)
+
+        /** How many calls are being tracked right now. */
+        @Synchronized
+        fun size(): Int = byCallId.size
+    }
 
     /**
      * What one refresh does.

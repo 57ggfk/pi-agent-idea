@@ -1086,8 +1086,15 @@ class BridgeService(private val project: Project) : Disposable {
     /** A tool in this round could not name the files it touched. */
     private var roundNeedsWholeRefresh = false
 
-    /** The tool arguments of the calls in flight, keyed by their call id. */
-    private val toolArgsByCallId = HashMap<String, JsonObject?>()
+    /**
+     * The tool arguments of the calls in flight, keyed by their call id.
+     *
+     * The tracker evicts the OLDEST call when the cap is reached: a plain
+     * map would drop an arbitrary one, and the dropped call's end event
+     * would find no arguments — escalating that edit back to a whole-project
+     * refresh (issue #9).
+     */
+    private val toolArgsByCallId = VfsRefresh.InFlightToolArgs(MAX_TRACKED_TOOL_CALLS)
 
     /** The files waiting for the next refresh. */
     private val pendingRefreshPaths = LinkedHashSet<String>()
@@ -1107,22 +1114,15 @@ class BridgeService(private val project: Project) : Disposable {
             // every edit escalated to a whole-project refresh (issue #9).
             "tool_execution_start" -> {
                 val callId = event["toolCallId"]?.jsonPrimitive?.contentOrNull ?: return
-                synchronized(refreshLock) {
-                    toolArgsByCallId[callId] = event["args"] as? JsonObject
-                    // A call whose end never arrives would leak its entry —
-                    // the map only holds the calls in flight.
-                    while (toolArgsByCallId.size > MAX_TRACKED_TOOL_CALLS) {
-                        toolArgsByCallId.remove(toolArgsByCallId.keys.first())
-                    }
-                }
+                // A call whose end never arrives would leak its entry — the
+                // tracker only holds the calls in flight.
+                toolArgsByCallId.remember(callId, event["args"] as? JsonObject)
                 return
             }
             "tool_execution_end" -> {
                 val tool = event["toolName"]?.jsonPrimitive?.contentOrNull ?: return
                 val callId = event["toolCallId"]?.jsonPrimitive?.contentOrNull
-                val args = synchronized(refreshLock) {
-                    callId?.let { toolArgsByCallId.remove(it) }
-                } ?: (event["args"] as? JsonObject)
+                val args = callId?.let { toolArgsByCallId.take(it) } ?: (event["args"] as? JsonObject)
                 val plan = VfsRefresh.planForToolCall(tool, args)
                 val paths = synchronized(refreshLock) {
                     if (plan.whole) {
@@ -1174,6 +1174,10 @@ class BridgeService(private val project: Project) : Disposable {
             whole = pendingWholeRefresh
             paths = pendingRefreshPaths.toList()
             pendingRefreshPaths.clear()
+            // The flag is TAKEN here. It is re-armed only when the refresh
+            // could not run yet (the rate limit) — a project without a base
+            // path must not leave it set for every later flush.
+            pendingWholeRefresh = false
         }
         if (!whole && paths.isEmpty()) return
         val lfs = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
@@ -1191,10 +1195,10 @@ class BridgeService(private val project: Project) : Disposable {
                 val now = System.currentTimeMillis()
                 if (now - lastWholeRefreshAt >= WHOLE_REFRESH_MIN_INTERVAL_MS) {
                     lastWholeRefreshAt = now
-                    synchronized(refreshLock) { pendingWholeRefresh = false }
                     refreshWholeProject(root, lfs, onFinish)
                 } else {
                     // Stay pending: the next flush picks the whole refresh up.
+                    synchronized(refreshLock) { pendingWholeRefresh = true }
                     LOG.info("vfs-refresh: whole deferred (rate limited)")
                     scheduleVfsRefresh()
                 }
