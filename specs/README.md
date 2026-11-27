@@ -3,7 +3,25 @@
 > 生成时间：2026-11-02（001–005）；**0.5.2 批次 006–010 见文末**
 > 0.5.2 批次生成时间：2026-11-04
 > 约束基准：[`.specify/memory/constitution.md`](../.specify/memory/constitution.md)
-> 本目录下每个 `NNN-*` 都遵循 spec → plan → tasks 三段式，可独立交付。
+> 本目录下每个 spec 目录都遵循 spec → plan → tasks 三段式，可独立交付。
+> **命名规则（2026-11-27 起）**：新工作用 `YYYYMMDD-HHMMSS-<topic>`（时间戳前缀）；
+> 存量三位号（001–070）是历史编号，只读不再新增。完整条文见 [docs/SPEC_NUMBERING.md](../docs/SPEC_NUMBERING.md)。
+
+## 命名与编号（2026-11-27 起）
+
+| 形态 | 目录名示例 | 说明 |
+|---|---|---|
+| 新工作 | `20261127-005429-csv-table/` | 时间戳（立项时刻）+ 主题 slug；建目录用 Speckit 的 `--timestamp` |
+| 存量 | `050-csv-tsv-table/` | 三位流水号，**只读**——不再新增、不再扩展、不重命名 |
+
+- 主题 slug：小写英文 + 连字符，2–3 个词，与 spec 里的功能名一致。
+- **对外引用号不进任何文件名**：GitHub issue / PR 号写在 spec 头部 `GitHub Issue:` 字段，
+  主号取先落地的那个（需求单 issue 优先）。正文写 `#N`，文件名里连 `#` 都不能带。
+- changelog 碎片名同样用 `<时间戳>-<主题>.<added|changed|fixed>.md`；文件名不进发布说明。
+- 规则全文、动机与旧号 → 新号映射见 [docs/SPEC_NUMBERING.md](../docs/SPEC_NUMBERING.md)；
+  规则条文本体在 [`.specify/memory/constitution.md`](../.specify/memory/constitution.md) 的「编号与命名」节。
+- 本次规则变更自己的三件套：[`20261127-005429-spec-numbering/`](./20261127-005429-spec-numbering/spec.md)
+  ——**第一份用新规则命名的 spec**。
 
 ## 缺口来源与判定依据
 

@@ -6,7 +6,7 @@
 
     <slug>.<added|changed|fixed>.md
 
-- `slug`：小写字母、数字、连字符。建议带规格号，如 `024-session-rename.added.md`
+- `slug`：小写字母、数字、连字符（CI 强校验）。**新工作用 `<时间戳>-<主题>`**，如 `20261127-005429-session-rename.added.md`；文件名不进发布说明，长度不限，但不要带 `#`
 - 类型只有三种：`added`（新增能力）、`changed`（既有行为改变）、`fixed`（缺陷修复）
 
 ## 内容：正好两行非空
