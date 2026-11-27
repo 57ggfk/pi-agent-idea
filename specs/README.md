@@ -11,7 +11,7 @@
 
 | 形态 | 目录名示例 | 说明 |
 |---|---|---|
-| 新工作 | `20261127-005429-csv-table/` | 时间戳（立项时刻）+ 主题 slug；建目录用 Speckit 的 `--timestamp` |
+| 新工作 | `20261127-005429-csv-table/` | 时间戳（立项时刻）+ 主题 slug；开关是 `.specify/init-options.json` 的 `feature_numbering: "timestamp"` |
 | 存量 | `050-csv-tsv-table/` | 三位流水号，**只读**——不再新增、不再扩展、不重命名 |
 
 - 主题 slug：小写英文 + 连字符，2–3 个词，与 spec 里的功能名一致。

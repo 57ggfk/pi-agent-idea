@@ -113,8 +113,9 @@ skills、安装/卸载扩展包）都视为高风险操作：
 完整条文、动机与迁移边界见 [`docs/SPEC_NUMBERING.md`](../../docs/SPEC_NUMBERING.md)。
 
 - **N1 目录名**：新 spec 目录 = `<YYYYMMDD-HHMMSS>-<topic-slug>`；时间戳取立项时刻；
-  同一秒内开工则加 `-2`/`-3` 后缀。建目录用 Speckit 的 `--timestamp`，**不要用默认取号**
-  （默认取号靠扫本地目录取最大号，并行 PR 必撞）。
+  同一秒内开工则加 `-2`/`-3` 后缀。开关是 `.specify/init-options.json` 的
+  `feature_numbering: "timestamp"`（`/speckit.specify` 读它）；CLI 建目录脚本用 `--timestamp`。
+  **不要用默认取号**（默认取号靠扫本地目录取最大号，并行 PR 必撞）。
 - **N2 主题 slug**：小写英文字母 + 连字符，2–3 个词，与 spec 里的功能名一致。
 - **N3 对外引用号**：GitHub issue 或 PR 号（两者共用一个计数器），写在 spec 头部
   `GitHub Issue:` / `GitHub PR:` 字段；主号取先落地的那个，需求单 issue 优先。

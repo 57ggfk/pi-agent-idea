@@ -25,6 +25,40 @@ Kotlin 宿主 + React/TypeScript 前端（`web/dist` 由 Gradle 同步进插件�
 - `docs/` — 长期文档（架构、产品设计、竞品、编号规则）
 - `scripts/` — 探针与真机验证脚本
 
+## Spec Kit 工作流
+
+本仓库的 spec 三件套由 [Speckit](https://github.com/github/spec-kit)（v1.2.5）生成。
+
+```bash
+# 安装（一次性）
+uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
+
+# 初始化（每个新克隆 / 每个工作树一次；--integration 换成你自己的工具）
+specify init --here --force --ignore-agent-tools --integration codebuddy --script py
+```
+
+**编号开关在 `.specify/init-options.json` 的 `feature_numbering`**，已入库且为 `"timestamp"`
+→ `/speckit.specify` 自动建 `specs/<YYYYMMDD-HHMMSS>-<slug>/`；别改回 `sequential`。
+（同文件的 `ai` / `integration` / `script` 跟着你自己的工具走，改动会出现在 git diff 里，属正常。）
+
+命令流：`/speckit.specify`（写 spec）→ `/speckit.clarify`（补齐歧义）→ `/speckit.plan`（技术方案）
+→ `/speckit.tasks`（可执行步骤）→ `/speckit.implement`（实现）。
+另有 `/speckit.analyze`（三件套一致性检查）、`/speckit.checklist`、`/speckit.constitution`（改宪法）、
+`/speckit.converge`（把没建完的补进 tasks.md）。
+
+`.specify/scripts/` 与各工具的命令镜像是机器态（`specify init --force` 重建，不入库）；
+`.specify/memory/`、`.specify/templates/`、`.specify/init-options.json` 已入库。
+
+## 文档存放
+
+| 内容 | 位置 |
+|---|---|
+| 功能规格三件套 | `specs/<时间戳>-<主题>/{spec,plan,tasks}.md` |
+| 长期文档（架构 / 产品设计 / 竞品 / 编号规则） | `docs/` |
+| 发布文案碎片 | `changelog.d/<时间戳>-<主题>.<type>.md` |
+| 规则与约束基准 | `.specify/memory/constitution.md` |
+| 本机私有约定 | `agents.local.md`（不入库） |
+
 ## 贡献者路径（外部 PR）
 
 1. fork 仓库，从 `main` 切分支（`feat/<主题>` / `fix/<主题>`）

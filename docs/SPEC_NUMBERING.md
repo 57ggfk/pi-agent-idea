@@ -48,7 +48,7 @@
 
 | 编号 | 规则 |
 |---|---|
-| **R1** | 新 spec 目录名 = `<时间戳>-<主题 slug>`；时间戳格式 `YYYYMMDD-HHMMSS`。Speckit 建目录与分支时用 `--timestamp` |
+| **R1** | 新 spec 目录名 = `<时间戳>-<主题 slug>`；时间戳格式 `YYYYMMDD-HHMMSS`。开关在 `.specify/init-options.json` 的 `feature_numbering: "timestamp"`（slash 命令读它）；CLI 建目录脚本用 `--timestamp` |
 | **R2** | 主题 slug = 小写英文字母 + 连字符，2–3 个词，与 `spec.md` 的功能名一致；由 `create_new_feature.py` 的 `_clean_branch_name()` 生成，必要时手工 `--short-name` |
 | **R3** | 同秒冲突 → 加 `-2` / `-3` 后缀，不改时间戳本体 |
 | **R4** | 时间戳语义 = **立项时刻**（spec 目录首次创建时刻），不是需求提出或完成时刻；跨天开工的在 `spec.md` 里补记完成日期 |
@@ -79,7 +79,7 @@
 |---|---|---|---|
 | 1 | `build.gradle.kts:351` `sortedBy { it.name }` → CHANGELOG 小节内顺序 | 字符串序；1000 排到 999 前（实测） | 定长时间戳 → **字符串序 = 时间序**，零改动、永远正确 |
 | 2 | 目录列举（`git ls-files` / 排序工具） | 1000 排 999 前 | 定长 → 任何排序器都正确 |
-| 3 | `create_new_feature.py:209` `_get_highest_from_specs()` | 扫本地目录取最大号 → 并行 PR 必撞 | 走 `--timestamp` 分支，取号逻辑不参与（脚本已内置排除 `^[0-9]{8}-[0-9]{6}-`） |
+| 3 | `create_new_feature.py:209` `_get_highest_from_specs()` | 扫本地目录取最大号 → 并行 PR 必撞 | `feature_numbering: "timestamp"` 时不参与；脚本已内置排除 `^[0-9]{8}-[0-9]{6}-` |
 | 4 | 位宽 | 三位用尽即断 | 不存在 |
 
 实测（定长时间戳，字典序 = 时间序）：
@@ -119,7 +119,7 @@
 | 4 | `changelog.d/README.md:9` | 「建议带规格号，如 `024-session-rename.added.md`」→「用 `<时间戳>-<主题>`，例 `20261127-003012-session-rename.added.md`」 |
 | 5 | `.github/pull_request_template.md:9` | 同 4 改写 |
 | 6 | `.specify/templates/spec-template.md:3`、`plan-template.md:3/5/50`、`tasks-template.md:8` | 占位符 `[###-feature-name]` → `[<YYYYMMDD-HHMMSS>-<topic>]` |
-| 7 | `.specify/scripts/python/create_new_feature.py` | 把 `--timestamp` 设为默认（`--number` 保留为显式选项），避免维护者忘传参数退回取号逻辑 |
+| 7 | `.specify/init-options.json` | 把 `feature_numbering` 设为 `timestamp` 并纳入版本控制——上游 init 会保留该值（`command_init.py:856` 用 `previous_init_options.get(...)`），`/speckit.specify` 读它决定目录前缀 |
 | 8 | `.github/ISSUE_TEMPLATE/`（新建 bug / feature，双语）、`CONTRIBUTING.md`（新建） | 贡献入口——比编号更卡的门槛 |
 | 9 | `specs/0.5.11-run-report.md` | 确认与新规则无冲突（浏览器线留痕已按 060–070 组织） |
 

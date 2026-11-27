@@ -49,7 +49,6 @@ web/probe-*.json
 .specify/integrations/
 .specify/workflows/
 .specify/feature.json
-.specify/init-options.json
 .specify/integration.json
 .specify/.gitignore
 
