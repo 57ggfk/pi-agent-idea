@@ -2,7 +2,7 @@
 
 **Feature Branch**: `[20261127-214747-repaint-focus]`
 **Created**: 2026-11-27
-**Status**: 草稿（待实现）
+**Status**: 已实现（2026-11-28；T1–T5 见 [./tasks.md](./tasks.md)；取证结论见该文件的实现记录）
 
 **GitHub Issue**: [#9](https://github.com/57ggfk/pi-agent-idea/issues/9)
 

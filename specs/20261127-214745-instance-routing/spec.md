@@ -2,7 +2,7 @@
 
 **Feature Branch**: `[20261127-214745-instance-routing]`
 **Created**: 2026-11-27
-**Status**: 草稿（待实现）
+**Status**: 已实现（2026-11-28；T1–T5 见 [./tasks.md](./tasks.md)；T4.1–T4.3 真机点击未做，原因见 tasks）
 
 **GitHub Issue**: [#7](https://github.com/57ggfk/pi-agent-idea/issues/7)
 
