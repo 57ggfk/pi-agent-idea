@@ -388,7 +388,14 @@ object PiManage {
     fun skillSetSourceEnabled(params: JsonObject): JsonObject {
         val dir = params.string("dir") ?: return error("missing dir")
         val enabled = params.boolean("enabled") ?: return error("missing enabled")
-        return PiSkills.setSourceEnabled(dir, enabled, PiCliRunner.agentDir())
+        // 13: the entry is written in the short "~/…" form when the
+        // directory is under the real user home.
+        return PiSkills.setSourceEnabled(
+            dir,
+            enabled,
+            PiCliRunner.agentDir(),
+            File(System.getProperty("user.home")),
+        )
     }
 
     /** Soft per-skill switch (Q3-b): frontmatter toggle in SKILL.md. */
@@ -626,15 +633,33 @@ object PiManage {
         return (props.getProperty("buildTime") ?: "") to (props.getProperty("commitId") ?: "")
     }
 
-    fun environment(): JsonObject {
-        val install = dev.pi.agent.process.PiLocator.locate(forceRefresh = true)
-        val (node, npm) = PiEnvironment.detectTools()
+    /**
+     * The facts the diagnostics card shows about the local pi installation.
+     *
+     * 14: the pi version is read from disk (`PiDiskVersion.current()` —
+     * package.json first) and the path from the locator's cached path
+     * (`PiLocator.locatePath()`). The old `PiLocator.locate(forceRefresh =
+     * true)` ran `pi --version` — a node cold start — every time the card
+     * was opened.
+     *
+     * The probes are injected so the test can assert where each value comes
+     * from without a pi installation. The JSON shape is unchanged — the
+     * frontend reads exactly these fields.
+     */
+    fun environment(
+        locatePath: () -> String? = { dev.pi.agent.process.PiLocator.locatePath() },
+        diskVersion: () -> String? = { dev.pi.agent.process.PiDiskVersion.current() },
+        detectTools: () -> Pair<JsonObject, JsonObject> = { PiEnvironment.detectTools() },
+    ): JsonObject {
+        val path = locatePath()
+        val version = diskVersion()
+        val (node, npm) = detectTools()
         val (buildTime, commitId) = buildInfo()
         return buildJsonObject {
             put("ok", true)
-            put("found", install != null)
-            put("path", install?.path ?: "")
-            put("version", install?.version ?: "")
+            put("found", path != null)
+            put("path", path ?: "")
+            put("version", version ?: "")
             put("agentDir", PiCliRunner.agentDir().absolutePath)
             // 036 FR-001: the diagnostics card surfaces what the setup probing
             // already computes — no second detection path to drift.

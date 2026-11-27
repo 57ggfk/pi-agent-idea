@@ -68,7 +68,9 @@ object PiSkills {
         val projectSettings = projectSettingsFile?.let(::readSettings)
 
         val exclusions = collectExclusions(listOfNotNull(userSettings, projectSettings))
-        val externalDirs = positiveDirEntries(userSettings)
+        // 13: an entry written as "~/…" is expanded back to its absolute path
+        // before it is used as a directory.
+        val externalDirs = positiveDirEntries(userSettings).map { expandSettingsPath(it, userHome) }
 
         data class Source(val dir: File, val source: String, val scope: String)
         val sources = buildList {
@@ -219,6 +221,45 @@ object PiSkills {
     internal fun normalizePath(path: String): String = path.replace('\\', '/').trimEnd('/')
 
     /**
+     * The path pi's settings.json should carry for [dir].
+     *
+     * 13: a directory under the real user home is written as `~/…`, so the
+     * settings file does not spell out the user's home directory. pi expands
+     * the tilde itself when it reads the `skills` array (verified against
+     * pi 1.6.1: dist/utils/paths.js `normalizePath` → `join(home, …)`,
+     * reached via dist/core/package-manager.js `resolveLocalEntries` →
+     * `resolvePathFromBase`), so the short form means the same directory
+     * to pi.
+     *
+     * A path outside the home stays absolute — the tilde would point
+     * somewhere else.
+     */
+    internal fun settingsPathFor(dir: String, userHome: File): String {
+        val normalized = normalizePath(dir)
+        if (normalized.isBlank()) return normalized
+        val home = normalizePath(userHome.absolutePath)
+        if (home.isBlank()) return normalized
+        if (normalized.equals(home, ignoreCase = true)) return "~"
+        if (!normalized.startsWith("$home/", ignoreCase = true)) return normalized
+        return "~/" + normalized.substring(home.length + 1)
+    }
+
+    /**
+     * The absolute path a settings entry stands for.
+     *
+     * The read side of the same coin as [settingsPathFor]: an entry written
+     * as `~/…` has to be expanded before it can be resolved against the
+     * filesystem. A path that is already absolute is returned unchanged.
+     */
+    internal fun expandSettingsPath(entry: String, userHome: File): String {
+        val normalized = normalizePath(entry)
+        if (normalized == "~") return normalizePath(userHome.absolutePath)
+        if (!normalized.startsWith("~/")) return normalized
+        val home = normalizePath(userHome.absolutePath)
+        return normalizePath(File(home, normalized.removePrefix("~/")).absolutePath)
+    }
+
+    /**
      * Display shortening (T1507): `~` for anything under the real home,
      * project-relative for project skills, package-relative for package
      * skills (`<pkg>/…` from the npm prefix). The full path still travels in
@@ -350,25 +391,42 @@ object PiSkills {
         return buildJsonObject { put("ok", true); put("changed", changed); put("enabled", enabled) }
     }
 
-    /** External source wiring (Q2): a plain dir entry in the user settings array. */
-    fun setSourceEnabled(dir: String, enabled: Boolean, agentDir: File): JsonObject {
+    /**
+     * External source wiring (Q2): a plain dir entry in the user settings array.
+     *
+     * 13: the entry is written in the short `~/…` form when the directory is
+     * under the real user home — pi expands the tilde itself (see
+     * [settingsPathFor]). The comparison against the existing entries is done
+     * on the expanded paths, so an entry written by an older plugin version
+     * (absolute) is still recognised and removed.
+     */
+    fun setSourceEnabled(
+        dir: String,
+        enabled: Boolean,
+        agentDir: File,
+        userHome: File = File(System.getProperty("user.home")),
+    ): JsonObject {
         val normalized = normalizePath(dir)
         if (normalized.isBlank()) return error("missing dir")
         val targetFile = File(agentDir, "settings.json")
         val settings = readSettings(targetFile) ?: buildJsonObject { }
         val old = skillEntries(settings)
+        val absolute = expandSettingsPath(normalized, userHome)
+        val stored = settingsPathFor(absolute, userHome)
         val updated: JsonArray = if (enabled) {
-            val present = old.any { (it as? JsonPrimitive)?.content?.let { c -> normalizePath(c) == normalized } == true }
+            val present = old.any {
+                (it as? JsonPrimitive)?.content?.let { c -> expandSettingsPath(c, userHome) == absolute } == true
+            }
             if (present) old
             else buildJsonArray {
                 old.forEach { add(it) }
-                add(JsonPrimitive(normalized))
+                add(JsonPrimitive(stored))
             }
         } else {
             buildJsonArray {
                 old.forEach { el ->
                     val raw = (el as? JsonPrimitive)?.content
-                    if (raw == null || normalizePath(raw) != normalized) add(el)
+                    if (raw == null || expandSettingsPath(raw, userHome) != absolute) add(el)
                 }
             }
         }

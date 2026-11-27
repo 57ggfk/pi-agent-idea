@@ -1063,16 +1063,36 @@ class BridgeService(private val project: Project) : Disposable {
     // -- VFS refresh after pi writes (spec 009 US4) --------------------------
 
     /**
-     * Debounced VFS refresh for pi's write-class tool calls (FR-011/FR-012):
-     * path-level refresh for named files, whole-project for shell tools and
-     * at every settle. Read-only tools never get here (pure logic in
-     * [VfsRefresh]). The Alarm coalesces bursts into one refresh.
+     * Debounced VFS refresh for pi's write-class tool calls (FR-011/FR-012).
+     *
+     * 9: a settled round no longer refreshes the WHOLE project tree. The
+     * files pi named are refreshed exactly; the whole tree is only refreshed
+     * when a tool could not name the files it touched (bash) — the escape
+     * hatch. Refreshing the whole tree re-reads every file in the project
+     * and reloads the document the user is editing, which is what made the
+     * IDE flash and lose the caret.
+     *
+     * Read-only tools never get here (pure logic in [VfsRefresh]). The Alarm
+     * coalesces bursts into one refresh.
      */
     private val vfsRefreshAlarm = com.intellij.util.Alarm(
         com.intellij.util.Alarm.ThreadToUse.POOLED_THREAD, this,
     )
     private val refreshLock = Any()
+
+    /** The files pi named during the round in progress. */
+    private val roundRefreshPaths = LinkedHashSet<String>()
+
+    /** A tool in this round could not name the files it touched. */
+    private var roundNeedsWholeRefresh = false
+
+    /** The tool arguments of the calls in flight, keyed by their call id. */
+    private val toolArgsByCallId = HashMap<String, JsonObject?>()
+
+    /** The files waiting for the next refresh. */
     private val pendingRefreshPaths = LinkedHashSet<String>()
+
+    /** A whole-project refresh is waiting for the next flush. */
     private var pendingWholeRefresh = false
 
     @Volatile
@@ -1080,22 +1100,66 @@ class BridgeService(private val project: Project) : Disposable {
 
     private fun maybeScheduleVfsRefresh(event: JsonObject) {
         val type = event["type"]?.jsonPrimitive?.contentOrNull ?: return
-        if (type == "agent_settled") {
-            // Whole-project refresh settles the round and covers files bash
-            // touched without naming them (rate-limited: FR-011 + plan risk).
-            if (System.currentTimeMillis() - lastWholeRefreshAt >= WHOLE_REFRESH_MIN_INTERVAL_MS) {
-                synchronized(refreshLock) { pendingWholeRefresh = true }
-                scheduleVfsRefresh()
+        when (type) {
+            // pi sends the tool arguments with the START of the call only —
+            // the end event carries the result, not the arguments. Without
+            // this the plugin never learns which file a tool touched, and
+            // every edit escalated to a whole-project refresh (issue #9).
+            "tool_execution_start" -> {
+                val callId = event["toolCallId"]?.jsonPrimitive?.contentOrNull ?: return
+                synchronized(refreshLock) {
+                    toolArgsByCallId[callId] = event["args"] as? JsonObject
+                    // A call whose end never arrives would leak its entry —
+                    // the map only holds the calls in flight.
+                    while (toolArgsByCallId.size > MAX_TRACKED_TOOL_CALLS) {
+                        toolArgsByCallId.remove(toolArgsByCallId.keys.first())
+                    }
+                }
+                return
             }
-            return
+            "tool_execution_end" -> {
+                val tool = event["toolName"]?.jsonPrimitive?.contentOrNull ?: return
+                val callId = event["toolCallId"]?.jsonPrimitive?.contentOrNull
+                val args = synchronized(refreshLock) {
+                    callId?.let { toolArgsByCallId.remove(it) }
+                } ?: (event["args"] as? JsonObject)
+                val plan = VfsRefresh.planForToolCall(tool, args)
+                val paths = synchronized(refreshLock) {
+                    if (plan.whole) {
+                        roundNeedsWholeRefresh = true
+                        emptyList()
+                    } else {
+                        roundRefreshPaths.addAll(plan.paths)
+                        plan.paths
+                    }
+                }
+                // The named files are refreshed right away, so the IDE shows
+                // the change while pi is still working.
+                if (paths.isNotEmpty()) {
+                    synchronized(refreshLock) { pendingRefreshPaths.addAll(paths) }
+                    scheduleVfsRefresh()
+                }
+                return
+            }
+            "agent_settled" -> {
+                // The round is over. What it touched is refreshed exactly; the
+                // whole tree is only refreshed when a tool could not name the
+                // files it touched. The old behaviour — refreshing the whole
+                // project on every settle — is what made the IDE flash and
+                // drop the caret (issue #9).
+                val plan = synchronized(refreshLock) {
+                    val p = VfsRefresh.planForRound(roundRefreshPaths, roundNeedsWholeRefresh)
+                    roundRefreshPaths.clear()
+                    roundNeedsWholeRefresh = false
+                    p
+                }
+                synchronized(refreshLock) {
+                    if (plan.whole) pendingWholeRefresh = true else pendingRefreshPaths.addAll(plan.paths)
+                }
+                scheduleVfsRefresh()
+                return
+            }
         }
-        if (type != "tool_execution_end") return
-        val tool = event["toolName"]?.jsonPrimitive?.contentOrNull ?: return
-        val paths = VfsRefresh.pathsForEvent(tool, event["args"] as? JsonObject)
-        synchronized(refreshLock) {
-            if (paths == null) pendingWholeRefresh = true else pendingRefreshPaths.addAll(paths)
-        }
-        scheduleVfsRefresh()
     }
 
     private fun scheduleVfsRefresh() {
@@ -1109,23 +1173,98 @@ class BridgeService(private val project: Project) : Disposable {
         synchronized(refreshLock) {
             whole = pendingWholeRefresh
             paths = pendingRefreshPaths.toList()
-            pendingWholeRefresh = false
             pendingRefreshPaths.clear()
         }
         if (!whole && paths.isEmpty()) return
         val lfs = com.intellij.openapi.vfs.LocalFileSystem.getInstance()
         val onFinish = Runnable { invalidateFilesCache() }
+        // The named files always refresh — they are exactly the files pi
+        // touched, so this is cheap and it cannot disturb anything else.
+        val ioFiles = paths.mapNotNull { toVfsRefreshPath(it) }
+        if (ioFiles.isNotEmpty()) lfs.refreshIoFiles(ioFiles, true, true, onFinish)
         if (whole) {
-            val root = project.basePath?.let { java.io.File(it) } ?: return
-            lastWholeRefreshAt = System.currentTimeMillis()
-            lfs.refreshIoFiles(listOf(root), true, true, onFinish)
-        } else {
-            val ioFiles = paths.mapNotNull { toVfsRefreshPath(it) }
-            if (ioFiles.isEmpty()) return
-            lfs.refreshIoFiles(ioFiles, true, true, onFinish)
+            val root = project.basePath?.let { java.io.File(it) }
+            if (root != null) {
+                // The whole-project refresh is the expensive one — it re-reads
+                // every file in the project. It is rate-limited so a burst of
+                // shell commands cannot hammer the VFS (FR-011 + plan risk).
+                val now = System.currentTimeMillis()
+                if (now - lastWholeRefreshAt >= WHOLE_REFRESH_MIN_INTERVAL_MS) {
+                    lastWholeRefreshAt = now
+                    synchronized(refreshLock) { pendingWholeRefresh = false }
+                    refreshWholeProject(root, lfs, onFinish)
+                } else {
+                    // Stay pending: the next flush picks the whole refresh up.
+                    LOG.info("vfs-refresh: whole deferred (rate limited)")
+                    scheduleVfsRefresh()
+                }
+            }
         }
         // No paths in the log: tool arguments can embed user content.
         LOG.info("vfs-refresh: whole=$whole paths=${paths.size}")
+    }
+
+    /**
+     * Refreshes the whole project tree — the escape hatch for a tool that
+     * could not name the files it touched.
+     *
+     * 9: the document the user is editing right now is left out of the
+     * refresh. Refreshing it reloads the document, the caret jumps and the
+     * IDE flashes. The tree is walked down to that file and everything else
+     * is refreshed as usual.
+     */
+    private fun refreshWholeProject(
+        root: java.io.File,
+        lfs: com.intellij.openapi.vfs.LocalFileSystem,
+        onFinish: Runnable,
+    ) {
+        val excluded = focusedEditorFilePath()
+        val plan = VfsRefresh.wholeRefreshTargets(root.path, excluded) { dir ->
+            val children = java.io.File(dir).listFiles() ?: return@wholeRefreshTargets emptyList()
+            children.map { it.path }
+        }
+        val deep = plan.deep.mapNotNull { path -> java.io.File(path).takeIf { it.exists() } }
+        val shallow = plan.shallow.mapNotNull { path -> java.io.File(path).takeIf { it.exists() } }
+        if (deep.isEmpty() && shallow.isEmpty()) {
+            // Nothing to single out — refresh the tree as it was.
+            lfs.refreshIoFiles(listOf(root), true, true, onFinish)
+            return
+        }
+        // The cache is invalidated once, after the last refresh went out.
+        if (deep.isNotEmpty()) {
+            lfs.refreshIoFiles(deep, true, true, if (shallow.isEmpty()) onFinish else null)
+        }
+        if (shallow.isNotEmpty()) lfs.refreshIoFiles(shallow, false, true, onFinish)
+    }
+
+    /**
+     * The file the focused editor shows, or null when no editor has focus.
+     *
+     * The editor state is only defined on the EDT, so the lookup hops there.
+     * A failure (a disposed project, a busy EDT) must not cost the refresh
+     * itself: the whole tree is then refreshed as before.
+     */
+    private fun focusedEditorFilePath(): String? {
+        val app = ApplicationManager.getApplication()
+        return try {
+            if (app.isDispatchThread) {
+                readFocusedEditorFilePath()
+            } else {
+                var path: String? = null
+                app.invokeAndWait { path = readFocusedEditorFilePath() }
+                path
+            }
+        } catch (e: Exception) {
+            LOG.debug("focused editor lookup failed: ${e.message}")
+            null
+        }
+    }
+
+    private fun readFocusedEditorFilePath(): String? {
+        val editor = com.intellij.openapi.fileEditor.FileEditorManager.getInstance(project).selectedTextEditor
+            ?: return null
+        val document = editor.document ?: return null
+        return com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getFile(document)?.path
     }
 
     /**
@@ -1253,9 +1392,13 @@ class BridgeService(private val project: Project) : Disposable {
      * prompt text atomically — two separate events would race the store.
      */
     fun pushIdePrompt(text: String, refs: List<Pair<String, Boolean>> = emptyList()) {
+        // Issue #7: the action belongs to the instance the user is looking
+        // at, not to instance 1 — otherwise every IDE action landed in the
+        // first tab no matter which one was open.
+        val instanceId = currentInstanceId()
         // Ensure a pi process exists and the frontend gets state events.
-        wirePiEvents()
-        PiProcessManager.getInstance(project).client()
+        wirePiEvents(instanceId)
+        PiProcessManager.getInstance(project).client(instanceId)
         push(buildJsonObject {
             put("t", "event")
             put("name", "ide")
@@ -1266,7 +1409,35 @@ class BridgeService(private val project: Project) : Disposable {
                     put("files", ideRefArray(refs))
                 }
             })
-        })
+        }, instanceId)
+    }
+
+    /**
+     * The pi instance an IDE-initiated action belongs to (issue #7).
+     *
+     * The tool window's selected content decides; when that is not a pi
+     * instance (a browser tab) the pi instance that was selected last is
+     * used. When nothing is determinable the caller keeps the old behaviour
+     * and talks to instance 1.
+     */
+    private fun currentInstanceId(): Int {
+        val selected = selectedPiInstanceId()
+        val lastSelected = dev.pi.agent.toolwindow.PiAgentToolWindowFactory.lastSelectedPiInstanceId(project)
+        return resolveTargetInstance(selected, lastSelected, livePiInstanceIds()) ?: 1
+    }
+
+    /** The pi instance whose tab is selected right now, if any. */
+    private fun selectedPiInstanceId(): Int? {
+        val content = ToolWindowManager.getInstance(project).getToolWindow(TOOL_WINDOW_ID)
+            ?.contentManager?.selectedContent ?: return null
+        return (content.component as? dev.pi.agent.toolwindow.PiAgentPanel)?.id
+    }
+
+    /** The pi instances that currently have a tab in the tool window. */
+    private fun livePiInstanceIds(): Set<Int> {
+        val manager = ToolWindowManager.getInstance(project).getToolWindow(TOOL_WINDOW_ID)?.contentManager
+            ?: return emptySet()
+        return manager.contents.mapNotNull { (it.component as? dev.pi.agent.toolwindow.PiAgentPanel)?.id }.toSet()
     }
 
     /** `files` payload shared by pushIdePrompt / pushIdeRefs: (path, isDirectory). */
@@ -1292,8 +1463,11 @@ class BridgeService(private val project: Project) : Disposable {
      */
     fun pushIdeRefs(refs: List<Pair<String, Boolean>>, fromDrop: Boolean = false) {
         if (refs.isEmpty()) return
-        wirePiEvents()
-        PiProcessManager.getInstance(project).client()
+        // Issue #7: same routing as pushIdePrompt — the references belong to
+        // the instance the user is looking at.
+        val instanceId = currentInstanceId()
+        wirePiEvents(instanceId)
+        PiProcessManager.getInstance(project).client(instanceId)
         push(buildJsonObject {
             put("t", "event")
             put("name", "ide")
@@ -1302,7 +1476,7 @@ class BridgeService(private val project: Project) : Disposable {
                 put("files", ideRefArray(refs))
                 if (fromDrop) put("fromDrop", true)
             })
-        })
+        }, instanceId)
     }
 
     /**
@@ -1467,6 +1641,9 @@ class BridgeService(private val project: Project) : Disposable {
         private const val MAX_FILES = 5000
         private const val VFS_REFRESH_DEBOUNCE_MS = 400L
         private const val WHOLE_REFRESH_MIN_INTERVAL_MS = 2_000L
+
+        /** How many tool calls in flight are remembered (issue #9). */
+        private const val MAX_TRACKED_TOOL_CALLS = 64
         private const val MAX_BASELINES = 50
         private const val MAX_BASELINE_BYTES = 2L * 1024 * 1024
         private val EXCLUDED_PATHS = listOf(
@@ -1477,4 +1654,39 @@ class BridgeService(private val project: Project) : Disposable {
         @JvmStatic
         fun getInstance(project: Project): BridgeService = project.getService(BridgeService::class.java)
     }
+}
+
+/**
+ * The id of the plugin's tool window.
+ *
+ * The IDE actions, the status widget and the instance router all address the
+ * same tool window; the name is repeated in a few places, so it lives here.
+ */
+internal const val TOOL_WINDOW_ID = "Pi Agent"
+
+/**
+ * Which pi instance an IDE-initiated action belongs to (issue #7).
+ *
+ * The rule (spec 20261127-214745, plan.md §2.1):
+ *
+ *  1. the tool window's selected content is a pi instance → that instance
+ *  2. otherwise the pi instance that was selected last → that instance
+ *  3. otherwise nothing is determinable → null, and the caller keeps the old
+ *     behaviour (instance 1)
+ *
+ * A closed instance is never the target: its tab is gone and so is its
+ * frontend — routing there would drop the action silently (FR-004).
+ *
+ * @param selectedId the pi instance whose tab is selected right now, if any
+ * @param lastSelectedId the pi instance that was selected last, if any
+ * @param liveIds the pi instances that currently have a tab
+ */
+internal fun resolveTargetInstance(
+    selectedId: Int?,
+    lastSelectedId: Int?,
+    liveIds: Set<Int>,
+): Int? {
+    if (selectedId != null && selectedId in liveIds) return selectedId
+    if (lastSelectedId != null && lastSelectedId in liveIds) return lastSelectedId
+    return null
 }

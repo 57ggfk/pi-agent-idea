@@ -10,6 +10,7 @@ import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowFactory;
 import com.intellij.openapi.wm.ToolWindowManager;
+import com.intellij.openapi.util.Key;
 import com.intellij.ui.content.Content;
 import com.intellij.ui.content.ContentFactory;
 import com.intellij.ui.content.ContentManager;
@@ -26,6 +27,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * Deliberately written in Java: {@code ToolWindowFactory} is a Kotlin
@@ -55,6 +57,9 @@ public class PiAgentToolWindowFactory implements ToolWindowFactory {
         // 019 D2: the first Content is the default instance (1).
         createInstanceContent(project, toolWindow, 1);
         toolWindow.getContentManager().addContentManagerListener(new CloseGuard(project));
+        // 7: remember which pi instance the user selects, so IDE actions can
+        // be routed to it.
+        toolWindow.getContentManager().addContentManagerListener(new SelectionTracker(project));
         // 019 D7/D8: the "+" action lives in the tool window header. Pass the
         // project explicitly — title actions do not reliably carry one in their
         // AnActionEvent data context, which used to leave "+" disabled.
@@ -119,9 +124,13 @@ public class PiAgentToolWindowFactory implements ToolWindowFactory {
     }
 
     /**
-     * 019 D7: closing a Content stops its pi instance. When the instance is
-     * mid-run, an IDE-native confirmation guards the close (the web ConfirmDialog
-     * cannot answer here — the page is going away with the Content).
+     * 019 D7: closing a Content stops its pi instance.
+     *
+     * 12: the confirmation is asked for EVERY close, not only while a run is
+     * in flight. The old guard asked only when `isStreaming` was true, so
+     * closing an idle instance happened without a word and the conversation
+     * in it was lost. The web ConfirmDialog cannot answer here — the page is
+     * going away with the Content — so the question is an IDE-native dialog.
      */
     private final class CloseGuard implements ContentManagerListener {
         private final Project project;
@@ -138,14 +147,13 @@ public class PiAgentToolWindowFactory implements ToolWindowFactory {
 
             int id = panel.getId();
             var manager = PiProcessManager.getInstance(project);
-            boolean running = BridgeService.getInstance(project).isStreaming(id);
-            if (running) {
+            if (asksForCloseConfirmation()) {
                 int answer = Messages.showYesNoDialog(
                         project,
                         PiAgentBundle.message("toolwindow.close.confirm"),
                         PiAgentBundle.message("toolwindow.close.confirm.title"),
                         Messages.getWarningIcon());
-                if (answer == Messages.NO) {
+                if (closeOutcome(answer) == CloseOutcome.KEEP_INSTANCE) {
                     // Content removal has already disposed the old panel. Build
                     // a fresh panel instead of reusing its dead JCEF browser.
                     ToolWindow toolWindow = toolWindowOf(project);
@@ -207,6 +215,92 @@ public class PiAgentToolWindowFactory implements ToolWindowFactory {
 
     private static ToolWindow toolWindowOf(Project project) {
         return ToolWindowManager.getInstance(project).getToolWindow("Pi Agent");
+    }
+
+    // -- 12: the close confirmation ------------------------------------------
+
+    /**
+     * The dialog answers, mirrored from the platform so the pure decision
+     * below does not need the dialog class.
+     *
+     * {@code com.intellij.openapi.ui.MessageConstants}: YES = 0, NO = 1.
+     */
+    static final int ANSWER_YES = 0;
+    static final int ANSWER_NO = 1;
+
+    /** What a close does, given the user's answer. */
+    enum CloseOutcome {
+        /** The instance is stopped and the tab goes away with it. */
+        STOP_INSTANCE,
+        /** The tab is rebuilt with the same instance id; the instance lives on. */
+        KEEP_INSTANCE,
+    }
+
+    /**
+     * 12: closing a pi instance always asks first.
+     *
+     * The old guard asked only while a run was in flight, so an idle
+     * instance closed without a warning and the conversation in it was lost.
+     * The question is asked unconditionally; the answer alone decides.
+     */
+    static boolean asksForCloseConfirmation() {
+        return true;
+    }
+
+    /**
+     * What the user's answer means.
+     *
+     * "No" keeps the instance — the caller rebuilds a fresh Content with the
+     * same id, because the old panel is already disposed by then.
+     */
+    static CloseOutcome closeOutcome(int answer) {
+        return answer == ANSWER_NO ? CloseOutcome.KEEP_INSTANCE : CloseOutcome.STOP_INSTANCE;
+    }
+
+    // -- 7: which pi instance the user is looking at -------------------------
+
+    /**
+     * The pi instance whose tab was selected last.
+     *
+     * IDE actions (Explain/Fix/Send with Pi) must land in the instance the
+     * user is looking at, not always in instance 1 (issue #7). The tool
+     * window's selected content is the primary signal, but it can be a
+     * browser tab — so the last selected *pi* instance is remembered here and
+     * used as the fallback.
+     */
+    private static final Key<Integer> LAST_SELECTED_PI_INSTANCE =
+            Key.create("pi.agent.lastSelectedPiInstance");
+
+    /**
+     * The pi instance that was selected last, or null when no pi tab has
+     * been selected yet.
+     */
+    @Nullable
+    public static Integer lastSelectedPiInstanceId(@Nullable Project project) {
+        return project == null ? null : project.getUserData(LAST_SELECTED_PI_INSTANCE);
+    }
+
+    /**
+     * Remembers the selected pi instance.
+     *
+     * Only pi panels count: a browser tab in the same tool window is not a pi
+     * instance and must not overwrite the remembered id.
+     */
+    private static final class SelectionTracker implements ContentManagerListener {
+        private final Project project;
+
+        SelectionTracker(Project project) {
+            this.project = project;
+        }
+
+        @Override
+        public void selectionChanged(@NotNull ContentManagerEvent event) {
+            Content selected = event.getContent();
+            if (selected == null) return;
+            if (selected.getComponent() instanceof PiAgentPanel panel) {
+                project.putUserData(LAST_SELECTED_PI_INSTANCE, panel.getId());
+            }
+        }
     }
 
     /** 019 D1/D8: smallest unused id taken from the real Content tabs. */
