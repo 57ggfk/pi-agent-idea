@@ -908,6 +908,17 @@ button {
 }
 
 /* Status bar */
+/* Two versions side by side: the running pi and the one on disk
+   (issue #6). The arrow is the tell — they only differ after an external
+   upgrade, and the title says the disk one needs a restart. */
+.status-version-split {
+  cursor: help;
+}
+.status-version-arrow {
+  opacity: 0.65;
+  padding: 0 2px;
+}
+
 .statusbar {
   flex: 0 0 auto;
   border-top: 1px solid var(--border);

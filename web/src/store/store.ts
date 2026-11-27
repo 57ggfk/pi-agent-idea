@@ -389,7 +389,15 @@ interface PiStore {
   tab: Tab;
 
   piStatus: "notStarted" | "starting" | "running" | "exited";
+  /** The version of the pi process the plugin is running. */
   piVersion: string;
+  /**
+   * The version of pi installed on the machine right now.
+   *
+   * Differs from [piVersion] when the user upgraded pi outside the IDE — the
+   * running process keeps the old code until it is restarted (issue #6).
+   */
+  piDiskVersion: string;
   exitMessage: string;
   exitStderr: string;
   /**
@@ -1328,6 +1336,7 @@ export const usePiStore = create<PiStore>((set, get) => {
 
     piStatus: "notStarted",
     piVersion: "",
+    piDiskVersion: "",
     exitMessage: "",
     exitStderr: "",
     piNotice: null,
@@ -1538,6 +1547,11 @@ export const usePiStore = create<PiStore>((set, get) => {
         } else if (name === "theme") {
           const t = (data ?? {}) as { theme?: unknown };
           if (isAppTheme(t.theme)) applyIdeTheme(t.theme);
+        } else if (name === "pi-disk-version") {
+          // The on-disk installation moved (an external update). Keep the
+          // running version untouched — it is still what the process runs.
+          const dv = data as { version?: string };
+          set({ piDiskVersion: dv.version ?? "" });
         } else if (name === "pi-state") {
           const st = data as {
             status: PiStore["piStatus"];

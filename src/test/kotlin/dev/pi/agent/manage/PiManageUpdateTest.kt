@@ -261,6 +261,74 @@ class PiManageUpdateTest {
         assertTrue(result["output"]!!.jsonPrimitive.content.contains("EACCES"))
     }
 
+    // -- issue #5: the npm fallback when pi refuses to update itself ----------
+
+    @Test
+    fun `a pi self-update refusal falls back to npm`() {
+        val runner = FakeRunner().apply {
+            response = CliResult(
+                1,
+                "",
+                "error: pi cannot self-update this installation.\n" +
+                    "Update @earendil-works/pi-coding-agent@1.6.1 using the package manager",
+            )
+        }
+        var fallbackRan = false
+        val result = PiManage.envUpdate(
+            runner = runner.asSelfUpdateRunner(),
+            refresh = {},
+            currentVersion = { "1.6.2" },
+            fallback = {
+                fallbackRan = true
+                CliResult(0, "added 1 package", "")
+            },
+        )
+
+        assertTrue(fallbackRan, "pi's refusal must trigger the npm fallback")
+        assertEquals("true", result["ok"]!!.jsonPrimitive.content)
+        assertEquals("true", result["viaNpm"]!!.jsonPrimitive.content)
+        assertEquals("1.6.2", result["version"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `a failure npm cannot fix is relayed without the fallback`() {
+        val runner = FakeRunner().apply {
+            response = CliResult(1, "", "npm error code EACCES: permission denied")
+        }
+        var fallbackRan = false
+        val result = PiManage.envUpdate(
+            runner = runner.asSelfUpdateRunner(),
+            refresh = {},
+            currentVersion = { "1.6.0" },
+            fallback = {
+                fallbackRan = true
+                CliResult(0, "", "")
+            },
+        )
+
+        assertFalse(fallbackRan, "only pi's refusal may trigger the fallback")
+        assertEquals("false", result["ok"]!!.jsonPrimitive.content)
+        assertEquals("false", result["viaNpm"]!!.jsonPrimitive.content)
+        assertTrue(result["output"]!!.jsonPrimitive.content.contains("EACCES"))
+    }
+
+    @Test
+    fun `a refusal without a usable npm keeps pi's own failure`() {
+        val runner = FakeRunner().apply {
+            response = CliResult(1, "", "error: pi cannot self-update this installation.")
+        }
+        val result = PiManage.envUpdate(
+            runner = runner.asSelfUpdateRunner(),
+            refresh = {},
+            currentVersion = { "1.6.0" },
+            fallback = { null },
+        )
+
+        assertEquals("false", result["ok"]!!.jsonPrimitive.content)
+        assertEquals("false", result["viaNpm"]!!.jsonPrimitive.content)
+        assertTrue(result["output"]!!.jsonPrimitive.content.contains("cannot self-update"))
+    }
+
     // -- 011 T021: one shaping pass for the output text ------------------------
 
     @Test

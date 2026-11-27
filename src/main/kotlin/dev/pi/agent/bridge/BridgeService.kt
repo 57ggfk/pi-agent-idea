@@ -1059,6 +1059,7 @@ class BridgeService(private val project: Project) : Disposable {
             if (state is PiConnectionState.Running) messageQueue(instanceId).onProcessRestarted()
         }
         pushStateEvent(manager.stateOf(instanceId), instanceId)
+        watchDiskVersion(instanceId)
         wireThemeEvents()
     }
 
@@ -1214,6 +1215,37 @@ class BridgeService(private val project: Project) : Disposable {
             put("name", "pi-state")
             put("data", data)
         }, instanceId)
+    }
+
+    /**
+     * The pi version currently installed on disk.
+     *
+     * Separate from [pushStateEvent] on purpose: that event carries the
+     * version of the pi **process** (a snapshot from when it started), while
+     * this one carries the version of the pi **installation**. They differ
+     * exactly when the user upgraded pi outside the IDE, and the status bar
+     * has to show both (issue #6).
+     */
+    private fun pushDiskVersionEvent(version: String?, instanceId: Int = 1) {
+        push(buildJsonObject {
+            put("t", "event")
+            put("name", "pi-disk-version")
+            put("data", buildJsonObject {
+                put("version", version ?: "")
+            })
+        }, instanceId)
+    }
+
+    /**
+     * Starts watching the on-disk pi version and reports it to the frontend.
+     *
+     * Called once per project when the bridge wires up; the watcher polls on a
+     * slow tick and only pushes when the version actually changed.
+     */
+    private fun watchDiskVersion(instanceId: Int = 1) {
+        val watcher = project.getService(dev.pi.agent.process.PiDiskVersionWatcher::class.java)
+        watcher.addListener { version -> pushDiskVersionEvent(version, instanceId) }
+        watcher.start()
     }
 
     fun push(record: JsonObject, instanceId: Int = 1) {

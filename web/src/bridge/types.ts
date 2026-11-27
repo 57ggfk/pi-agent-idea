@@ -6,7 +6,16 @@
  * Java → JS event   : { t: "event", name: eventName, data }
  */
 
-export type BridgeEventName = "pi" | "pi-state" | "ide" | "theme" | "queue" | "auth";
+export type BridgeEventName =
+  | "pi"
+  | "pi-state"
+  // The pi version installed on disk — separate from the running process
+  // version carried by "pi-state" (issue #6).
+  | "pi-disk-version"
+  | "ide"
+  | "theme"
+  | "queue"
+  | "auth";
 
 /**
  * Every method the Java side dispatches (keep in sync with
