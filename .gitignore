@@ -29,6 +29,9 @@ web/probe-*.json
 [Zz][Cc]ode*
 .idea/
 
+# Gradle/Kotlin 构建产物目录。
+.kotlin/
+
 # Agent scratch / credentials.
 # The per-agent command copies (.codebuddy/) and the workspace agent state
 # (.workbuddy/, incl. the mirrored speckit commands and the daily work log)
@@ -53,7 +56,7 @@ web/probe-*.json
 .specify/.gitignore
 
 # 本机私有的 agent 约定（提交者身份、提交时间折算、本机环境等），只对作者生效，不入库。
-agents.local.md
+AGENTS.local.md
 
 # 版本执行提示词：派发给外部 agent 的临时编排稿，只留本地，不入库。
 # 命名约定 <version>-PROMPT.md，任意版本前缀均忽略，避免每版本改一次规则。

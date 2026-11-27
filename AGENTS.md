@@ -4,7 +4,7 @@ Pi Agent for JetBrains —— 把 [pi coding agent](https://github.com/earendil-
 Kotlin 宿主 + React/TypeScript 前端（`web/dist` 由 Gradle 同步进插件资源）。
 
 > 给所有 AI 编码代理与贡献者看的项目说明。
-> **本机私有约定写在 `agents.local.md`**——该文件若存在，先读它并以其为准（它不入库，只对作者本人生效）。
+> **本机私有约定写在 `AGENTS.local.md`**——该文件若存在，先读它并以其为准（它不入库，只对作者本人生效）。
 
 ## 命令
 
@@ -57,7 +57,7 @@ specify init --here --force --ignore-agent-tools --integration codebuddy --scrip
 | 长期文档（架构 / 产品设计 / 竞品 / 编号规则） | `docs/` |
 | 发布文案碎片 | `changelog.d/<时间戳>-<主题>.<type>.md` |
 | 规则与约束基准 | `.specify/memory/constitution.md` |
-| 本机私有约定 | `agents.local.md`（不入库） |
+| 本机私有约定 | `AGENTS.local.md`（不入库） |
 
 ## 贡献者路径（外部 PR）
 
