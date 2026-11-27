@@ -58,7 +58,7 @@ describe("issue #11 — the paste token is localized", () => {
     expect(found[0]?.lines).toBe(12);
     expect(found[0]?.text).toBe(token);
     // And it still expands back to the original content.
-    expect(expandPastes(`before ${token} after`, new Map([[3, "full text"]]))).toBe(
+    expect(expandPastes(`before ${token} after`, new Map([[3, { content: "full text", lines: 12 }]]))).toBe(
       "before full text after",
     );
   });
@@ -69,7 +69,7 @@ describe("issue #11 — the paste token is localized", () => {
     expect(found).toHaveLength(1);
     expect(found[0]?.id).toBe(4);
     expect(found[0]?.lines).toBe(5);
-    expect(expandPastes(token, new Map([[4, "const a = 1;"]]))).toBe("const a = 1;");
+    expect(expandPastes(token, new Map([[4, { content: "const a = 1;", lines: 5 }]]))).toBe("const a = 1;");
   });
 
   it("hasPasteTokens and replaceToken keep working for both languages", () => {
@@ -94,5 +94,31 @@ describe("issue #11 — the paste token is localized", () => {
   it("plain prose is not mistaken for a token", () => {
     expect(hasPasteTokens("nothing to see here")).toBe(false);
     expect(scanPasteTokens("[not a token]")).toHaveLength(0);
+  });
+
+  it("prose that looks like a token is not expanded into an old paste (issue #11)", () => {
+    // The wording is localized, so the words cannot identify a token. The
+    // NUMBERS do: a candidate stands for a paste only when a known paste has
+    // the same id AND the same line count.
+    const prose = "please check [log #3 +120 lines] first";
+    const known = new Map([[3, { content: "REAL PASTE CONTENT", lines: 18 }]]);
+
+    expect(scanPasteTokens(prose)).toHaveLength(1); // the shape matches…
+    expect(hasPasteTokens(prose, known)).toBe(false); // …but it is not one of ours
+    expect(expandPastes(prose, known)).toBe(prose); // so the words survive
+  });
+
+  it("a real token still expands when the wording is any language", () => {
+    const token = pasteToken(3, "Markdown", 18, EN);
+    const known = new Map([[3, { content: "REAL PASTE CONTENT", lines: 18 }]]);
+    expect(expandPastes(token, known)).toBe("REAL PASTE CONTENT");
+  });
+
+  it("the same id with a different line count is not a token", () => {
+    const known = new Map([[3, { content: "REAL PASTE CONTENT", lines: 18 }]]);
+    // "#3 +99" is not the token we folded (that one said 18 lines).
+    const prose = "[已粘贴 文本 #3 +99 行]";
+    expect(expandPastes(prose, known)).toBe(prose);
+    expect(hasPasteTokens(prose, known)).toBe(false);
   });
 });

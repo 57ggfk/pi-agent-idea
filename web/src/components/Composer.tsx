@@ -424,6 +424,14 @@ export default function Composer() {
       // The kind comes from the paste map, not from the token text: the token
       // wording is localized, the map is not.
       const entry = pastes.get(id);
+      // Only a REAL paste gets a chip. Prose that looks like a token
+      // ("[see #3 +42 lines]") must stay the user's own text — painting a
+      // chip over it would make it expand into an old paste on send.
+      const known =
+        entry !== undefined
+          ? entry.lines === lines
+          : expandedPaste?.id === id && expandedPaste.lines === lines;
+      if (!known) continue;
       const kind = entry?.kind ?? expandedPaste?.kind ?? "text";
       events.push({
         start,
@@ -942,7 +950,7 @@ export default function Composer() {
     // tokens — the transcript stays fully viewable and copyable.
     const body = expandPastes(
       text,
-      new Map([...pastes].map(([id, entry]) => [id, entry.content])),
+      new Map([...pastes].map(([id, entry]) => [id, { content: entry.content, lines: entry.lines }])),
     ).trim();
     // Tokens live inline in the text (018 US1) — a message of only references
     // is non-empty text, so "text or images" is the whole sendability rule.

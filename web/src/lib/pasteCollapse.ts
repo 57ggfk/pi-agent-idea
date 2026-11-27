@@ -151,10 +151,47 @@ export function scanPasteTokens(text: string): PasteTokenMatch[] {
   return out;
 }
 
-/** True when the draft still carries paste tokens. */
-export function hasPasteTokens(text: string): boolean {
-  PASTE_TOKEN_RE.lastIndex = 0;
-  return PASTE_TOKEN_RE.test(text);
+/**
+ * A paste the composer actually folded.
+ *
+ * The LINE COUNT is part of the restore key, not decoration: it is what tells
+ * a real token from prose that happens to look like one.
+ */
+export interface KnownPaste {
+  /** The full original content — restored before sending. */
+  content: string;
+  /** The line count the token carries. */
+  lines: number;
+}
+
+/**
+ * Is this candidate token a paste we actually folded?
+ *
+ * The wording is localized, so it cannot identify a token — but the numbers
+ * can. A candidate stands for a real paste only when a known paste has BOTH
+ * the same id AND the same line count.
+ *
+ * Without the line count, prose that looks like a token ("[see #3 +42
+ * lines]") would be taken for one, and sending the message would silently
+ * replace the user's words with an old paste's content.
+ */
+export function isKnownPasteToken(match: PasteTokenMatch, known: Map<number, KnownPaste>): boolean {
+  const paste = known.get(match.id);
+  return paste !== undefined && paste.lines === match.lines;
+}
+
+/**
+ * True when the draft still carries paste tokens.
+ *
+ * With [known] the answer is about real pastes only — prose that looks like
+ * a token does not count.
+ */
+export function hasPasteTokens(text: string, known?: Map<number, KnownPaste>): boolean {
+  if (!known) {
+    PASTE_TOKEN_RE.lastIndex = 0;
+    return PASTE_TOKEN_RE.test(text);
+  }
+  return scanPasteTokens(text).some((match) => isKnownPasteToken(match, known));
 }
 
 /**
@@ -162,14 +199,19 @@ export function hasPasteTokens(text: string): boolean {
  * ids (entry deleted from the map but token text still present) expand to
  * the empty string? No — they stay as-is: a token whose content we no longer
  * hold must not silently shrink to nothing; sending the visible token text
- * keeps the user's draft honest.
+ * keeps the user's draft honest. A candidate that does not match a known
+ * paste's id AND line count stays as-is for the same reason: it is not one
+ * of our tokens, it is the user's own text.
  */
-export function expandPastes(text: string, contents: Map<number, string>): string {
+export function expandPastes(text: string, pastes: Map<number, KnownPaste>): string {
   // Group 2 is the id (group 1 is the localized wording before the core).
-  return text.replace(PASTE_TOKEN_RE, (match, _prefix: string, idStr: string) => {
+  return text.replace(PASTE_TOKEN_RE, (match, _prefix: string, idStr: string, linesStr: string) => {
     const id = Number(idStr);
-    const content = contents.get(id);
-    return content === undefined ? match : content;
+    const paste = pastes.get(id);
+    // The line count is part of the key: prose that looks like a token must
+    // not swallow the user's words (issue #11 follow-up).
+    if (paste === undefined || paste.lines !== Number(linesStr)) return match;
+    return paste.content;
   });
 }
 

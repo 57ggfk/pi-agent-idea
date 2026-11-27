@@ -101,3 +101,24 @@ test("the Chinese placeholder reaches pi as the FULL content, not as a token (is
   const raw = await page.evaluate(() => document.querySelector(".markdown")?.textContent ?? "");
   expect(raw).not.toContain("已粘贴");
 });
+
+test("prose that looks like a paste token is sent as the user's own words (issue #11)", async ({ page }) => {
+  await page.goto("/?locale=zh");
+  await expect(page.getByTestId("empty-state")).toBeVisible();
+
+  // A real paste exists now: id 1, BIG_LINES lines.
+  await pasteText(page, BIG_MARKDOWN);
+  await expect(page.getByTestId("paste-chip")).toHaveCount(1);
+
+  // The user types prose that happens to look like a token. It carries the
+  // same id, but a line count no paste has.
+  const prose = "please check [log #1 +999 lines] first";
+  await page.getByTestId("composer-input").fill(prose);
+  await page.getByTestId("send-btn").click();
+
+  // The words must survive: a token-looking shape must not swallow them.
+  await expect(page.locator(".message-list")).toContainText("please check", { timeout: 30_000 });
+  const sent = await page.locator(".message-list").innerText();
+  expect(sent).toContain("[log #1 +999 lines]");
+  expect(sent).not.toContain("section 0");
+});

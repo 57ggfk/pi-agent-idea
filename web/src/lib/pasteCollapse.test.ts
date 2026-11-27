@@ -103,7 +103,7 @@ describe("paste tokens (FR-007)", () => {
   });
 
   it("expands tokens back to the full original before send", () => {
-    const map = new Map([[1, "line1\nline2\nline3"]]);
+    const map = new Map([[1, { content: "line1\nline2\nline3", lines: 3 }]]);
     const draft = `check this: ${pasteToken(1, "Markdown", 3, EN_WORDS)} please`;
     expect(expandPastes(draft, map)).toBe("check this: line1\nline2\nline3 please");
   });
