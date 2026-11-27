@@ -58,6 +58,7 @@ specify init --here --force --ignore-agent-tools --integration codebuddy --scrip
 | 发布文案碎片 | `changelog.d/<时间戳>-<主题>.<type>.md` |
 | 规则与约束基准 | `.specify/memory/constitution.md` |
 | 本机私有约定 | `AGENTS.local.md`（不入库） |
+| Claude Code 入口 | `CLAUDE.md`——只有一行 `@` 导入指向本文件，内容不重复维护 |
 
 ## 贡献者路径（外部 PR）
 
@@ -99,3 +100,5 @@ specify init --here --force --ignore-agent-tools --integration codebuddy --scrip
 - **JCEF 是单向的**：前端资源走 `LocalUiServer` 的 HTTP bridge，不注入 JS
 
 完整约束基准：`.specify/memory/constitution.md` · 编号与命名：[docs/SPEC_NUMBERING.md](docs/SPEC_NUMBERING.md) · 贡献细则：[CONTRIBUTING.md](CONTRIBUTING.md)
+
+指令文件本身会漂移：Claude Code 的 `/doctor prompt-audit` 能查出 CLAUDE.md / AGENTS.md 里的过时引用与互相矛盾，改完规则跑一次。
