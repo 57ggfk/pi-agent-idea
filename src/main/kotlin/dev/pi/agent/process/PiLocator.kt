@@ -22,22 +22,60 @@ object PiLocator {
     @Volatile
     private var cached: PiInstallation? = null
 
+    /**
+     * The path of the pi executable, without probing its version.
+     *
+     * Split out from [locate] because the version probe starts a process
+     * (`pi --version` → node cold start). The disk-version watcher needs the
+     * path on every tick but must not pay for a subprocess each time.
+     */
+    @Volatile
+    private var cachedPath: String? = null
+
     fun locate(forceRefresh: Boolean = false): PiInstallation? {
         if (!forceRefresh) {
             cached?.let { return it }
         }
         val found = doLocate()
         cached = found
+        // Keep the path cache in step: the two caches describe the same
+        // installation, and a refresh here (a settings change, an install)
+        // must not leave [locatePath] pointing at the previous path.
+        cachedPath = found?.path
+        return found
+    }
+
+    /**
+     * The path of the pi executable only — no subprocess.
+     *
+     * Resolution order is the same as [locate]'s; only the version probe is
+     * skipped. Used by [PiDiskVersion], which asks for the path constantly and
+     * the version rarely.
+     */
+    fun locatePath(forceRefresh: Boolean = false): String? {
+        if (!forceRefresh) {
+            cachedPath?.let { return it }
+        }
+        val found = doLocatePath()
+        // The cached installation describes the old path — it no longer
+        // describes this machine, so it goes with the path.
+        if (cached?.path != found) cached = null
+        cachedPath = found
         return found
     }
 
     private fun doLocate(): PiInstallation? {
+        val path = doLocatePath() ?: return null
+        return PiInstallation(path, version(path))
+    }
+
+    private fun doLocatePath(): String? {
         // Only requires a readable file: on Windows, canExecute() is unreliable
         // for scripts (and the e2e mock injects a .mjs here).
         System.getenv("PI_AGENT_EXECUTABLE")?.let { envPath ->
             val f = File(envPath)
             if (f.isFile) {
-                return PiInstallation(f.absolutePath, version(f.absolutePath))
+                return f.absolutePath
             }
             LOG.warn("PI_AGENT_EXECUTABLE is set but not a file: $envPath")
         }
@@ -51,7 +89,7 @@ object PiLocator {
             app.getService(dev.pi.agent.settings.PiAgentSettings::class.java).customPiPath()?.let { settingPath ->
                 val f = File(settingPath)
                 if (f.isFile) {
-                    return PiInstallation(f.absolutePath, version(f.absolutePath))
+                    return f.absolutePath
                 }
                 LOG.warn("custom pi path is set but not a file: $settingPath")
             }
@@ -64,24 +102,22 @@ object PiLocator {
             val whereResults = windowsWhere("pi").orEmpty()
             val best = whereResults.firstOrNull { OsProcess.isCmdLike(it) || it.lowercase().endsWith(".exe") }
                 ?: whereResults.firstOrNull()
-            best?.let { return foundAt(it) }
+            best?.let { return it }
         } else {
             loginShellPath()
                 .map { dir -> File(dir, "pi") }
                 .firstOrNull { isLaunchable(it) }
-                ?.let { return foundAt(it.absolutePath) }
+                ?.let { return it.absolutePath }
         }
 
         for (candidate in candidatePaths()) {
             val f = File(candidate)
             if (isLaunchable(f)) {
-                return foundAt(f.absolutePath)
+                return f.absolutePath
             }
         }
         return null
     }
-
-    private fun foundAt(path: String): PiInstallation = PiInstallation(path, version(path))
 
     /**
      * `pi --version` output, or null when the binary is not runnable.

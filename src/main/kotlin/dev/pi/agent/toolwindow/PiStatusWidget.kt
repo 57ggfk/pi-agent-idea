@@ -86,10 +86,22 @@ class PiStatusWidget(private val project: Project) :
     override fun getTooltipText(): String = when (val s = activeState()) {
         is PiConnectionState.Running ->
             "${instanceSummary()}: " + PiAgentBundle.message("status.running") +
-                (s.installation.version?.let { " ($it)" } ?: "")
+                (s.installation.version?.let { " ($it)" } ?: "") + diskVersionNote()
         is PiConnectionState.Starting -> "${instanceSummary()}: " + PiAgentBundle.message("status.starting")
         is PiConnectionState.Exited -> "${instanceSummary()}: " + PiAgentBundle.message("status.exited", s.message ?: "")
         PiConnectionState.NotStarted -> "${instanceSummary()}: " + PiAgentBundle.message("status.notStarted")
+    }
+
+    /**
+     * A note about the on-disk installation, when it differs from the running
+     * one — the user upgraded pi outside the IDE and the running process
+     * still has the old code (issue #6). Silent otherwise.
+     */
+    private fun diskVersionNote(): String {
+        val running = (activeState() as? PiConnectionState.Running)?.installation?.version
+        val disk = dev.pi.agent.process.PiDiskVersion.current() ?: return ""
+        if (running == null || disk == running) return ""
+        return " — " + PiAgentBundle.message("status.diskVersion", disk)
     }
 
     override fun getAlignment(): Float = 0.5f

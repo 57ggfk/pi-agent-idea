@@ -653,19 +653,37 @@ object PiManage {
      * refreshed so the version the UI shows comes from the new binary (T018);
      * pi has no check-update subcommand, so "already newest" is whatever the
      * command's own output says — the plugin never guesses it.
+     *
+     * When pi refuses because it does not recognise the installation as
+     * package-managed (`cannot self-update this installation`), the update
+     * falls back to npm: the prefix is derived from pi's own path and passed
+     * as `--prefix`, so the install lands in the prefix pi actually lives in
+     * (issue #5). Any other failure is pi's own and is relayed unchanged —
+     * the fallback must not mask a network or permission problem.
      */
     fun envUpdate(
         runner: (List<String>, Long) -> CliResult = ::defaultRunner,
         refresh: () -> Unit = { dev.pi.agent.process.PiLocator.locate(forceRefresh = true) },
         currentVersion: () -> String? = { dev.pi.agent.process.PiLocator.locate()?.version },
+        fallback: () -> CliResult? = { PiSelfUpdate.npmUpdate(dev.pi.agent.process.PiLocator.locatePath()) },
     ): JsonObject {
-        val result = runner(envUpdateArgs(), UPDATE_TIMEOUT_SECONDS)
+        var result = runner(envUpdateArgs(), UPDATE_TIMEOUT_SECONDS)
+        var usedFallback = false
+        if (!result.success && PiSelfUpdate.isSelfUpdateRefusal(result.stdout + "\n" + result.stderr)) {
+            // pi could not update itself; npm can, if we tell it which prefix.
+            val viaNpm = fallback()
+            if (viaNpm != null) {
+                result = viaNpm
+                usedFallback = true
+            }
+        }
         if (result.success) refresh()
         return buildJsonObject {
             put("ok", result.success)
             put("exitCode", result.exitCode)
             put("output", cliOutput(result))
             put("version", currentVersion() ?: "")
+            put("viaNpm", usedFallback)
         }
     }
 

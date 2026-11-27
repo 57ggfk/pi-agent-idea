@@ -2,12 +2,14 @@ import { usePiStore } from "../store/store";
 import { useT } from "../i18n/useT";
 import SessionTitleInput from "./SessionTitleInput";
 import Icon from "./Icon";
+import { piVersionDisplay } from "../lib/piVersion";
 
 export default function StatusBar() {
   const { t } = useT();
   const stats = usePiStore((s) => s.stats);
   const piStatus = usePiStore((s) => s.piStatus);
   const piVersion = usePiStore((s) => s.piVersion);
+  const piDiskVersion = usePiStore((s) => s.piDiskVersion);
   const exitMessage = usePiStore((s) => s.exitMessage);
   const exitStderr = usePiStore((s) => s.exitStderr);
   const piNotice = usePiStore((s) => s.piNotice);
@@ -40,6 +42,12 @@ export default function StatusBar() {
         .slice(-20)
         .join("\n")
     : "";
+
+  // The disk version differs from the running one only when pi was
+  // upgraded outside the IDE. An unknown disk version is not a difference —
+  // it just means we do not know yet.
+  const version = piVersionDisplay(piVersion, piDiskVersion);
+  const diskDiffers = version.differs;
 
   // Context fill level drives the bar color (green → amber → red).
   const ctxLevel = percent == null ? "ok" : percent >= 90 ? "critical" : percent >= 70 ? "warn" : "ok";
@@ -79,7 +87,23 @@ export default function StatusBar() {
       <div className="statusbar" data-testid="statusbar">
       <div className="statusbar-row">
         <span className={`status-dot ${piStatus} ${isStreaming ? "busy" : ""}`} data-testid="status-dot" />
-        <span data-testid="status-version">pi {piVersion || "—"}</span>
+        {/*
+          Two facts, both true: the version of the pi process the plugin is
+          running, and the version installed on the machine. They differ when
+          the user upgraded pi outside the IDE — the running process keeps the
+          old code until it restarts, so the status bar says so (issue #6).
+        */}
+        {diskDiffers ? (
+          <span
+            className="status-version status-version-split"
+            data-testid="status-version"
+            title={t("status.diskVersionTitle", { version: piDiskVersion })}
+          >
+            pi {version.running || "—"} <span className="status-version-arrow">→</span> {version.disk}
+          </span>
+        ) : (
+          <span data-testid="status-version">pi {piVersion || "—"}</span>
+        )}
         {editingCurrent && tab !== "sessions" ? (
           // The one inline editor on chat/manage tabs (T108); the session
           // list hosts it on the sessions tab — never both at once.
