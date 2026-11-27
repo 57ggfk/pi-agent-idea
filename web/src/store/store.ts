@@ -1171,6 +1171,22 @@ export const usePiStore = create<PiStore>((set, get) => {
   const queueItemText = (id: string): string =>
     get().queue.items.find((item) => item.id === id)?.text ?? "";
 
+  /**
+   * Drops ONE transcript copy of a queued steer, not all of them.
+   *
+   * Two steers can carry the SAME text ("stop" twice), and the transcript
+   * copies of those are indistinguishable to the user — but only one of them
+   * went back to the composer. Removing every copy with that text would take
+   * the other steer's transcript entry with it: it would vanish from the
+   * transcript while still sitting in the queue, which is the very ambiguity
+   * issue #8 is about.
+   */
+  const dropOneSteerCopy = (items: ChatItem[], text: string): ChatItem[] => {
+    const at = items.findIndex((item) => isQueuedSteerWithText(item, text));
+    if (at < 0) return items;
+    return [...items.slice(0, at), ...items.slice(at + 1)];
+  };
+
   /** Full-snapshot update from the Kotlin queue service (spec 005). */
   const applyQueueState = (data: QueueStateEvent | QueueState) => {
     const mirrorItems = Array.isArray(data.items) ? data.items : [];
@@ -1957,7 +1973,7 @@ export const usePiStore = create<PiStore>((set, get) => {
         // ambiguity this issue is about.
         if (text) {
           set((state) => ({
-            items: state.items.filter((item) => !isQueuedSteerWithText(item, text)),
+            items: dropOneSteerCopy(state.items, text),
           }));
         }
       } catch (e) {
@@ -2002,7 +2018,7 @@ export const usePiStore = create<PiStore>((set, get) => {
           },
           items: injected
             ? state.items
-            : state.items.filter((item) => !isQueuedSteerWithText(item, restoredText)),
+            : dropOneSteerCopy(state.items, restoredText),
         }));
         if (injected) {
           // FR-004: no silent withdrawal — say it in words, not with a bare

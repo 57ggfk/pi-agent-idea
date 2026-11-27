@@ -230,4 +230,26 @@ describe("issue #8 — steer state in the transcript", () => {
 
     expect(steerIn()?.steerState).toBe("queued");
   });
+
+  it("two steers with the same text: taking one back leaves the other in the transcript", async () => {
+    // Two identical steers are indistinguishable to the user, but only ONE of
+    // them went back to the composer. Removing every copy with that text
+    // would take the other one's transcript entry with it.
+    h.state.methods.set("queue.enqueue", () => ({ ok: true, id: "q-1" }));
+    usePiStore.setState({ isStreaming: true });
+
+    await usePiStore.getState().sendImages("stop", [], "steer");
+    await usePiStore.getState().sendImages("stop", [], "steer");
+
+    const steers = () => usePiStore.getState().items.filter((i) => i.steer);
+    expect(steers()).toHaveLength(2);
+
+    // The user takes the first one back.
+    h.state.methods.set("queue.restore", () => ({ ok: true, text: "stop" }));
+    await usePiStore.getState().queueRestore("q-1");
+
+    // The other one must still be there.
+    expect(steers()).toHaveLength(1);
+    expect(usePiStore.getState().pendingPrompt?.text).toBe("stop");
+  });
 });
