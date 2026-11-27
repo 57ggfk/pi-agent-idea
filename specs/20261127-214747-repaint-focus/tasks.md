@@ -1,6 +1,6 @@
 # 任务清单：自动编辑后不闪、不夺走输入焦点
 
-**Spec**: [spec.md](./spec.md) · **Plan**: [plan.md](./plan.md) · **编号**: `20261127-214745` · **Issue**: #9
+**Spec**: [spec.md](./spec.md) · **Plan**: [plan.md](./plan.md) · **编号**: `20261127-214747` · **Issue**: #9
 
 ## T1 取证（阻塞项，先做）
 

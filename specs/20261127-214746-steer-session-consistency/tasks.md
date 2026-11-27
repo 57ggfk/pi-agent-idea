@@ -1,6 +1,6 @@
 # 任务清单：插话在队列与会话之间的一致性
 
-**Spec**: [spec.md](./spec.md) · **Plan**: [plan.md](./plan.md) · **编号**: `20261127-214745` · **Issue**: #8
+**Spec**: [spec.md](./spec.md) · **Plan**: [plan.md](./plan.md) · **编号**: `20261127-214746` · **Issue**: #8
 
 ## T1 状态字段（先断言）
 

@@ -1,6 +1,6 @@
 # 任务清单：诊断页的环境识别卡重做
 
-**Spec**: [spec.md](./spec.md) · **Plan**: [plan.md](./plan.md) · **编号**: `20261127-214745` · **Issue**: #14
+**Spec**: [spec.md](./spec.md) · **Plan**: [plan.md](./plan.md) · **编号**: `20261127-214748` · **Issue**: #14
 
 ## T1 版本来源（先断言）
 

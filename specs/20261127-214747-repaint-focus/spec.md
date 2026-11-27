@@ -1,6 +1,6 @@
 # Feature Specification: 自动编辑后不闪、不夺走输入焦点
 
-**Feature Branch**: `[20261127-214745-repaint-focus]`
+**Feature Branch**: `[20261127-214747-repaint-focus]`
 **Created**: 2026-11-27
 **Status**: 草稿（待实现）
 

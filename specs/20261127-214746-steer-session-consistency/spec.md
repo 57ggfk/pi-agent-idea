@@ -1,6 +1,6 @@
 # Feature Specification: 插话在队列与会话之间的一致性
 
-**Feature Branch**: `[20261127-214745-steer-session-consistency]`
+**Feature Branch**: `[20261127-214746-steer-session-consistency]`
 **Created**: 2026-11-27
 **Status**: 草稿（待实现）
 

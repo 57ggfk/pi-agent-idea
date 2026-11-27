@@ -1,6 +1,6 @@
 # Feature Specification: 诊断页的环境识别卡重做
 
-**Feature Branch**: `[20261127-214745-diagnostics-env-card]`
+**Feature Branch**: `[20261127-214748-diagnostics-env-card]`
 **Created**: 2026-11-27
 **Status**: 草稿（待实现）
 
