@@ -11,9 +11,11 @@ import {
   expandPastes,
   pasteToken,
   replaceToken,
+  scanPasteTokens,
   shouldAutoSaveAsFile,
   shouldCollapse,
   type PasteKind,
+  type PasteTokenWords,
 } from "../lib/pasteCollapse";
 import { findTempRefPaths } from "../lib/tempRefs";
 import { useT } from "../i18n/useT";
@@ -73,10 +75,6 @@ type Density = 0 | 1 | 2;
 // `user@example.com` still reads as an email, not as a file token.
 const AT_QUERY_RE = /(?:^|[^\w@])@([^\s@]*)$/;
 
-// 044: paste chips in the draft. The token wording is language-neutral by
-// design (restore key = the id), so the scan regex mirrors pasteCollapse's.
-const PASTE_TOKEN_SCAN = /\[Pasted ([A-Za-z]+) #(\d+) \+(\d+) lines\]/g;
-
 /** Hover preview body cap (FR-005): enough to judge, small enough to read. */
 const PASTE_PREVIEW_MAX = 400;
 
@@ -92,6 +90,19 @@ function pasteKindLabel(t: TFunction, kind: PasteKind): string {
     default:
       return kind;
   }
+}
+
+/** Every kind the detector can return — the order of the label table. */
+const PASTE_KINDS: PasteKind[] = ["Markdown", "JSON", "code", "log", "text"];
+
+/** What the composer keeps per folded paste (issue #11). */
+interface PasteEntry {
+  /** The full original text — restored before sending. */
+  content: string;
+  /** The detected kind — the chip label reads it from here, not from the token. */
+  kind: PasteKind;
+  /** The line count the token carries. */
+  lines: number;
 }
 
 type MenuState = "list" | "loading" | "failed" | "empty";
@@ -165,12 +176,33 @@ export default function Composer() {
   const [text, setText] = useState("");
   const [mode, setMode] = useState<SendMode>("auto");
   const [images, setImages] = useState<PendingImage[]>([]);
-  // 044: folded pastes — the textarea carries the language-neutral token,
-  // this map holds the full original per token id, and doSend expands it
-  // (FR-007). `expandedPaste` is the last chip the user expanded and has not
-  // edited since: while the content is still intact in the box, a collapse
-  // affordance can fold it back (US2 再折回).
-  const [pastes, setPastes] = useState<Map<number, string>>(new Map());
+  // 044: folded pastes — the textarea carries the token, this map holds the
+  // full original per token id (plus the kind and the line count, so the
+  // chip label does not have to be parsed back out of the token text —
+  // issue #11), and doSend expands it (FR-007). `expandedPaste` is the last
+  // chip the user expanded and has not edited since: while the content is
+  // still intact in the box, a collapse affordance can fold it back (US2 再折回).
+  const [pastes, setPastes] = useState<Map<number, PasteEntry>>(new Map());
+  /**
+   * The wording of the paste token (issue #11).
+   *
+   * The token's machine core is language-neutral; the words around it are
+   * not — the Chinese UI must show a Chinese placeholder. The token is
+   * written ONCE, when the paste happens: a token already in the draft keeps
+   * the wording it was created with (rewriting it would move the caret and
+   * could lose characters).
+   */
+  const tokenWords = useMemo<PasteTokenWords>(
+    () => ({
+      pasted: t("composer.pasteToken.pasted"),
+      lines: t("composer.pasteToken.lines"),
+      kinds: Object.fromEntries(PASTE_KINDS.map((k) => [k, pasteKindLabel(t, k)])) as Record<
+        PasteKind,
+        string
+      >,
+    }),
+    [t],
+  );
   const [expandedPaste, setExpandedPaste] = useState<
     { id: number; content: string; kind: PasteKind; lines: number; start: number; end: number } | null
   >(null);
@@ -297,7 +329,7 @@ export default function Composer() {
   const pasteContent = useCallback(
     (id: number) => {
       const direct = pastes.get(id);
-      if (direct !== undefined) return direct;
+      if (direct !== undefined) return direct.content;
       // An expanded chip's entry is gone from the map; the content lives in
       // expandedPaste until edited.
       return expandedPaste?.id === id ? expandedPaste.content : undefined;
@@ -311,7 +343,8 @@ export default function Composer() {
    *  the memo's chip pills call it during render. */
   const expandPaste = useCallback(
     (id: number, kind: PasteKind, lines: number, start: number, end: number) => {
-      const content = pastes.get(id);
+      const entry = pastes.get(id);
+      const content = entry?.content;
       if (content === undefined) return;
       const ta = taRef.current;
       // Snapshot the selection before expanding: the deferred select-all below
@@ -384,14 +417,14 @@ export default function Composer() {
         ),
       });
     }
-    PASTE_TOKEN_SCAN.lastIndex = 0;
-    for (let m = PASTE_TOKEN_SCAN.exec(text); m; m = PASTE_TOKEN_SCAN.exec(text)) {
-      // Scan groups: 1 = kind, 2 = id, 3 = lines (mirror of pasteToken's text).
-      const id = Number(m[2]);
-      const kind = m[1] as PasteKind;
-      const lines = Number(m[3]);
-      const start = m.index;
-      const end = start + m[0].length;
+    // Issue #11: the ONE scanner (pasteCollapse owns the token grammar) — the
+    // chip layer and the textarea can never disagree about where a token is.
+    for (const match of scanPasteTokens(text)) {
+      const { id, lines, start, end } = match;
+      // The kind comes from the paste map, not from the token text: the token
+      // wording is localized, the map is not.
+      const entry = pastes.get(id);
+      const kind = entry?.kind ?? expandedPaste?.kind ?? "text";
       events.push({
         start,
         end,
@@ -414,7 +447,7 @@ export default function Composer() {
             }}
             onMouseLeave={schedulePreviewClose}
           >
-            {m[0]}
+            {match.text}
           </span>
         ),
       });
@@ -546,11 +579,11 @@ export default function Composer() {
     }
     const kind = detectPasteKind(current);
     const lines = countLines(current.replace(/\r\n/g, "\n"));
-    const token = pasteToken(id, kind, lines);
+    const token = pasteToken(id, kind, lines, tokenWords);
     selfChangeRef.current = true;
     applyText(text.slice(0, start) + token + text.slice(end));
-    setPastes((prev) => new Map(prev).set(id, current));
-  }, [applyText, expandedPaste, text]);
+    setPastes((prev) => new Map(prev).set(id, { content: current, kind, lines }));
+  }, [applyText, expandedPaste, text, tokenWords]);
 
   /** Folds a paste in at the current selection (FR-001/FR-002). 044 #4: pastes
    *  beyond the file threshold auto-save to a temp file reference — no prompt
@@ -564,13 +597,13 @@ export default function Composer() {
       const id = nextPasteIdRef.current++;
       const kind = detectPasteKind(plain);
       const lines = countLines(plain.replace(/\r\n/g, "\n"));
-      const token = pasteToken(id, kind, lines);
+      const token = pasteToken(id, kind, lines, tokenWords);
       const trailing = trailingFor(plain);
       const start = ta?.selectionStart ?? text.length;
       const end = ta?.selectionEnd ?? text.length;
       const next = text.slice(0, start) + token + trailing + text.slice(end);
       applyText(next);
-      setPastes((prev) => new Map(prev).set(id, plain));
+      setPastes((prev) => new Map(prev).set(id, { content: plain, kind, lines }));
       if (shouldAutoSaveAsFile(lines)) {
         void savePasteAsFile({ id, content: plain, kind, lines });
       }
@@ -589,8 +622,10 @@ export default function Composer() {
     },
     // savePasteAsFile intentionally omitted: it reads the draft through
     // textRef, so the stale closure below cannot affect it (same-tick call).
+    // tokenWords IS a dependency: a language switch must change the wording
+    // of the NEXT token (issue #11).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [applyText, text],
+    [applyText, text, tokenWords],
   );
 
   /** FR-011/FR-012: swap a folded chip for an `@path` reference to a temp
@@ -905,7 +940,10 @@ export default function Composer() {
     setTempRefWarning(null);
     // 044 FR-007: pi receives the full original content, never the chip
     // tokens — the transcript stays fully viewable and copyable.
-    const body = expandPastes(text, pastes).trim();
+    const body = expandPastes(
+      text,
+      new Map([...pastes].map(([id, entry]) => [id, entry.content])),
+    ).trim();
     // Tokens live inline in the text (018 US1) — a message of only references
     // is non-empty text, so "text or images" is the whole sendability rule.
     if (!body && images.length === 0) return;

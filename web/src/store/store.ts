@@ -757,6 +757,26 @@ export const usePiStore = create<PiStore>((set, get) => {
   const sourceLoaders = new Map<SourceId, () => Promise<unknown>>();
 
   /**
+   * The request on the wire per source (issue #10).
+   *
+   * The source machine refuses a second read while one is inflight. That is
+   * right for the menus (they would spam the bridge) but wrong for a
+   * deliberate refresh: a caller that needs a fresh answer must be able to
+   * wait for the running one and then read again — otherwise "refresh twice"
+   * silently refreshes once.
+   */
+  const inflightSources = new Map<SourceId, Promise<unknown>>();
+
+  /**
+   * Serializes the catalog refreshes (issue #10).
+   *
+   * Saving a provider refreshes the model catalog and the thinking levels;
+   * two saves in a row must both land, and a second refresh must not be
+   * refused by the source machine's in-flight guard.
+   */
+  let modelsReloadChain: Promise<unknown> = Promise.resolve();
+
+  /**
    * 021 D8: every `switchSession` / `runNewSession` bumps this. A response
    * that comes back after a newer request owns the screen is dropped instead
    * of painting the wrong transcript.
@@ -797,14 +817,32 @@ export const usePiStore = create<PiStore>((set, get) => {
     sourceLoaders.set(id, fetcher);
     if (get().sources[id].inflight) return undefined;
     set({ sources: beginLoad(get().sources, id) });
+    const pending = (async () => {
+      try {
+        const value = await fetcher();
+        set({ sources: resolveLoad(get().sources, id) });
+        return value;
+      } catch (e) {
+        set({ sources: rejectLoad(get().sources, id, e) });
+        return undefined;
+      }
+    })();
+    // The request on the wire, so a caller that needs a FRESH read can wait
+    // for it instead of being refused by the dedupe guard above (issue #10:
+    // two reloads in a row must both refresh, not "sometimes" refresh).
+    inflightSources.set(id, pending);
     try {
-      const value = await fetcher();
-      set({ sources: resolveLoad(get().sources, id) });
-      return value;
-    } catch (e) {
-      set({ sources: rejectLoad(get().sources, id, e) });
-      return undefined;
+      return (await pending) as T | undefined;
+    } finally {
+      if (inflightSources.get(id) === pending) inflightSources.delete(id);
     }
+  };
+
+  /** Waits out a read that is still on the wire ("" when there is none). */
+  const waitSourceIdle = async (id: SourceId): Promise<void> => {
+    const pending = inflightSources.get(id);
+    if (!pending) return;
+    await pending.catch(() => undefined);
   };
 
   /**
@@ -1104,17 +1142,69 @@ export const usePiStore = create<PiStore>((set, get) => {
     }
   };
 
+  /**
+   * The texts of the steers the frontend withdrew itself — took back into the
+   * composer or deleted from the queue (issue #8).
+   *
+   * A steer leaves the queue mirror for three different reasons:
+   *   1. pi consumed it  → it is in pi's context now ("injected"),
+   *   2. the user deleted it from the queue,
+   *   3. the user took it back to edit it.
+   * The mirror alone cannot tell them apart — only the frontend knows which of
+   * the three it caused itself. So it records its own withdrawals here, and a
+   * text that vanished from the mirror counts as "injected" only when the
+   * frontend did not touch it.
+   */
+  const withdrawnSteerTexts = new Set<string>();
+
+  /** The text of a steer item in the transcript ("" when it carries none). */
+  const steerItemText = (item: ChatItem): string => {
+    const block = item.blocks.find((b) => b.kind === "text");
+    return block && block.kind === "text" ? block.text : "";
+  };
+
+  /** Is this the transcript copy of a steer that is still waiting in the queue? */
+  const isQueuedSteerWithText = (item: ChatItem, text: string): boolean =>
+    Boolean(item.steer) && item.steerState === "queued" && steerItemText(item) === text;
+
+  /** The text of a queue entry in the mirror ("" when the id is unknown). */
+  const queueItemText = (id: string): string =>
+    get().queue.items.find((item) => item.id === id)?.text ?? "";
+
   /** Full-snapshot update from the Kotlin queue service (spec 005). */
   const applyQueueState = (data: QueueStateEvent | QueueState) => {
+    const mirrorItems = Array.isArray(data.items) ? data.items : [];
+    // Issue #8 FR-003: the transcript copy of a steer says whether it is
+    // still queued or already injected. The mirror is the truth about the
+    // queue — but only for the texts the frontend did not withdraw itself.
+    // Matching is by text: the mirror regenerates its ids when it rebuilds.
+    const mirrorTexts = new Set(mirrorItems.map((item) => item.text));
+    const current = get().items;
+    const updated = current.map((item) => {
+      if (!item.steer || item.steerState !== "queued") return item;
+      const text = steerItemText(item);
+      if (!text) return item;
+      // Still in the mirror → still queued (a mode change does not count).
+      if (mirrorTexts.has(text)) return item;
+      // The frontend took this one back / deleted it: it was never injected.
+      if (withdrawnSteerTexts.has(text)) return item;
+      // pi consumed it → it is in pi's context now.
+      return { ...item, steerState: "injected" as const };
+    });
+    const changed = updated.length !== current.length || updated.some((item, i) => item !== current[i]);
+
     set({
       queue: {
-        items: Array.isArray(data.items) ? data.items : [],
+        items: mirrorItems,
         paused: Boolean(data.paused),
         pauseReason: data.pauseReason ?? null,
         drift: Boolean(data.drift),
       },
       // A snapshot without drift clears the dismissed banner too.
       driftAck: !data.drift,
+      // Only a real transition rewrites the transcript — an unchanged array
+      // would re-render (and re-scroll) the whole message list.
+      ...(changed ? { items: updated } : {}),
     });
   };
 
@@ -1710,6 +1800,11 @@ export const usePiStore = create<PiStore>((set, get) => {
           item.done = true;
           item.ephemeral = true;
           item.steer = true;
+          // Issue #8 FR-003: a fresh steer starts in the queue.
+          item.steerState = "queued";
+          // A new steer with the same text is a new entry: the old withdrawal
+          // marker must not shadow it.
+          withdrawnSteerTexts.delete(text);
           set({ items: [...get().items, item] });
         }
         return;
@@ -1845,15 +1940,39 @@ export const usePiStore = create<PiStore>((set, get) => {
 
     async queueRemove(id: string) {
       if (!bridge) return;
+      // Issue #8: the frontend withdrew this entry itself, so it says so
+      // BEFORE the request — the queue snapshot that comes back would
+      // otherwise read the disappearance as "pi injected it" (FR-004).
+      const text = queueItemText(id);
+      if (text) withdrawnSteerTexts.add(text);
       try {
-        await bridge.request("queue.remove", { id });
+        const res = await bridge.request<{ ok?: boolean }>("queue.remove", { id });
+        if (res?.ok === false) {
+          // The entry is still in the queue → the transcript copy stays too.
+          if (text) withdrawnSteerTexts.delete(text);
+          return;
+        }
+        // The entry is gone from the queue: its transcript copy goes with it,
+        // otherwise "not in the queue but still in the transcript" is the very
+        // ambiguity this issue is about.
+        if (text) {
+          set((state) => ({
+            items: state.items.filter((item) => !isQueuedSteerWithText(item, text)),
+          }));
+        }
       } catch (e) {
+        if (text) withdrawnSteerTexts.delete(text);
         appendError(t("error.queueRemove.failed", { msg: (e as Error).message }));
       }
     },
 
     async queueRestore(id: string) {
       if (!bridge) return false;
+      // Issue #8: mark the withdrawal BEFORE the request — the queue snapshot
+      // that comes back would otherwise read the disappearance as "pi
+      // injected it" and mark the transcript copy as injected (FR-004).
+      const mirrored = queueItemText(id);
+      if (mirrored) withdrawnSteerTexts.add(mirrored);
       try {
         const res = await bridge.request<{
           ok: boolean;
@@ -1862,19 +1981,37 @@ export const usePiStore = create<PiStore>((set, get) => {
           error?: string;
         }>("queue.restore", { id });
         if (!res.ok) {
+          if (mirrored) withdrawnSteerTexts.delete(mirrored);
           appendError(res.error ?? t("error.queueRestore.failed", { msg: "" }));
           return false;
         }
-        set({
+        const restoredText = res.text ?? mirrored ?? "";
+        // FR-001/FR-004: a steer that is still queued leaves the transcript
+        // with the queue entry (the user is editing it); one that pi already
+        // took stays in the transcript — it is in pi's context now and must
+        // not be withdrawn silently.
+        const injected = get().items.some(
+          (item) => item.steer && item.steerState === "injected" && steerItemText(item) === restoredText,
+        );
+        set((state) => ({
           pendingPrompt: {
-            text: res.text ?? "",
+            text: restoredText,
             id: ++promptSeq,
             mode: "restore",
             images: res.images ?? [],
           },
-        });
+          items: injected
+            ? state.items
+            : state.items.filter((item) => !isQueuedSteerWithText(item, restoredText)),
+        }));
+        if (injected) {
+          // FR-004: no silent withdrawal — say it in words, not with a bare
+          // error code the user cannot read.
+          appendError(t("queue.restore.injected"));
+        }
         return true;
       } catch (e) {
+        if (mirrored) withdrawnSteerTexts.delete(mirrored);
         appendError(t("error.queueRestore.failed", { msg: (e as Error).message }));
         return false;
       }
@@ -2530,15 +2667,53 @@ export const usePiStore = create<PiStore>((set, get) => {
     async reloadModels() {
       if (!bridge) return false;
       const b = bridge;
-      let refreshed = false;
-      // Goes through the source machine so a failure stays visible in the
-      // diagnostics panel instead of leaving the picker silently stale (003).
-      await get().loadSource("models", async () => {
-        const r = await b.request<{ models?: ModelInfo[]; refreshed?: boolean }>("models.reload");
-        refreshed = r.refreshed !== false;
-        if (Array.isArray(r.models)) set({ models: r.models });
-      });
-      return refreshed;
+      /**
+       * Issue #10: the model catalog and the thinking levels are two
+       * independent sources, but they describe the SAME provider
+       * configuration — a provider saved in the auth panel changes both. So a
+       * refresh reads both, and the thinking levels are usable right away
+       * instead of after the panel is reopened (which re-ran init()).
+       *
+       * Each read keeps its own failure: a thinking-levels read that fails
+       * marks that source failed and leaves the catalog refresh alone.
+       */
+      const run = async (): Promise<boolean> => {
+        let refreshed = false;
+        // A read that is still on the wire (init() may be running) would be
+        // refused by the source machine — wait it out, then read again, so
+        // "refresh twice" really refreshes twice.
+        await Promise.all([waitSourceIdle("models"), waitSourceIdle("thinkingLevels")]);
+        await Promise.all([
+          // Goes through the source machine so a failure stays visible in the
+          // diagnostics panel instead of leaving the picker silently stale (003).
+          get().loadSource("models", async () => {
+            // The bridge asks pi to rebuild its catalog (models.json needs
+            // the in-process refresh) and answers with the new list.
+            const r = await b.request<{ models?: ModelInfo[]; refreshed?: boolean }>("models.reload");
+            refreshed = r.refreshed !== false;
+            if (Array.isArray(r.models)) {
+              set({ models: r.models });
+              return;
+            }
+            // No catalog in the answer → read it from pi directly.
+            const list = await rpc<{ models?: ModelInfo[] }>(b, { type: "get_available_models" });
+            if (Array.isArray(list.models)) set({ models: list.models });
+          }),
+          get().loadSource("thinkingLevels", async () => {
+            const r = await rpc<{ levels: string[] }>(b, { type: "get_available_thinking_levels" });
+            set({ thinkingLevels: r.levels ?? [] });
+          }),
+        ]);
+        return refreshed;
+      };
+      // Serialize: the second refresh starts after the first one finished, so
+      // the in-flight guard cannot swallow it.
+      const next = modelsReloadChain.then(run, run);
+      modelsReloadChain = next.then(
+        () => undefined,
+        () => undefined,
+      );
+      return next;
     },
 
     async refreshCommands() {

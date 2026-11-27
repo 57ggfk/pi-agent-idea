@@ -6,6 +6,7 @@ import {
   hasPasteTokens,
   pasteToken,
   replaceToken,
+  type PasteTokenWords,
   shouldAutoSaveAsFile,
   shouldCollapse,
 } from "./pasteCollapse";
@@ -86,24 +87,34 @@ describe("pasteCollapse kind detection", () => {
   });
 });
 
+/**
+ * The English wording (issue #11) — the token format itself is unchanged for
+ * English, the words around the machine core are what got localized.
+ */
+const EN_WORDS: PasteTokenWords = {
+  pasted: "Pasted",
+  lines: "lines",
+  kinds: { Markdown: "Markdown", JSON: "JSON", code: "code", log: "log", text: "text" },
+};
+
 describe("paste tokens (FR-007)", () => {
   it("formats the stable token", () => {
-    expect(pasteToken(1, "Markdown", 18)).toBe("[Pasted Markdown #1 +18 lines]");
+    expect(pasteToken(1, "Markdown", 18, EN_WORDS)).toBe("[Pasted Markdown #1 +18 lines]");
   });
 
   it("expands tokens back to the full original before send", () => {
     const map = new Map([[1, "line1\nline2\nline3"]]);
-    const draft = `check this: ${pasteToken(1, "Markdown", 3)} please`;
+    const draft = `check this: ${pasteToken(1, "Markdown", 3, EN_WORDS)} please`;
     expect(expandPastes(draft, map)).toBe("check this: line1\nline2\nline3 please");
   });
 
   it("keeps unknown tokens as-is instead of silently emptying them", () => {
-    const draft = pasteToken(7, "code", 9);
+    const draft = pasteToken(7, "code", 9, EN_WORDS);
     expect(expandPastes(`a ${draft} b`, new Map())).toBe(`a ${draft} b`);
   });
 
   it("detects and replaces single tokens", () => {
-    const draft = `before ${pasteToken(2, "JSON", 5)} after`;
+    const draft = `before ${pasteToken(2, "JSON", 5, EN_WORDS)} after`;
     expect(hasPasteTokens(draft)).toBe(true);
     const r = replaceToken(draft, 2, "REPL");
     expect(r?.text).toBe("before REPL after");

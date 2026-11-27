@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { usePiStore } from "../../store/store";
 import type { Bridge } from "../../bridge/types";
 import { manageApi, type EnvUpdateResult, type EnvironmentResult, type ToolStatus } from "../../manage";
 import { useT } from "../../i18n/useT";
 import { shortPath } from "../../lib/shortPath";
+import { piVersionDisplay } from "../../lib/piVersion";
 import {
   SOURCE_IDS,
   SOURCE_LABEL_KEYS,
@@ -23,6 +24,54 @@ const STATUS_LABEL_KEY = {
 } as const satisfies Record<SourceStatus, string>;
 
 /**
+ * One row of the environment card (issue #14 FR-001): a label on the left,
+ * the value on the right, one item per line.
+ *
+ * The value has three states, and each row carries its own: the value is
+ * known, it is still being read (the bridge read is per row, not per card),
+ * or the probe failed ("not found" / "unknown") — never a blank.
+ */
+function EnvRow({
+  label,
+  testid,
+  children,
+}: {
+  label: string;
+  testid: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="diag-env-row" data-testid={testid}>
+      <span className="diag-env-label">{label}</span>
+      <span className="diag-env-value">{children}</span>
+    </div>
+  );
+}
+
+/**
+ * A path in the environment card (issue #14 FR-002): it never breaks in the
+ * middle — the full path stays in the tooltip and the visible text is
+ * ellipsized. On narrow panels the `~/`-shortened form takes over (the
+ * shared .skill-path-* CSS switch the skills rows already use).
+ */
+function EnvPath({
+  path,
+  homeDir,
+  testid,
+}: {
+  path: string;
+  homeDir?: string;
+  testid: string;
+}) {
+  return (
+    <span className="diag-env-path mono" title={path} data-testid={testid}>
+      <span className="skill-path-full" data-testid={`${testid}-full`}>{path}</span>
+      <span className="skill-path-short" data-testid={`${testid}-short`}>{shortPath(path, homeDir)}</span>
+    </span>
+  );
+}
+
+/**
  * One tool line in the environment card (036 FR-001/FR-002): `node vX.Y.Z`
  * plus its path — full path on wide panels, `~/`-shortened on narrow ones
  * (the shared .skill-path-* CSS switch). A missing tool is an explicit
@@ -31,20 +80,18 @@ const STATUS_LABEL_KEY = {
 function ToolLine({ label, tool, homeDir, testid }: { label: string; tool?: ToolStatus; homeDir?: string; testid: string }) {
   const { t } = useT();
   return (
-    <span className="diag-env-row" data-testid={testid}>
-      <span className="diag-env-label">{label}</span>
-      {tool?.found ? (
+    <EnvRow label={label} testid={testid}>
+      {tool === undefined ? (
+        <span data-testid={`${testid}-detecting`}>{t("manage.env.detecting")}</span>
+      ) : tool.found ? (
         <>
           <b data-testid={`${testid}-version`}>{tool.version || t("manage.env.unknown")}</b>
-          <span className="diag-env-path mono">
-            <span className="skill-path-full" data-testid={`${testid}-path-full`}>{tool.path}</span>
-            <span className="skill-path-short" data-testid={`${testid}-path-short`}>{shortPath(tool.path, homeDir)}</span>
-          </span>
+          <EnvPath path={tool.path} homeDir={homeDir} testid={`${testid}-path`} />
         </>
       ) : (
         <span className="manage-env-missing" data-testid={`${testid}-missing`}>{t("manage.env.notFound")}</span>
       )}
-    </span>
+    </EnvRow>
   );
 }
 
@@ -66,6 +113,12 @@ function ToolLine({ label, tool, homeDir, testid }: { label: string; tool?: Tool
 export default function DiagnosticsPanel({ api, bridge }: { api: ReturnType<typeof manageApi>; bridge: Bridge }) {
   const sources = usePiStore((s) => s.sources);
   const retrySource = usePiStore((s) => s.retrySource);
+  // Issue #14 FR-003/FR-005: the versions come from the store — the same
+  // facts the status bar shows, read by the same helper, so the two places
+  // cannot tell different stories. They arrive asynchronously and never
+  // block the first paint.
+  const piVersion = usePiStore((s) => s.piVersion);
+  const piDiskVersion = usePiStore((s) => s.piDiskVersion);
   const { t } = useT();
   const summary = summarize(sources);
   const overall = summarizeState(sources);
@@ -79,6 +132,19 @@ export default function DiagnosticsPanel({ api, bridge }: { api: ReturnType<type
   useEffect(() => {
     void refreshEnv();
   }, [refreshEnv]);
+
+  /**
+   * The version on disk.
+   *
+   * The watcher's fact (pi-disk-version) is the source; the environment read
+   * carries the same number as a fallback for the moment before the watcher
+   * has reported (the Kotlin side reads it from disk, without a
+   * subprocess). It is the SAME fact, not a second probe.
+   */
+  const diskVersion = piDiskVersion || env?.version || "";
+  // The same helper the status bar uses, so the two cannot disagree about
+  // what "the disk moved on" means (FR-005).
+  const version = piVersionDisplay(piVersion, diskVersion);
 
   // pi self-update (spec 001 US3). There is no check-update subcommand, so the
   // env card only shows the current version plus an on-demand entry; the
@@ -138,36 +204,84 @@ export default function DiagnosticsPanel({ api, bridge }: { api: ReturnType<type
         )}
       </div>
 
+      {/*
+        Issue #14 — the environment card is a vertical list, one item per row,
+        with the label column aligned. Every row carries its own unknown
+        state: the bridge read must not hold the whole card back (FR-003).
+      */}
       <div className="diag-env" data-testid="manage-env">
-        {env ? (
-          env.found ? (
-            <span className="diag-env-version">
-              pi <b data-testid="pi-version">{env.version || "?"}</b> · <span className="mono">{env.path}</span>
-            </span>
-          ) : (
-            <span className="manage-env-missing">
-              {t("manage.env.missing")}{" "}
-              <code>npm install -g @earendil-works/pi-coding-agent</code> {t("manage.env.missingEnd")}
-            </span>
-          )
-        ) : (
-          <span>{t("manage.env.detecting")}</span>
-        )}
-        {env?.agentDir ? <span className="mono diag-env-dir">~/.pi/agent</span> : null}
-        {/* 036 US1/US2: the card answers the full "what is on this machine?" question. */}
-        {env ? <ToolLine label="node" tool={env.node} homeDir={env.homeDir} testid="env-node" /> : null}
-        {env ? <ToolLine label="npm" tool={env.npm} homeDir={env.homeDir} testid="env-npm" /> : null}
-        {env ? (
-          <span className="diag-env-row" data-testid="env-plugin">
-            <span className="diag-env-label">{t("manage.env.plugin")}</span>
-            <b data-testid="plugin-version">{env.pluginVersion || t("manage.env.unknown")}</b>
-            <span className="diag-env-path" data-testid="plugin-build">
-              {t("manage.env.built")} {env.buildTime || t("manage.env.unknown")}
-              {" · "}
-              {env.commitId || t("manage.env.unknown")}
-            </span>
-          </span>
-        ) : null}
+        <div className="diag-env-list">
+          {/* The two versions are the store's facts — the same ones the
+              status bar shows (FR-005), so the two places cannot disagree. */}
+          <EnvRow label={t("manage.env.runningVersion")} testid="env-running-version">
+            {piVersion ? (
+              <b data-testid="pi-running-version">{piVersion}</b>
+            ) : (
+              <span data-testid="pi-running-version-unknown">{t("manage.env.unknown")}</span>
+            )}
+          </EnvRow>
+          {/* The historical "pi-version" testid stays on the version the
+              card shows as "installed" — the specs anchor on it. */}
+          <EnvRow label={t("manage.env.diskVersion")} testid="env-disk-version">
+            {diskVersion ? (
+              <b data-testid="pi-version">{diskVersion}</b>
+            ) : (
+              <span data-testid="pi-version-unknown">{t("manage.env.unknown")}</span>
+            )}
+          </EnvRow>
+          {/* US3: the disk moved on — say it in the same words the status
+              bar uses, so the two places read the same. */}
+          {version.differs ? (
+            <div className="diag-env-note" data-testid="env-disk-note">
+              {t("status.diskVersionTitle", { version: diskVersion })}
+            </div>
+          ) : null}
+
+          <EnvRow label={t("manage.env.piPath")} testid="env-pi-path">
+            {env === null ? (
+              <span data-testid="env-pi-path-detecting">{t("manage.env.detecting")}</span>
+            ) : env.found && env.path ? (
+              <EnvPath path={env.path} homeDir={env.homeDir} testid="env-pi-path-value" />
+            ) : (
+              <span className="manage-env-missing" data-testid="env-pi-missing">
+                {t("manage.env.missing")}{" "}
+                <code>npm install -g @earendil-works/pi-coding-agent</code> {t("manage.env.missingEnd")}
+              </span>
+            )}
+          </EnvRow>
+
+          <EnvRow label={t("manage.env.agentDir")} testid="env-agent-dir">
+            {env === null ? (
+              <span data-testid="env-agent-dir-detecting">{t("manage.env.detecting")}</span>
+            ) : env.agentDir ? (
+              <EnvPath path={env.agentDir} homeDir={env.homeDir} testid="env-agent-dir-value" />
+            ) : (
+              <span data-testid="env-agent-dir-unknown">{t("manage.env.unknown")}</span>
+            )}
+          </EnvRow>
+
+          {/* 036 US1/US2: the card answers the full "what is on this machine?" question. */}
+          <ToolLine label="node" tool={env?.node} homeDir={env?.homeDir} testid="env-node" />
+          <ToolLine label="npm" tool={env?.npm} homeDir={env?.homeDir} testid="env-npm" />
+
+          <EnvRow label={t("manage.env.plugin")} testid="env-plugin">
+            {env === null ? (
+              <span data-testid="env-plugin-detecting">{t("manage.env.detecting")}</span>
+            ) : (
+              <>
+                <b data-testid="plugin-version">{env.pluginVersion || t("manage.env.unknown")}</b>
+                <span className="diag-env-path" data-testid="plugin-build">
+                  {t("manage.env.built")} {env.buildTime || t("manage.env.unknown")}
+                  {" · "}
+                  {env.commitId || t("manage.env.unknown")}
+                </span>
+              </>
+            )}
+          </EnvRow>
+        </div>
+        {/* The action is a row of its own, and it never waits for a version
+            (FR-003): the button is about the installation, not about a
+            number. */}
         {env?.found ? (
           <button className="btn diag-env-update" data-testid="pi-update" disabled={updating} onClick={requestEnvUpdate}>
             {updating ? t("manage.env.updating") : t("manage.env.update")}

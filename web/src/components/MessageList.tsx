@@ -104,8 +104,15 @@ function ItemViewImpl({
           replay. User items have no header (display:none), so the badge is a
           row of its own. */}
       {item.steer ? (
-        <div className="steer-tag" data-testid="steer-tag">
-          {t("chat.steerTag")}
+        <div className="steer-tag" data-testid="steer-tag" data-state={item.steerState ?? "unknown"}>
+          {/* Issue #8 FR-003: the badge says whether the steer is still queued
+              or already injected. An item without a state (an old transcript)
+              falls back to the plain badge. */}
+          {item.steerState === "queued"
+            ? t("chat.steerTagQueued")
+            : item.steerState === "injected"
+              ? t("chat.steerTagInjected")
+              : t("chat.steerTag")}
         </div>
       ) : null}
       <div className="item-header">

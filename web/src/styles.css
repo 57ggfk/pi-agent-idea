@@ -4431,14 +4431,14 @@ button {
 }
 
 /* The pi environment card (version, binary path, agent dir, self-update).
-   Moved here from the manage root's top bar, which squeezed version + trust +
-   update onto one line; the card wraps instead of squeezing. Long nvm paths
-   break inside their span rather than pushing the card sideways. */
+   Issue #14: one item per line, label column aligned (FR-001). A long nvm
+   path is ellipsized and keeps the full text in the tooltip (FR-002) — it
+   never breaks in the middle, and it never pushes the card sideways. */
 .diag-env {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 10px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
   padding: 8px 10px;
   margin-bottom: 10px;
   border: 1px solid var(--border);
@@ -4452,28 +4452,45 @@ button {
   min-width: 0;
 }
 
-.diag-env-version {
-  flex: 1 1 auto;
-  word-break: break-all;
-}
-
-.diag-env-dir {
-  flex: 0 0 auto;
+/* The rows themselves — the label column has a fixed width, so every row
+   starts its value at the same x. */
+.diag-env-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
 
 /* 036: node/npm/plugin rows in the environment card; paths reuse the
    .skill-path-full/.skill-path-short responsive switch (FR-008). */
 .diag-env-row {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: minmax(72px, auto) minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
   min-width: 0;
 }
 
 .diag-env-label {
-  flex: 0 0 auto;
   font-weight: 600;
   color: var(--text);
+  white-space: nowrap;
+}
+
+.diag-env-value {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Issue #14 US3: the "the disk moved on" note, in the same words the status
+   bar uses. */
+.diag-env-note {
+  padding-left: 80px;
+  color: var(--text-secondary);
+  font-style: italic;
 }
 
 .diag-env-path {
@@ -4484,7 +4501,19 @@ button {
 }
 
 .diag-env-update {
-  flex: 0 0 auto;
+  align-self: flex-start;
+}
+
+/* The label column shrinks on a narrow panel so the value keeps room. */
+@media (max-width: 420px) {
+  .diag-env-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .diag-env-note {
+    padding-left: 0;
+  }
 }
 
 .diag-list {
@@ -4838,6 +4867,20 @@ button {
   border-radius: 999px;
   font-size: var(--fs-xs);
   color: var(--accent);
+}
+
+/* Issue #8 FR-003 / US2: "still queued" and "already injected" must be
+   distinguishable at a glance — the wording says it, the colour underlines
+   it. A queued steer is pending (dashed, muted); an injected one already
+   happened (solid). */
+.steer-tag[data-state="queued"] {
+  border-style: dashed;
+  border-color: var(--text-secondary);
+  color: var(--text-secondary);
+}
+
+.steer-tag[data-state="injected"] {
+  border-style: solid;
 }
 
 /* --------------------------------------------------------------------------

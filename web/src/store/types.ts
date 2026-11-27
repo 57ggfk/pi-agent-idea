@@ -73,6 +73,15 @@ export interface ChatItem {
   ephemeral?: boolean;
   /** Renders the「插话」badge on an ephemeral steer item. */
   steer?: boolean;
+  /**
+   * Issue #8 FR-003: whether the steer is still waiting in pi's queue
+   * ("queued") or pi has already taken it into the running turn
+   * ("injected").
+   *
+   * Undefined on items that carry no state (an old transcript) — the UI
+   * falls back to the plain badge for those.
+   */
+  steerState?: "queued" | "injected";
 }
 
 // -- Message queue (spec 005) ----------------------------------------------

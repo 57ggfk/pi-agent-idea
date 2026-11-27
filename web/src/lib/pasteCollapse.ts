@@ -1,11 +1,21 @@
 /**
  * 044: paste-folding decision + token bookkeeping (pure logic, no DOM).
  *
- * The textarea carries a stable, language-neutral token
- * `[Pasted {Kind} #N +X lines]`; the real content lives in the composer's
- * paste map and is restored by [expandPastes] right before sending (FR-007) —
- * so pi always receives the full original text, and the sent transcript
- * remains fully viewable/copyable.
+ * The textarea carries a token whose MACHINE CORE — `#<id> +<lines>` — is
+ * byte-identical in every language; the words around it ("Pasted"/"已粘贴",
+ * "lines"/"行", the kind name) are localized and handed in by the caller. The
+ * real content lives in the composer's paste map and is restored by
+ * [expandPastes] right before sending (FR-007) — so pi always receives the
+ * full original text, and the sent transcript remains fully viewable/copyable.
+ *
+ * The token grammar lives here and ONLY here: the composer scans with
+ * [scanPasteTokens] instead of keeping a second copy of the pattern, so the
+ * next wording change cannot drift between the two (issue #11).
+ *
+ * The scanner matches the words around the core loosely on purpose — a token
+ * created in the English UI must still be recognized (and expandable) after
+ * the user switches to Chinese, and the other way round. The core itself
+ * (`#<id> +<lines>`) is the only part the restore key depends on.
  */
 
 export type PasteKind = "Markdown" | "JSON" | "code" | "log" | "text";
@@ -76,13 +86,70 @@ export function detectPasteKind(raw: string): PasteKind {
   return "text";
 }
 
-/** The exact token text that sits in the textarea (FR-003 line count, neutral wording). */
-export function pasteToken(id: number, kind: PasteKind, lines: number): string {
-  return `[Pasted ${kind} #${id} +${lines} lines]`;
+/**
+ * The wording around the machine core — the caller localizes it (issue #11).
+ *
+ * The core (`#<id> +<lines>`) is the same in every language; only these
+ * words change. They are passed in because this module is a pure function
+ * library: it must not know about i18n.
+ */
+export interface PasteTokenWords {
+  /** The word that introduces the chip: "Pasted" / "已粘贴". */
+  pasted: string;
+  /** The unit word: "lines" / "行". */
+  lines: string;
+  /** The localized kind name per kind ("code" / "代码"). */
+  kinds: Record<PasteKind, string>;
 }
 
-/** Finds paste tokens; the id is the restore key, so the surrounding wording may evolve. */
-const PASTE_TOKEN_RE = /\[Pasted (?:[A-Za-z]+) #(\d+) \+(\d+) lines\]/g;
+/** The exact token text that sits in the textarea (FR-003 line count). */
+export function pasteToken(id: number, kind: PasteKind, lines: number, words: PasteTokenWords): string {
+  return `[${words.pasted} ${words.kinds[kind] ?? kind} #${id} +${lines} ${words.lines}]`;
+}
+
+/**
+ * Finds paste tokens; the id is the restore key, so the surrounding wording
+ * may evolve — and it DOES differ per language, which is why the words are
+ * matched loosely: only the machine core (`#<id> +<lines>`) is fixed.
+ *
+ * Groups: 1 = the words before the core, 2 = the id, 3 = the line count,
+ * 4 = the unit word after the core.
+ */
+export const PASTE_TOKEN_RE = /\[([^\[\]\n#+]+) #(\d+) \+(\d+) ([^\[\]\n#+]*)\]/g;
+
+/** One paste token found in a draft. */
+export interface PasteTokenMatch {
+  /** The token text as it sits in the draft (byte-identical to it). */
+  text: string;
+  /** The restore key. */
+  id: number;
+  /** The line count the token carries. */
+  lines: number;
+  /** Where the token starts in the draft. */
+  start: number;
+  /** Where the token ends in the draft. */
+  end: number;
+}
+
+/**
+ * The ONE scanner for paste tokens (issue #11): the composer renders its
+ * chips from this, so the draft text and the chip layer can never disagree
+ * about where a token is.
+ */
+export function scanPasteTokens(text: string): PasteTokenMatch[] {
+  const out: PasteTokenMatch[] = [];
+  PASTE_TOKEN_RE.lastIndex = 0;
+  for (let m = PASTE_TOKEN_RE.exec(text); m !== null; m = PASTE_TOKEN_RE.exec(text)) {
+    out.push({
+      text: m[0],
+      id: Number(m[2]),
+      lines: Number(m[3]),
+      start: m.index,
+      end: m.index + m[0].length,
+    });
+  }
+  return out;
+}
 
 /** True when the draft still carries paste tokens. */
 export function hasPasteTokens(text: string): boolean {
@@ -98,7 +165,8 @@ export function hasPasteTokens(text: string): boolean {
  * keeps the user's draft honest.
  */
 export function expandPastes(text: string, contents: Map<number, string>): string {
-  return text.replace(PASTE_TOKEN_RE, (match, idStr: string) => {
+  // Group 2 is the id (group 1 is the localized wording before the core).
+  return text.replace(PASTE_TOKEN_RE, (match, _prefix: string, idStr: string) => {
     const id = Number(idStr);
     const content = contents.get(id);
     return content === undefined ? match : content;
@@ -109,7 +177,7 @@ export function expandPastes(text: string, contents: Map<number, string>): strin
 export function replaceToken(text: string, id: number, replacement: string): { text: string; start: number; end: number } | null {
   PASTE_TOKEN_RE.lastIndex = 0;
   for (let m = PASTE_TOKEN_RE.exec(text); m !== null; m = PASTE_TOKEN_RE.exec(text)) {
-    if (Number(m[1]) === id) {
+    if (Number(m[2]) === id) {
       const start = m.index;
       const end = start + m[0].length;
       return { text: text.slice(0, start) + replacement + text.slice(end), start, end };
