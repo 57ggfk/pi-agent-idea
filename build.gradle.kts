@@ -11,7 +11,7 @@ plugins {
 }
 
 group = "dev.pi"
-version = "0.5.10"
+version = "0.5.11"
 
 repositories {
     mavenCentral()
