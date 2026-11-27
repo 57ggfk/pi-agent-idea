@@ -113,6 +113,11 @@ for (const width of [360, 430, 900]) {
 /** T016 — the scrim swallows clicks and wheel events. */
 test("the scrim closes on click and blocks scrolling behind it", async ({ page }) => {
   for (let i = 0; i < 6; i++) await sendAndWait(page, `question ${i}`);
+  // The transcript is rebuilt from pi's own copy after every settled run
+  // (replayMessages), so wait for the six messages to be there before the
+  // assertions below: without this the count is read mid-replay and the
+  // test fails under load.
+  await expect(page.getByTestId("item-user")).toHaveCount(6);
   await page.evaluate(() => {
     const list = document.querySelector(".message-list")!;
     list.scrollTop = 0;
