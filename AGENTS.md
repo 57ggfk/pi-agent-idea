@@ -68,7 +68,15 @@ specify init --here --force --ignore-agent-tools --integration codebuddy --scrip
 4. 本地跑通上面的测试命令
 5. 开 PR：写清「改了什么 / 用户可见变化 / 怎么验证的」
 
-**不需要写 spec，也不需要抢编号**——spec 目录名用 `<时间戳>-<主题>`；编号规则见 [docs/SPEC_NUMBERING.md](docs/SPEC_NUMBERING.md)。
+### 要不要写 spec？
+
+| 你的改动 | spec 三件套（`spec.md` / `plan.md` / `tasks.md`） |
+|---|---|
+| 修 bug、加小功能 | **不需要**——issue 或 PR 描述说清就行 |
+| 有设计取舍的大功能 | **需要**，但可以由维护者代写：规范先在 issue 谈定，合并前补齐 |
+
+编号不用人工分配：spec 目录名是 `<时间戳>-<主题>`（时间戳即开工时刻），
+规则见 [docs/SPEC_NUMBERING.md](docs/SPEC_NUMBERING.md)。
 
 ## 所有者路径（内部）
 

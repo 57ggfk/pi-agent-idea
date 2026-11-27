@@ -97,9 +97,11 @@ skills、安装/卸载扩展包）都视为高风险操作：
 
 ## 开发流程
 
-1. **每个功能先有 spec**：`specs/<YYYYMMDD-HHMMSS>-<topic>/spec.md` 写清用户价值与可验收行为，
+1. **每个功能先有 spec**（外部贡献者例外见本条末句）：`specs/<YYYYMMDD-HHMMSS>-<topic>/spec.md` 写清用户价值与可验收行为，
    不含技术选型；技术方案进 `plan.md`；可执行步骤进 `tasks.md`。
    目录命名规则见下文「编号与命名」及 [`docs/SPEC_NUMBERING.md`](../../docs/SPEC_NUMBERING.md)。
+   **外部贡献者例外**：修 bug / 加小功能**不需要** spec 三件套，issue 或 PR 描述说清即可；
+   有设计取舍的大功能**需要** spec 三件套，但可由维护者代写——规范先在 issue 里谈定，合并前补齐（见 `CONTRIBUTING.md`）。
 2. **任务粒度**：单个 task 必须能在一次提交内完成并通过验证，且自带「怎么验」。
 3. **实现顺序**：先补自动化断言，再改实现；断言红 → 实现绿。
 4. **真机验收不可连续跳过两版**：纯自动化可以证明前端行为，但 IDE 侧扩展点注册、

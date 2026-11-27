@@ -7,7 +7,7 @@
 
 | 你要做的事 | 走哪条 | 需要准备 |
 |---|---|---|
-| 修 bug、加一个小功能 | **直接开 PR** | 一条 changelog 碎片 + 测试。**不需要**写 spec，**不需要**抢编号 |
+| 修 bug、加一个小功能 | **直接开 PR** | 一条 changelog 碎片 + 测试。**不需要** spec 三件套，编号也不用人工分配 |
 | 有设计取舍的大功能 | **先开 issue 讨论** | issue →（需要时）spec 三件套 → PR |
 
 > Small fixes go straight to a PR — one changelog fragment plus tests. No spec, no number to claim.
@@ -16,7 +16,7 @@
 ## 开工前 · Before you start
 
 1. **先搜 issue** —— 可能已经有人在做，避免重复劳动。
-2. **不要抢编号**：spec 目录名用 `<时间戳>-<主题>`，例如 `20261127-005429-csv-table`。
+2. **编号不用人工分配**：spec 目录名用 `<时间戳>-<主题>`，例如 `20261127-005429-csv-table`。
    时间戳就是你开工的时刻，**不需要问任何人要号**。
 3. **改动放自己的分支**：`feat/<主题>` 或 `fix/<主题>`。
 
@@ -54,6 +54,9 @@ fix: provider 被删后面板不再瘫痪 (#43)
 
 只有**有设计取舍**的功能才需要 spec 三件套（`spec.md` / `plan.md` / `tasks.md`）。
 小改动请不要为了凑格式写文档 —— 你的时间比格式值钱。
+
+大功能的 spec 三件套**可以由维护者代写**：规范先在 issue 里谈定，合并前我们补齐文档，
+你只需要保证实现与讨论结论一致。
 
 ## 真机验收 · Real-machine verification
 
