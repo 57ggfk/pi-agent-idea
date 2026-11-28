@@ -80,7 +80,7 @@ export const zh: Dict = {
   "panel.method.select": "选择",
   "panel.method.input": "输入",
   "panel.method.editor": "编辑器",
-  "panel.output.empty": "还没有写操作——这里列的是 pi 自己的 write/edit 调用，不是 git status。",
+  "panel.output.empty": "本会话还没有写操作——这里列的是 pi 自己的 write/edit 调用（不含子代理写的文件），不是 git status。",
   "panel.output.kindWrite": "新建/重写",
   "panel.output.kindEdit": "编辑",
   "panel.output.times": "×{{n}}",

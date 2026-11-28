@@ -131,7 +131,7 @@
       + e2e 1 条（`?panel=1` 跑完后子代理分区出现 3 行、徽标正确、与后台任务分区互不混淆）
 - [x] T10.4 样式：`styles.css` 加 `.panel-subagent` / `.panel-subagent-name`（与
       `.panel-job` 同款，不引入新 token）
-- [ ] T10.5 真机复验：在真实 IDEA 上触发一次真实后台 subagent，确认「子代理」分区
+- [x] T10.5 真机复验：在真实 IDEA 上触发一次真实后台 subagent，确认「子代理」分区
       出现对应代理名（待做——插件已重建待装）
 
 ## T11 真机（真实 IDEA 2026.2）验收留痕
@@ -155,3 +155,12 @@
 - [ ] T11.4 未闭环：真实 pi 在 IDEA 里的 JCEF 进程崩溃过一次（面板反复
       「Rebuilding Pi Agent UI (no bridge poll for 94s)」，9222 失联）。与本次
       改动无直接证据链，但需在发版前观察。
+
+- [x] T11.5 真机发现并修文案：subagent 写的文件（`notes/agent-check.txt`）**不出现在
+      「产出」区**——产出推导只统计父会话**直接**的 write/edit 调用（FR-006 的原意
+      「pi 自己的写操作」）。普通用户看到「消息里说写了文件、产出却是空的」会困惑，
+      故空态文案补明边界：「本会话还没有写操作——这里列的是 pi 自己的 write/edit 调用
+      （**不含子代理写的文件**），不是 git status。」en 同步。
+- [x] T11.6 真机环境备注：OpenCode Zen Free 的免费额度在验收时用尽（HTTP 429
+      FreeUsageLimitError）；换本机 magpie provider（127.0.0.1:3425，DeepSeek V4 Pro）
+      后正常。**与本插件无关**，但说明真机验收要有备用模型。

@@ -79,7 +79,7 @@ export const en = {
   "panel.method.select": "select",
   "panel.method.input": "input",
   "panel.method.editor": "editor",
-  "panel.output.empty": "No write operations yet — this lists pi's own write/edit calls, not a git status.",
+  "panel.output.empty": "No write operations in this session — this lists pi's own write/edit calls (not files written by sub-agents), not a git status.",
   "panel.output.kindWrite": "New/rewrite",
   "panel.output.kindEdit": "Edited",
   "panel.output.times": "×{{n}}",
