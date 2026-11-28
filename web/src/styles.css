@@ -2284,7 +2284,7 @@ button {
 }
 
 /* App-wide tooltip (012 US2): one delegated bubble for every [data-tip].
-   z-index 30 sits under the confirm scrim (40), the model popover (50) and
+   z-index 30 sits under the confirm scrim (58), the model popover (50) and
    the menus (60) — a tooltip never covers a dialog (T114). */
 .tooltip {
   position: fixed;
@@ -2305,7 +2305,11 @@ button {
 .confirm-scrim {
   position: absolute;
   inset: 0;
-  z-index: 40;
+  /* A modal scrim must sit ABOVE every transient popover (outline / status
+     panel 55, search 56) — with the old 40 the status panel painted over the
+     dialog and masked its buttons (US4-3 e2e, status panel spec). Still under
+     the image preview (65) and tooltips (70). */
+  z-index: 58;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -5237,6 +5241,231 @@ button {
   white-space: nowrap;
 }
 
+/* Status panel (specs/20261128-092912-status-panel) ------------------------- */
+/* Same popover formula as .session-outline (top 40px / right 8px /
+   min(320px, 100cqw - 24px), z-index 55) — D-1 拍板「大纲同款弹层」. The one
+   difference is the vertical budget: five sections stack, so max-height caps
+   it and the body scrolls internally — .app only clips x (styles.css .app),
+   an over-tall panel would be cut by the tool window's bottom edge. */
+.status-panel {
+  position: absolute;
+  top: 40px;
+  right: 8px;
+  width: min(320px, calc(100cqw - 24px));
+  max-height: min(60vh, 420px);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md, 8px);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  z-index: 55;
+  overflow: hidden;
+}
+
+.status-panel-body {
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 2px 4px;
+}
+
+.panel-section {
+  padding: 6px 8px;
+  min-width: 0;
+}
+.panel-section + .panel-section {
+  border-top: 1px solid var(--border);
+}
+.panel-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.panel-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 2px 0;
+  font-size: 12.5px;
+  color: var(--text);
+}
+.panel-row-key {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+}
+.panel-row-val {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.panel-run-state {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.panel-note {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  padding: 2px 0;
+}
+.panel-ext-key {
+  flex: 0 0 auto;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--bg-subtle);
+  border-radius: var(--r-sm);
+  padding: 1px 6px;
+}
+.panel-ext-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel-badge {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  background: var(--bg-subtle);
+  white-space: nowrap;
+}
+.panel-badge.job-running {
+  color: var(--accent-text);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.panel-badge.job-waiting {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+}
+.panel-badge.job-done {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 45%, transparent);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+}
+.panel-badge.job-failed {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.panel-job {
+  padding: 3px 0;
+  min-width: 0;
+}
+.panel-job-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.panel-job-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+}
+.panel-job-progress {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.panel-job-chain {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.panel-chain-glyph {
+  font-size: 11px;
+}
+.chain-done .panel-chain-glyph { color: var(--success); }
+.chain-running .panel-chain-glyph { color: var(--accent-text); }
+.chain-waiting .panel-chain-glyph { color: var(--warning); }
+.chain-failed .panel-chain-glyph { color: var(--danger); }
+.chain-upcoming .panel-chain-glyph { color: var(--text-secondary); }
+
+.panel-todo-item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  padding: 3px 4px;
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
+  color: var(--text);
+}
+.panel-todo-glyph {
+  flex: 0 0 auto;
+}
+.todo-done .panel-todo-glyph { color: var(--success); }
+.todo-active .panel-todo-glyph { color: var(--accent-text); }
+.todo-pending .panel-todo-glyph { color: var(--text-secondary); }
+.todo-done .panel-todo-text {
+  color: var(--text-secondary);
+}
+/* US3-1: the in-progress row is the highlight, same treatment as the
+   outline's current entry. */
+.panel-todo-item.todo-active {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.panel-row-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 4px 6px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  color: var(--text);
+  font-size: 12.5px;
+}
+.panel-row-btn:hover {
+  background: var(--bg-subtle);
+}
+.panel-item-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.panel-times {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
 /* In-session search bar (US2) ----------------------------------------------- */
 
 .session-search {
@@ -5321,9 +5550,11 @@ button {
   background: color-mix(in srgb, #f0883e 65%, transparent);
 }
 
-/* Jump flash (scrollToItem): fades without moving layout. */
+/* Jump flash (scrollToItem): fades without moving layout. The approval card
+   joins so the status panel's pending jump (goToApproval) flashes too. */
 .item.flash-target,
-.system-item.flash-target {
+.system-item.flash-target,
+.approval-card.flash-target {
   animation: flash-target-fade 2s ease-out;
 }
 @keyframes flash-target-fade {

@@ -15,6 +15,7 @@ import ManageView from "./components/ManageView";
 import ConfirmDialog from "./components/ConfirmDialog";
 import SessionOutline from "./components/SessionOutline";
 import SessionSearch from "./components/SessionSearch";
+import StatusPanel from "./components/StatusPanel";
 import Icon, { IconSprite } from "./components/Icon";
 import TooltipHost, { tip } from "./components/Tooltip";
 import { requestRepaint } from "./lib/repaint";
@@ -68,6 +69,7 @@ export default function App() {
   const toggleOutline = usePiStore((s) => s.toggleOutline);
   // Toolbar button toggles the search bar: a second click must close it.
   const toggleSearch = usePiStore((s) => s.toggleSearch);
+  const toggleStatusPanel = usePiStore((s) => s.toggleStatusPanel);
   const newSession = usePiStore((s) => s.newSession);
   const isStreaming = usePiStore((s) => s.isStreaming);
   const setupGate = usePiStore((s) => s.setupGate);
@@ -162,6 +164,20 @@ export default function App() {
                   <Icon name="search" className="ic-sm" />
                   <span className="btn-lbl">{t("chat.search.shortLabel")}</span>
                 </button>
+                {/* Status panel (specs/20261128-092912-status-panel FR-001):
+                    always present — an empty session still has a run status to
+                    show — and deliberately badge-less (D-1 拍板). */}
+                <button
+                  type="button"
+                  className="tab-tool-btn"
+                  data-testid="status-panel-btn"
+                  aria-label={t("chat.statusPanel.label")}
+                  {...tip(t("chat.statusPanel.label"))}
+                  onClick={() => toggleStatusPanel()}
+                >
+                  <Icon name="gauge" className="ic-sm" />
+                  <span className="btn-lbl">{t("chat.statusPanel.shortLabel")}</span>
+                </button>
                 <button
                   type="button"
                   className="tab-tool-btn"
@@ -191,6 +207,7 @@ export default function App() {
               <MessageList />
               <SessionOutline />
               <SessionSearch />
+              <StatusPanel />
               <ApprovalCard />
               <QueueBar />
               <Composer />

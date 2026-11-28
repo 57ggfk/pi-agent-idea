@@ -10,6 +10,7 @@ import {
   validateSessionTitle,
 } from "../lib/sessionTitle";
 import { manageApi, type AuthLoginEventData, type AuthLoginEvent, type AuthLoginPrompt, type EnvDetectResult } from "../manage";
+import { FLASH_CLASS, prefersReducedMotion } from "../lib/scrollToItem";
 
 /**
  * Panel-side mirror of one pi OAuth login. `events` is capped: providers emit
@@ -32,10 +33,15 @@ import {
   formatTokens,
   itemToMarkdownSource,
   itemsFromMessages,
+  parseSubagentAsyncWidget,
   quoteMarkdownSource,
+  SUBAGENT_ASYNC_WIDGET_KEY,
+  upsertExtensionStatus,
+  type AsyncStatusSnapshot,
   type ChatItem,
   type CommandInfo,
   type ConfirmRequest,
+  type ExtensionStatus,
   type ModelInfo,
   type PendingApproval,
   type PiNotice,
@@ -126,6 +132,31 @@ type QueuedSwitch = { file: string; settle: (ok: boolean) => void };
 
 let switchBusy = false;
 let switchQueued: QueuedSwitch | null = null;
+
+/**
+ * D2 (FR-011): the subagent-async widget feed merges through a trailing timer
+ * of this length — pi-subagents events burst (extension-api.md:151), so the
+ * latest frame wins when the timer fires.
+ */
+export const SUBAGENT_FLUSH_MS = 250;
+
+/**
+ * Module-level on purpose (same reasoning as the switch gate above): a store
+ * reset must not resurrect an armed timer, and a pending frame belonging to
+ * the session we just left must not flush into the new one.
+ */
+let subagentFlushTimer: ReturnType<typeof setTimeout> | undefined;
+/** undefined = nothing pending; null = an explicit clear frame; snapshot = apply it. */
+let subagentPending: { apply: AsyncStatusSnapshot | null } | undefined;
+
+/** Tests only: drops the armed flush timer and any pending frame. */
+export function resetSubagentThrottle(): void {
+  if (subagentFlushTimer !== undefined) {
+    clearTimeout(subagentFlushTimer);
+    subagentFlushTimer = undefined;
+  }
+  subagentPending = undefined;
+}
 
 /**
  * 030: clears the relay gate. A store reset wipes state but not this, and a test
@@ -473,6 +504,25 @@ interface PiStore {
   outlineOpen: boolean;
   toggleOutline(open?: boolean): void;
 
+  // -- status panel (specs/20261128-092912-status-panel) -----------------------
+
+  /**
+   * The status panel popover (FR-001). Mutually exclusive with the outline and
+   * the search bar (U2: opening any of the three closes the status panel and
+   * vice versa — the outline/search pair itself keeps coexisting). NOT reset
+   * by session switches: run status and background jobs still mean something
+   * across a switch, so a forced close would only lose the user's place.
+   */
+  statusPanelOpen: boolean;
+  toggleStatusPanel(open?: boolean): void;
+  /**
+   * D6 (FR-004): a pending entry's click — switch to the chat tab, bring the
+   * queue-head approval card into view and flash it. Only the head card
+   * exists (pi asks one question at a time); with nothing pending this still
+   * performs the tab switch so the click never dead-ends.
+   */
+  goToApproval(): Promise<void>;
+
   // -- language (spec 008) ----------------------------------------------------
 
   /** Effective UI language (a registered code), resolved at init (FR-004). */
@@ -584,6 +634,26 @@ interface PiStore {
 
   /** Pending tool-approval dialogs forwarded by the pi-approve extension. */
   approvals: PendingApproval[];
+
+  /**
+   * D1 (FR-003): mirror of the pi process's extension setStatus entries.
+   * Belongs to the pi PROCESS — cleared wholesale when piStatus leaves
+   * running (exited / a new process starting); session switches inside one
+   * process do not clear it (the panel only mirrors; whether entries change
+   * is the extension's own setStatus business).
+   */
+  extensionStatuses: ExtensionStatus[];
+
+  /**
+   * D2 (FR-011): channel-A mirror of pi-subagents' async job view.
+   * `seen` flips on ANY setWidget(subagent-async) frame — including the empty
+   * registration frame — and survives session switches (installed-ness is a
+   * machine-level fact). `snapshot` is the latest parsed snapshot (null =
+   * installed, no jobs) and resets to null on session switch/new: a job
+   * snapshot must never leak across sessions. Frames merge through a ~250ms
+   * trailing timer (SUBAGENT_FLUSH_MS), snapshots replace wholesale.
+   */
+  subagentAsync: { seen: boolean; snapshot: AsyncStatusSnapshot | null; updatedAt: number };
   /** Approval policy of the bundled extension: "yolo" (default) or "ask". */
   approvalMode: "ask" | "yolo";
   /** pi-managed toggles; null until get_state / config.getPrefs answered. */
@@ -712,7 +782,14 @@ interface PiStore {
   /** Sends the edited text, branching the old version off first (FR-009). */
   sendEdited(text: string): Promise<void>;
   openFile(path: string, line: number): Promise<boolean>;
-  showFileDiff(path: string): Promise<void>;
+  /** Resolves whether the diff actually opened (D5's openOutput needs the outcome to fall back). */
+  showFileDiff(path: string): Promise<boolean>;
+  /**
+   * D5 (FR-006): the output section's click. Tries the IDE's native diff
+   * viewer first and falls back to opening the file when the diff was
+   * refused (showFileDiff used to swallow its outcome — it now reports it).
+   */
+  openOutput(path: string): Promise<boolean>;
   /**
    * Answers a pending extension_ui_request: `confirm` takes a boolean,
    * `select`/`input`/`editor` take the chosen string, `null` cancels (pi
@@ -804,6 +881,31 @@ export const usePiStore = create<PiStore>((set, get) => {
     clearTimeout(noticeTimer);
     set({ sessionsNotice: { text, kind } });
     noticeTimer = setTimeout(() => set({ sessionsNotice: null }), 4_000);
+  };
+
+  /**
+   * D2 (FR-011, channel A): a `setWidget(subagent-async)` frame arrived.
+   * `seen` flips immediately — the extension is installed, even for the empty
+   * registration frame (probe-036 §4). The parsed snapshot lands through a
+   * trailing timer armed for SUBAGENT_FLUSH_MS: frames arriving inside the
+   * window overwrite the pending one, the timer flushes the latest exactly
+   * once (merge, extension-api.md:151). Invalid frames drop without touching
+   * state; the pending frame itself is dropped by the session resets below so
+   * it can never flush into a session it does not belong to.
+   */
+  const noteSubagentAsyncWidget = (widgetLines: unknown) => {
+    set({ subagentAsync: { ...get().subagentAsync, seen: true } });
+    const parsed = parseSubagentAsyncWidget(widgetLines);
+    if (parsed === undefined) return; // invalid frame — previous state stands
+    subagentPending = { apply: parsed };
+    if (subagentFlushTimer !== undefined) return;
+    subagentFlushTimer = setTimeout(() => {
+      subagentFlushTimer = undefined;
+      if (subagentPending === undefined) return; // a session reset dropped it
+      const apply = subagentPending.apply;
+      subagentPending = undefined;
+      set({ subagentAsync: { seen: true, snapshot: apply, updatedAt: Date.now() } });
+    }, SUBAGENT_FLUSH_MS);
   };
 
   /**
@@ -945,6 +1047,10 @@ export const usePiStore = create<PiStore>((set, get) => {
    * mirror is reset rather than cleared over RPC.
    */
   const resetConversationLocalState = () => {
+    // D2: the old session's job snapshot must not leak into the new one, and
+    // a frame still pending from it must not flush after the switch. `seen`
+    // stays — installed-ness is a machine-level fact, not session state.
+    subagentPending = undefined;
     set({
       pendingPrompt: null,
       editing: null,
@@ -955,6 +1061,7 @@ export const usePiStore = create<PiStore>((set, get) => {
       outlineOpen: false,
       search: { open: false, query: "", index: 0 },
       pendingSearchJump: null,
+      subagentAsync: { seen: get().subagentAsync.seen, snapshot: null, updatedAt: Date.now() },
     });
   };
 
@@ -1327,9 +1434,26 @@ export const usePiStore = create<PiStore>((set, get) => {
       return;
     }
     if (type === "extension_ui_request") {
-      // Dialog kinds (confirm/select/input/editor) queue as approval cards;
-      // fire-and-forget methods (notify/setStatus/…) parse to null and are
-      // ignored.
+      // FR-003: dialog kinds (confirm/select/input/editor) queue as approval
+      // cards. setStatus mirrors into extensionStatuses (D1). The
+      // subagent-async widget is FR-011's channel-A data feed (D2),
+      // intercepted before the generic drop below. Every other fire-and-
+      // forget method — notify, and any other setWidget (D-4, incl. the
+      // channel-B "subagent-inspect" frame) — stays dropped.
+      const method = String(event["method"] ?? "");
+      if (method === "setWidget" && event["widgetKey"] === SUBAGENT_ASYNC_WIDGET_KEY) {
+        noteSubagentAsyncWidget(event["widgetLines"]);
+        return;
+      }
+      if (method === "setStatus") {
+        const statusKey = event["statusKey"];
+        if (typeof statusKey === "string" && statusKey) {
+          set({
+            extensionStatuses: upsertExtensionStatus(get().extensionStatuses, statusKey, event["statusText"]),
+          });
+        }
+        return;
+      }
       const request = approvalFromEvent(event);
       if (request) set({ approvals: [...get().approvals, request] });
       return;
@@ -1466,6 +1590,7 @@ export const usePiStore = create<PiStore>((set, get) => {
     composerResetSeq: 0,
 
     outlineOpen: false,
+    statusPanelOpen: false,
     search: { open: false, query: "", index: 0 },
     pendingSearchJump: null,
     sessionSearch: null,
@@ -1475,6 +1600,8 @@ export const usePiStore = create<PiStore>((set, get) => {
     envLocale: "",
 
     approvals: [],
+    extensionStatuses: [],
+    subagentAsync: { seen: false, snapshot: null, updatedAt: 0 },
     // Auto-approve by default; "ask" is opt-in from the options menu.
     approvalMode: "yolo",
     autoCompaction: null,
@@ -1509,11 +1636,16 @@ export const usePiStore = create<PiStore>((set, get) => {
     // -- session outline & search (spec 006) -----------------------------------
 
     toggleOutline(open?: boolean) {
-      set({ outlineOpen: open ?? !get().outlineOpen });
+      const next = open ?? !get().outlineOpen;
+      // U2 (FR-001): opening the outline closes the status panel; closing the
+      // outline must not resurrect it. The search keeps coexisting (红线:
+      // only the status panel is exclusive).
+      set({ outlineOpen: next, ...(next ? { statusPanelOpen: false } : {}) });
     },
 
     openSearch() {
-      set({ search: { ...get().search, open: true } });
+      // U2: opening the search closes the status panel.
+      set({ search: { ...get().search, open: true }, statusPanelOpen: false });
     },
 
     closeSearch() {
@@ -1523,6 +1655,36 @@ export const usePiStore = create<PiStore>((set, get) => {
     toggleSearch() {
       if (get().search.open) get().closeSearch();
       else get().openSearch();
+    },
+
+    // -- status panel (specs/20261128-092912-status-panel) -----------------------
+
+    toggleStatusPanel(open?: boolean) {
+      const next = open ?? !get().statusPanelOpen;
+      // U2: opening the panel closes outline and search (the same instant
+      // rule as FR-001); closing it touches nothing else.
+      set({
+        statusPanelOpen: next,
+        ...(next ? { outlineOpen: false, search: { ...get().search, open: false } } : {}),
+      });
+    },
+
+    async goToApproval() {
+      set({ tab: "chat" });
+      if (get().approvals.length === 0) return;
+      // The card mounts with the tab switch — wait for the DOM. Two rAFs (a
+      // frame for the state commit, one for the paint); a plain timeout when
+      // there is no frame clock (headless store tests).
+      await new Promise<void>((r) => {
+        if (typeof requestAnimationFrame !== "function") return setTimeout(r, 0) as unknown as void;
+        requestAnimationFrame(() => requestAnimationFrame(() => r()));
+      });
+      const card =
+        typeof document === "undefined" ? null : document.querySelector<HTMLElement>(".approval-card");
+      if (!card) return;
+      card.scrollIntoView({ block: "center", behavior: prefersReducedMotion() ? "auto" : "smooth" });
+      card.classList.add(FLASH_CLASS);
+      window.setTimeout(() => card.classList.remove(FLASH_CLASS), 2000);
     },
 
     setSearchQuery(query: string) {
@@ -1677,6 +1839,10 @@ export const usePiStore = create<PiStore>((set, get) => {
             exitStderr: st.stderr ?? "",
             // 051: 插件改了启动参数时要说出来（provider 没了 → 改用默认模型）。
             piNotice: st.notice ?? null,
+            // D1: setStatus entries belong to the pi process. Leaving running
+            // (exited, or a new process starting) clears the mirror wholesale —
+            // old entries would be residue of a dead process.
+            ...(st.status !== "running" ? { extensionStatuses: [] } : {}),
           });
           if (st.status === "running") refreshMeta();
         }
@@ -2190,6 +2356,9 @@ export const usePiStore = create<PiStore>((set, get) => {
       // Captured before the optimistic set below clears it — the abort must
       // still happen for a run that was streaming at click time.
       const wasStreaming = get().isStreaming;
+      // D2: a frame still pending from the old session must not flush into the
+      // target one; the snapshot reset lives in the set below.
+      subagentPending = undefined;
 
       // 021 D3: jump first, fill later. Everything the user can see switches
       // to the target in this one synchronous set (+ repaint); the RPCs below
@@ -2210,6 +2379,9 @@ export const usePiStore = create<PiStore>((set, get) => {
         outlineOpen: false,
         search: { open: false, query: "", index: 0 },
         pendingSearchJump: null,
+        // D2: the old session's job snapshot must not leak into the target
+        // session; `seen` stays (installed-ness is machine-level).
+        subagentAsync: { seen: get().subagentAsync.seen, snapshot: null, updatedAt: Date.now() },
       });
       requestRepaint();
       perfMark("switch.pending", startedAt, { kind: "history" });
@@ -2876,14 +3048,29 @@ export const usePiStore = create<PiStore>((set, get) => {
       }
     },
 
-    /** Shows pi's changes to a file in the IDE's native diff viewer. */
-    async showFileDiff(path: string) {
-      if (!bridge) return;
+    /**
+     * Shows pi's changes to a file in the IDE's native diff viewer. Resolves
+     * whether the diff opened — it used to swallow its outcome, but the
+     * output section's click (D5 openOutput) needs it to decide on a
+     * fallback. Existing `void` callers keep working unchanged.
+     */
+    async showFileDiff(path: string): Promise<boolean> {
+      if (!bridge) return false;
       try {
         await bridge.request("ide.showFileDiff", { path });
+        return true;
       } catch {
         // non-fatal: e.g. file no longer exists
+        return false;
       }
+    },
+
+    /** D5 (FR-006): diff first; when the IDE refuses (file gone, no diff), open the file instead. */
+    async openOutput(path: string): Promise<boolean> {
+      if (await get().showFileDiff(path)) return true;
+      // Kotlin coerces the line to at least 1 (BridgeService openFileInEditor),
+      // so 0 means "no particular line".
+      return get().openFile(path, 0);
     },
 
     /**

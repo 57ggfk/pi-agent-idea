@@ -319,6 +319,17 @@ export class MockBridge implements Bridge {
    */
   private readonly dialogScenario =
     typeof location !== "undefined" ? new URLSearchParams(location.search).get("dialog") : null;
+  /**
+   * `?panel=1` — status-panel fixtures ride one scripted run (plan U5):
+   * write + edit×2 in authoritative argsJson shapes (output expectations: 3
+   * paths, one of them ×2), a setStatus appear→clear pair, and
+   * setWidget(subagent-async) in three frames ≥250ms apart (the throttle
+   * window) so each lands in the store on its own. `?panel=todo` — one todo
+   * toolcall snapshot (5 items: 2✓ 1◌ 2○). Queue events stay untouched
+   * (FR-005: the queue never enters the panel).
+   */
+  private readonly panelScenario =
+    typeof location !== "undefined" ? (query()?.get("panel") ?? "") : "";
   // Transcript of the current branch. Kept so get_messages / fork behave like
   // pi 1.5.0 (measured, see specs/007-message-fork/fork-semantics.json): a fork
   // branches *before* the chosen user entry, so that entry and everything after
@@ -880,6 +891,13 @@ export class MockBridge implements Bridge {
       return Promise.resolve({ ok: true } as T);
     }
     if (method === "ide.showFileDiff") {
+      // Status panel FR-006: echo the path so an e2e can assert which path a
+      // click hands to the bridge (same pattern as ide.openFile above).
+      // `?showFileDiff=fail` is the IDE refusing the diff — the panel's
+      // fallback (ide.openFile) is what must fire.
+      const p = params as { path?: string } | undefined;
+      if (query()?.get("showFileDiff") === "fail") return Promise.reject(new Error("mock refusal"));
+      globalThis.sessionStorage?.setItem("pi-mock-show-file-diff", p?.path ?? "");
       return Promise.resolve({ ok: true } as T);
     }
     // 013 US2: ?term=fail exercises the copy-fallback path, ?term=none the
@@ -2687,6 +2705,151 @@ export class MockBridge implements Bridge {
       durationMs: 8,
     });
 
+    // ?panel=todo —— 处理清单夹具：一次 todo 类工具调用快照，5 项 2✓ 1◌ 2○。
+    // 字段形状 {todos:[{label,state}]} 是 mock 自造（plan D4/U5：本机没有 todo
+    // 类扩展、无权威 schema，形状以真机遇到为准扩展；断言 mock-only 是有意的）。
+    // 独立 assistant 消息（同 dialog 回声先例），不碰既有轮次结构。
+    if (!this.aborted && this.panelScenario === "todo") {
+      const todoArgs = {
+        todos: [
+          { label: "Ship the login flow", state: "done" },
+          { label: "Write the e2e for login", state: "done" },
+          { label: "Wire the telemetry hook", state: "active" },
+          { label: "Cut the 0.6.0 release notes", state: "pending" },
+          { label: "Update the demo video", state: "pending" },
+        ],
+      };
+      await sleep(30);
+      emit({ type: "message_start", message: { role: "assistant", content: [], stopReason: "pending" } });
+      await sleep(40);
+      emit({
+        type: "message_update",
+        usage: {},
+        assistantMessageEvent: { type: "toolcall_start", contentIndex: 0, id: "call_mock_todo", toolName: "todowrite" },
+      });
+      await sleep(50);
+      emit({
+        type: "message_update",
+        usage: {},
+        assistantMessageEvent: {
+          type: "toolcall_end",
+          contentIndex: 0,
+          toolCall: { id: "call_mock_todo", name: "todowrite", arguments: todoArgs },
+        },
+      });
+      const todoMessage = {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "call_mock_todo", name: "todowrite", arguments: todoArgs }],
+        stopReason: "toolUse",
+        usage: { input: 120, output: 50, cacheRead: 0, cacheWrite: 0, totalTokens: 170 },
+        timestamp: Date.now(),
+      };
+      await sleep(30);
+      emit({ type: "message_end", message: todoMessage });
+      await sleep(40);
+      emit({ type: "tool_execution_start", toolCallId: "call_mock_todo", toolName: "todowrite", args: todoArgs });
+      await sleep(50);
+      emit({
+        type: "tool_execution_end",
+        toolCallId: "call_mock_todo",
+        toolName: "todowrite",
+        result: { content: [{ type: "text", text: "5 todos recorded" }] },
+        isError: false,
+        durationMs: 4,
+      });
+    }
+
+    // ?panel=1 —— 状态面板夹具（plan U5）。setStatus 出现→清除两帧；write +
+    // edit×2 走权威 argsJson 形状（产出区期望 = 3 路径、其一 ×2，与默认 edit
+    // 各占一路径）；setWidget(subagent-async) 三帧：空态注册 / chain 2/3 运行
+    // 中 / 完成+已完成作业。帧间隔 ≥250ms 节流窗（400/2200ms），每帧独立落
+    // store，UI 才能断言「运行中→已完成」与 chain 步骤流文本。队列事件不动。
+    if (!this.aborted && this.panelScenario === "1") {
+      // setStatus: the entry shows while the run streams, clears near the end.
+      emit({
+        type: "extension_ui_request",
+        id: "ui-status-1",
+        method: "setStatus",
+        statusKey: "mock-indexer",
+        statusText: "Indexing project files…",
+      });
+
+      // write + edit×2 as a separate assistant message (first-appearance order
+      // behind the default edit; edit×2 on one path exercises the dedupe).
+      const extraCalls = [
+        { id: "call_mock_3", name: "write", args: { path: "src/feature.ts", content: "export const feature = true;\n" } },
+        { id: "call_mock_4", name: "edit", args: { path: "src/lib/util.ts", edits: [{ oldText: "alpha", newText: "beta" }] } },
+        { id: "call_mock_5", name: "edit", args: { path: "src/lib/util.ts", edits: [{ oldText: "gamma", newText: "delta" }] } },
+      ];
+      await sleep(30);
+      emit({ type: "message_start", message: { role: "assistant", content: [], stopReason: "pending" } });
+      for (const [i, call] of extraCalls.entries()) {
+        await sleep(40);
+        emit({
+          type: "message_update",
+          usage: {},
+          assistantMessageEvent: { type: "toolcall_start", contentIndex: i, id: call.id, toolName: call.name },
+        });
+        await sleep(50);
+        emit({
+          type: "message_update",
+          usage: {},
+          assistantMessageEvent: {
+            type: "toolcall_end",
+            contentIndex: i,
+            toolCall: { id: call.id, name: call.name, arguments: call.args },
+          },
+        });
+      }
+      const extraMessage = {
+        role: "assistant",
+        content: extraCalls.map((c) => ({ type: "toolCall", id: c.id, name: c.name, arguments: c.args })),
+        stopReason: "toolUse",
+        usage: { input: 300, output: 80, cacheRead: 0, cacheWrite: 0, totalTokens: 380 },
+        timestamp: Date.now(),
+      };
+      await sleep(30);
+      emit({ type: "message_end", message: extraMessage });
+      for (const call of extraCalls) {
+        await sleep(40);
+        emit({ type: "tool_execution_start", toolCallId: call.id, toolName: call.name, args: call.args });
+        await sleep(50);
+        emit({
+          type: "tool_execution_end",
+          toolCallId: call.id,
+          toolName: call.name,
+          result: { content: [{ type: "text", text: `${call.name} ok` }] },
+          isError: false,
+          durationMs: 5,
+        });
+      }
+
+      // Frame 1: the empty registration frame (probe §4 — 扩展已装信号).
+      emit({ type: "extension_ui_request", id: "ui-widget-1", method: "setWidget", widgetKey: "subagent-async" });
+      await sleep(400);
+      // Frame 2: one chain job running at step 2/3.
+      emit({
+        type: "extension_ui_request",
+        id: "ui-widget-2",
+        method: "setWidget",
+        widgetKey: "subagent-async",
+        widgetLines: [subagentAsyncFrame([MOCK_CHAIN_JOB])],
+      });
+      await sleep(2200);
+      // Frame 3: the completed job joins; the chain keeps running 2/3.
+      emit({
+        type: "extension_ui_request",
+        id: "ui-widget-3",
+        method: "setWidget",
+        widgetKey: "subagent-async",
+        widgetLines: [subagentAsyncFrame([MOCK_DONE_JOB, MOCK_CHAIN_JOB])],
+      });
+      await sleep(150);
+      // Clear the setStatus entry (missing statusText = clear, rpc-mode.js:
+      // JSON drops the undefined key).
+      emit({ type: "extension_ui_request", id: "ui-status-2", method: "setStatus", statusKey: "mock-indexer" });
+    }
+
     // ?dialog=select|input|editor|multi —— 扩展在工具之间问用户（ctx.ui.select 等）。
     // 答案回显进对话，spec 才能断言这一次 round-trip 真的把值送回了 pi。
     // multi 复现 rpiv-ask-user-question 在 RPC 下的降级形态：编号选项写在
@@ -2851,6 +3014,53 @@ export class MockBridge implements Bridge {
     );
   }
 }
+
+// -- status panel fixtures (?panel=1, specs/20261128-092912-status-panel) -----
+// Wire shapes follow probe-036 (specs/20261128-092912-status-panel/probe.md
+// §4/§5): setWidget(subagent-async) with widgetLines[0] carrying
+// `PI_SUBAGENT_ASYNC_JSON:<AsyncStatusSnapshot JSON>`; a frame without
+// widgetLines is the empty registration (the extension announcing itself).
+
+const SUBAGENT_SNAPSHOT_CAPS = {
+  maxRuns: 20,
+  maxChildrenPerNode: 50,
+  maxDepth: 4,
+  maxStringLength: 4000,
+  maxSerializedBytes: 262144,
+};
+const SUBAGENT_SNAPSHOT_OMITTED = { runs: 0, children: 0, byteLimitExceeded: false };
+
+/** One chain job running at step 2/3 (US5-1): scout done, worker running, reviewer queued. */
+const MOCK_CHAIN_JOB = {
+  id: "async-run-chain-1",
+  kind: "subagent",
+  label: "refactor-auth",
+  state: "running",
+  children: [
+    { id: "chain-step-1", kind: "step", label: "scout", state: "complete" },
+    { id: "chain-step-2", kind: "step", label: "worker", state: "running" },
+    { id: "chain-step-3", kind: "step", label: "reviewer", state: "queued" },
+  ],
+};
+
+/** One already-completed job (joins the view in the final frame). */
+const MOCK_DONE_JOB = {
+  id: "async-run-docs-1",
+  kind: "subagent",
+  label: "docs-sync",
+  state: "complete",
+};
+
+const subagentAsyncFrame = (runs: unknown[]): string =>
+  "PI_SUBAGENT_ASYNC_JSON:" +
+  JSON.stringify({
+    kind: "pi-subagents.async-status-snapshot",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    caps: SUBAGENT_SNAPSHOT_CAPS,
+    omitted: SUBAGENT_SNAPSHOT_OMITTED,
+    runs,
+  });
 
 const MOCK_MODELS: MockModel[] = [
   {

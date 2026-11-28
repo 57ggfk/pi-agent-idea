@@ -221,6 +221,414 @@ export function approvalFromEvent(event: AnyRecord): PendingApproval | null {
 }
 
 // ---------------------------------------------------------------------------
+// Status panel data layer (specs/20261128-092912-status-panel, plan D1/D2/D4/D5)
+//
+// Pure folds over pi's wire events / transcript items — no React, no store.
+// Wire shapes were verified against the local pi 1.6.1 package
+// (dist/modes/rpc/rpc-mode.js:106-115 setStatus; dist/core/tools/write.d.ts
+// and edit.d.ts args schemas; pi core ToolName union index.d.ts:23) and
+// probe-036 (specs/20261128-092912-status-panel/probe.md §4/§5). The JSON
+// wire carries no schema validation, so every parser degrades instead of
+// throwing.
+// ---------------------------------------------------------------------------
+
+// -- D1: extension setStatus entries (FR-003) ---------------------------------
+
+/**
+ * One entry of the status bar a pi extension maintains via `setStatus(key,
+ * text)`. The mirror belongs to the pi PROCESS: the store clears it wholesale
+ * when piStatus leaves running (exited / a new process starting); session
+ * switches inside one process do not clear it — the panel only mirrors, and
+ * whether entries change is the extension's own setStatus business.
+ */
+export interface ExtensionStatus {
+  statusKey: string;
+  text: string;
+  updatedAt: number;
+}
+
+/** Plan D1 D-推荐值: a chatty extension must not grow the mirror unbounded. */
+export const EXTENSION_STATUS_CAP = 12;
+
+/**
+ * Folds one `setStatus` frame into the mirror. A string text upserts at the
+ * key's existing position (insertion order stays stable); any non-string
+ * text — including the key the wire drops when the extension called
+ * `setStatus(key, undefined)` — clears the entry. Past the cap the oldest
+ * updatedAt is evicted; a same-ms burst falls back to FIFO. `now` is
+ * injectable so tests can pin eviction order.
+ */
+export function upsertExtensionStatus(
+  list: ExtensionStatus[],
+  statusKey: string,
+  text: unknown,
+  now: number = Date.now(),
+): ExtensionStatus[] {
+  const idx = list.findIndex((s) => s.statusKey === statusKey);
+  if (typeof text !== "string") {
+    return idx >= 0 ? list.filter((_, i) => i !== idx) : list;
+  }
+  if (idx >= 0) {
+    const next = list.slice();
+    next[idx] = { statusKey, text, updatedAt: now };
+    return next;
+  }
+  const next = [...list, { statusKey, text, updatedAt: now }];
+  if (next.length <= EXTENSION_STATUS_CAP) return next;
+  let oldest = 0;
+  for (let i = 1; i < next.length; i++) {
+    if (next[i].updatedAt < next[oldest].updatedAt) oldest = i;
+  }
+  return next.filter((_, i) => i !== oldest);
+}
+
+// -- D2: pi-subagents async job view (FR-011, channel A) ----------------------
+//
+// pi-subagents publishes its job view through `setWidget("subagent-async")`;
+// the first widget line carries `PI_SUBAGENT_ASYNC_JSON:<snapshot JSON>` and
+// an empty frame registers the widget (probe-036 §4). Types below are the
+// panel-facing subset of AsyncStatusSnapshot (pi-subagents
+// src/runs/shared/async-status-projection.d.ts, probe-036 §5). Snapshots
+// replace wholesale, never merge (extension-api.md:386).
+
+export const SUBAGENT_ASYNC_WIDGET_KEY = "subagent-async";
+export const SUBAGENT_ASYNC_PREFIX = "PI_SUBAGENT_ASYNC_JSON:";
+export const SUBAGENT_ASYNC_SNAPSHOT_KIND = "pi-subagents.async-status-snapshot";
+export const SUBAGENT_ASYNC_SNAPSHOT_VERSION = 1;
+
+export interface AsyncStatusSnapshotCaps {
+  maxRuns?: number;
+  maxChildrenPerNode?: number;
+  maxDepth?: number;
+  maxStringLength?: number;
+  maxSerializedBytes?: number;
+}
+
+export interface AsyncStatusSnapshotOmitted {
+  runs?: number;
+  children?: number;
+  byteLimitExceeded?: boolean;
+}
+
+export interface AsyncStatusSnapshotNode {
+  id: string;
+  /** "subagent" | "workflow" | "step" | "host-step" on conforming frames. */
+  kind?: string;
+  label: string;
+  /**
+   * Raw wire value. The .d.ts contract is the八值
+   * queued|running|complete|failed|partial|paused|stopped|rejected — a
+   * violation renders as "unknown" (mapJobState), it never throws.
+   */
+  state?: unknown;
+  children?: AsyncStatusSnapshotNode[];
+}
+
+export interface AsyncStatusSnapshot {
+  kind: string;
+  version: number;
+  generatedAt?: string;
+  caps?: AsyncStatusSnapshotCaps;
+  omitted?: AsyncStatusSnapshotOmitted;
+  runs: AsyncStatusSnapshotNode[];
+}
+
+/**
+ * Parses the widgetLines of a `setWidget(subagent-async)` frame:
+ * - widgetLines missing / empty (the probe's registration frame) → `null`, the
+ *   CLEAR semantics (snapshot = none, extension installed);
+ * - a frame failing prefix / JSON / kind / version validation → `undefined`,
+ *   DROP it — current state stands;
+ * - otherwise the parsed snapshot.
+ */
+export function parseSubagentAsyncWidget(widgetLines: unknown): AsyncStatusSnapshot | null | undefined {
+  if (!Array.isArray(widgetLines) || widgetLines.length === 0) return null;
+  const first = widgetLines[0];
+  if (typeof first !== "string" || !first.startsWith(SUBAGENT_ASYNC_PREFIX)) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(first.slice(SUBAGENT_ASYNC_PREFIX.length));
+  } catch {
+    return undefined;
+  }
+  const rec = asRecord(parsed);
+  if (!rec) return undefined;
+  if (rec["kind"] !== SUBAGENT_ASYNC_SNAPSHOT_KIND || rec["version"] !== SUBAGENT_ASYNC_SNAPSHOT_VERSION) {
+    return undefined;
+  }
+  const caps = asRecord(rec["caps"]);
+  const omitted = asRecord(rec["omitted"]);
+  return {
+    kind: SUBAGENT_ASYNC_SNAPSHOT_KIND,
+    version: SUBAGENT_ASYNC_SNAPSHOT_VERSION,
+    ...(typeof rec["generatedAt"] === "string" ? { generatedAt: rec["generatedAt"] } : {}),
+    ...(caps ? { caps: snapshotCaps(caps) } : {}),
+    ...(omitted ? { omitted: snapshotOmitted(omitted) } : {}),
+    runs: Array.isArray(rec["runs"])
+      ? rec["runs"].map(snapshotNode).filter((n): n is AsyncStatusSnapshotNode => n !== null)
+      : [],
+  };
+}
+
+function snapshotCaps(raw: AnyRecord): AsyncStatusSnapshotCaps {
+  const num = (key: string) => (typeof raw[key] === "number" ? (raw[key] as number) : undefined);
+  return {
+    maxRuns: num("maxRuns"),
+    maxChildrenPerNode: num("maxChildrenPerNode"),
+    maxDepth: num("maxDepth"),
+    maxStringLength: num("maxStringLength"),
+    maxSerializedBytes: num("maxSerializedBytes"),
+  };
+}
+
+function snapshotOmitted(raw: AnyRecord): AsyncStatusSnapshotOmitted {
+  return {
+    runs: typeof raw["runs"] === "number" ? (raw["runs"] as number) : undefined,
+    children: typeof raw["children"] === "number" ? (raw["children"] as number) : undefined,
+    byteLimitExceeded: raw["byteLimitExceeded"] === true,
+  };
+}
+
+function snapshotNode(raw: unknown): AsyncStatusSnapshotNode | null {
+  const rec = asRecord(raw);
+  if (!rec) return null;
+  const node: AsyncStatusSnapshotNode = {
+    id: String(rec["id"] ?? ""),
+    kind: typeof rec["kind"] === "string" ? rec["kind"] : undefined,
+    label: typeof rec["label"] === "string" ? rec["label"] : "",
+    state: rec["state"],
+  };
+  if (Array.isArray(rec["children"])) {
+    const children = rec["children"].map(snapshotNode).filter((n): n is AsyncStatusSnapshotNode => n !== null);
+    if (children.length > 0) node.children = children;
+  }
+  return node;
+}
+
+/** FR-011's panel badge set. "unknown" is neutral: shown verbatim lowercased, never forced into a group. */
+export type JobBadge = "running" | "waiting" | "done" | "failed" | "unknown";
+
+/**
+ * Maps a snapshot node's raw state onto the panel's four states (plan D2):
+ * running/queued → running (排队也是在跑), paused → waiting (等用户输入),
+ * complete → done, failed/partial/stopped/rejected → failed (partial gets
+ * its own copy later). Anything else — unknown values, or a missing /
+ * non-string state (wire runtime violation; the .d.ts constrains only the
+ * type side) — maps to "unknown".
+ */
+export function mapJobState(state: unknown): JobBadge {
+  if (typeof state !== "string") return "unknown";
+  switch (state.trim().toLowerCase()) {
+    case "running":
+    case "queued":
+      return "running";
+    case "paused":
+      return "waiting";
+    case "complete":
+      return "done";
+    case "failed":
+    case "partial":
+    case "stopped":
+    case "rejected":
+      return "failed";
+    default:
+      return "unknown";
+  }
+}
+
+/** One rendered step of a chain (label + state); runs come before their children. */
+export interface JobStep {
+  label: string;
+  badge: JobBadge;
+  /** Lowercased raw state; set only when badge === "unknown" and the wire carried a non-empty string. */
+  rawState?: string;
+}
+
+export interface JobChain {
+  steps: JobStep[];
+  /** The extension reported omitted children, or the walk hit caps.maxDepth. */
+  truncated: boolean;
+}
+
+/**
+ * Rebuilds the chain step sequence from the snapshot's runs[]/children[] tree
+ * (depth-first, runs before their children — plan D2: `✓ scout → ● worker →
+ * ○ reviewer`). Recursion caps at `caps.maxDepth` (runs are depth 0, their
+ * children depth 1, …; a missing/negative maxDepth means no cap), and
+ * `omitted.children` also flags truncation — the extension may have dropped
+ * children before the wire ever saw them.
+ */
+export function jobStepChain(snapshot: AsyncStatusSnapshot | null | undefined): JobChain {
+  if (!snapshot) return { steps: [], truncated: false };
+  const cap = snapshot.caps?.maxDepth;
+  const maxDepth = typeof cap === "number" && cap >= 0 ? cap : Number.POSITIVE_INFINITY;
+  const steps: JobStep[] = [];
+  let cut = false;
+  const walk = (nodes: AsyncStatusSnapshotNode[], depth: number) => {
+    for (const node of nodes) {
+      const badge = mapJobState(node.state);
+      steps.push({
+        label: node.label || node.id,
+        badge,
+        ...(badge === "unknown" && typeof node.state === "string" && node.state.trim() !== ""
+          ? { rawState: node.state.trim().toLowerCase() }
+          : {}),
+      });
+      if (node.children && node.children.length > 0) {
+        if (depth + 1 > maxDepth) {
+          cut = true;
+          continue;
+        }
+        walk(node.children, depth + 1);
+      }
+    }
+  };
+  walk(snapshot.runs, 0);
+  return { steps, truncated: cut || Boolean(snapshot.omitted?.children) };
+}
+
+// -- D4: todo snapshot (FR-012) ------------------------------------------------
+//
+// No todo extension is installed on this machine, so there is no authoritative
+// schema to read (plan D4) — this parser is a MOCK-ONLY tolerance layer: tool
+// names match anything containing "todo" (case-insensitive) and every field
+// has fallbacks. Shapes grow when the real machine meets one; the assertions
+// in statusPanel.test.ts use mock shapes on purpose.
+
+export type TodoStatus = "pending" | "active" | "done" | "cancelled";
+
+export interface TodoSnapshotItem {
+  text: string;
+  status: TodoStatus;
+}
+
+/**
+ * Latest-wins snapshot of the todo-type tool calls in the transcript: the
+ * last completed (done===true) toolcall block whose toolName contains "todo"
+ * provides the WHOLE snapshot — earlier ones are replaced, never merged.
+ * Streaming and unparseable blocks are skipped, so the previous snapshot
+ * survives them. null = no snapshot (FR-012: the section hides).
+ */
+export function todoSnapshotFromItems(items: ChatItem[]): TodoSnapshotItem[] | null {
+  let snapshot: TodoSnapshotItem[] | null = null;
+  for (const item of items) {
+    for (const block of item.blocks) {
+      if (block.kind !== "toolcall" || !block.done) continue;
+      if (!block.toolName.toLowerCase().includes("todo")) continue;
+      let args: AnyRecord | undefined;
+      try {
+        args = asRecord(JSON.parse(block.argsJson));
+      } catch {
+        continue; // unparseable — the previous snapshot survives
+      }
+      if (!args) continue;
+      const rawList = ["items", "todos", "list"]
+        .map((key) => args[key])
+        .find((value) => Array.isArray(value));
+      if (!rawList) continue;
+      snapshot = (rawList as unknown[]).map(todoEntry).filter((e): e is TodoSnapshotItem => e !== null);
+    }
+  }
+  return snapshot;
+}
+
+function todoEntry(raw: unknown): TodoSnapshotItem | null {
+  const rec = asRecord(raw);
+  if (!rec) return null;
+  const text = [rec["text"], rec["content"], rec["label"], rec["title"]].find(
+    (value): value is string => typeof value === "string",
+  );
+  if (text === undefined) return null;
+  return { text, status: normalizeTodoStatus([rec["state"], rec["status"], rec["done"]]) };
+}
+
+/**
+ * One entry's status: the first candidate that resolves wins. Strings run
+ * through the alias table (mock-only — grows as real shapes arrive);
+ * booleans map done/false→pending (plan D4). Unrecognized strings fall
+ * through, and the entry defaults to pending rather than crashing.
+ */
+function normalizeTodoStatus(candidates: unknown[]): TodoStatus {
+  for (const value of candidates) {
+    if (typeof value === "boolean") return value ? "done" : "pending";
+    if (typeof value !== "string") continue;
+    const s = value.trim().toLowerCase().replace(/[\s-]+/g, "_");
+    if (s === "pending" || s === "todo" || s === "not_started") return "pending";
+    if (s === "in_progress" || s === "active" || s === "running" || s === "current") return "active";
+    if (s === "completed" || s === "complete" || s === "done" || s === "finished") return "done";
+    if (s === "cancelled" || s === "canceled") return "cancelled";
+  }
+  return "pending";
+}
+
+// -- D5: write-tool outputs (FR-006 / FR-007) ----------------------------------
+//
+// pi core tools (1.6.1 dist/core/tools/index.d.ts:23): read|bash|powershell|
+// edit|write|grep|find|ls. The write pair is write + edit — read/grep/find/ls
+// are read-only, and bash/powershell are deliberately excluded (spec
+// boundary: "bash 里改文件看不到" — this list never claims to be git status).
+// Future write-class extensions append here.
+// argsJson schemas (write.d.ts / edit.d.ts): both carry `path`; the
+// Claude-style file_path/filePath remain parse-time fallbacks only.
+
+export const WRITE_TOOLS = ["write", "edit"] as const;
+
+export type WriteTool = (typeof WRITE_TOOLS)[number];
+
+export interface OutputEdit {
+  path: string;
+  /** Change kinds the path collected, in first-seen order (双类型并存 → 两徽标). */
+  kinds: WriteTool[];
+  /** How many write/edit calls touched the path. */
+  count: number;
+  /** Item id of the newest call — the panel's sort/dedup key (plan D5). */
+  lastItemId: number;
+}
+
+/**
+ * Derives the write-operation list from the transcript: every completed
+ * toolcall block whose tool is in WRITE_TOOLS, its path parsed out of
+ * argsJson, deduped by path (first-appearance order). A pure function of
+ * `items` — runNewSession clears items and switchSession rebuilds them, so
+ * per-session isolation holds by construction (FR-007); the panel calls this
+ * through useMemo.
+ */
+export function outputEditsFromItems(items: ChatItem[]): OutputEdit[] {
+  const byPath = new Map<string, OutputEdit>();
+  for (const item of items) {
+    for (const block of item.blocks) {
+      if (block.kind !== "toolcall" || !block.done) continue;
+      const toolName = block.toolName.toLowerCase();
+      if (!(WRITE_TOOLS as readonly string[]).includes(toolName)) continue;
+      let args: AnyRecord | undefined;
+      try {
+        args = asRecord(JSON.parse(block.argsJson));
+      } catch {
+        continue;
+      }
+      if (!args) continue;
+      const path = [args["path"], args["file_path"], args["filePath"]].find(
+        (value): value is string => typeof value === "string" && value.length > 0,
+      );
+      if (path === undefined) continue;
+      const tool = toolName as WriteTool;
+      const existing = byPath.get(path);
+      if (existing) {
+        byPath.set(path, {
+          path,
+          kinds: existing.kinds.includes(tool) ? existing.kinds : [...existing.kinds, tool],
+          count: existing.count + 1,
+          lastItemId: Math.max(existing.lastItemId, item.id),
+        });
+      } else {
+        byPath.set(path, { path, kinds: [tool], count: 1, lastItemId: item.id });
+      }
+    }
+  }
+  return [...byPath.values()];
+}
+
+// ---------------------------------------------------------------------------
 // App-internal confirmation dialog (spec 007 US3)
 // ---------------------------------------------------------------------------
 

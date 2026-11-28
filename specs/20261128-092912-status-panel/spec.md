@@ -126,12 +126,20 @@ chain 步骤流（哪些步骤已完成、正在跑第几步、还有几步）�
 - **FR-011**：**后台任务**分区展示 pi-subagents 的作业（本机已装，F-20/21）：
   每行 = 作业名 + 四态（运行中 / 等待你 / 已完成 / 失败，对齐其 OSC 7501 语义）
   + chain 步骤流（`done scout → running worker` 式，标出已完成、正在执行与
-  将要执行的步骤）。数据：订阅宿主事件（jobsChanged / asyncStarted /
-  childStatus / asyncComplete / processTerminal）触发读 status（同帧合并，
-  约 250ms 一次）；会话重载后从 transcript 记录重建（subagent 工具结果
-  `details.results[]`、`subagent-notify` 消息 `details.runs[]`）；前台子代理
-  进度随父会话工具卡（`tool_execution_update` 的 `details.progress[]`）。
+  将要执行的步骤）。**数据通道 = 通道 A（`setWidget` 快照）**：
+  pi-subagents 经 `extension_ui_request` 发 `method:"setWidget"`、
+  `widgetKey:"subagent-async"`、`widgetLines[0]` 形如
+  `PI_SUBAGENT_ASYNC_JSON:<AsyncStatusSnapshot JSON>`（无 `widgetLines` = 空态注册帧）；
+  宿主按 250ms 合并后整帧替换旧快照（快照是全量替换不是补丁）。
+  佐证：probe.md §3/§4/§5（静态 + 首次 RPC 实测）与 **2026-11-28 真机复测**
+  （真实 pi 1.6.1 + pi-subagents 0.89.2：抓到 12 个真实快照帧，面板渲染出
+  `worker | 步骤 1/1 | 运行中 | ● worker`）。
+  降级路径（会话重载后从 transcript 重建）：subagent 工具结果 `details.results[]`、
+  `subagent-notify` 消息 `details.runs[]`（通道 D，尚未真机确认回吐，见 tasks T9.2）；
+  前台子代理进度随父会话工具卡（`tool_execution_update` 的 `details.progress[]`）。
   扩展未装时该分区隐藏，不显示空壳（F-24 之戒：状态不得残留过期）。
+  **注**：`subagent:*` 五个宿主事件是 pi 的进程内总线事件，RPC 模式下不上线
+  （probe.md §3），因此不作为数据源。
 - **FR-012**：**处理清单**分区：三态勾选对齐 Cursor（F-25）——○ 未开始 /
   ◌ 进行中 / ✓ 已完成（⊗ 已取消备用）；进行中的条目置顶高亮。v1 数据源 =
   transcript 中 todo 类工具调用的最近一次快照（装了 todo 类扩展才有内容），
@@ -168,9 +176,11 @@ chain 步骤流（哪些步骤已完成、正在跑第几步、还有几步）�
 
 ## 边界与风险
 
-- **FR-011 是唯一要探针的点**：pi-subagents 事件与 status 的**线上形状**（事件以
-  什么形状到达 RPC 流、status 读数走哪条通道）文档写明但未实测——实现前先跑
-  真机探针（`scripts/` 惯例），探针不过则该分区降级为「transcript 重建」-only。
+- **FR-011 的线上形状已由真机坐实**（2026-11-28）：`setWidget(subagent-async)` +
+  `PI_SUBAGENT_ASYNC_JSON:` 前缀的快照帧确实上线，面板据此渲染作业行。
+  仍存两处未闭环（不阻塞）：inspect 成功变体（probe.md §8 caveat 2）、后台作业的
+  「等待你」态实拍。通道 D（transcript 重建）的 `get_messages` 回吐未线测，
+  缺口时按 tasks T4.3 降级为「重载后历史行仅由通道 A 快照承担」。
 - **产出 ≠ 磁盘真实 diff**：推导自工具调用，bash 里改文件看不到；文案要说清
   「pi 的写操作清单」，不冒充 git status。
 - **产出区语义与 Cursor 病的对应**：按会话隔离（FR-007）天然规避「不清空」；

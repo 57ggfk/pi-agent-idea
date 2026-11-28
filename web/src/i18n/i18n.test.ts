@@ -46,6 +46,54 @@ describe("registry and dictionaries (SC-002 / FR-016)", () => {
     const differing = Object.keys(enRecord).filter((k) => enRecord[k] !== zhRecord[k]);
     expect(differing.length).toBeGreaterThan(0);
   });
+
+  it("status panel keys exist in BOTH locales (FR-009; plan U4 — a presence assertion, not set equality: the generic parity test above stays green when both sides miss the same key)", () => {
+    // specs/20261128-092912-status-panel: every key the StatusPanel renders.
+    const required = [
+      "chat.statusPanel.label",
+      "chat.statusPanel.shortLabel",
+      "chat.statusPanel.close",
+      "chat.statusPanel.title",
+      "panel.section.run",
+      "panel.section.jobs",
+      "panel.section.todo",
+      "panel.section.pending",
+      "panel.section.output",
+      "panel.run.idle",
+      "panel.run.streaming",
+      "panel.run.starting",
+      "panel.run.exited",
+      "panel.run.notStarted",
+      "panel.run.model",
+      "panel.run.context",
+      "panel.run.cost",
+      "panel.run.exitHint",
+      "panel.jobs.empty",
+      "panel.jobs.truncated",
+      "panel.job.running",
+      "panel.job.waiting",
+      "panel.job.done",
+      "panel.job.failed",
+      "panel.job.partial",
+      "panel.job.unknown",
+      "panel.job.stepProgress",
+      "panel.pending.count",
+      "panel.method.confirm",
+      "panel.method.select",
+      "panel.method.input",
+      "panel.method.editor",
+      "panel.output.empty",
+      "panel.output.kindWrite",
+      "panel.output.kindEdit",
+      "panel.output.times",
+    ];
+    const enRecord = en as Record<string, string>;
+    const zhRecord = zh as Record<string, string>;
+    for (const key of required) {
+      expect(enRecord[key], `en misses ${key}`).toBeTruthy();
+      expect(zhRecord[key], `zh misses ${key}`).toBeTruthy();
+    }
+  });
 });
 
 describe("plural coverage (FR-015 / SC-006)", () => {

@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
+    "e2e": "playwright test",
     "probe:jcef": "node probe-scroll-jcef.mjs",
     "probe:jcef:red": "node probe-scroll-jcef-red.mjs",
     "probe:wheel": "node probe-wheel-real.mjs"
