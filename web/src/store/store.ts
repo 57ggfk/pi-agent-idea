@@ -719,6 +719,8 @@ interface PiStore {
   renameSessionFile(file: string, name: string): Promise<boolean>;
   deleteSession(file: string): Promise<void>;
   forkSession(): Promise<void>;
+  /** Copies the whole session at the current position (pi's `clone` RPC). */
+  cloneSession(): Promise<void>;
   /** Branches the session at a specific pi reply (spec 007 US1). */
   forkAtItem(itemId: number): Promise<void>;
   exportSession(file: string): Promise<void>;
@@ -1149,6 +1151,27 @@ export const usePiStore = create<PiStore>((set, get) => {
     }
   };
 
+  /**
+   * Copies the whole session at the current position (pi's `clone` RPC).
+   * Unlike `runForkSession` (which branches at the last user entry and drops
+   * everything after it), this keeps the full transcript.
+   */
+  const runCloneSession = async () => {
+    if (!bridge) return;
+    try {
+      const result = await rpc<{ cancelled?: boolean }>(bridge, { type: "clone" });
+      if (result?.cancelled) {
+        appendError(t("error.fork.cancelled"));
+        return;
+      }
+      await syncAfterBranch();
+      resetConversationLocalState();
+      await applyForkSuffix();
+    } catch (e) {
+      appendError(t("error.fork.failed", { msg: (e as Error).message }));
+    }
+  };
+
   const runDeleteSession = async (file: string) => {
     if (!bridge) return;
     try {
@@ -1545,10 +1568,11 @@ export const usePiStore = create<PiStore>((set, get) => {
         case "compact":
           void get().compact();
           return;
-        // /clone in pi TUI is "duplicate the session at the current position" —
-        // exactly the plugin's full-copy fork (024 US2/US3), confirm included.
+        // pi's /clone copies the whole session at the current position;
+        // the plugin's forkSession() branches at the last user message and
+        // would drop everything after it.
         case "clone":
-          void get().forkSession();
+          void get().cloneSession();
           return;
         case "sessions":
           get().setTab("sessions");
@@ -2633,6 +2657,25 @@ export const usePiStore = create<PiStore>((set, get) => {
         message: t("confirm.fork.message"),
         confirmLabel: t("confirm.fork.confirm"),
         onConfirm: runForkSession,
+      });
+    },
+
+    async cloneSession() {
+      if (!bridge) return;
+      if (get().isStreaming) {
+        appendError(t("error.fork.busy"));
+        return;
+      }
+      if (get().editing) {
+        appendError(t("error.fork.editing"));
+        return;
+      }
+      // i18n: confirm.clone.title / .message / .clone / .cancel
+      get().askConfirm({
+        title: t("confirm.clone.title"),
+        message: t("confirm.clone.message"),
+        confirmLabel: t("confirm.clone.confirm"),
+        onConfirm: runCloneSession,
       });
     },
 

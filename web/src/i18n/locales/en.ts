@@ -311,6 +311,10 @@ export const en = {
   "confirm.fork.message":
     "A new session is created from the last question, including pi's answer. The current session stays as it is.",
   "confirm.fork.confirm": "Fork session",
+  "confirm.clone.title": "Copy this session?",
+  "confirm.clone.message":
+    "A new session is created with the whole conversation so far, up to this point. The current session stays as it is.",
+  "confirm.clone.confirm": "Copy session",
   "confirm.forkAt.title": "Fork from this reply?",
   "confirm.forkAt.last":
     "A new session is created with this reply as its last message — the whole conversation so far is copied. The current session stays as it is.",

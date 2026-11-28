@@ -122,9 +122,29 @@ describe("runBuiltinCommand dispatch", () => {
     expect(usePiStore.getState().confirm).toBeNull();
   });
 
-  it("clone asks the fork confirmation (full-copy fork), same as the fork button", () => {
+  it("clone asks a confirmation before copying the session", () => {
     usePiStore.setState({ items: [emptyUser()] });
     usePiStore.getState().runBuiltinCommand("clone");
     expect(usePiStore.getState().confirm).not.toBeNull();
+  });
+
+  it("clone copies the whole session via pi's clone RPC, not a fork at the last user message", async () => {
+    // pi's /clone is fork(leafId, {position:"at"}) — the entire transcript at
+    // the current position. The plugin's forkSession() would branch at the
+    // last *user* entry and drop everything after it (found on the real
+    // machine 2026-11-28), so /clone must use the clone RPC.
+    h.state.rpc.set("get_fork_messages", () => [
+      { entryId: "entry-1", text: "first question" },
+      { entryId: "entry-2", text: "second question" },
+    ]);
+    h.state.rpc.set("clone", () => ({ cancelled: false }));
+    usePiStore.setState({ items: [emptyUser()] });
+    usePiStore.getState().runBuiltinCommand("clone");
+    const confirm = usePiStore.getState().confirm;
+    expect(confirm).not.toBeNull();
+    await confirm?.onConfirm();
+    const types = commandTypes();
+    expect(types).toContain("clone");
+    expect(types).not.toContain("fork");
   });
 });

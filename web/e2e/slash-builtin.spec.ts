@@ -69,6 +69,25 @@ test("/settings switches to the manage tab", async ({ page }) => {
   await expect(page.getByTestId("manage-view")).toBeVisible();
 });
 
+test("/clone confirms, then copies the whole session (not a fork at the last message)", async ({ page }) => {
+  const input = page.getByTestId("composer-input");
+  await input.pressSequentially("/clone");
+  await page.keyboard.press("Enter");
+  const dialog = page.getByTestId("confirm-dialog");
+  await expect(dialog).toBeVisible();
+  await expect(page.getByTestId("confirm-title")).toHaveText(/copy this session/i);
+  // Confirming runs pi's clone RPC — a copy of the whole transcript at the
+  // current position. A fork would branch at the last user message and drop
+  // everything after it (found on the real machine 2026-11-28).
+  await page.getByTestId("confirm-ok").click();
+  await expect(dialog).toHaveCount(0);
+  // The copy lands in the session list as its own row (pi clones the active
+  // branch into a new session file); the current transcript stays.
+  await page.getByTestId("tab-sessions").click();
+  await expect(page.getByTestId("sessions-view")).toBeVisible();
+  await expect(page.locator(".session-name").filter({ hasText: "Cloned session" })).toHaveCount(1);
+});
+
 test("a partial query still filters across built-ins and pi-side commands", async ({ page }) => {
   const input = page.getByTestId("composer-input");
   await input.pressSequentially("/se");
