@@ -74,6 +74,14 @@ export const en = {
   "composer.menu.refresh": "↻ Refresh",
   "composer.menu.refreshAria": "Refresh file list",
   "composer.menu.footerHint": "Files from the project index",
+  // Built-in slash commands (menu descriptions follow pi TUI's own copy).
+  "slash.builtin.model": "Select a model (opens the model picker)",
+  "slash.builtin.thinking": "Set the thinking level",
+  "slash.builtin.new": "Start a new session",
+  "slash.builtin.compact": "Manually compact the session context",
+  "slash.builtin.clone": "Duplicate the current session at the current position",
+  "slash.builtin.resume": "Resume another session",
+  "slash.builtin.settings": "Open the manage view (models, skills, credentials, MCP)",
   "composer.image.remove": "Remove {{name}}",
   "composer.image.fallback": "image",
   "composer.dropHint": "Release to reference this file or folder",
@@ -303,6 +311,10 @@ export const en = {
   "confirm.fork.message":
     "A new session is created from the last question, including pi's answer. The current session stays as it is.",
   "confirm.fork.confirm": "Fork session",
+  "confirm.clone.title": "Copy this session?",
+  "confirm.clone.message":
+    "A new session is created with the whole conversation so far, up to this point. The current session stays as it is.",
+  "confirm.clone.confirm": "Copy session",
   "confirm.forkAt.title": "Fork from this reply?",
   "confirm.forkAt.last":
     "A new session is created with this reply as its last message — the whole conversation so far is copied. The current session stays as it is.",
@@ -317,6 +329,7 @@ export const en = {
   "error.fork.noUser": "fork failed: there is no user message to fork from",
   "error.fork.noBranch": "fork failed: this reply has no branch point",
   "error.fork.cancelled": "fork cancelled by a pi extension",
+  "error.clone.empty": "there is nothing to copy yet — send a message first",
   "error.fork.failed": "fork failed: {{msg}}",
   "error.clone.cancelled": "clone cancelled by a pi extension",
   "error.delete.failed": "delete failed: {{msg}}",

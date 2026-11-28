@@ -3,6 +3,7 @@ import type { AppTheme, Bridge, ThemePreference } from "../bridge/types";
 import { rpc } from "../bridge/types";
 import { getBridge } from "../bridge";
 import { displaySkillText, parseSkillBlock } from "../lib/skillDisplay";
+import type { BuiltinAction } from "../lib/builtinCommands";
 import {
   clipTitleInput,
   deriveSessionTitle,
@@ -473,6 +474,27 @@ interface PiStore {
   outlineOpen: boolean;
   toggleOutline(open?: boolean): void;
 
+  // -- built-in slash commands (0.5.12 first pass) ----------------------------
+
+  /**
+   * One-shot signal telling a picker popover to open (slash `/model`
+   * `/thinking`). nonce bumps per request so two identical requests in a row
+   * still retrigger; pickers react to the nonce, not object identity.
+   */
+  pickerSignal: { target: "model" | "thinking"; nonce: number } | null;
+  /**
+   * Executes a pi TUI built-in slash command on the plugin surface it maps to
+   * (see lib/builtinCommands.ts). Built-ins never go through the prompt path:
+   * the RPC layer would feed "/model" verbatim to the LLM.
+   */
+  runBuiltinCommand(action: BuiltinAction): void;
+  /**
+   * Consumed by the picker that opened for the signal: must be cleared on use,
+   * or a Composer remount (tab round-trip) re-fires the stale signal and the
+   * picker pops open on its own — found on the PyCharm real machine.
+   */
+  clearPickerSignal(): void;
+
   // -- language (spec 008) ----------------------------------------------------
 
   /** Effective UI language (a registered code), resolved at init (FR-004). */
@@ -697,6 +719,8 @@ interface PiStore {
   renameSessionFile(file: string, name: string): Promise<boolean>;
   deleteSession(file: string): Promise<void>;
   forkSession(): Promise<void>;
+  /** Copies the whole session at the current position (pi's `clone` RPC). */
+  cloneSession(): Promise<void>;
   /** Branches the session at a specific pi reply (spec 007 US1). */
   forkAtItem(itemId: number): Promise<void>;
   exportSession(file: string): Promise<void>;
@@ -1127,6 +1151,27 @@ export const usePiStore = create<PiStore>((set, get) => {
     }
   };
 
+  /**
+   * Copies the whole session at the current position (pi's `clone` RPC).
+   * Unlike `runForkSession` (which branches at the last user entry and drops
+   * everything after it), this keeps the full transcript.
+   */
+  const runCloneSession = async () => {
+    if (!bridge) return;
+    try {
+      const result = await rpc<{ cancelled?: boolean }>(bridge, { type: "clone" });
+      if (result?.cancelled) {
+        appendError(t("error.fork.cancelled"));
+        return;
+      }
+      await syncAfterBranch();
+      resetConversationLocalState();
+      await applyForkSuffix();
+    } catch (e) {
+      appendError(t("error.fork.failed", { msg: (e as Error).message }));
+    }
+  };
+
   const runDeleteSession = async (file: string) => {
     if (!bridge) return;
     try {
@@ -1439,6 +1484,7 @@ export const usePiStore = create<PiStore>((set, get) => {
     themePreference: initialPreference,
     ideTheme: "light",
     tab: "chat",
+    pickerSignal: null,
 
     piStatus: "notStarted",
     piVersion: "",
@@ -1504,6 +1550,41 @@ export const usePiStore = create<PiStore>((set, get) => {
       if (get().setupGate.needsSetup && get().setupGate.state === "ready") return;
       set({ tab });
       if (tab === "sessions") void get().refreshSessions();
+    },
+
+    runBuiltinCommand(action: BuiltinAction) {
+      const bumpPicker = (target: "model" | "thinking") =>
+        set({ pickerSignal: { target, nonce: (get().pickerSignal?.nonce ?? 0) + 1 } });
+      switch (action) {
+        case "model-picker":
+          bumpPicker("model");
+          return;
+        case "thinking-picker":
+          bumpPicker("thinking");
+          return;
+        case "new-session":
+          void get().newSession();
+          return;
+        case "compact":
+          void get().compact();
+          return;
+        // pi's /clone copies the whole session at the current position;
+        // the plugin's forkSession() branches at the last user message and
+        // would drop everything after it.
+        case "clone":
+          void get().cloneSession();
+          return;
+        case "sessions":
+          get().setTab("sessions");
+          return;
+        case "manage":
+          get().setTab("manage");
+          return;
+      }
+    },
+
+    clearPickerSignal() {
+      set({ pickerSignal: null });
     },
 
     // -- session outline & search (spec 006) -----------------------------------
@@ -2576,6 +2657,33 @@ export const usePiStore = create<PiStore>((set, get) => {
         message: t("confirm.fork.message"),
         confirmLabel: t("confirm.fork.confirm"),
         onConfirm: runForkSession,
+      });
+    },
+
+    async cloneSession() {
+      if (!bridge) return;
+      if (get().isStreaming) {
+        appendError(t("error.fork.busy"));
+        return;
+      }
+      if (get().editing) {
+        appendError(t("error.fork.editing"));
+        return;
+      }
+      // pi refuses to clone a session that was never saved (agent-session-runtime
+      // "This session has not been saved yet"). The UI knows it is empty, so
+      // answer in the user's language instead of letting the English error
+      // bubble up (found on the PyCharm real machine 2026-11-28).
+      if (get().items.length === 0) {
+        appendError(t("error.clone.empty"));
+        return;
+      }
+      // i18n: confirm.clone.title / .message / .clone / .cancel
+      get().askConfirm({
+        title: t("confirm.clone.title"),
+        message: t("confirm.clone.message"),
+        confirmLabel: t("confirm.clone.confirm"),
+        onConfirm: runCloneSession,
       });
     },
 

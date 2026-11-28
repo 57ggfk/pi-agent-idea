@@ -181,6 +181,20 @@ export default function ModelPicker() {
     }
   }, [open]);
 
+  // Slash `/model` opens this picker through the store's one-shot signal:
+  // primitives, not the object, so identical requests still retrigger via nonce.
+  // The signal is consumed on use — a stale one would re-fire on remount.
+  const pickerTarget = usePiStore((s) => s.pickerSignal?.target ?? null);
+  const pickerNonce = usePiStore((s) => s.pickerSignal?.nonce ?? 0);
+  const clearPickerSignal = usePiStore((s) => s.clearPickerSignal);
+
+  useEffect(() => {
+    if (pickerTarget === "model") {
+      setOpen(true);
+      clearPickerSignal();
+    }
+  }, [pickerTarget, pickerNonce, clearPickerSignal]);
+
   /**
    * Spec 016: credentials changed outside the plugin (terminal `/login`, a
    * hand-edited models.json) never pass through the auth panel, so the picker
