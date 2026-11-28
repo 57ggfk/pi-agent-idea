@@ -329,6 +329,7 @@ export const en = {
   "error.fork.noUser": "fork failed: there is no user message to fork from",
   "error.fork.noBranch": "fork failed: this reply has no branch point",
   "error.fork.cancelled": "fork cancelled by a pi extension",
+  "error.clone.empty": "there is nothing to copy yet — send a message first",
   "error.fork.failed": "fork failed: {{msg}}",
   "error.clone.cancelled": "clone cancelled by a pi extension",
   "error.delete.failed": "delete failed: {{msg}}",

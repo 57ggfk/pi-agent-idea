@@ -2670,6 +2670,14 @@ export const usePiStore = create<PiStore>((set, get) => {
         appendError(t("error.fork.editing"));
         return;
       }
+      // pi refuses to clone a session that was never saved (agent-session-runtime
+      // "This session has not been saved yet"). The UI knows it is empty, so
+      // answer in the user's language instead of letting the English error
+      // bubble up (found on the PyCharm real machine 2026-11-28).
+      if (get().items.length === 0) {
+        appendError(t("error.clone.empty"));
+        return;
+      }
       // i18n: confirm.clone.title / .message / .clone / .cancel
       get().askConfirm({
         title: t("confirm.clone.title"),

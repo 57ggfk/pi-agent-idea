@@ -128,6 +128,17 @@ describe("runBuiltinCommand dispatch", () => {
     expect(usePiStore.getState().confirm).not.toBeNull();
   });
 
+  it("clone refuses an empty session with a localized notice (pi cannot clone an unsaved session)", () => {
+    usePiStore.setState({ items: [] });
+    usePiStore.getState().runBuiltinCommand("clone");
+    expect(usePiStore.getState().confirm).toBeNull();
+    const errors = usePiStore.getState().items.filter((i) => i.isError);
+    expect(errors.length).toBe(1);
+    const text = (errors[0].blocks[0] as { text: string }).text;
+    // The notice is localized — the test suite runs in English.
+    expect(text).toMatch(/send a message first|先发一条消息/);
+  });
+
   it("clone copies the whole session via pi's clone RPC, not a fork at the last user message", async () => {
     // pi's /clone is fork(leafId, {position:"at"}) — the entire transcript at
     // the current position. The plugin's forkSession() would branch at the

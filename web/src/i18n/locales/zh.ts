@@ -322,6 +322,7 @@ export const zh: Dict = {
   "error.fork.noUser": "分叉失败：没有可分叉的用户消息",
   "error.fork.noBranch": "分叉失败：此回复没有可用的分叉点",
   "error.fork.cancelled": "分叉被 pi 扩展取消",
+  "error.clone.empty": "还没有可复制的内容 —— 先发一条消息",
   "error.fork.failed": "分叉失败：{{msg}}",
   "error.clone.cancelled": "克隆被 pi 扩展取消",
   "error.delete.failed": "删除失败：{{msg}}",
