@@ -72,3 +72,7 @@ web/node_modules
 # 确需入库的夹具用 `git add -f`（browser 分支已有 bubbles.html 等先例）。
 test/e2e-project/*.svg
 test/e2e-project/*.html
+
+# out/ 是真机验收的探针产物（CDP 脚本、截图、results.json）：一次性证据，
+# 没有用例引用，不入库（与 test/e2e-project 产物同理）。
+out/
