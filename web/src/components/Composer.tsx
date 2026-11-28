@@ -18,8 +18,10 @@ import {
   type PasteTokenWords,
 } from "../lib/pasteCollapse";
 import { findTempRefPaths } from "../lib/tempRefs";
+import { BUILTIN_COMMANDS, type BuiltinCommand } from "../lib/builtinCommands";
 import { useT } from "../i18n/useT";
 import type { TFunction } from "i18next";
+import type { CommandInfo } from "../store/types";
 import ModelPicker from "./ModelPicker";
 import SendButton from "./SendButton";
 import ThinkingPicker from "./ThinkingPicker";
@@ -32,6 +34,9 @@ interface PendingImage {
   mimeType: string;
   name: string;
 }
+
+/** One slash-menu row: a pi-side command (sent as text, expanded core-side) or a plugin-executed built-in. */
+type SlashEntry = CommandInfo & { builtin?: BuiltinCommand };
 
 const FILE_MENU_MAX = 20;
 
@@ -259,6 +264,7 @@ export default function Composer() {
   // typing stays allowed (Q2), sending does not.
   const pendingSwitch = usePiStore((s) => s.pendingSwitch);
   const commands = usePiStore((s) => s.commands);
+  const runBuiltinCommand = usePiStore((s) => s.runBuiltinCommand);
   const files = usePiStore((s) => s.files);
   const filesSource = usePiStore((s) => s.sources.files);
   const commandsSource = usePiStore((s) => s.sources.commands);
@@ -887,8 +893,23 @@ export default function Composer() {
   // The menus no longer require matches to show up: a query with no result used
   // to close the menu silently, which is indistinguishable from "broken".
   const slashOpen = slashQuery !== null && !slashDismissed;
+  // pi's TUI-layer built-ins (lib/builtinCommands.ts) lead the menu, like the
+  // pi TUI itself does. They execute on plugin surfaces and never reach the
+  // prompt path — sending "/model" verbatim would feed it to the LLM.
+  const builtinEntries: SlashEntry[] = useMemo(
+    () =>
+      BUILTIN_COMMANDS.map((c) => ({
+        name: c.name,
+        description: t(c.descKey),
+        source: "builtin",
+        builtin: c,
+      })),
+    [t],
+  );
   const slashMatches = slashOpen
-    ? commands.filter((c) => c.name.toLowerCase().includes(slashQuery)).slice(0, 8)
+    ? [...builtinEntries, ...commands]
+        .filter((c) => c.name.toLowerCase().includes(slashQuery))
+        .slice(0, 8)
     : [];
 
   const atMatch = AT_QUERY_RE.exec(text);
@@ -983,8 +1004,16 @@ export default function Composer() {
     collapseComposer();
   };
 
-  const applySlashCommand = (name: string) => {
-    applyText(`/${name} `);
+  const applySlashCommand = (entry: SlashEntry) => {
+    if (entry.builtin) {
+      // Built-ins execute locally — the typed "/name" must not go out as a
+      // message (the RPC prompt path would feed it verbatim to the LLM).
+      applyText("");
+      setSlashDismissed(false);
+      runBuiltinCommand(entry.builtin.action);
+      return;
+    }
+    applyText(`/${entry.name} `);
     taRef.current?.focus();
   };
 
@@ -1246,7 +1275,7 @@ export default function Composer() {
                 className={`slash-item ${i === highlightIndex ? "slash-active" : ""}`}
                 onMouseDown={(e) => {
                   e.preventDefault();
-                  applySlashCommand(c.name);
+                  applySlashCommand(c);
                 }}
               >
                 <span className="slash-name">/{c.name}</span>
@@ -1517,7 +1546,7 @@ export default function Composer() {
                 }
                 if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
                   e.preventDefault();
-                  applySlashCommand(slashMatches[highlightIndex].name);
+                  applySlashCommand(slashMatches[highlightIndex]);
                   return;
                 }
               }

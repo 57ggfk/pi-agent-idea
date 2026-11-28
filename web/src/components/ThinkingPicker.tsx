@@ -16,6 +16,14 @@ export default function ThinkingPicker() {
   const thinkingLevels = usePiStore((s) => s.thinkingLevels);
   const setThinkingLevel = usePiStore((s) => s.setThinkingLevel);
   const rootRef = useRef<HTMLDivElement>(null);
+  // Slash `/thinking` opens this picker through the store's one-shot signal:
+  // primitives, not the object, so identical requests still retrigger via nonce.
+  const pickerTarget = usePiStore((s) => s.pickerSignal?.target ?? null);
+  const pickerNonce = usePiStore((s) => s.pickerSignal?.nonce ?? 0);
+
+  useEffect(() => {
+    if (pickerTarget === "thinking") setOpen(true);
+  }, [pickerTarget, pickerNonce]);
 
   useEffect(() => {
     if (!open) return;

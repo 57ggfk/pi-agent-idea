@@ -3,6 +3,7 @@ import type { AppTheme, Bridge, ThemePreference } from "../bridge/types";
 import { rpc } from "../bridge/types";
 import { getBridge } from "../bridge";
 import { displaySkillText, parseSkillBlock } from "../lib/skillDisplay";
+import type { BuiltinAction } from "../lib/builtinCommands";
 import {
   clipTitleInput,
   deriveSessionTitle,
@@ -472,6 +473,21 @@ interface PiStore {
   /** The user-message outline popover (US1). Hidden for empty sessions. */
   outlineOpen: boolean;
   toggleOutline(open?: boolean): void;
+
+  // -- built-in slash commands (0.5.12 first pass) ----------------------------
+
+  /**
+   * One-shot signal telling a picker popover to open (slash `/model`
+   * `/thinking`). nonce bumps per request so two identical requests in a row
+   * still retrigger; pickers react to the nonce, not object identity.
+   */
+  pickerSignal: { target: "model" | "thinking"; nonce: number } | null;
+  /**
+   * Executes a pi TUI built-in slash command on the plugin surface it maps to
+   * (see lib/builtinCommands.ts). Built-ins never go through the prompt path:
+   * the RPC layer would feed "/model" verbatim to the LLM.
+   */
+  runBuiltinCommand(action: BuiltinAction): void;
 
   // -- language (spec 008) ----------------------------------------------------
 
@@ -1439,6 +1455,7 @@ export const usePiStore = create<PiStore>((set, get) => {
     themePreference: initialPreference,
     ideTheme: "light",
     tab: "chat",
+    pickerSignal: null,
 
     piStatus: "notStarted",
     piVersion: "",
@@ -1504,6 +1521,36 @@ export const usePiStore = create<PiStore>((set, get) => {
       if (get().setupGate.needsSetup && get().setupGate.state === "ready") return;
       set({ tab });
       if (tab === "sessions") void get().refreshSessions();
+    },
+
+    runBuiltinCommand(action: BuiltinAction) {
+      const bumpPicker = (target: "model" | "thinking") =>
+        set({ pickerSignal: { target, nonce: (get().pickerSignal?.nonce ?? 0) + 1 } });
+      switch (action) {
+        case "model-picker":
+          bumpPicker("model");
+          return;
+        case "thinking-picker":
+          bumpPicker("thinking");
+          return;
+        case "new-session":
+          void get().newSession();
+          return;
+        case "compact":
+          void get().compact();
+          return;
+        // /clone in pi TUI is "duplicate the session at the current position" —
+        // exactly the plugin's full-copy fork (024 US2/US3), confirm included.
+        case "clone":
+          void get().forkSession();
+          return;
+        case "sessions":
+          get().setTab("sessions");
+          return;
+        case "manage":
+          get().setTab("manage");
+          return;
+      }
     },
 
     // -- session outline & search (spec 006) -----------------------------------
