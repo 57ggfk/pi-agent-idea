@@ -66,6 +66,7 @@ describe("registry and dictionaries (SC-002 / FR-016)", () => {
       "panel.run.notStarted",
       "panel.run.model",
       "panel.run.context",
+      "panel.run.contextValue",
       "panel.run.cost",
       "panel.run.exitHint",
       "panel.jobs.empty",

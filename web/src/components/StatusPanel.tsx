@@ -10,6 +10,7 @@ import {
   type AsyncStatusSnapshot,
   type AsyncStatusSnapshotNode,
   type JobBadge,
+  type SubagentRun,
   type TodoSnapshotItem,
 } from "../store/types";
 import { shortPath } from "../lib/shortPath";
@@ -69,6 +70,46 @@ const RUN_STATE_LABEL_KEYS: Record<string, keyof Dict> = {
   exited: "panel.run.exited",
   notStarted: "panel.run.notStarted",
 };
+
+/**
+ * Channel-D rows carry pi-subagents' own status vocabulary — completed |
+ * failed | paused | stopped (extension-api.md:666) — which is NOT the
+ * snapshot's eight-value set. Map them onto the panel's badge set; an
+ * unknown status renders as "done" only when the extension says so, and
+ * otherwise falls back to the neutral unknown badge.
+ */
+function mapSubagentStatus(status: string): JobBadge {
+  switch (status.trim().toLowerCase()) {
+    case "completed":
+    case "complete":
+    case "done":
+      return "done";
+    case "failed":
+    case "error":
+      return "failed";
+    case "paused":
+    case "waiting":
+      return "waiting";
+    case "stopped":
+    case "rejected":
+    case "cancelled":
+    case "canceled":
+      return "failed";
+    default:
+      return status.trim() === "" ? "unknown" : "done";
+  }
+}
+
+const SUBAGENT_STATUS_KEYS: Record<string, keyof Dict> = {
+  running: "panel.job.running",
+  waiting: "panel.job.waiting",
+  done: "panel.job.done",
+  failed: "panel.job.failed",
+  unknown: "panel.job.unknown",
+};
+
+/** Stable empty list — see the subagentRuns selector below. */
+const EMPTY_RUNS: SubagentRun[] = [];
 
 /**
  * One background-job row (FR-011): job name + four-state badge + chain step
@@ -137,6 +178,11 @@ export default function StatusPanel() {
   const stats = usePiStore((s) => s.stats);
   const extensionStatuses = usePiStore((s) => s.extensionStatuses);
   const subagentAsync = usePiStore((s) => s.subagentAsync);
+  // FR-011 channel D: the runs recovered from the transcript.
+  // A stable EMPTY constant matters: returning a fresh [] on every call makes
+  // zustand see a changed value on every store update, and the panel renders
+  // in an endless update loop.
+  const subagentRuns = usePiStore((s) => (open ? s.subagentRuns : EMPTY_RUNS));
   const approvals = usePiStore((s) => s.approvals);
   // Closed panel → null, so streaming chunks do not re-render this component
   // at all. The derivations below are O(items×blocks) per transcript edit;
@@ -207,8 +253,11 @@ export default function StatusPanel() {
           {percent != null ? (
             <div className="panel-row" data-testid="panel-run-ctx">
               <span className="panel-row-key">{t("panel.run.context")}</span>
+              {/* The row already labels this "上下文" — the value must not
+                  repeat the word (status.ctx carries its own prefix for the
+                  status bar, which has no label column). */}
               <span className="panel-row-val">
-                {t("status.ctx", { pct: Math.round(percent) })}
+                {t("panel.run.contextValue", { pct: Math.round(percent) })}
                 {ctxTokens != null ? ` · ${formatTokens(ctxTokens)}` : ""}
               </span>
             </div>
@@ -253,6 +302,32 @@ export default function StatusPanel() {
                 ) : null}
               </>
             )}
+          </section>
+        ) : null}
+
+        {/* -- sub-agents: the individual runs, recovered from the transcript
+               (FR-011 channel D). Kept apart from 后台任务 on purpose: the
+               jobs section answers "what is running right now", this one
+               answers "what sub-agents did this session use". -- */}
+        {subagentRuns.length > 0 ? (
+          <section className="panel-section" data-testid="panel-subagents">
+            <div className="panel-section-title">{t("panel.section.subagents")}</div>
+            {subagentRuns.map((run, i) => (
+              <div
+                key={run.runId || `${run.agent}-${i}`}
+                className="panel-subagent"
+                data-testid="panel-subagent"
+                data-origin={run.origin}
+              >
+                <span className="panel-subagent-name">{run.agent || t("panel.subagent.unnamed")}</span>
+                <span
+                  className={`panel-badge job-${mapSubagentStatus(run.status)}`}
+                  data-testid="panel-subagent-badge"
+                >
+                  {t(SUBAGENT_STATUS_KEYS[mapSubagentStatus(run.status)] ?? "panel.job.done")}
+                </span>
+              </div>
+            ))}
           </section>
         ) : null}
 

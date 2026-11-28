@@ -487,6 +487,157 @@ export function jobStepChain(snapshot: AsyncStatusSnapshot | null | undefined): 
   return { steps, truncated: cut || Boolean(snapshot.omitted?.children) };
 }
 
+// -- Channel D: transcript rebuild (FR-011) -----------------------------------
+//
+// Channel A (the `setWidget(subagent-async)` snapshot) only carries the jobs
+// that are live WHILE the extension is connected. After a reload — or when the
+// panel attaches to a session whose snapshot frames were emitted before the
+// bridge existed — channel A has nothing, and the panel would show an empty
+// jobs section for work that demonstrably ran.
+//
+// pi-subagents documents the rebuild path (extension-api.md:157): the session
+// file already holds the records — the `subagent` tool result's
+// `details.results[]` for foreground runs, and the `subagent-notify` message's
+// `details.runs[]` for background runs (extension-api.md:666).
+
+/** A sub-agent run recovered from the transcript (channel D). */
+export interface SubagentRun {
+  /** The run's id when known; "" otherwise. */
+  runId: string;
+  /** The agent's name — `agent` on notify rows, `agent`/`name` on results. */
+  agent: string;
+  /** Raw status string: completed | failed | paused | stopped (notify rows). */
+  status: string;
+  /** "background" (notify) | "foreground" (tool result). */
+  origin: "background" | "foreground";
+}
+
+const SUBAGENT_NOTIFY_CUSTOM_TYPE = "subagent-notify";
+
+/**
+ * Rebuilds the sub-agent runs from a raw transcript.
+ *
+ * Both records are read defensively — the transcript is user data and pi's
+ * shape can change with the extension's version:
+ * - a custom message with `customType === "subagent-notify"` carries
+ *   `details.runs[]`, one entry per finished run, each with `agent` + `status`
+ *   and optionally `runId` / `childRuns[]` (extension-api.md:666-672);
+ * - a `toolResult` for the `subagent` tool carries `details.results[]` for
+ *   foreground runs (extension-api.md:157).
+ *
+ * Rows are deduped by run id (a foreground result and the notify that later
+ * describes the same run are the same work) and ordered by first appearance.
+ */
+export function subagentRunsFromMessages(messages: unknown[]): SubagentRun[] {
+  const rows: SubagentRun[] = [];
+  const seen = new Set<string>();
+  const push = (run: SubagentRun) => {
+    const key = run.runId || `${run.origin}:${run.agent}:${run.status}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    rows.push(run);
+  };
+
+  for (const m of messages) {
+    const rec = asRecord(m);
+    if (!rec) continue;
+
+    // Background: the completion notice.
+    const customType = rec["customType"];
+    if (customType === SUBAGENT_NOTIFY_CUSTOM_TYPE) {
+      const details = asRecord(rec["details"]);
+      const runs = details?.["runs"];
+      if (!Array.isArray(runs)) continue;
+      for (const raw of runs) {
+        const run = asRecord(raw);
+        if (!run) continue;
+        const agent = typeof run["agent"] === "string" ? run["agent"] : "";
+        const status = typeof run["status"] === "string" ? run["status"] : "";
+        if (!agent && !status) continue;
+        push({
+          runId: typeof run["runId"] === "string" ? run["runId"] : "",
+          agent,
+          status,
+          origin: "background",
+        });
+        // A workflow's children are runs too — the user asked for sub-agents
+        // to be listed individually, not folded into their parent.
+        const childRuns = run["childRuns"];
+        if (Array.isArray(childRuns)) {
+          for (const rawChild of childRuns) {
+            const child = asRecord(rawChild);
+            if (!child) continue;
+            const childAgent = typeof child["agent"] === "string" ? child["agent"] : "";
+            const childStatus = typeof child["status"] === "string" ? child["status"] : "";
+            if (!childAgent && !childStatus) continue;
+            push({
+              runId: typeof child["runId"] === "string" ? child["runId"] : "",
+              agent: childAgent,
+              status: childStatus,
+              origin: "background",
+            });
+          }
+        }
+      }
+      continue;
+    }
+
+    // Foreground: the `subagent` tool's result.
+    if (rec["role"] !== "toolResult") continue;
+    if (String(rec["toolName"] ?? "") !== "subagent") continue;
+    const details = asRecord(rec["details"]);
+    const results = details?.["results"];
+    if (!Array.isArray(results)) continue;
+    for (const raw of results) {
+      const res = asRecord(raw);
+      if (!res) continue;
+      const agent = typeof res["agent"] === "string" ? res["agent"] : "";
+      const status = typeof res["status"] === "string" ? res["status"] : "";
+      if (!agent && !status) continue;
+      push({
+        runId: typeof res["runId"] === "string" ? res["runId"] : "",
+        agent,
+        status,
+        origin: "foreground",
+      });
+    }
+  }
+  return rows;
+}
+
+/**
+ * The LIVE path of channel D: the same two records arrive as events while the
+ * session runs — a `message_end` whose message has `role:"custom"` and
+ * `customType:"subagent-notify"` (background), and a `tool_execution_end` for
+ * the `subagent` tool (foreground).
+ *
+ * Returns the runs the event carries (possibly none). The caller merges them
+ * into the store's list — the live path must not depend on a replay.
+ */
+export function subagentRunsFromEvent(event: AnyRecord): SubagentRun[] {
+  const type = String(event["type"] ?? "");
+
+  if (type === "message_end") {
+    const message = asRecord(event["message"]);
+    if (!message) return [];
+    if (message["role"] !== "custom") return [];
+    if (message["customType"] !== SUBAGENT_NOTIFY_CUSTOM_TYPE) return [];
+    return subagentRunsFromMessages([message]);
+  }
+
+  if (type === "tool_execution_end") {
+    if (String(event["toolName"] ?? "") !== "subagent") return [];
+    const details = asRecord(event["details"]);
+    const results = details?.["results"];
+    if (!Array.isArray(results)) return [];
+    return subagentRunsFromMessages([
+      { role: "toolResult", toolName: "subagent", details: { results } },
+    ]);
+  }
+
+  return [];
+}
+
 // -- D4: todo snapshot (FR-012) ------------------------------------------------
 //
 // No todo extension is installed on this machine, so there is no authoritative

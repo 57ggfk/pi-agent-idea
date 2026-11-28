@@ -35,6 +35,8 @@ import {
   itemsFromMessages,
   parseSubagentAsyncWidget,
   quoteMarkdownSource,
+  subagentRunsFromEvent,
+  subagentRunsFromMessages,
   SUBAGENT_ASYNC_WIDGET_KEY,
   upsertExtensionStatus,
   type AsyncStatusSnapshot,
@@ -49,6 +51,7 @@ import {
   type QueueMode,
   type QueueState,
   type QueueStateEvent,
+  type SubagentRun,
   type SessionStats,
 } from "./types";
 import {
@@ -654,6 +657,15 @@ interface PiStore {
    * trailing timer (SUBAGENT_FLUSH_MS), snapshots replace wholesale.
    */
   subagentAsync: { seen: boolean; snapshot: AsyncStatusSnapshot | null; updatedAt: number };
+
+  /**
+   * FR-011 channel D: the sub-agent runs recovered from the transcript
+   * (pi-subagents extension-api.md:157). Channel A only knows the jobs that
+   * are live right now; this is what makes the panel show work that ran
+   * before the plugin attached, or in an earlier turn of this session.
+   * Resets on session switch — a run belongs to the session that spawned it.
+   */
+  subagentRuns: SubagentRun[];
   /** Approval policy of the bundled extension: "yolo" (default) or "ask". */
   approvalMode: "ask" | "yolo";
   /** pi-managed toggles; null until get_state / config.getPrefs answered. */
@@ -1062,6 +1074,8 @@ export const usePiStore = create<PiStore>((set, get) => {
       search: { open: false, query: "", index: 0 },
       pendingSearchJump: null,
       subagentAsync: { seen: get().subagentAsync.seen, snapshot: null, updatedAt: Date.now() },
+      // FR-011 channel D: the new conversation starts with no sub-agent runs.
+      subagentRuns: [],
     });
   };
 
@@ -1463,6 +1477,25 @@ export const usePiStore = create<PiStore>((set, get) => {
       return;
     }
     set({ items: applyEvent(state.items, event) });
+    // FR-011 channel D, LIVE path: a sub-agent record arrives as an event
+    // while the session runs — a `message_end` carrying the
+    // `subagent-notify` custom message (background), or the `subagent`
+    // tool's `tool_execution_end` (foreground). Without this the panel
+    // would only learn about sub-agents after a full replay.
+    const liveRuns = subagentRunsFromEvent(event);
+    if (liveRuns.length > 0) {
+      const known = new Set(
+        get().subagentRuns.map((r) => r.runId || `${r.origin}:${r.agent}:${r.status}`),
+      );
+      const merged = [...get().subagentRuns];
+      for (const run of liveRuns) {
+        const key = run.runId || `${run.origin}:${run.agent}:${run.status}`;
+        if (known.has(key)) continue;
+        known.add(key);
+        merged.push(run);
+      }
+      if (merged.length !== get().subagentRuns.length) set({ subagentRuns: merged });
+    }
     // 012 T109: pi never names sessions on its own (T101 evidence) — the first
     // real user message becomes the title, written back via set_session_name.
     // Stage B then refines it once the first assistant reply is in.
@@ -1602,6 +1635,8 @@ export const usePiStore = create<PiStore>((set, get) => {
     approvals: [],
     extensionStatuses: [],
     subagentAsync: { seen: false, snapshot: null, updatedAt: 0 },
+    // FR-011 channel D: sub-agent runs recovered from the transcript.
+    subagentRuns: [],
     // Auto-approve by default; "ask" is opt-in from the options menu.
     approvalMode: "yolo",
     autoCompaction: null,
@@ -1925,6 +1960,8 @@ export const usePiStore = create<PiStore>((set, get) => {
         const messages = await rpc<{ messages: unknown[] }>(bridge, { type: "get_messages" });
         const restored = itemsFromMessages(messages.messages ?? []);
         if (restored.length > 0) set({ items: restored });
+        // FR-011 channel D: the same replay carries the sub-agent records.
+        set({ subagentRuns: subagentRunsFromMessages(messages.messages ?? []) });
       } catch {
         // mock bridge without get_messages support
       }
@@ -2382,6 +2419,8 @@ export const usePiStore = create<PiStore>((set, get) => {
         // D2: the old session's job snapshot must not leak into the target
         // session; `seen` stays (installed-ness is machine-level).
         subagentAsync: { seen: get().subagentAsync.seen, snapshot: null, updatedAt: Date.now() },
+        // FR-011 channel D: same rule for the transcript-rebuilt runs.
+        subagentRuns: [],
       });
       requestRepaint();
       perfMark("switch.pending", startedAt, { kind: "history" });
@@ -2442,6 +2481,9 @@ export const usePiStore = create<PiStore>((set, get) => {
 
           set({
             items: itemsFromMessages(messages.messages ?? []).filter((i) => !i.ephemeral),
+            // FR-011 channel D: sub-agent runs belong to the session that
+            // spawned them — they never leak across a session switch.
+            subagentRuns: subagentRunsFromMessages(messages.messages ?? []),
             stats,
             sessionName: state?.sessionName,
             sessionId: state?.sessionId,
@@ -2804,6 +2846,8 @@ export const usePiStore = create<PiStore>((set, get) => {
         // records the real message itself, and the transcript wins (plan 5).
         const restored = itemsFromMessages(messages.messages ?? []).filter((i) => !i.ephemeral);
         set({ items: restored });
+        // FR-011 channel D: refresh the sub-agent runs with the same replay.
+        set({ subagentRuns: subagentRunsFromMessages(messages.messages ?? []) });
       } catch {
         // mock bridge without get_messages support
       }

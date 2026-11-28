@@ -87,6 +87,10 @@ test("US1-1: idle run shows Idle + model + context + cost, same store fields as 
   // not just a label.
   await expect(page.getByTestId("panel-run-ctx")).toContainText(/9\s*%/);
   await expect(page.getByTestId("panel-run-ctx")).toContainText(/18[.,]?/); // 18080 tokens ≈ 18.1k
+  // The row already says "Context"/"上下文" — the value must not repeat the
+  // word (real-machine finding 2026-11-28: it rendered "上下文  上下文 0% · 0").
+  const ctxText = await page.getByTestId("panel-run-ctx").innerText();
+  expect(ctxText.toLowerCase().match(/context|上下文/g)?.length ?? 0).toBeLessThanOrEqual(1);
   await expect(page.getByTestId("panel-run-cost")).toContainText("$");
 });
 
@@ -293,6 +297,40 @@ test("FR-011: jobs section registers, shows the running chain 2/3, then the comp
   await expect(page.getByTestId("panel-jobs")).toBeVisible();
   await expect(page.getByTestId("panel-jobs-empty")).toBeVisible();
   await expect(page.getByTestId("panel-job")).toHaveCount(0);
+});
+
+test("FR-011 channel D: sub-agents recovered from the transcript get their own section", async ({ page }) => {
+  await page.goto("/?panel=1");
+  await expect(page.getByTestId("empty-state")).toBeVisible();
+  await openPanel(page);
+
+  // Before the run there are no sub-agent records at all.
+  await expect(page.getByTestId("panel-subagents")).toHaveCount(0);
+
+  // The run produces two background runs and one foreground run — pi
+  // delivers them as events (mock fixture in bridge/mock.ts, pi-subagents'
+  // own shapes).
+  await page.getByTestId("composer-input").fill("subagent probe");
+  await page.getByTestId("send-btn").click();
+
+  const subagents = page.getByTestId("panel-subagents");
+  await expect(subagents).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("panel-subagent")).toHaveCount(3);
+
+  // Each row names its agent and carries a state badge.
+  await expect(page.getByTestId("panel-subagent").filter({ hasText: "worker" })).toBeVisible();
+  await expect(page.getByTestId("panel-subagent").filter({ hasText: "scout" })).toBeVisible();
+  await expect(page.getByTestId("panel-subagent").filter({ hasText: "reviewer" })).toBeVisible();
+  await expect(
+    page.getByTestId("panel-subagent").filter({ hasText: "worker" }).getByTestId("panel-subagent-badge"),
+  ).toHaveText("Completed");
+  await expect(
+    page.getByTestId("panel-subagent").filter({ hasText: "scout" }).getByTestId("panel-subagent-badge"),
+  ).toHaveText("Failed");
+
+  // The sub-agent section is its own category — it must not be folded into
+  // the background-jobs rows (the user's ask on the real machine).
+  await expect(subagents).toContainText("Sub-agents");
 });
 
 test("FR-001: the three popovers are mutually exclusive with the status panel", async ({ page }) => {

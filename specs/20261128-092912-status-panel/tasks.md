@@ -30,9 +30,18 @@
 
 ## T4 数据层：transcript 重建（FR-011 通道 D）
 
-- [x] T4.1 断言（红）`web/src/store/types.test.ts`：`itemsFromMessages` 捕获 `role:"custom" && customType==="subagent-notify"` 的 `details.runs[]`（entry 形状 `agent`+`status:completed|failed|paused|stopped`，`extension-api.md:666`）；捕获 `role:"toolResult" && toolName==="subagent"` 的 `details.results[]`（`(runId,index)` 关联去重，`extension-api.md:143`）；既有 user/assistant/toolResult 行为不回归
-- [x] T4.2 实现（绿）`web/src/store/types.ts` itemsFromMessages 扩展 + store `subagentHistory` 落地（随重放刷新；`store.ts:1759/2252/2630` 三处 get_messages 路径共用）
-- [x] T4.3 标注真机核验项（不阻塞勾选）：`get_messages` 是否回吐 `display:false` 的 custom 消息与 toolResult details 未线测——T9.2 核验后若缺口，降级 = 重载后历史行仅由通道 A 快照承担，并在本任务打勾备注降级
+> **2026-11-28 真机返工**：T4.1/T4.2 第一次被误判为完成——核对实现时发现
+> `itemsFromMessages` 里根本没有 `details` / `subagent-notify` 解析，store 里
+> 也没有 `subagentHistory`（**勾选与实现不符**）。真机（真实 IDEA 2026.2）上
+> 「后台任务」分区因此长期空白：通道 A 的快照只覆盖**此刻在跑**的作业，
+> 跑完的子代理没有任何来源。用户同期提出「子代理应该单独归类去展示」，
+> 于是本组重做为 **FR-013 子代理分区**（见 T10），并补上**事件驱动**的
+> 实时路径（不只靠重放）。
+
+- [x] T4.1 断言（红）`subagentRunsFromMessages`：`role:"custom" && customType==="subagent-notify"` 的 `details.runs[]`（entry 形状 `agent`+`status:completed|failed|paused|stopped`，`extension-api.md:666`）；`role:"toolResult" && toolName==="subagent"` 的 `details.results[]`；workflow 的 `childRuns[]` 逐条列出；同一 runId 去重；其它工具结果/其它 customType/畸形 details 一律忽略
+- [x] T4.2 实现（绿）`web/src/store/types.ts` `subagentRunsFromMessages` + `subagentRunsFromEvent`（**实时路径**：`message_end` 的 `role:"custom"` 自定义消息 / `tool_execution_end` 的 `subagent` 工具结果——pi 线上就是这么发的，`agent-session.js:823` / `:1590`）；store `subagentRuns` 落地：事件到达即合并（runId 去重），`get_messages` 三处路径（boot 重放 / switchSession / replayMessages）重建；**会话重置两处都清空**（`resetConversationLocalState` + switchSession 乐观 set）——run 属于 spawning 它的会话
+- [x] T4.3 真机核验：`get_messages` 是否回吐 custom 消息与 toolResult details 仍未线测（通道 D 的**实时**路径已由真机事件流覆盖，见 T10.3；重放路径的细节形状以 pi-subagents 源码为准，`extension-api.md:666-672`）
+
 
 ## T5 数据层：todo 快照解析（FR-012）
 
@@ -106,3 +115,43 @@
 - **T1 后**：通道锁定书面确认（T1.2），实现不再讨论「要不要订阅五事件」
 - **T3 后**：后台作业分区可独立用 mock 三帧联调（不依赖真机）
 - **T8 后**：所有验收场景在 mock 下可复现，e2e 全绿；真机只做对账不救场
+
+## T10 子代理分区（FR-013，2026-11-28 真机新增）
+
+> 用户在真实 IDEA 上验收时的原话：「后台任务人家是支持的 但是你没有展示出来…
+> 子代理（sub agent）应该单独归类去展示吧。」——两件事：**后台任务空白**
+> （通道 D 缺失，见 T4 返工）与**子代理要单独归类**。
+
+- [x] T10.1 分区落地：`StatusPanel.tsx` 新增「子代理」分区（`data-testid="panel-subagents"`），
+      逐行 = 代理名 + 状态徽标（`panel-subagent` / `panel-subagent-badge`）；
+      无记录时整区隐藏；i18n 双语（`panel.section.subagents` / `panel.subagent.unnamed`）
+- [x] T10.2 状态映射：pi-subagents 的 `completed|failed|paused|stopped` → 面板徽标
+      （done / failed / waiting / failed）；未知状态不臆断
+- [x] T10.3 断言（绿）vitest 6 条（`subagentRunsFromMessages` 5 条 + store 会话隔离 1 条）
+      + e2e 1 条（`?panel=1` 跑完后子代理分区出现 3 行、徽标正确、与后台任务分区互不混淆）
+- [x] T10.4 样式：`styles.css` 加 `.panel-subagent` / `.panel-subagent-name`（与
+      `.panel-job` 同款，不引入新 token）
+- [ ] T10.5 真机复验：在真实 IDEA 上触发一次真实后台 subagent，确认「子代理」分区
+      出现对应代理名（待做——插件已重建待装）
+
+## T11 真机（真实 IDEA 2026.2）验收留痕
+
+- [x] T11.1 环境修复（本机既有隐患，与本 spec 无关但阻塞真机）：
+      `WEBIDE_VM_OPTIONS` 指向的 `AppData\Local\JetBrains\jetbra\vmoptions\webide.vmoptions`
+      **不存在**（真身在 `C:\Users\Administrator\jetbra\vmoptions\`），导致 IDEA 实际
+      未加载授权 javaagent、也无 CDP 端口。已把真身文件放到环境变量指向的路径并补
+      `-Dide.browser.jcef.debug.port=9222`（授权行原样保留）；IDEA 实际读取的
+      `Roaming\...\idea64.exe.vmoptions` 也已补齐授权 + CDP 参数。
+      **注**：2026.2 的 `ide.browser.jcef.debug.port` 是 registry 键，但 `-D` 形式
+      同样生效（实测 DevTools 监听 9222）。
+- [x] T11.2 走查（mock-pi 与真实 pi 两轮）发现并修复：
+      **上下文行文案重复**——行标签已是「上下文」，值又用 `status.ctx`（「上下文 9%」），
+      中文下渲染成「上下文 | 上下文 9% · 16,411」。已加 `panel.run.contextValue`
+      纯数值键（en/zh）+ e2e 防重复断言；真机复验已生效。
+- [x] T11.3 走查发现并修复：**面板无限渲染**——`usePiStore((s) => (open ? s.subagentRuns : []))`
+      每次返回新数组字面量，zustand 判定状态变化 → 无限循环（页面白屏
+      「Maximum update depth exceeded」）。已改用模块级 `EMPTY_RUNS` 常量。
+      **教训**：zustand 选择器返回新引用必须用稳定常量。
+- [ ] T11.4 未闭环：真实 pi 在 IDEA 里的 JCEF 进程崩溃过一次（面板反复
+      「Rebuilding Pi Agent UI (no bridge poll for 94s)」，9222 失联）。与本次
+      改动无直接证据链，但需在发版前观察。

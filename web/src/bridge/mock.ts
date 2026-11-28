@@ -330,6 +330,26 @@ export class MockBridge implements Bridge {
    */
   private readonly panelScenario =
     typeof location !== "undefined" ? (query()?.get("panel") ?? "") : "";
+  /**
+   * FR-011 channel D: the transcript records of two sub-agent runs — a
+   * background one (subagent-notify → details.runs[]) and a foreground one
+   * (subagent tool result → details.results[]). The shapes are
+   * pi-subagents' own (extension-api.md:666 / :157). Seeded at construction so
+   * the boot replay already carries them — the panel must show the runs even
+   * before the user sends anything.
+   */
+  /**
+   * FR-011 channel D: the sub-agent records this session produced. They
+   * travel as EVENTS while the run happens — a `message_end` carrying the
+   * `subagent-notify` custom message (background), and the `subagent` tool's
+   * `tool_execution_end` (foreground). pi delivers them the same way
+   * (agent-session.js:823 / :1590), so the panel learns about a sub-agent
+   * while it runs, not only after a replay.
+   *
+   * Kept as data so the mock can emit both the live events and the replayed
+   * transcript records.
+   */
+  private subagentRecords: unknown[] = [];
   // Transcript of the current branch. Kept so get_messages / fork behave like
   // pi 1.5.0 (measured, see specs/007-message-fork/fork-semantics.json): a fork
   // branches *before* the chosen user entry, so that entry and everything after
@@ -2188,10 +2208,12 @@ export class MockBridge implements Bridge {
         return {
           success: true,
           data: {
-            messages: this.history.map(({ role, content }) => ({ role, content })),
+            messages: [
+              ...this.history.map(({ role, content }) => ({ role, content })),
+              ...this.subagentRecords,
+            ],
           },
-        };
-      case "get_fork_messages":
+        };      case "get_fork_messages":
         // pi 1.5.0 wraps the list — {data:{messages:[{entryId,text}]}} — and
         // reports user entries only; measured in
         // specs/007-message-fork/fork-semantics.json.
@@ -2765,6 +2787,29 @@ export class MockBridge implements Bridge {
     // 中 / 完成+已完成作业。帧间隔 ≥250ms 节流窗（400/2200ms），每帧独立落
     // store，UI 才能断言「运行中→已完成」与 chain 步骤流文本。队列事件不动。
     if (!this.aborted && this.panelScenario === "1") {
+      // FR-011 channel D: the sub-agent records this run produced. Seeded
+      // with the run so a session that never ran a sub-agent still shows the
+      // panel's empty states.
+      const backgroundRuns = [
+        { runId: "mock-bg-1", agent: "worker", status: "completed" },
+        { runId: "mock-bg-2", agent: "scout", status: "failed" },
+      ];
+      const foregroundRuns = [{ runId: "mock-fg-1", agent: "reviewer", status: "completed" }];
+      this.subagentRecords = [
+        {
+          role: "custom",
+          customType: "subagent-notify",
+          content: "Background subagent finished and verified.",
+          details: { runs: backgroundRuns },
+        },
+        {
+          role: "toolResult",
+          toolName: "subagent",
+          toolCallId: "call_mock_fg_1",
+          details: { results: foregroundRuns },
+        },
+      ];
+
       // setStatus: the entry shows while the run streams, clears near the end.
       emit({
         type: "extension_ui_request",
@@ -2823,6 +2868,38 @@ export class MockBridge implements Bridge {
           durationMs: 5,
         });
       }
+
+      // FR-011 channel D, LIVE: the foreground sub-agent run arrives as the
+      // `subagent` tool's tool_execution_end (details.results[]), and the
+      // background run as a `message_end` carrying the subagent-notify custom
+      // message (details.runs[]). pi delivers both this way.
+      await sleep(60);
+      emit({
+        type: "tool_execution_end",
+        toolCallId: "call_mock_fg_1",
+        toolName: "subagent",
+        result: { content: [{ type: "text", text: "reviewer finished" }] },
+        details: { results: [{ runId: "mock-fg-1", agent: "reviewer", status: "completed" }] },
+        isError: false,
+        durationMs: 12,
+      });
+      await sleep(60);
+      emit({
+        type: "message_end",
+        message: {
+          role: "custom",
+          customType: "subagent-notify",
+          content: "Background subagent finished and verified.",
+          display: true,
+          details: {
+            runs: [
+              { runId: "mock-bg-1", agent: "worker", status: "completed" },
+              { runId: "mock-bg-2", agent: "scout", status: "failed" },
+            ],
+          },
+          timestamp: Date.now(),
+        },
+      });
 
       // Frame 1: the empty registration frame (probe §4 — 扩展已装信号).
       emit({ type: "extension_ui_request", id: "ui-widget-1", method: "setWidget", widgetKey: "subagent-async" });

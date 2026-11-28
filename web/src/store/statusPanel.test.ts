@@ -73,6 +73,7 @@ import {
   outputEditsFromItems,
   parseSubagentAsyncWidget,
   resetItemIds,
+  subagentRunsFromMessages,
   todoSnapshotFromItems,
   upsertExtensionStatus,
   type AsyncStatusSnapshot,
@@ -443,6 +444,28 @@ describe("store: derivations follow the session (D4/D5 会话隔离, FR-007)", (
     expect(usePiStore.getState().items).toEqual([]);
     expect(outputEditsFromItems(usePiStore.getState().items)).toEqual([]);
     expect(todoSnapshotFromItems(usePiStore.getState().items)).toBeNull();
+  });
+
+  it("FR-011 channel D: the replayed transcript fills subagentRuns, and a session switch clears them", async () => {
+    h.state.rpc.set("get_messages", () => ({
+      messages: [
+        {
+          role: "custom",
+          customType: "subagent-notify",
+          details: { runs: [{ runId: "r1", agent: "worker", status: "completed" }] },
+        },
+      ],
+    }));
+
+    await usePiStore.getState().switchSession("/sessions/next.jsonl");
+    expect(usePiStore.getState().subagentRuns).toEqual([
+      { runId: "r1", agent: "worker", status: "completed", origin: "background" },
+    ]);
+
+    // A run belongs to the session that spawned it — it must not leak.
+    h.state.rpc.set("get_messages", () => ({ messages: [] }));
+    await usePiStore.getState().switchSession("/sessions/other.jsonl");
+    expect(usePiStore.getState().subagentRuns).toEqual([]);
   });
 });
 
@@ -882,5 +905,98 @@ describe("store: status panel popover (U2/D6)", () => {
     usePiStore.setState({ tab: "sessions" });
     await usePiStore.getState().goToApproval();
     expect(usePiStore.getState().tab).toBe("chat");
+  });
+});
+
+// -- FR-011 channel D: transcript rebuild ------------------------------------
+//
+// Channel A (the setWidget snapshot) only knows the jobs that are live right
+// now. The transcript is what proves work already happened — pi-subagents
+// documents the rebuild path (extension-api.md:157): the `subagent-notify`
+// message carries `details.runs[]` (background), the `subagent` tool result
+// carries `details.results[]` (foreground).
+
+describe("subagentRunsFromMessages (FR-011 channel D)", () => {
+  it("reads background runs from a subagent-notify message's details.runs[]", () => {
+    const rows = subagentRunsFromMessages([
+      {
+        role: "custom",
+        customType: "subagent-notify",
+        content: "Background subagent finished",
+        details: {
+          runs: [
+            { runId: "run-1", agent: "worker", status: "completed" },
+            { runId: "run-2", agent: "scout", status: "failed" },
+          ],
+        },
+      },
+    ]);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ runId: "run-1", agent: "worker", status: "completed", origin: "background" });
+    expect(rows[1]).toMatchObject({ agent: "scout", status: "failed" });
+  });
+
+  it("reads foreground runs from the subagent tool result's details.results[]", () => {
+    const rows = subagentRunsFromMessages([
+      {
+        role: "toolResult",
+        toolName: "subagent",
+        toolCallId: "tc-1",
+        details: { results: [{ runId: "fg-1", agent: "worker", status: "completed" }] },
+      },
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ runId: "fg-1", agent: "worker", origin: "foreground" });
+  });
+
+  it("lists a workflow's child runs individually (the user asked for sub-agents as their own category)", () => {
+    const rows = subagentRunsFromMessages([
+      {
+        role: "custom",
+        customType: "subagent-notify",
+        details: {
+          runs: [
+            {
+              runId: "wf-1",
+              agent: "workflow",
+              status: "completed",
+              childRuns: [
+                { runId: "c-1", agent: "scout", status: "completed" },
+                { runId: "c-2", agent: "worker", status: "completed" },
+              ],
+            },
+          ],
+        },
+      },
+    ]);
+    expect(rows.map((r) => r.agent)).toEqual(["workflow", "scout", "worker"]);
+  });
+
+  it("dedupes the same run reported twice (foreground result + later notify)", () => {
+    const rows = subagentRunsFromMessages([
+      {
+        role: "toolResult",
+        toolName: "subagent",
+        details: { results: [{ runId: "same", agent: "worker", status: "completed" }] },
+      },
+      {
+        role: "custom",
+        customType: "subagent-notify",
+        details: { runs: [{ runId: "same", agent: "worker", status: "completed" }] },
+      },
+    ]);
+    expect(rows).toHaveLength(1);
+  });
+
+  it("ignores other tool results, other custom types, and malformed details", () => {
+    const rows = subagentRunsFromMessages([
+      { role: "toolResult", toolName: "bash", details: { results: [{ agent: "x", status: "completed" }] } },
+      { role: "custom", customType: "something-else", details: { runs: [{ agent: "x", status: "completed" }] } },
+      { role: "custom", customType: "subagent-notify", details: { runs: "not-an-array" } },
+      { role: "custom", customType: "subagent-notify", details: { runs: [{ nothing: true }] } },
+      "garbage",
+      null,
+    ]);
+    expect(rows).toEqual([]);
   });
 });
