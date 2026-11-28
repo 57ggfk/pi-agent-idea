@@ -18,12 +18,17 @@ export default function ThinkingPicker() {
   const rootRef = useRef<HTMLDivElement>(null);
   // Slash `/thinking` opens this picker through the store's one-shot signal:
   // primitives, not the object, so identical requests still retrigger via nonce.
+  // The signal is consumed on use — a stale one would re-fire on remount.
   const pickerTarget = usePiStore((s) => s.pickerSignal?.target ?? null);
   const pickerNonce = usePiStore((s) => s.pickerSignal?.nonce ?? 0);
+  const clearPickerSignal = usePiStore((s) => s.clearPickerSignal);
 
   useEffect(() => {
-    if (pickerTarget === "thinking") setOpen(true);
-  }, [pickerTarget, pickerNonce]);
+    if (pickerTarget === "thinking") {
+      setOpen(true);
+      clearPickerSignal();
+    }
+  }, [pickerTarget, pickerNonce, clearPickerSignal]);
 
   useEffect(() => {
     if (!open) return;

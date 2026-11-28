@@ -488,6 +488,12 @@ interface PiStore {
    * the RPC layer would feed "/model" verbatim to the LLM.
    */
   runBuiltinCommand(action: BuiltinAction): void;
+  /**
+   * Consumed by the picker that opened for the signal: must be cleared on use,
+   * or a Composer remount (tab round-trip) re-fires the stale signal and the
+   * picker pops open on its own — found on the PyCharm real machine.
+   */
+  clearPickerSignal(): void;
 
   // -- language (spec 008) ----------------------------------------------------
 
@@ -1551,6 +1557,10 @@ export const usePiStore = create<PiStore>((set, get) => {
           get().setTab("manage");
           return;
       }
+    },
+
+    clearPickerSignal() {
+      set({ pickerSignal: null });
     },
 
     // -- session outline & search (spec 006) -----------------------------------

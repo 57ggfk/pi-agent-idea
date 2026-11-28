@@ -94,6 +94,13 @@ describe("runBuiltinCommand dispatch", () => {
     expect(usePiStore.getState().pickerSignal).toEqual({ target: "thinking", nonce: 1 });
   });
 
+  it("clearPickerSignal resets the signal so a remount cannot re-fire it", () => {
+    usePiStore.getState().runBuiltinCommand("model-picker");
+    expect(usePiStore.getState().pickerSignal).not.toBeNull();
+    usePiStore.getState().clearPickerSignal();
+    expect(usePiStore.getState().pickerSignal).toBeNull();
+  });
+
   it("sessions switches to the sessions tab", () => {
     usePiStore.getState().runBuiltinCommand("sessions");
     expect(usePiStore.getState().tab).toBe("sessions");

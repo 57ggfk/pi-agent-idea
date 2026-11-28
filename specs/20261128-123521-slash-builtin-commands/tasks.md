@@ -12,6 +12,11 @@
 
 ## 待办（非本分支）
 
-- [ ] **T9** 真机验收：MANUAL_TEST「Chat」节新增 4 条（内置 7 条逐一执行、拼错命令现状确认）
+- [x] **T9** 真机验收（2026-11-28，PyCharm 2026.3，裸 CDP 9223 驱动，工作流 dwfrun-d722559b）：
+  10 项 9 过 1 挂——挂的是本 feature 自己的缺陷（`pickerSignal` 用后不清理，Composer
+  切页重挂载时残留信号误弹选择器），已修复（信号用后即清，回归 e2e + store 用例双补）；
+  另确认 `prompt`（LLM）RPC 全程 0 次、`/websearch` 真实命令 Tab 补全不变、
+  `/compact` 空会话报「Nothing to compact」属观察项。证据：`out/slash-verify/`
+  （results.json + shot-1~6.png）；报告与截图也发在 issue #16。
 - [ ] **T10（P1，未立项）** 菜单 source 分组 / `argumentHint` / 空格保持菜单 / 参数补全
 - [ ] **T11（P2，未立项）** 未知命令发送前兜底；排队路径模板展开（pi 上游）

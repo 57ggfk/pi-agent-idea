@@ -39,6 +39,21 @@ test("/model opens the model picker and clears the input", async ({ page }) => {
   await expect(input).toHaveValue("");
 });
 
+test("a consumed picker signal must not survive a tab round-trip (PyCharm real-machine find)", async ({ page }) => {
+  const input = page.getByTestId("composer-input");
+  await input.pressSequentially("/model");
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("model-popover")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("model-popover")).not.toBeVisible();
+  // Composer unmounts on a tab switch; a stale signal re-fired the mount
+  // effect and auto-opened the picker on return (real-machine 2026-11-28).
+  await page.getByTestId("tab-sessions").click();
+  await page.getByTestId("tab-chat").click();
+  await expect(page.getByTestId("composer-input")).toBeVisible();
+  await expect(page.getByTestId("model-popover")).not.toBeVisible();
+});
+
 test("/resume switches to the sessions tab", async ({ page }) => {
   const input = page.getByTestId("composer-input");
   await input.pressSequentially("/resume");
