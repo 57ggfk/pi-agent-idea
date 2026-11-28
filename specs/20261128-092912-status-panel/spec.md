@@ -4,7 +4,7 @@
 **Created**: 2026-11-28
 **Status**: Final（2026-11-28 定稿；D-1/D-2 与分区构成经用户四轮反馈拍板，D-3/D-4/D-5 为推荐值）
 
-**GitHub Issue**: 待开——需求确认后创建并回填编号。
+**GitHub Issue**: [#15](https://github.com/57ggfk/pi-agent-idea/issues/15)
 
 **Input**: 用户需求——「新增状态面版，运行状态、任务、待处理、产出」。
 
